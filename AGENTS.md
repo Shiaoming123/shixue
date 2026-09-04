@@ -2,10 +2,10 @@
 
 ## Read before changing code
 
-1. Read `README.md` or `README.en.md` for product scope and maturity labels.
+1. Read both `README.md` and `README.en.md` for product scope and maturity labels. Any README content change must update both languages in the same change and keep claims, links, commands, and maturity labels aligned.
 2. Read `docs/README.md`, then the document for the area being changed.
 3. Read the immediate callers, exports, tests, and configuration before editing.
-4. For development and release checks, read `docs/development.md` and `docs/release-kit.md`.
+4. For development and release checks, read `docs/development.md` and `docs/release-kit.md`. For Windows packaging, updater, release assets, or Authenticode changes, also read `docs/windows-distribution.md` and `docs/windows-v0.2.3-release-retrospective.md`.
 
 ## Boundaries
 

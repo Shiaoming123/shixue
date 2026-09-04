@@ -30,6 +30,12 @@ refactor: 重构（无功能变化）
 3. 提交 PR，并填写 PR 模板中的检查清单。
 4. 至少一次 review 通过后合并。
 
+修改 `README.md` 或 `README.en.md` 时，必须在同一个 PR 中同步另一语言，并保持功能声明、成熟度、命令和链接一致。
+
+### Windows 发布类变更
+
+修改 Release workflow、Tauri 打包、updater、资产命名或 Authenticode 接入前，先阅读 [Windows v0.2.3 交付复盘](./docs/windows-v0.2.3-release-retrospective.md)。PR 需说明 action 输入依据、跨平台路径覆盖，并附上 `npm run release:check -- --mode=release`、相关测试和 Windows 产物审计结果；不得提交或输出证书、PFX、密码、Token PIN、云签名凭据或 updater 私钥。
+
 ## 报告问题
 
 - 功能请求与可复现的缺陷，请使用 Issue 模板。

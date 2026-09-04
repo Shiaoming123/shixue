@@ -22,6 +22,7 @@
 | 定义产品目标、数据与交付边界 | [application-protocol.md](./application-protocol.md) |
 | 了解 Release Kit 与发布边界 | [release-kit.md](./release-kit.md) |
 | 下载 Windows 免安装版、了解 Authenticode | [windows-distribution.md](./windows-distribution.md) |
+| 复盘 Windows v0.2.3 发布事故与门禁 | [windows-v0.2.3-release-retrospective.md](./windows-v0.2.3-release-retrospective.md) |
 | 从模板做出第一个应用 | [blueprints/README.md](./blueprints/README.md) |
 | 用设计系统、写组件、加主题 | [design-system.md](./design-system.md) |
 | 理解模块化架构、扩展模块 | [modular-architecture.md](./modular-architecture.md) |
@@ -38,7 +39,7 @@
 
 - **新用户 / 决策者** → 先读 [project-guide.md](./project-guide.md)，判断项目是否适合
 - **贡献者 / Agent** → 先读 [development.md](./development.md)，再遵守 [../AGENTS.md](../AGENTS.md)
-- **发布负责人** → 读 [release-kit.md](./release-kit.md)，确认已验证范围与待完成的平台工作
+- **发布负责人** → 先读 [release-kit.md](./release-kit.md)，再用 [Windows v0.2.3 交付复盘](./windows-v0.2.3-release-retrospective.md) 检查已知失败模式
 - **准备做首个应用的开发者** → 先读 [blueprints/README.md](./blueprints/README.md)，按产品类型选择一条窄路径
 - **前端开发者** → 先读 [design-system.md](./design-system.md)，再动手写组件
 - **架构师 / 进阶开发者** → 先读 [modular-architecture.md](./modular-architecture.md) 与 [agent-integration.md](./agent-integration.md)
@@ -55,6 +56,7 @@
 | application-protocol.md | 应用协议：产品意图、能力、数据、降级与证据边界 |
 | release-kit.md | Release Kit：配置检查与发布成熟度边界 |
 | windows-distribution.md | Windows 免安装交付、SmartScreen 与 Authenticode 选择指南 |
+| windows-v0.2.3-release-retrospective.md | v0.2.3 Windows 交付事故、证据边界与防复发清单 |
 | blueprints/ | 首个应用蓝图：本地笔记、开发者工具、本地 AI 伴侣 |
 | design-system.md | 设计系统：tokens + 组件 + 主题 + 性能 + 可达性 |
 | modular-architecture.md | 模块化架构：运行时与原生构建双平面契约 + 平台能力 |

@@ -68,6 +68,8 @@ stage, upload, or post-upload verification steps.
 The Release stays a draft through those steps and is published only after both the
 portable EXE and checksum are confirmed, so a failed upload cannot leave an incomplete
 formal Release visible to users.
+The real v0.2.1-v0.2.3 failures, fixes, and the next-release checklist are recorded in
+[Windows v0.2.3 release retrospective](./windows-v0.2.3-release-retrospective.md).
 They also run:
 
 ```bash
