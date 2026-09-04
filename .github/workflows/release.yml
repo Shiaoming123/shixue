@@ -18,7 +18,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Require version tag source
         if: github.ref_type != 'tag'
