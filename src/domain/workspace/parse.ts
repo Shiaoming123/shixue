@@ -380,6 +380,12 @@ function assertUniqueIds(state: WorkspaceStateV3): void {
   assertUnique(state.listGroups, 'list group'); assertUnique(state.lists, 'list'); assertUnique(state.sections, 'section'); assertUnique(state.tags, 'tag'); assertUnique(state.tasks, 'task')
   assertUnique(state.recurrenceSeries, 'recurrence series'); assertUnique(state.occurrences, 'occurrence'); assertUnique(state.reminderRules, 'reminder rule'); assertUnique(state.reminderDeliveries, 'reminder delivery')
   assertUnique(state.studySessions, 'study session'); assertUnique(state.taskEvents, 'task event'); assertUnique(state.completionRecords, 'completion record'); assertUnique(state.reviewTaskLinks, 'review task link'); assertUnique(state.commandReceipts, 'command receipt')
+  assertUniqueAcrossEntities([
+    state.listGroups, state.lists, state.sections, state.tags, state.tasks,
+    state.recurrenceSeries, state.occurrences, state.reminderRules, state.reminderDeliveries,
+    state.studySessions, state.taskEvents, state.completionRecords, state.reviewTaskLinks,
+    state.commandReceipts,
+  ])
   assertUnique(state.taskEvents.map((event) => ({ id: String(event.sequence) })), 'task event sequence')
   assertUnique(state.commandReceipts.map((receipt) => ({ id: receipt.idempotencyKey })), 'command receipt idempotencyKey')
 }
@@ -409,6 +415,9 @@ function assertReferences(state: WorkspaceStateV3): void {
   const deliveryKeys = new Set<string>()
   for (const delivery of state.reminderDeliveries) {
     const rule = rules.get(delivery.reminderRuleId); if (!rule) throw new Error(`Reminder delivery ${delivery.id} has unknown reminderRuleId.`)
+    if (rule.occurrenceId && delivery.occurrenceId !== rule.occurrenceId) {
+      throw new Error(`Reminder delivery ${delivery.id} does not match reminder rule occurrence.`)
+    }
     if (delivery.occurrenceId) assertOccurrenceTask(occurrences.get(delivery.occurrenceId), series, rule.taskId, `Reminder delivery ${delivery.id}`)
     const key = `${delivery.reminderRuleId}\u0000${delivery.occurrenceId ?? ''}\u0000${delivery.scheduledFor}`
     if (deliveryKeys.has(key)) throw new Error('Workspace state contains a duplicate reminder delivery.')
@@ -429,8 +438,10 @@ function assertReferences(state: WorkspaceStateV3): void {
     throw new Error('An active Study session requires an in-progress task.')
   }
   for (const link of state.reviewTaskLinks) {
-    if (!records.has(link.completionRecordId)) throw new Error(`Review task link ${link.id} has unknown completionRecordId.`)
+    const record = records.get(link.completionRecordId)
+    if (!record) throw new Error(`Review task link ${link.id} has unknown completionRecordId.`)
     if (!tasks.has(link.taskId)) throw new Error(`Review task link ${link.id} has unknown taskId.`)
+    if (record.taskId !== link.taskId) throw new Error(`Review task link ${link.id} completion belongs to another task.`)
     if (link.occurrenceId) assertOccurrenceTask(occurrences.get(link.occurrenceId), series, link.taskId, `Review task link ${link.id}`)
   }
 }
@@ -489,6 +500,7 @@ function requireRangeInteger(value: unknown, min: number, max: number, label: st
 function parseJsonRecord(value: unknown, label: string): { [key: string]: JsonValue } { const record = requireRecord(value, label); return parseJsonValue(record, label) as { [key: string]: JsonValue } }
 function parseJsonValue(value: unknown, label: string): JsonValue { if (value === null || typeof value === 'string' || typeof value === 'boolean') return value; if (typeof value === 'number') { if (!Number.isFinite(value)) throw new Error(`${label} must be JSON-safe.`); return value }; if (Array.isArray(value)) return value.map((entry, index) => parseJsonValue(entry, `${label} ${index}`)); if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, parseJsonValue(entry, `${label}.${key}`)])); throw new Error(`${label} must be JSON-safe.`) }
 function assertUnique(values: readonly { id: string }[], label: string): void { const seen = new Set<string>(); for (const value of values) { if (seen.has(value.id)) throw new Error(`Workspace state contains a duplicate ${label} id.`); seen.add(value.id) } }
+function assertUniqueAcrossEntities(collections: readonly (readonly { id: string }[])[]): void { const seen = new Set<string>(); for (const collection of collections) for (const entity of collection) { if (seen.has(entity.id)) throw new Error('Workspace state contains a duplicate entity id.'); seen.add(entity.id) } }
 function ids(values: readonly { id: string }[]): Set<string> { return new Set(values.map((value) => value.id)) }
 function isDateOnly(value: string): boolean { if (!DATE_ONLY.test(value)) return false; const [year, month, day] = value.split('-').map(Number); return new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) === value }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }

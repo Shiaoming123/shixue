@@ -238,3 +238,108 @@ test('preserves event-chain and active-session invariants for legacy learning fa
   })
   assert.throws(() => parseWorkspaceState(activeSession), /in-progress task/)
 })
+
+test('rejects an id reused by different root entity kinds', () => {
+  const state = validWorkspaceState()
+  state.tasks[0].id = state.lists[0].id
+  state.taskEvents[0].taskId = state.tasks[0].id
+
+  assert.throws(() => parseWorkspaceState(state), /duplicate entity id/)
+})
+
+test('rejects a review link whose completion record belongs to another task', () => {
+  const state = validWorkspaceState()
+  state.tasks.push({ ...state.tasks[0], id: 'task-2', title: 'Review rent' })
+  state.taskEvents.push({ ...state.taskEvents[0], id: 'event-2', sequence: 2, taskId: 'task-2' })
+  state.completionRecords.push({
+    id: 'record-1',
+    taskId: 'task-1',
+    topicId: null,
+    sessionIds: [],
+    taskTitleSnapshot: 'Pay rent',
+    learned: 'Paid on time',
+    evidence: 'Bank receipt',
+    blocker: '',
+    nextAction: 'Review next month',
+    mastery: null,
+    completedAt: '2026-09-04T09:00:00+08:00',
+    reviewStage: 0,
+    nextReviewOn: null,
+    lastReviewResult: null,
+    lastReviewedAt: null,
+    createdAt: '2026-09-04T09:00:00+08:00',
+    updatedAt: '2026-09-04T09:00:00+08:00',
+    deletedAt: null,
+  })
+  state.reviewTaskLinks.push({
+    id: 'review-link-1',
+    completionRecordId: 'record-1',
+    taskId: 'task-2',
+    occurrenceId: null,
+    reviewStage: 0,
+    dueOn: '2026-09-05',
+    completedAt: null,
+    createdAt: '2026-09-04T09:00:00+08:00',
+    updatedAt: '2026-09-04T09:00:00+08:00',
+  })
+
+  assert.throws(() => parseWorkspaceState(state), /completion belongs to another task/)
+})
+
+test('rejects a delivery occurrence that differs from its occurrence-scoped reminder rule', () => {
+  const state = validWorkspaceState()
+  state.recurrenceSeries.push({
+    id: 'series-1',
+    revision: 1,
+    taskId: 'task-1',
+    cadence: { kind: 'daily', interval: 1 },
+    basis: 'fixed_schedule',
+    anchorAt: '2026-09-04T09:00:00+08:00',
+    end: { kind: 'never' },
+    timezone: 'Asia/Shanghai',
+    createdThrough: null,
+    createdCount: 0,
+  })
+  state.tasks[0].recurrenceSeriesId = 'series-1'
+  state.occurrences.push(
+    {
+      id: 'occurrence-1',
+      seriesId: 'series-1',
+      ordinal: 1,
+      scheduledAt: '2026-09-04T09:00:00+08:00',
+      status: 'pending',
+      override: null,
+      completedAt: null,
+      revision: 1,
+    },
+    {
+      id: 'occurrence-2',
+      seriesId: 'series-1',
+      ordinal: 2,
+      scheduledAt: '2026-09-05T09:00:00+08:00',
+      status: 'pending',
+      override: null,
+      completedAt: null,
+      revision: 1,
+    },
+  )
+  state.reminderRules.push({
+    id: 'reminder-1',
+    taskId: 'task-1',
+    occurrenceId: 'occurrence-1',
+    trigger: { kind: 'at_start' },
+    enabled: true,
+    revision: 1,
+  })
+  state.reminderDeliveries.push({
+    id: 'delivery-1',
+    reminderRuleId: 'reminder-1',
+    occurrenceId: 'occurrence-2',
+    scheduledFor: '2026-09-05T09:00:00+08:00',
+    status: 'pending',
+    snoozedUntil: null,
+    action: null,
+  })
+
+  assert.throws(() => parseWorkspaceState(state), /does not match reminder rule occurrence/)
+})
