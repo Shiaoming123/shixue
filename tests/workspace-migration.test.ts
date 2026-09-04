@@ -249,6 +249,24 @@ test('workspace export is v3 and imports legacy study envelopes only after full 
   }
 })
 
+test('legacy v1 envelope rejects an inner v2 state', () => {
+  assert.throws(() => parseWorkspaceExport({
+    format: 'meow-study/study-export',
+    version: 1,
+    exportedAt: MIGRATED_AT,
+    state: v2Fixture(),
+  }), /envelope version.*state version/i)
+})
+
+test('legacy v2 envelope rejects an inner v1 state', () => {
+  assert.throws(() => parseWorkspaceExport({
+    format: 'meow-study/study-export',
+    version: 2,
+    exportedAt: MIGRATED_AT,
+    state: v1Fixture(),
+  }), /envelope version.*state version/i)
+})
+
 test('malformed import leaves the destination snapshot byte-for-byte unchanged', async () => {
   const original = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
   const store = createInMemoryWorkspaceStore(original)
@@ -325,6 +343,35 @@ test('legacy IndexedDB facade rejects v3 without rewriting it as v2', async () =
   const verification = await openDB(databaseName, 2)
   assert.deepEqual((await verification.get('studyState', 'current')).state, workspace)
   verification.close()
+})
+
+test('legacy IndexedDB save rejects a current v3 snapshot with and without CAS', async () => {
+  for (const expectedUpdatedAt of [undefined, MIGRATED_AT]) {
+    const suffix = expectedUpdatedAt === undefined ? 'unconditional' : 'cas'
+    const databaseName = `meow-legacy-save-v3-${suffix}-${Date.now()}`
+    await deleteDB(databaseName)
+    const database = await openDB(databaseName, 2, {
+      upgrade(db) {
+        const todos = db.createObjectStore('todos', { keyPath: 'id', autoIncrement: true })
+        todos.createIndex('by-created-at', 'created_at')
+        db.createObjectStore('studyState', { keyPath: 'key' })
+      },
+    })
+    const workspace = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
+    const original = JSON.stringify(workspace)
+    await database.put('studyState', { key: 'current', state: workspace })
+    database.close()
+
+    const store = createIndexedDbStudyStore({ databaseName, seed: v2Fixture() })
+    await assert.rejects(store.save(v2Fixture(), expectedUpdatedAt), /version 3/i)
+
+    const verification = await openDB(databaseName, 2)
+    assert.equal(
+      JSON.stringify((await verification.get('studyState', 'current')).state),
+      original,
+    )
+    verification.close()
+  }
 })
 
 test('IndexedDB save refuses to bypass legacy migration and its backup', async () => {
@@ -496,4 +543,27 @@ test('legacy SQLite facade rejects v3 without executing a v2 overwrite', async (
 
   await assert.rejects(store.load(), /Unsupported stored Study state version: 3/)
   assert.equal(executions, 0)
+})
+
+test('legacy SQLite save rejects a current v3 row with and without CAS', async () => {
+  for (const expectedUpdatedAt of [undefined, MIGRATED_AT]) {
+    const workspace = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
+    const originalPayload = JSON.stringify(workspace)
+    let currentPayload = originalPayload
+    let executions = 0
+    const store = createTauriSqliteStudyStore(async () => ({
+      async select<T>(): Promise<T> {
+        return [{ version: 3, payload: currentPayload }] as T
+      },
+      async execute(_sql: string, binds?: unknown[]) {
+        executions += 1
+        currentPayload = String(binds?.[1])
+        return { rowsAffected: 1 }
+      },
+    }), v2Fixture())
+
+    await assert.rejects(store.save(v2Fixture(), expectedUpdatedAt), /version 3/i)
+    assert.equal(executions, 0)
+    assert.equal(currentPayload, originalPayload)
+  }
 })

@@ -41,6 +41,12 @@ export function parseWorkspaceExport(value: unknown): WorkspaceExportV3 {
     if (parsed.version !== 1 && parsed.version !== 2) {
       throw new Error(`Unsupported Study import version: ${String(parsed.version)}.`)
     }
+    const stateVersion = isRecord(parsed.state) ? parsed.state.version : undefined
+    if (stateVersion !== parsed.version) {
+      throw new Error(
+        `Study import envelope version ${parsed.version} does not match state version ${String(stateVersion)}.`,
+      )
+    }
     return createWorkspaceExport(
       parseWorkspaceStateOrMigrate(parsed.state, exportedAt),
       exportedAt,

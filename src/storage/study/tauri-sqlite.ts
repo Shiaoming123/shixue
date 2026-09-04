@@ -37,12 +37,23 @@ export const SAVE_STUDY_STATE_WITH_CAS_SQL = `INSERT INTO study_state
   (id, version, payload, updated_at)
   SELECT 1, $1, $2, $3
   WHERE (NOT EXISTS (SELECT 1 FROM study_state WHERE id = 1) AND $4 = $5)
-     OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND updated_at = $4)
+     OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND version != 3 AND updated_at = $4)
   ON CONFLICT(id) DO UPDATE SET
     version = excluded.version,
     payload = excluded.payload,
     updated_at = excluded.updated_at
-  WHERE study_state.updated_at = $4`
+  WHERE study_state.version != 3 AND study_state.updated_at = $4`
+
+export const SAVE_STUDY_STATE_WITH_VERSION_GUARD_SQL = `INSERT INTO study_state
+  (id, version, payload, updated_at)
+  SELECT 1, $1, $2, $3
+  WHERE NOT EXISTS (SELECT 1 FROM study_state WHERE id = 1)
+     OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND version != 3)
+  ON CONFLICT(id) DO UPDATE SET
+    version = excluded.version,
+    payload = excluded.payload,
+    updated_at = excluded.updated_at
+  WHERE study_state.version != 3`
 
 export const BACKUP_LEGACY_WORKSPACE_STATE_SQL = `INSERT INTO study_state_backups
   (backup_key, version, payload, created_at)
@@ -148,16 +159,20 @@ export function createTauriSqliteStudyStore(
     async save(state, expectedUpdatedAt) {
       const database = await loadDatabase()
       const validated = parseStudyState(state)
+      const rows = await database.select<StudyStateRow[]>(
+        'SELECT version, payload FROM study_state WHERE id = 1',
+      )
+      if (rows[0]?.version === 3) {
+        throw new Error('Legacy StudyStore cannot save over Workspace state version 3.')
+      }
       if (expectedUpdatedAt === undefined) {
-        await database.execute(
-          `INSERT INTO study_state (id, version, payload, updated_at)
-         VALUES (1, $1, $2, $3)
-         ON CONFLICT(id) DO UPDATE SET
-           version = excluded.version,
-           payload = excluded.payload,
-           updated_at = excluded.updated_at`,
+        const saved = await database.execute(
+          SAVE_STUDY_STATE_WITH_VERSION_GUARD_SQL,
           [validated.version, JSON.stringify(validated), validated.updatedAt],
         )
+        if (rowsAffected(saved) < 1) {
+          throw new Error('Study snapshot conflict: the stored state changed before save.')
+        }
         return
       }
       const saved = await database.execute(SAVE_STUDY_STATE_WITH_CAS_SQL, [

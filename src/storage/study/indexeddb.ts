@@ -59,6 +59,9 @@ export function createIndexedDbStudyStore(
       const validated = parseStudyState(state)
       const transaction = database.transaction('studyState', 'readwrite')
       const current = await transaction.store.get(CURRENT_STUDY_STATE)
+      if (current?.state.version === 3) {
+        throw new Error('Legacy StudyStore cannot save over Workspace state version 3.')
+      }
       const actualUpdatedAt = current?.state.updatedAt ?? seed.updatedAt
       if (expectedUpdatedAt !== undefined && actualUpdatedAt !== expectedUpdatedAt) {
         throw new Error('Study snapshot conflict: the stored state changed before save.')
