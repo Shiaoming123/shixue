@@ -1,0 +1,63 @@
+[package]
+name = "meow-study"
+version = "0.2.0"
+description = "Local-first personal learning record and review assistant"
+authors = ["Shiaoming123"]
+license = "MIT"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "meow_study_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# tray-icon: 系统托盘; image-png: 让 default_window_icon() 能解码 PNG 图标
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# —— 核心能力（始终启用，是脚手架的立身之本） ——
+tauri-plugin-opener = "2"
+tauri-plugin-process = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-store = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# —— 可选能力模块（P1，由 feature 门控，未启用不编译、不占体积） ——
+tauri-plugin-global-shortcut = { version = "2", optional = true }
+tauri-plugin-clipboard-manager = { version = "2", optional = true }
+tauri-plugin-notification = { version = "2", optional = true }
+tauri-plugin-autostart = { version = "2", optional = true }
+
+# —— Agent 能力（P2：密钥代理 + 本地推理，由 feature 门控） ——
+# keyring：OS 钥匙串（macOS Keychain / Windows Credential Manager / Linux Secret Service）
+# 默认 feature "v1" 已包含三端原生后端，按目标平台自动选择
+keyring = { version = "4", optional = true }
+# reqwest：LLM 请求流式透传代理，避免 API Key 暴露在前端
+reqwest = { version = "0.12", features = ["stream", "json"], optional = true }
+# futures-util：流式代理里消费 bytes_stream
+futures-util = { version = "0.3", optional = true }
+
+# 功能模块开关（与前端 modules.config.ts 对应）
+# 核心能力（sqlite/store/updater/tray）始终启用，无需 feature
+[features]
+default = []
+shortcut = ["dep:tauri-plugin-global-shortcut"]
+clipboard = ["dep:tauri-plugin-clipboard-manager"]
+notification = ["dep:tauri-plugin-notification"]
+autostart = ["dep:tauri-plugin-autostart"]
+# Agent 能力：agent = 密钥代理（keyring + reqwest）；agent-sidecar = 上述 + Pi RPC sidecar（P3）
+agent = ["dep:keyring", "dep:reqwest", "dep:futures-util"]
+agent-sidecar = ["agent"]
+
+# 单实例是桌面端专有能力，移动端目标不参与编译
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"

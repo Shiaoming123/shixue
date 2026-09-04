@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "product": {
+    "name": "meow-study",
+    "goal": "Help one person capture, plan, execute, prove, review, and trace every learning task locally.",
+    "nonGoals": [
+      "Do not make cloud sync, AI generation, social features, or provider credentials part of the core learning loop.",
+      "Do not claim signed delivery, hosted updates, store submission, deployed Web hosting, or real-device validation without separate evidence."
+    ]
+  },
+  "targets": {
+    "primary": ["desktop"],
+    "maturity": {
+      "desktop": "stable",
+      "web": "beta",
+      "mobile": "beta"
+    },
+    "degradation": {
+      "web": ["Skip desktop-only modules and use IndexedDB for local Study data."],
+      "mobile": ["Skip desktop-only modules while retaining responsive UI and native SQL where supported."]
+    }
+  },
+  "modulePolicy": {
+    "enabled": ["core", "storage", "sqlite", "indexedDb", "tray", "updater", "themes"],
+    "disabled": ["sync", "agent", "shortcut", "clipboard", "notification", "autostart", "mcp"]
+  },
+  "data": {
+    "defaultMode": "local-first",
+    "ports": [
+      {
+        "id": "study",
+        "format": "meow-study/study-export",
+        "version": 2
+      }
+    ],
+    "sync": {
+      "enabled": false,
+      "provider": "none"
+    },
+    "exclusions": ["secrets", "sync state"]
+  },
+  "delivery": {
+    "desktopPackage": "unverified",
+    "signing": "unverified",
+    "updater": "template-only",
+    "webDeployment": "unverified",
+    "mobileNative": "unverified"
+  },
+  "acceptance": {
+    "required": ["test", "check:protocol", "check:csp", "typecheck", "build", "build:web", "check:modules", "check:docs"],
+    "conditional": ["rust:verify", "smoke:web-persistence", "smoke:windows-package", "mobile:doctor", "check:android-artifact"]
+  },
+  "evolution": {
+    "additive": "Add fields only in a schema version that the checker explicitly understands.",
+    "breaking": "Document a migration when removing or renaming a module, data format, or compatibility promise."
+  }
+}

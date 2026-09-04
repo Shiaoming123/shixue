@@ -1,0 +1,242 @@
+/**
+ * 全局样式：设计系统 token + 基础 reset + 工具类。
+ *
+ * token 分两类：
+ * - 语义色（--bg/--surface/--accent/…）：由 applyTheme() 动态写入，随主题切换。
+ * - 结构 token（--space-* / --radius-* / --text-* / --shadow-* / --motion-* / --z-*）：
+ *   与主题无关，全主题共享，保证任何主题下间距、圆角、动效一致。
+ *
+ * 完整说明见 docs/design-system.md。
+ */
+
+:root {
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'SF Pro Display',
+    'SF Pro Text',
+    system-ui,
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+  color-scheme: light dark;
+  font-size: 16px;
+  font-synthesis: none;
+
+  /* ---- 语义色（默认海洋蓝·浅色，运行时被 applyTheme 覆盖） ---- */
+  --bg: #f6f3ea;
+  --surface: #fbf9f3;
+  --surface-alt: #efede4;
+  --text: #181c19;
+  --muted: #687067;
+  --border: rgba(38, 55, 43, 0.16);
+  --accent: #3f6b45;
+  --accent-text: #ffffff;
+  --success: #3f6b45;
+  --warning: #c28618;
+  --danger: #b4473f;
+
+  /* ---- 结构 token：间距（4px 基准） ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ---- 结构 token：圆角 ---- */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 26px;
+  --radius-full: 999px;
+
+  /* ---- 结构 token：字号（正文 13/14，标题 15/16/20） ---- */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+
+  /* ---- 结构 token：字重（只用 400 / 500，克制层级） ---- */
+  --font-regular: 400;
+  --font-medium: 500;
+
+  /* ---- 结构 token：阴影（桌面端轻微层次） ---- */
+  --shadow-sm: 0 1px 2px rgba(26, 36, 29, 0.05), 0 0 0 0.5px rgba(26, 36, 29, 0.04);
+  --shadow-md: 0 8px 28px rgba(26, 36, 29, 0.08), 0 1px 3px rgba(26, 36, 29, 0.06);
+  --shadow-lg: 0 22px 64px rgba(26, 36, 29, 0.14), 0 4px 14px rgba(26, 36, 29, 0.08);
+
+  /* ---- iOS-inspired materials ---- */
+  --hairline: color-mix(in srgb, var(--border) 82%, transparent);
+  --material-thin: color-mix(in srgb, var(--surface) 78%, transparent);
+  --material-regular: color-mix(in srgb, var(--surface) 90%, transparent);
+  --control-fill: color-mix(in srgb, var(--surface-alt) 78%, var(--surface));
+  --press-fill: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+
+  /* ---- 结构 token：动效 ---- */
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --motion-slow: 360ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ---- 结构 token：层级 ---- */
+  --z-base: 1;
+  --z-sticky: 100;
+  --z-overlay: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  min-width: 320px;
+  min-height: 100%;
+  overscroll-behavior: none;
+}
+
+html {
+  height: 100%;
+  background: var(--bg);
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition:
+    background-color var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease),
+    opacity var(--motion-fast) var(--ease),
+    box-shadow var(--motion-fast) var(--ease),
+    transform var(--motion-fast) var(--ease);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.975);
+}
+
+button:disabled {
+  cursor: default;
+}
+
+input,
+textarea,
+select {
+  caret-color: var(--accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--muted) 74%, transparent);
+  opacity: 1;
+}
+
+select {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 让交互元素有可见的键盘焦点（可访问性底线） */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 88%, white);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+/* 尊重系统「减少动效」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border: color-mix(in srgb, var(--text) 35%, transparent);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --material-thin: var(--surface);
+    --material-regular: var(--surface);
+  }
+}
+
+/* ---- 语义色工具类 ---- */
+.text-success {
+  color: var(--success);
+}
+.text-warning {
+  color: var(--warning);
+}
+.text-danger {
+  color: var(--danger);
+}
+.text-muted {
+  color: var(--muted);
+}
+
+/* ---- 基础滚动条（桌面端更精致） ---- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--muted) 34%, transparent);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 54%, transparent);
+  background-clip: padding-box;
+}
+
+@media (pointer: coarse) {
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
