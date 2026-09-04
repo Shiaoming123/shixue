@@ -54,7 +54,9 @@ database. NSIS uses Simplified Chinese and installs for the current user.
 
 Only `template` and `release` are valid mode values. Unknown values fail instead of falling back to template mode.
 
-Tag releases run that strict mode before `tauri-action` starts. They also run:
+Tag releases run that strict mode before the Windows-only `tauri-action` starts. Successful
+`v*.*.*` builds publish NSIS and MSI assets plus updater metadata to a non-draft GitHub Release.
+They also run:
 
 ```bash
 npm run release:provenance
