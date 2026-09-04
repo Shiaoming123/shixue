@@ -46,7 +46,7 @@ test('v1 migration replaces nested StudyStep with Task and CompletionRecord', ()
   assert.equal('steps' in migrated.topics[0], false)
   assert.deepEqual(migrated.tasks[0], {
     id: 'step-1', revision: 1, topicId: 'topic-1', title: 'Persist state', notes: '', status: 'completed',
-    plannedOn: '2026-09-04', dueOn: null, estimateMinutes: 45,
+    plannedOn: '2026-09-04', dueOn: null, reminderAt: null, priority: 'none', estimateMinutes: 45,
     acceptanceCriteria: ['restart resumes'], checklist: [], blockedReason: null,
     createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-05T00:00:00.000Z', deletedAt: null,
   })
@@ -61,6 +61,26 @@ test('v1 migration replaces nested StudyStep with Task and CompletionRecord', ()
     [[null, 'planned'], ['planned', 'completed']],
   )
   assert.deepEqual(parseStudyState(migrated), migrated)
+})
+
+test('v2 task parsing defaults new todo metadata and validates explicit values', () => {
+  const legacyV2 = createSeedStudyState('2026-09-04T00:00:00.000Z') as unknown as {
+    tasks: Array<Record<string, unknown>>
+  }
+  delete legacyV2.tasks[0].priority
+  delete legacyV2.tasks[0].reminderAt
+
+  const parsed = parseStudyState(legacyV2)
+  assert.equal(parsed.tasks[0].priority, 'none')
+  assert.equal(parsed.tasks[0].reminderAt, null)
+
+  const invalidPriority = structuredClone(parsed) as unknown as { tasks: Array<Record<string, unknown>> }
+  invalidPriority.tasks[0].priority = 'urgent'
+  assert.throws(() => parseStudyState(invalidPriority), /priority/i)
+
+  const invalidReminder = structuredClone(parsed) as unknown as { tasks: Array<Record<string, unknown>> }
+  invalidReminder.tasks[0].reminderAt = '2026-09-04'
+  assert.throws(() => parseStudyState(invalidReminder), /reminderAt/i)
 })
 
 test('review dates follow the deterministic 1/3/7 calendar-day schedule', () => {

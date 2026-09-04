@@ -1,44 +1,95 @@
 import type { Module } from '../types'
 
-/**
- * shortcut 模块 —— 全局快捷键唤起（P1，官方插件）。
- *
- * 典型场景：Option+Space 唤起 Spotlight 式 AI 面板。
- * 前端薄封装；真正的快捷键注册在 Rust 侧（tauri-plugin-global-shortcut）。
- *
- * 注意：macOS 需用户在「辅助功能」里授权。
- * 用法：启用后通过 register() 注册快捷键，见模块内函数。
- */
-const shortcut: Module = {
-  id: 'shortcut',
-  name: '全局快捷键',
-  dependencies: [],
-  platforms: ['desktop'],
-  requiredCapabilities: ['global-shortcut'],
+const QUICK_CAPTURE_SHORTCUT = 'Ctrl+Alt+A'
+const QUICK_CAPTURE_EVENT = 'shixue:quick-capture'
+
+interface ShortcutEvent {
+  state: string
 }
 
-export default shortcut
-
-// —— 前端 API（启用本模块后可用）——
-let registered = false
-
-export async function registerShortcut(
-  shortcut: string,
-  handler: () => void,
-): Promise<void> {
-  const { register } = await import('@tauri-apps/plugin-global-shortcut')
-  await register(shortcut, (event) => {
-    if (event.state === 'Pressed') handler()
-  })
-  registered = true
+interface MainWindow {
+  show(): Promise<void>
+  unminimize(): Promise<void>
+  setFocus(): Promise<void>
 }
 
-export async function unregisterShortcut(shortcut: string): Promise<void> {
-  const { unregister } = await import('@tauri-apps/plugin-global-shortcut')
-  await unregister(shortcut)
-  registered = false
+interface ShortcutBindings {
+  register(
+    shortcut: string,
+    handler: (event: ShortcutEvent) => void | Promise<void>,
+  ): Promise<void>
+  unregister(shortcut: string): Promise<void>
+  getMainWindow(): MainWindow
+  dispatchEvent(event: Event): void
 }
 
-export function isShortcutRegistered(): boolean {
-  return registered
+type LoadShortcutBindings = () => Promise<ShortcutBindings>
+
+async function loadShortcutBindings(): Promise<ShortcutBindings> {
+  const [{ register, unregister }, { getCurrentWindow }] = await Promise.all([
+    import('@tauri-apps/plugin-global-shortcut'),
+    import('@tauri-apps/api/window'),
+  ])
+
+  return {
+    register,
+    unregister,
+    getMainWindow: getCurrentWindow,
+    dispatchEvent: (event) => window.dispatchEvent(event),
+  }
 }
+
+export function createShortcutModule(
+  loadBindings: LoadShortcutBindings = loadShortcutBindings,
+): Module {
+  let bindings: ShortcutBindings | undefined
+  let registered = false
+  let registration: Promise<void> | undefined
+
+  async function setup(): Promise<void> {
+    if (registered) return
+
+    registration ??= (async () => {
+      const loaded = await loadBindings()
+      await loaded.register(QUICK_CAPTURE_SHORTCUT, async ({ state }) => {
+        if (state !== 'Pressed') return
+
+        const mainWindow = loaded.getMainWindow()
+        await mainWindow.show()
+        await mainWindow.unminimize()
+        await mainWindow.setFocus()
+        loaded.dispatchEvent(new CustomEvent(QUICK_CAPTURE_EVENT))
+      })
+      bindings = loaded
+      registered = true
+    })()
+
+    try {
+      await registration
+    } finally {
+      if (!registered) registration = undefined
+    }
+  }
+
+  async function teardown(): Promise<void> {
+    if (registration) await registration
+    if (!registered || !bindings) return
+
+    await bindings.unregister(QUICK_CAPTURE_SHORTCUT)
+    registered = false
+    bindings = undefined
+    registration = undefined
+  }
+
+  return {
+    id: 'shortcut',
+    name: '全局快捷键',
+    dependencies: [],
+    platforms: ['desktop'],
+    requiredCapabilities: ['global-shortcut'],
+    setup,
+    teardown,
+  }
+}
+
+export default createShortcutModule()

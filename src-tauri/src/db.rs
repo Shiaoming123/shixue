@@ -97,6 +97,16 @@ pub fn migrations() -> Vec<Migration> {
                 )"#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "create_study_reminder_deliveries",
+            sql: r#"CREATE TABLE IF NOT EXISTS study_reminder_deliveries (
+                    task_id TEXT PRIMARY KEY NOT NULL,
+                    reminder_at TEXT NOT NULL,
+                    delivered_at TEXT NOT NULL
+                )"#,
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -105,7 +115,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn migration_v5_adds_versioned_study_state_backups_without_replacing_prior_migrations() {
+    fn migrations_append_backup_and_reminder_delivery_tables_without_replacing_prior_versions() {
         let migrations = migrations();
 
         assert_eq!(
@@ -113,7 +123,7 @@ mod tests {
                 .iter()
                 .map(|migration| migration.version)
                 .collect::<Vec<_>>(),
-            vec![1, 2, 3, 4, 5]
+            vec![1, 2, 3, 4, 5, 6]
         );
         assert_eq!(
             migrations

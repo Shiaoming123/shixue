@@ -4,13 +4,19 @@ import test from 'node:test'
 import { deleteDB, openDB } from 'idb'
 import {
   addTaskChecklistItem,
+  bulkCancelStudyTasks,
+  bulkDeleteStudyTasks,
+  bulkRescheduleStudyTasks,
   captureStudyTask,
   completeStudyTask,
+  deleteStudyTask,
   loadStudyState,
   planStudyTask,
   pauseStudySession,
   rescheduleStudyTask,
   resumeStudySession,
+  archiveStudyListGroup,
+  saveStudyListGroup,
   saveStudyScratchpad,
   saveStudySession,
   reorderStudyTasks,
@@ -18,6 +24,8 @@ import {
   startStudyTask,
   switchStudyTask,
   transitionStudyTask,
+  toggleStudyTaskCompletion,
+  updateStudyTask,
 } from '../src/lib/study.ts'
 import { createInMemoryStudyStore } from '../src/storage/study/in-memory.ts'
 import { createIndexedDbStudyStore, V1_STUDY_STATE_BACKUP_KEY } from '../src/storage/study/indexeddb.ts'
@@ -151,6 +159,236 @@ test('checklist commands persist stable items without noisy TaskEvents', async (
     position: 0,
   }])
   assert.deepEqual(state.taskEvents.map(({ type }) => type), ['captured'])
+})
+
+test('updating task metadata preserves lifecycle status and revision CAS', async () => {
+  await useEmptyStore()
+  await captureStudyTask({ title: 'Draft' }, { taskId: 'task-1', eventId: 'capture', now: '2026-09-04T08:00:00.000Z' })
+  await planStudyTask('task-1', {}, { eventId: 'plan', now: '2026-09-04T08:01:00.000Z' })
+  await transitionStudyTask('task-1', 'blocked', { reason: 'Missing fixture', eventId: 'block', now: '2026-09-04T08:02:00.000Z' })
+
+  const updated = await updateStudyTask('task-1', {
+    title: 'Build restart fixture',
+    notes: 'Keep the failure reproducible.',
+    dueOn: '2026-09-08',
+    acceptanceCriteria: ['Restart resumes from the same checkpoint.'],
+  }, { expectedRevision: 3, now: '2026-09-04T08:03:00.000Z' })
+
+  assert.equal(updated.status, 'blocked')
+  assert.equal(updated.blockedReason, 'Missing fixture')
+  assert.equal(updated.revision, 4)
+  assert.deepEqual((await loadStudyState()).taskEvents.map(({ type }) => type), ['captured', 'planned', 'blocked'])
+  await assert.rejects(
+    updateStudyTask('task-1', { notes: 'stale' }, { expectedRevision: 3, now: '2026-09-04T08:04:00.000Z' }),
+    /revision conflict/i,
+  )
+})
+
+test('task creation and planning persist todo metadata atomically', async () => {
+  await useEmptyStore()
+  const captured = await captureStudyTask({
+    title: 'Prepare demo',
+    topicId: 'topic-1',
+    plannedOn: '2026-09-05',
+    dueOn: '2026-09-06',
+    reminderAt: '2026-09-05T01:30:00.000Z',
+    priority: 'high',
+  }, { taskId: 'task-1', eventId: 'capture', now: '2026-09-04T08:00:00.000Z' })
+
+  assert.deepEqual(
+    {
+      topicId: captured.topicId,
+      plannedOn: captured.plannedOn,
+      dueOn: captured.dueOn,
+      reminderAt: captured.reminderAt,
+      priority: captured.priority,
+    },
+    {
+      topicId: 'topic-1',
+      plannedOn: '2026-09-05',
+      dueOn: '2026-09-06',
+      reminderAt: '2026-09-05T01:30:00.000Z',
+      priority: 'high',
+    },
+  )
+
+  const planned = await planStudyTask('task-1', {
+    reminderAt: null,
+    priority: 'low',
+  }, { eventId: 'plan', now: '2026-09-04T08:01:00.000Z' })
+  assert.equal(planned.reminderAt, null)
+  assert.equal(planned.priority, 'low')
+})
+
+test('quick completion toggles without evidence and finishes the task session', async () => {
+  await useEmptyStore()
+  await captureStudyTask(
+    { title: 'Quick task', plannedOn: '2026-09-05' },
+    { taskId: 'task-1', eventId: 'capture', now: '2026-09-04T08:00:00.000Z' },
+  )
+  await planStudyTask('task-1', {}, { eventId: 'plan', now: '2026-09-04T08:01:00.000Z' })
+  await startStudyTask('task-1', { sessionId: 'session-1', eventId: 'start', now: '2026-09-04T08:02:00.000Z' })
+
+  const completed = await toggleStudyTaskCompletion('task-1', {
+    eventId: 'quick-complete',
+    now: '2026-09-04T08:12:00.000Z',
+  })
+  assert.equal(completed.status, 'completed')
+
+  let state = await loadStudyState()
+  assert.equal(state.sessions[0].state, 'finished')
+  assert.equal(state.sessions[0].elapsedSeconds, 600)
+  assert.equal(state.completionRecords.length, 0)
+  assert.equal(state.taskEvents.at(-1)?.completionRecordId, null)
+
+  const reopened = await toggleStudyTaskCompletion('task-1', {
+    eventId: 'quick-reopen',
+    now: '2026-09-04T08:13:00.000Z',
+  })
+  assert.equal(reopened.status, 'planned')
+  state = await loadStudyState()
+  assert.deepEqual(state.taskEvents.slice(-2).map(({ type }) => type), ['completed', 'reopened'])
+})
+
+test('quick completion supports inbox tasks, reopens them to inbox, and rejects cancellation', async () => {
+  await useEmptyStore()
+  await captureStudyTask(
+    { title: 'Inbox task' },
+    { taskId: 'task-1', eventId: 'capture', now: '2026-09-04T08:00:00.000Z' },
+  )
+  assert.equal((await toggleStudyTaskCompletion('task-1', {
+    eventId: 'complete', now: '2026-09-04T08:01:00.000Z',
+  })).status, 'completed')
+  assert.equal((await toggleStudyTaskCompletion('task-1', {
+    eventId: 'reopen', now: '2026-09-04T08:02:00.000Z',
+  })).status, 'inbox')
+  await transitionStudyTask('task-1', 'cancelled', {
+    eventId: 'cancel', now: '2026-09-04T08:03:00.000Z',
+  })
+  await assert.rejects(toggleStudyTaskCompletion('task-1'), /cancelled/i)
+})
+
+test('soft-delete preserves history and evidence while safely finishing an active session', async () => {
+  await useEmptyStore()
+  await captureStudyTask({ title: 'Evidence task' }, { taskId: 'task-1', eventId: 'capture', now: '2026-09-04T08:00:00.000Z' })
+  await planStudyTask('task-1', {}, { eventId: 'plan', now: '2026-09-04T08:01:00.000Z' })
+  await completeStudyTask(
+    { taskId: 'task-1', learned: 'Checkpoint identity matters.', evidence: 'Restart test passed.', nextAction: 'Repeat under interruption.' },
+    { recordId: 'record-1', eventId: 'complete', now: '2026-09-04T08:02:00.000Z' },
+  )
+  await planStudyTask('task-1', {}, { eventId: 'reopen', now: '2026-09-04T08:03:00.000Z' })
+  await startStudyTask('task-1', { sessionId: 'session-1', eventId: 'start', now: '2026-09-04T08:04:00.000Z' })
+
+  await deleteStudyTask('task-1', { expectedRevision: 5, eventId: 'delete', now: '2026-09-04T08:14:00.000Z' })
+
+  const state = await loadStudyState()
+  assert.equal(state.tasks[0].deletedAt, '2026-09-04T08:14:00.000Z')
+  assert.equal(state.tasks[0].revision, 6)
+  assert.equal(state.sessions[0].state, 'finished')
+  assert.equal(state.sessions[0].elapsedSeconds, 600)
+  assert.equal(state.completionRecords[0].evidence, 'Restart test passed.')
+  assert.deepEqual(state.taskEvents.map(({ type }) => type), ['captured', 'planned', 'completed', 'reopened', 'started', 'deleted'])
+  assert.deepEqual(state.taskEvents.map(({ sequence }) => sequence), [1, 2, 3, 4, 5, 6])
+  await assert.rejects(deleteStudyTask('task-1'), /not found/i)
+})
+
+test('bulk cancellation validates every target before committing any change', async () => {
+  await useEmptyStore()
+  for (const id of ['task-1', 'task-2']) {
+    await captureStudyTask({ title: id }, { taskId: id, eventId: `capture-${id}`, now: '2026-09-04T08:00:00.000Z' })
+    await planStudyTask(id, {}, { eventId: `plan-${id}`, now: '2026-09-04T08:01:00.000Z' })
+  }
+  const before = await loadStudyState()
+
+  await assert.rejects(
+    bulkCancelStudyTasks([
+      { taskId: 'task-1', expectedRevision: 2, eventId: 'cancel-1' },
+      { taskId: 'task-2', expectedRevision: 99, eventId: 'cancel-2' },
+    ], { reason: 'Priority changed', now: '2026-09-04T08:02:00.000Z' }),
+    /revision conflict/i,
+  )
+  assert.deepEqual(await loadStudyState(), before)
+
+  const cancelled = await bulkCancelStudyTasks([
+    { taskId: 'task-1', expectedRevision: 2, eventId: 'cancel-1' },
+    { taskId: 'task-2', expectedRevision: 2, eventId: 'cancel-2' },
+  ], { reason: 'Priority changed', now: '2026-09-04T08:02:00.000Z' })
+  assert.deepEqual(cancelled.map(({ status }) => status), ['cancelled', 'cancelled'])
+  assert.deepEqual((await loadStudyState()).taskEvents.slice(-2).map(({ type }) => type), ['cancelled', 'cancelled'])
+})
+
+test('bulk reschedule is atomic, finishes an active session, and keeps event sequence continuous', async () => {
+  await useEmptyStore()
+  for (const id of ['task-1', 'task-2']) {
+    await captureStudyTask({ title: id }, { taskId: id, eventId: `capture-${id}`, now: '2026-09-04T08:00:00.000Z' })
+    await planStudyTask(id, {}, { eventId: `plan-${id}`, now: '2026-09-04T08:01:00.000Z' })
+  }
+  await startStudyTask('task-1', { sessionId: 'session-1', eventId: 'start-1', now: '2026-09-04T08:02:00.000Z' })
+
+  const tasks = await bulkRescheduleStudyTasks([
+    { taskId: 'task-1', expectedRevision: 3, eventId: 'reschedule-1' },
+    { taskId: 'task-2', expectedRevision: 2, eventId: 'reschedule-2' },
+  ], '2026-09-10', { reason: 'Batch planning', now: '2026-09-04T08:12:00.000Z' })
+
+  const state = await loadStudyState()
+  assert.deepEqual(tasks.map(({ status, plannedOn }) => [status, plannedOn]), [
+    ['planned', '2026-09-10'],
+    ['planned', '2026-09-10'],
+  ])
+  assert.equal(state.sessions[0].state, 'finished')
+  assert.equal(state.sessions[0].elapsedSeconds, 600)
+  assert.deepEqual(state.taskEvents.slice(-2).map(({ type }) => type), ['rescheduled', 'rescheduled'])
+  assert.deepEqual(state.taskEvents.map(({ sequence }) => sequence), [1, 2, 3, 4, 5, 6, 7])
+})
+
+test('bulk reschedule promotes inbox tasks into the planned workflow', async () => {
+  await useEmptyStore()
+  await captureStudyTask({ title: 'Inbox task' }, { taskId: 'inbox-1', eventId: 'capture-inbox-1', now: '2026-09-04T08:00:00.000Z' })
+
+  const [task] = await bulkRescheduleStudyTasks([
+    { taskId: 'inbox-1', expectedRevision: 1, eventId: 'schedule-inbox-1' },
+  ], '2026-09-04', { reason: 'Move to today', now: '2026-09-04T08:01:00.000Z' })
+
+  assert.equal(task.status, 'planned')
+  assert.equal(task.plannedOn, '2026-09-04')
+  assert.equal((await loadStudyState()).taskEvents.at(-1)?.type, 'rescheduled')
+})
+
+test('list groups persist independently and archive without orphaning lists', async () => {
+  await useEmptyStore()
+  await saveStudyListGroup({ id: 'group-work', title: '工作', position: 0, createdAt: '2026-09-04T08:00:00.000Z', updatedAt: '2026-09-04T08:00:00.000Z', archivedAt: null })
+  const grouped = await loadStudyState()
+  assert.equal(grouped.listGroups?.[0]?.title, '工作')
+
+  await archiveStudyListGroup('group-work', '2026-09-04T08:01:00.000Z')
+  const archived = await loadStudyState()
+  assert.equal(archived.listGroups?.[0]?.archivedAt, '2026-09-04T08:01:00.000Z')
+})
+
+test('bulk soft-delete rejects duplicate targets without partially deleting tasks', async () => {
+  await useEmptyStore()
+  await captureStudyTask({ title: 'First' }, { taskId: 'task-1', eventId: 'capture-1', now: '2026-09-04T08:00:00.000Z' })
+  await captureStudyTask({ title: 'Second' }, { taskId: 'task-2', eventId: 'capture-2', now: '2026-09-04T08:00:00.000Z' })
+  const before = await loadStudyState()
+
+  await assert.rejects(
+    bulkDeleteStudyTasks([
+      { taskId: 'task-1', expectedRevision: 1, eventId: 'delete-1' },
+      { taskId: 'task-1', expectedRevision: 1, eventId: 'delete-2' },
+    ], { now: '2026-09-04T08:01:00.000Z' }),
+    /duplicate/i,
+  )
+  assert.deepEqual(await loadStudyState(), before)
+
+  const deleted = await bulkDeleteStudyTasks([
+    { taskId: 'task-1', expectedRevision: 1, eventId: 'delete-1' },
+    { taskId: 'task-2', expectedRevision: 1, eventId: 'delete-2' },
+  ], { now: '2026-09-04T08:01:00.000Z' })
+  assert.deepEqual(deleted.map(({ deletedAt }) => deletedAt), [
+    '2026-09-04T08:01:00.000Z',
+    '2026-09-04T08:01:00.000Z',
+  ])
+  assert.deepEqual((await loadStudyState()).taskEvents.map(({ sequence }) => sequence), [1, 2, 3, 4])
 })
 
 test('starting a second task fails without partial state or event writes', async () => {

@@ -1,163 +1,124 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import {
-  ArrowRight,
-  CalendarClock,
-  CheckCircle2,
-  ChevronRight,
-  CircleSlash2,
-  Inbox,
-  Plus,
-  RotateCcw,
-} from '@lucide/vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from '@lucide/vue'
+import type { StudyTaskPriority } from '../../storage/study/types'
+import type { StudyTaskQuerySort, StudyTaskSmartView } from '../../lib/study-task-query'
 
 export type TaskViewStatus = 'inbox' | 'backlog' | 'planned' | 'in_progress' | 'blocked' | 'completed' | 'cancelled'
-
 export interface TaskViewItem {
-  id: string
-  title: string
-  topic: string
-  status: TaskViewStatus
-  plannedLabel: string
-  estimateMinutes: number | null
-  acceptanceCriteria: string[]
-  checklist: Array<{ id: string; text: string; checked: boolean }>
-  blockedReason: string
+  id: string; title: string; notes: string; topic: string; topicId: string | null
+  status: TaskViewStatus; plannedOn: string | null; dueOn: string | null; reminderAt: string | null
+  priority: StudyTaskPriority; plannedLabel: string; dueLabel: string; reminderLabel: string
+  estimateMinutes: number | null; acceptanceCriteria: string[]
+  checklist: Array<{ id: string; text: string; checked: boolean }>; blockedReason: string
 }
 
-const props = defineProps<{ tasks: TaskViewItem[]; dateLabel: string; selectedId?: string; filter: TaskViewStatus }>()
+const props = defineProps<{
+  tasks: TaskViewItem[]; topics: Array<{ id: string; title: string }>; title: string; subtitle: string
+  selectedId?: string; smartView: StudyTaskSmartView; search: string; topicFilter: string
+  priorityFilter: StudyTaskPriority | 'all'; sort: StudyTaskQuerySort
+}>()
 const emit = defineEmits<{
-  capture: [title: string]
-  open: [id: string]
-  plan: [id: string]
-  start: [id: string]
-  reopen: [id: string]
-  filterChange: [filter: TaskViewStatus]
+  capture: [title: string]; open: [id: string]; toggleComplete: [id: string]; edit: [id: string]; delete: [id: string]
+  bulkDelete: [ids: string[]]; bulkComplete: [ids: string[]]; bulkMoveToToday: [ids: string[]]
+  smartViewChange: [value: StudyTaskSmartView]
+  searchChange: [value: string]; topicFilterChange: [value: string]
+  priorityFilterChange: [value: StudyTaskPriority | 'all']; sortChange: [value: StudyTaskQuerySort]
 }>()
 
 const draft = ref('')
-const mode = computed<TaskViewStatus>({ get: () => props.filter, set: (value) => emit('filterChange', value) })
+const captureInput = ref<HTMLInputElement>()
+const searchInput = ref<HTMLInputElement>()
+const toolbarOpen = ref(false)
+const batchMode = ref(false)
+const selectedIds = ref<string[]>([])
+const confirmDeleteIds = ref<string[]>([])
+const searchModel = computed({ get: () => props.search, set: (value: string) => emit('searchChange', value) })
+const topicModel = computed({ get: () => props.topicFilter, set: (value: string) => emit('topicFilterChange', value) })
+const priorityModel = computed<StudyTaskPriority | 'all'>({ get: () => props.priorityFilter, set: (value) => emit('priorityFilterChange', value) })
+const sortModel = computed<StudyTaskQuerySort>({ get: () => props.sort, set: (value) => emit('sortChange', value) })
+const sections = computed(() => {
+  if (props.smartView !== 'today') return [{ key: 'all', label: '', tasks: props.tasks }]
+  const today = new Date().toLocaleDateString('sv-SE')
+  const overdue = props.tasks.filter((task) => dateFor(task) && dateFor(task)! < today)
+  const current = props.tasks.filter((task) => !dateFor(task) || dateFor(task)! >= today)
+  return [{ key: 'overdue', label: overdue.length ? '已过期' : '', tasks: overdue }, { key: 'today', label: current.length ? '今天' : '', tasks: current }].filter(({ tasks }) => tasks.length)
+})
 
-const inboxTasks = computed(() => props.tasks.filter((task) => task.status === 'inbox'))
-const visibleTasks = computed(() => props.tasks.filter((task) => task.status === mode.value))
-const filters: Array<{ key: TaskViewStatus; label: string }> = [
-  { key: 'inbox', label: '收件箱' },
-  { key: 'backlog', label: '待安排' },
-  { key: 'planned', label: '已计划' },
-  { key: 'in_progress', label: '进行中' },
-  { key: 'blocked', label: '已阻塞' },
-  { key: 'completed', label: '已完成' },
-  { key: 'cancelled', label: '已取消' },
-]
+watch(() => props.smartView, clearSelection)
+watch(() => props.tasks.map(({ id }) => id).join('|'), () => {
+  const available = new Set(props.tasks.map(({ id }) => id))
+  selectedIds.value = selectedIds.value.filter((id) => available.has(id))
+})
 
-function capture() {
-  const value = draft.value.trim()
-  if (!value) return
-  emit('capture', value)
-  draft.value = ''
+function capture() { const title = draft.value.trim(); if (!title) return; emit('capture', title); draft.value = '' }
+function dateFor(task: TaskViewItem) { return task.plannedOn ?? task.dueOn }
+function toggleSelection(id: string) { selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter((value) => value !== id) : [...selectedIds.value, id] }
+function clearSelection() { selectedIds.value = []; confirmDeleteIds.value = [] }
+function finishBatch(action: 'complete' | 'today' | 'delete') {
+  const ids = [...selectedIds.value]; if (!ids.length) return
+  if (action === 'complete') emit('bulkComplete', ids)
+  if (action === 'today') emit('bulkMoveToToday', ids)
+  if (action === 'delete') emit('bulkDelete', ids)
+  batchMode.value = false; clearSelection()
 }
-
-function statusLabel(task: TaskViewItem) {
-  if (task.status === 'in_progress') return '进行中'
-  if (task.status === 'blocked') return '已受阻'
-  if (task.status === 'completed') return '已完成'
-  if (task.status === 'cancelled') return '已取消'
-  if (task.status === 'backlog') return '待安排'
-  return task.plannedLabel || '待安排'
+function isTyping(target: EventTarget | null) { return target instanceof HTMLElement && target.matches('input, textarea, select, [contenteditable="true"]') }
+function handleShortcut(event: KeyboardEvent) {
+  if (event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target)) return
+  if (event.key === '/') { event.preventDefault(); searchInput.value?.focus(); return }
+  if (event.key.toLowerCase() === 'n') { event.preventDefault(); captureInput.value?.focus(); return }
+  const index = props.tasks.findIndex(({ id }) => id === props.selectedId)
+  if (event.key === 'j' || event.key === 'ArrowDown') { event.preventDefault(); const task = props.tasks[Math.min(props.tasks.length - 1, Math.max(0, index + 1))]; if (task) emit('open', task.id) }
+  if (event.key === 'k' || event.key === 'ArrowUp') { event.preventDefault(); const task = props.tasks[Math.max(0, index < 0 ? 0 : index - 1)]; if (task) emit('open', task.id) }
+  if (event.key.toLowerCase() === 'e' && props.selectedId) emit('edit', props.selectedId)
+  if (event.key.toLowerCase() === 'c' && props.selectedId) emit('toggleComplete', props.selectedId)
 }
+onMounted(() => window.addEventListener('keydown', handleShortcut))
+onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
 </script>
 
 <template>
   <section class="tasks-view">
     <header class="page-header">
-      <div><p>{{ dateLabel }}</p><h1>任务</h1></div>
+      <div class="page-title"><h1>{{ title }}</h1><select class="mobile-smart-view" :value="smartView" aria-label="智能清单" @change="emit('smartViewChange', ($event.target as HTMLSelectElement).value as StudyTaskSmartView)"><option value="inbox">收件箱</option><option value="today">今天</option><option value="next7">最近 7 天</option><option value="all">全部任务</option><option value="completed">已完成</option></select><span>{{ subtitle }}</span></div>
+      <div class="header-actions">
+        <button type="button" :class="{ active: toolbarOpen }" title="筛选" aria-label="筛选" @click="toolbarOpen = !toolbarOpen"><Filter :size="18" /></button>
+        <button type="button" :class="{ active: batchMode }" title="批量操作" aria-label="批量操作" @click="batchMode = !batchMode; clearSelection()"><ListFilter :size="18" /></button>
+        <button type="button" title="更多" aria-label="更多"><MoreHorizontal :size="19" /></button>
+      </div>
     </header>
-
-    <form class="capture" @submit.prevent="capture">
-      <Plus :size="22" :stroke-width="1.65" />
-      <input v-model="draft" aria-label="记录学习想法" placeholder="记下想学、想查或想练的事……" />
-      <button :disabled="!draft.trim()" title="加入收件箱" type="submit"><ArrowRight :size="20" /></button>
-    </form>
-
-    <div class="toolbar">
-      <div class="segmented" aria-label="任务范围">
-        <button v-for="filter in filters" :key="filter.key" :class="{ active: mode === filter.key }" @click="mode = filter.key">
-          {{ filter.label }} <span v-if="filter.key === 'inbox'">{{ inboxTasks.length }}</span>
-        </button>
-      </div>
+    <form class="capture" @submit.prevent="capture"><Plus :size="19" /><input ref="captureInput" v-model="draft" aria-label="新建任务" :placeholder="smartView === 'today' ? '添加到今天' : '添加任务'" /><button type="submit" :disabled="!draft.trim()" title="添加" aria-label="添加"><Check :size="17" /></button></form>
+    <label class="search-field"><Search :size="16" /><input ref="searchInput" v-model="searchModel" type="search" aria-label="搜索任务" placeholder="搜索" /><button v-if="searchModel" type="button" title="清除" aria-label="清除搜索" @click="searchModel = ''"><X :size="14" /></button><kbd v-else>/</kbd></label>
+    <div v-if="toolbarOpen" class="filters">
+      <select v-model="topicModel" aria-label="清单"><option value="all">全部清单</option><option value="unassigned">收件箱</option><option v-for="topic in topics" :key="topic.id" :value="topic.id">{{ topic.title }}</option></select>
+      <select v-model="priorityModel" aria-label="优先级"><option value="all">全部优先级</option><option value="high">高优先级</option><option value="medium">中优先级</option><option value="low">低优先级</option><option value="none">无优先级</option></select>
+      <select v-model="sortModel" aria-label="排序"><option value="manual">手动排序</option><option value="dueOn">截止日期</option><option value="priority">优先级</option><option value="updatedAt">最近更新</option><option value="title">标题</option></select>
     </div>
-
-    <div v-if="visibleTasks.length" class="task-table">
-      <div class="table-head"><span>任务</span><span>主题</span><span>计划</span></div>
-      <div class="task-list">
-        <article v-for="task in visibleTasks" :key="task.id" class="task-row">
-          <button class="row-main" :class="{ selected: task.id === selectedId }" @click="emit('open', task.id)">
-            <span class="state-dot" :class="task.status">
-              <CheckCircle2 v-if="task.status === 'completed'" :size="17" />
-              <CircleSlash2 v-else-if="task.status === 'cancelled'" :size="17" />
-              <Inbox v-else-if="task.status === 'inbox'" :size="17" />
-              <CalendarClock v-else :size="17" />
-            </span>
-            <span class="row-copy"><strong>{{ task.title }}</strong><small>{{ task.status === 'inbox' ? '尚未安排主题与日期' : statusLabel(task) }}</small></span>
-            <span class="topic-cell">{{ task.topic }}</span>
-            <span class="plan-cell">{{ statusLabel(task) }}</span>
-            <ChevronRight :size="18" />
-          </button>
-          <button v-if="task.status === 'inbox' || task.status === 'backlog'" class="row-action" @click="emit('plan', task.id)">安排</button>
-          <button v-else-if="task.status === 'planned'" class="row-action" @click="emit('start', task.id)">开始</button>
-          <button v-else-if="task.status === 'completed' || task.status === 'cancelled'" class="icon-action" title="重开任务" @click="emit('reopen', task.id)"><RotateCcw :size="17" /></button>
-          <button v-else class="icon-action" title="继续任务" @click="emit('start', task.id)"><ArrowRight :size="18" /></button>
+    <div v-if="batchMode" class="batch-bar"><span>{{ selectedIds.length }}</span><div><button type="button" :disabled="!selectedIds.length" title="完成" aria-label="批量完成" @click="finishBatch('complete')"><CheckCircle2 :size="17" /></button><button type="button" :disabled="!selectedIds.length" title="移到今天" aria-label="移到今天" @click="finishBatch('today')"><CalendarDays :size="17" /></button><button type="button" class="danger" :disabled="!selectedIds.length" title="删除" aria-label="批量删除" @click="confirmDeleteIds = [...selectedIds]"><Trash2 :size="17" /></button></div></div>
+    <div v-if="tasks.length" class="task-sections">
+      <section v-for="section in sections" :key="section.key" class="task-section">
+        <h2 v-if="section.label" :class="{ overdue: section.key === 'overdue' }">{{ section.label }} <span>{{ section.tasks.length }}</span></h2>
+        <article v-for="task in section.tasks" :key="task.id" class="task-row" :class="{ selected: selectedId === task.id, completed: task.status === 'completed' }">
+          <button v-if="batchMode" class="select-button" type="button" :aria-label="`选择 ${task.title}`" @click="toggleSelection(task.id)"><span :class="{ checked: selectedIds.includes(task.id) }"><Check :size="13" /></span></button>
+          <button v-else class="complete-button" type="button" :aria-label="task.status === 'completed' ? `重新打开 ${task.title}` : `完成 ${task.title}`" @click="emit('toggleComplete', task.id)"><span :class="[task.priority, { checked: task.status === 'completed' }]"><Check :size="14" /></span></button>
+          <button class="task-main" type="button" @click="emit('open', task.id)"><span class="task-copy"><strong>{{ task.title }}</strong><small><span v-if="task.plannedLabel"><CalendarDays :size="13" />{{ task.plannedLabel }}</span><span v-if="task.reminderLabel"><Bell :size="13" />{{ task.reminderLabel }}</span><span><Inbox :size="13" />{{ task.topic }}</span></small></span><Flag v-if="task.priority !== 'none'" class="priority" :class="task.priority" :size="17" fill="currentColor" /><ChevronRight :size="17" class="chevron" /></button>
+          <div class="row-actions"><button type="button" title="编辑" :aria-label="`编辑 ${task.title}`" @click="emit('edit', task.id)"><Pencil :size="15" /></button><button type="button" class="danger" title="删除" :aria-label="`删除 ${task.title}`" @click="confirmDeleteIds = [task.id]"><Trash2 :size="15" /></button></div>
         </article>
-      </div>
+      </section>
     </div>
-    <div v-else class="empty-state">
-      <CheckCircle2 :size="34" :stroke-width="1.5" />
-      <h2>{{ mode === 'inbox' ? '收件箱清空了' : `没有${filters.find((item) => item.key === mode)?.label}的任务` }}</h2>
-      <p>{{ mode === 'inbox' ? '这里是想法的临时停靠点，不必把每个念头都变成任务。' : '任务发生变化后，会自动出现在对应状态中。' }}</p>
-    </div>
+    <div v-else class="empty-state"><CheckCircle2 :size="36" /><strong>{{ searchModel ? '没有结果' : smartView === 'completed' ? '尚无已完成任务' : '清单已清空' }}</strong></div>
+    <div v-if="confirmDeleteIds.length" class="confirm-backdrop" @click.self="confirmDeleteIds = []"><section class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="delete-title"><h2 id="delete-title">删除 {{ confirmDeleteIds.length }} 项？</h2><footer><button type="button" @click="confirmDeleteIds = []">取消</button><button type="button" class="danger" @click="confirmDeleteIds.length === 1 ? (emit('delete', confirmDeleteIds[0]), confirmDeleteIds = []) : finishBatch('delete')">删除</button></footer></section></div>
   </section>
 </template>
 
 <style scoped>
-.tasks-view { width: min(100%, 900px); margin: 0 auto; padding: 48px 44px 104px; }
-.page-header { padding-bottom: 24px; border-bottom: 1px solid var(--border); }
-.page-header p { margin: 0 0 18px; color: var(--text); font-size: 13px; letter-spacing: .1em; }
-h1 { margin: 0; font-size: clamp(28px, 3.1vw, 38px); line-height: 1.2; font-weight: 650; letter-spacing: -.035em; }
-.capture { display: grid; grid-template-columns: 24px 1fr 42px; align-items: center; gap: 12px; margin: 28px 0 22px; padding: 8px 8px 8px 16px; border: 1px solid var(--hairline); border-radius: var(--radius-xl); background: var(--surface); color: var(--muted); box-shadow: var(--shadow-sm); transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease); }
-.capture:focus-within { border-color: color-mix(in srgb, var(--accent) 58%, var(--border)); box-shadow: var(--focus-ring), var(--shadow-sm); }
-.capture input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 14px; }
-.capture button { width: 42px; height: 42px; display: grid; place-items: center; border: 0; border-radius: var(--radius-lg); background: var(--accent); color: var(--accent-text); box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 18%, transparent); }
-.capture button:disabled { opacity: .4; }
-.toolbar { overflow-x: auto; padding: 0 0 16px; border-bottom: 1px solid var(--hairline); scrollbar-width: none; }.toolbar::-webkit-scrollbar { display: none; }
-.segmented { display: flex; width: max-content; min-width: 100%; gap: 3px; padding: 3px; border-radius: var(--radius-lg); background: var(--control-fill); }
-.segmented button { min-height: 36px; padding: 0 13px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--muted); font-size: 12px; white-space: nowrap; }
-.segmented button:hover { color: var(--text); }.segmented button.active { background: var(--surface); box-shadow: var(--shadow-sm); color: var(--text); }
-.segmented span { color: var(--muted); font-variant-numeric: tabular-nums; }
-.task-table { margin-top: 4px; }.table-head { display: grid; grid-template-columns: 1fr 180px 116px; gap: 12px; padding: 16px 58px 11px 16px; color: var(--muted); font-size: 11px; }
-.task-list { overflow: hidden; border: 1px solid var(--hairline); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); }
-.task-row { min-height: 72px; display: flex; align-items: center; border-top: 1px solid var(--hairline); }.task-row:first-child { border-top: 0; }
-.row-main { min-width: 0; flex: 1; min-height: 70px; display: grid; grid-template-columns: 34px minmax(180px, 1fr) 180px 100px 20px; align-items: center; gap: 11px; padding: 8px 8px 8px 16px; border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--text); text-align: left; }.row-main:hover { background: color-mix(in srgb, var(--control-fill) 72%, transparent); }.row-main.selected { outline: 1px solid color-mix(in srgb, var(--accent) 38%, transparent); outline-offset: -1px; background: var(--press-fill); }
-.state-dot { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border)); border-radius: 50%; color: var(--accent); }
-.state-dot.blocked { color: var(--warning); }.state-dot.completed { color: var(--success); }.state-dot.cancelled { color: var(--muted); }
-.row-copy { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-.row-copy strong { overflow: hidden; font-size: 14px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-.row-copy small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.topic-cell, .plan-cell { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.row-main > svg { color: var(--muted); }
-.row-action { min-height: 38px; margin-right: 8px; padding: 0 14px; border: 0; border-radius: var(--radius-md); background: var(--accent); color: var(--accent-text); font-size: 12px; font-weight: 600; }
-.icon-action { width: 42px; height: 42px; display: grid; place-items: center; margin-right: 8px; border: 0; border-radius: 50%; background: var(--control-fill); color: var(--accent); }
-.empty-state { min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; }
-.empty-state > svg { color: var(--accent); }.empty-state h2 { margin: 14px 0 6px; font-size: 18px; }.empty-state p { max-width: 430px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.empty-state button { min-height: 42px; margin-top: 18px; padding: 0 15px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--accent); }
-@media (max-width: 799px) {
-  .tasks-view { padding: 27px 20px 126px; }
-  .page-header { padding-bottom: 19px; } .page-header p { display: none; } h1 { font-size: 34px; }
-  .capture { grid-template-columns: 22px 1fr 42px; margin-top: 20px; padding: 7px 7px 7px 15px; border-radius: 18px; }
-  .capture button { width: 42px; padding: 0; justify-content: center; font-size: 0; }
-  .toolbar { margin-right: -20px; border-bottom: 0; }.segmented { min-width: max-content; gap: 2px; padding: 3px 23px 3px 3px; }.segmented button { min-height: 40px; padding: 0 11px; font-size: 11px; }
-  .task-table { margin-top: 12px; }.table-head { display: none; }.task-list { border-radius: 18px; }.task-row { min-height: 84px; }.row-main { min-height: 82px; grid-template-columns: 32px 1fr 18px; padding-left: 13px; }
-  .row-copy strong { display: -webkit-box; overflow: hidden; white-space: normal; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  .topic-cell, .plan-cell { display: none; }
-  .row-action { min-width: 56px; padding: 0 10px; }
-}
+.tasks-view { width: min(100%, 760px); min-height: 100%; margin: 0 auto; padding: 28px 28px 80px; }.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }.page-header h1 { margin: 0; font-size: 22px; line-height: 1.25; font-weight: 650; letter-spacing: -.02em; }.page-header span { display: block; margin-top: 5px; color: var(--muted); font-size: var(--text-xs); }.mobile-smart-view { display: none; }.header-actions { display: flex; gap: 2px; }.header-actions button, .search-field button, .row-actions button { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--muted); }.header-actions button:hover, .header-actions button.active, .row-actions button:hover { background: var(--control-fill); color: var(--text); }
+.capture { height: 48px; display: grid; grid-template-columns: 24px 1fr 36px; align-items: center; gap: 8px; margin-top: 22px; padding: 0 6px 0 14px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--material-regular); box-shadow: var(--shadow-sm); backdrop-filter: blur(20px) saturate(150%); }.capture > svg { color: var(--accent); }.capture input { min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--text-base); }.capture button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: var(--accent); color: var(--accent-text); }.capture button:disabled { opacity: .28; }
+.search-field { height: 38px; display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 6px; margin-top: 14px; padding: 0 8px 0 11px; border: 1px solid transparent; border-radius: var(--radius-md); background: var(--control-fill); color: var(--muted); }.search-field:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }.search-field input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--text-sm); }.search-field button { width: 28px; height: 28px; }.search-field kbd { padding: 2px 6px; border: 1px solid var(--hairline); border-radius: 6px; color: var(--muted); font: inherit; font-size: 10px; }.filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 9px; padding: 10px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--material-thin); }.filters select { min-width: 0; height: 36px; padding: 0 9px; border: 1px solid var(--hairline); border-radius: var(--radius-md); outline: 0; background: var(--control-fill); color: var(--text); font-size: var(--text-xs); }
+.batch-bar { min-height: 46px; display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding: 5px 7px 5px 13px; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); color: var(--accent); font-size: var(--text-sm); }.batch-bar > div { display: flex; gap: 3px; }.batch-bar button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: transparent; color: inherit; }.task-sections { margin-top: 20px; }.task-section + .task-section { margin-top: 20px; }.task-section h2 { margin: 0 0 7px; color: var(--accent); font-size: var(--text-sm); font-weight: 650; }.task-section h2.overdue { color: var(--danger); }.task-section h2 span { margin-left: 4px; color: var(--muted); font-weight: 500; }
+.task-row { position: relative; min-height: 64px; display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: stretch; border-bottom: 1px solid var(--hairline); transition: background var(--motion-fast) var(--ease); }.task-row:first-of-type { border-top: 1px solid var(--hairline); }.task-row:hover, .task-row.selected { background: color-mix(in srgb, var(--press-fill) 72%, transparent); }.task-row.selected { box-shadow: inset 3px 0 var(--accent); }.complete-button, .select-button { display: grid; place-items: center; border: 0; background: transparent; }.complete-button span, .select-button span { width: 22px; height: 22px; display: grid; place-items: center; border: 1.5px solid color-mix(in srgb, var(--muted) 78%, transparent); border-radius: 50%; color: transparent; }.complete-button span.high { border-color: var(--danger); }.complete-button span.medium { border-color: var(--warning); }.complete-button span.low { border-color: var(--accent); }.complete-button span.checked, .select-button span.checked { border-color: var(--success); background: var(--success); color: var(--accent-text); }
+.task-main { min-width: 0; min-height: 63px; display: grid; grid-template-columns: minmax(0, 1fr) 22px 20px; align-items: center; gap: 6px; padding: 8px 8px 8px 0; border: 0; background: transparent; color: var(--text); text-align: left; }.task-copy { min-width: 0; }.task-copy strong { display: block; overflow: hidden; font-size: var(--text-base); font-weight: 550; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }.task-copy small { min-height: 18px; display: flex; align-items: center; gap: 12px; margin-top: 5px; overflow: hidden; color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }.task-copy small span { display: inline-flex; align-items: center; gap: 4px; }.task-row.completed .task-copy strong { color: var(--muted); text-decoration: line-through; }.priority.high { color: var(--danger); }.priority.medium { color: var(--warning); }.priority.low { color: var(--accent); }.chevron { color: color-mix(in srgb, var(--muted) 55%, transparent); }.row-actions { position: absolute; right: 7px; top: 50%; display: none; transform: translateY(-50%); gap: 2px; padding-left: 18px; background: linear-gradient(90deg, transparent, var(--surface) 25%); }.task-row:hover .row-actions { display: flex; }.row-actions button { width: 34px; height: 34px; background: var(--control-fill); }.danger { color: var(--danger) !important; }
+.empty-state { min-height: 320px; display: grid; place-content: center; justify-items: center; gap: 12px; color: color-mix(in srgb, var(--muted) 72%, transparent); }.empty-state strong { color: var(--muted); font-size: var(--text-base); font-weight: 550; }.confirm-backdrop { position: fixed; z-index: var(--z-modal); inset: 0; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, var(--text) 24%, transparent); backdrop-filter: blur(10px); }.confirm-card { width: min(100%, 360px); padding: 22px; border: 1px solid var(--hairline); border-radius: var(--radius-xl); background: var(--material-regular); box-shadow: var(--shadow-lg); }.confirm-card h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }.confirm-card footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }.confirm-card button { min-height: 38px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font-size: var(--text-sm); }
+@media (max-width: 799px) { .tasks-view { width: 100%; padding: 18px 16px calc(106px + env(safe-area-inset-bottom, 0px)); }.page-header h1 { display: none; }.mobile-smart-view { display: block; max-width: 190px; padding: 0 25px 0 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 20px; font-weight: 650; letter-spacing: -.02em; }.capture { margin-top: 16px; }.task-sections { margin-top: 15px; }.task-row { min-height: 68px; }.task-main { min-height: 67px; grid-template-columns: minmax(0, 1fr) 22px; }.chevron { display: none; }.task-copy strong { white-space: normal; }.task-copy small { gap: 9px; }.task-copy small span:nth-child(2) { display: none; }.row-actions { display: none !important; }.filters { grid-template-columns: 1fr; }.complete-button span, .select-button span { width: 24px; height: 24px; } }
+@media (hover: none) { .row-actions { display: none !important; } }
 </style>

@@ -73,7 +73,7 @@ export const moduleContracts: Record<ModuleId, ModuleContract> = {
   },
   sync: {
     id: 'sync',
-    name: '本地优先同步',
+    name: '可选本地优先同步',
     dependencies: ['storage'],
     nativeBuild: { kind: 'none' },
   },
@@ -122,7 +122,10 @@ export const moduleContracts: Record<ModuleId, ModuleContract> = {
       kind: 'cargo-feature',
       feature: 'shortcut',
       platforms: ['desktop'],
-      permissions: ['global-shortcut:default'],
+      permissions: [
+        'global-shortcut:allow-register',
+        'global-shortcut:allow-unregister',
+      ],
     },
   },
   clipboard: {

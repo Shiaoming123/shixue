@@ -21,8 +21,8 @@
     }
   },
   "modulePolicy": {
-    "enabled": ["core", "storage", "sqlite", "indexedDb", "tray", "updater", "themes"],
-    "disabled": ["sync", "agent", "shortcut", "clipboard", "notification", "autostart", "mcp"]
+    "enabled": ["core", "storage", "sqlite", "indexedDb", "tray", "updater", "themes", "shortcut", "notification"],
+    "disabled": ["sync", "agent", "clipboard", "autostart", "mcp"]
   },
   "data": {
     "defaultMode": "local-first",

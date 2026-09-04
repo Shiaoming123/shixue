@@ -8,6 +8,7 @@ export type StudyTaskStatus =
   | 'blocked'
   | 'completed'
   | 'cancelled'
+export type StudyTaskPriority = 'none' | 'low' | 'medium' | 'high'
 export type StudySessionState = 'running' | 'paused' | 'finished'
 export type ReviewResult = 'clear' | 'fuzzy' | 'relearn'
 export type ReviewStage = 0 | 1 | 2 | 3
@@ -23,13 +24,24 @@ export type TaskEventType =
   | 'reopened'
   | 'cancelled'
   | 'rescheduled'
+  | 'deleted'
 
 export interface StudyTopic {
   id: string
+  groupId?: string | null
   title: string
   goal: string
   successCriteria: string[]
   weeklyTargetMinutes: number
+  createdAt: string
+  updatedAt: string
+  archivedAt: string | null
+}
+
+export interface StudyListGroup {
+  id: string
+  title: string
+  position: number
   createdAt: string
   updatedAt: string
   archivedAt: string | null
@@ -52,6 +64,8 @@ export interface StudyTask {
   status: StudyTaskStatus
   plannedOn: string | null
   dueOn: string | null
+  reminderAt: string | null
+  priority: StudyTaskPriority
   estimateMinutes: number | null
   acceptanceCriteria: string[]
   checklist: TaskChecklistItem[]
@@ -109,6 +123,7 @@ export interface CompletionRecord {
 
 export interface StudyState {
   version: typeof STUDY_STATE_VERSION
+  listGroups?: StudyListGroup[]
   topics: StudyTopic[]
   tasks: StudyTask[]
   sessions: StudySession[]
@@ -175,6 +190,12 @@ const TASK_STATUSES: readonly StudyTaskStatus[] = [
   'completed',
   'cancelled',
 ]
+const TASK_PRIORITIES: readonly StudyTaskPriority[] = [
+  'none',
+  'low',
+  'medium',
+  'high',
+]
 const EVENT_TYPES: readonly TaskEventType[] = [
   'captured',
   'migrated',
@@ -187,6 +208,7 @@ const EVENT_TYPES: readonly TaskEventType[] = [
   'reopened',
   'cancelled',
   'rescheduled',
+  'deleted',
 ]
 const MAX_ITEMS = 100_000
 const MAX_TEXT_LENGTH = 100_000
@@ -280,6 +302,8 @@ export function migrateStudyStateV1ToV2(value: unknown, migratedAt: string): Stu
         status,
         plannedOn: step.scheduledOn,
         dueOn: null,
+        reminderAt: null,
+        priority: 'none',
         estimateMinutes: step.estimateMinutes,
         acceptanceCriteria: [...step.acceptanceCriteria],
         checklist: [],
@@ -304,6 +328,8 @@ export function migrateStudyStateV1ToV2(value: unknown, migratedAt: string): Stu
       status: session.state === 'completed' ? 'completed' : 'in_progress',
       plannedOn: session.startedAt.slice(0, 10),
       dueOn: null,
+      reminderAt: null,
+      priority: 'none',
       estimateMinutes: Math.max(1, Math.round(session.elapsedSeconds / 60)),
       acceptanceCriteria: [],
       checklist: [],
@@ -494,6 +520,9 @@ export function parseStudyState(value: unknown): StudyState {
   const object = requireRecord(value, 'Study state')
   if (object.version !== 2) throw new Error('Study state must use version 2.')
   const topics = requireArray(object.topics, 'Study state topics').map(parseTopic)
+  const listGroups = object.listGroups === undefined
+    ? []
+    : requireArray(object.listGroups, 'Study state listGroups').map(parseListGroup)
   const tasks = requireArray(object.tasks, 'Study state tasks').map(parseTask)
   const sessions = requireArray(object.sessions, 'Study state sessions').map(parseSession)
   const taskEvents = requireArray(object.taskEvents, 'Study state taskEvents').map(parseEvent)
@@ -501,9 +530,10 @@ export function parseStudyState(value: unknown): StudyState {
     object.completionRecords,
     'Study state completionRecords',
   ).map(parseCompletionRecord)
-  for (const items of [topics, tasks, sessions, taskEvents, completionRecords]) {
+  for (const items of [listGroups, topics, tasks, sessions, taskEvents, completionRecords]) {
     if (items.length > MAX_ITEMS) throw new Error('Study state contains too many records.')
   }
+  assertUnique(listGroups, 'list group')
   assertUnique(topics, 'topic')
   assertUnique(tasks, 'task')
   assertUnique(sessions, 'session')
@@ -520,6 +550,12 @@ export function parseStudyState(value: unknown): StudyState {
   }
 
   const topicIds = new Set(topics.map(({ id }) => id))
+  const listGroupIds = new Set(listGroups.filter(({ archivedAt }) => !archivedAt).map(({ id }) => id))
+  for (const topic of topics) {
+    if (topic.groupId && !listGroupIds.has(topic.groupId)) {
+      throw new Error(`Topic ${topic.id} has unknown or archived groupId.`)
+    }
+  }
   const taskById = new Map(tasks.map((task) => [task.id, task]))
   const sessionById = new Map(sessions.map((session) => [session.id, session]))
   const recordById = new Map(completionRecords.map((record) => [record.id, record]))
@@ -593,19 +629,9 @@ export function parseStudyState(value: unknown): StudyState {
   ) {
     throw new Error('An active Study session requires an in-progress task.')
   }
-  for (const task of tasks.filter(
-    ({ status, deletedAt }) => status === 'completed' && !deletedAt,
-  )) {
-    if (
-      !completionRecords.some(
-        (record) => record.taskId === task.id && !record.deletedAt,
-      )
-    ) {
-      throw new Error(`Completed task ${task.id} requires a CompletionRecord.`)
-    }
-  }
   return {
     version: 2,
+    listGroups,
     topics,
     tasks,
     sessions,
@@ -722,6 +748,7 @@ function parseTopic(raw: unknown, index: number): StudyTopic {
   const value = requireRecord(raw, `Study topic ${index}`)
   return {
     id: requireText(value.id, 'Study topic id'),
+    groupId: value.groupId === undefined ? null : parseNullableText(value.groupId, 'Study topic groupId'),
     title: requireText(value.title, 'Study topic title'),
     goal: requireText(value.goal, 'Study topic goal'),
     successCriteria: parseTextArray(
@@ -738,11 +765,26 @@ function parseTopic(raw: unknown, index: number): StudyTopic {
   }
 }
 
+function parseListGroup(raw: unknown, index: number): StudyListGroup {
+  const value = requireRecord(raw, `Study list group ${index}`)
+  return {
+    id: requireText(value.id, 'Study list group id'),
+    title: requireText(value.title, 'Study list group title'),
+    position: requireNonNegativeInteger(value.position, 'Study list group position'),
+    createdAt: requireText(value.createdAt, 'Study list group createdAt'),
+    updatedAt: requireText(value.updatedAt, 'Study list group updatedAt'),
+    archivedAt: parseNullableText(value.archivedAt, 'Study list group archivedAt'),
+  }
+}
+
 function parseTask(raw: unknown, index: number): StudyTask {
   const value = requireRecord(raw, `Study task ${index}`)
   const status = parseTaskStatus(value.status)
   const plannedOn = parseDateOnly(value.plannedOn, 'Study task plannedOn')
   const dueOn = parseDateOnly(value.dueOn, 'Study task dueOn')
+  const reminderAt = value.reminderAt === undefined
+    ? null
+    : parseNullableIsoDateTime(value.reminderAt, 'Study task reminderAt')
   if (plannedOn && dueOn && dueOn < plannedOn) {
     throw new Error('Study task dueOn cannot precede plannedOn.')
   }
@@ -781,6 +823,8 @@ function parseTask(raw: unknown, index: number): StudyTask {
     status,
     plannedOn,
     dueOn,
+    reminderAt,
+    priority: value.priority === undefined ? 'none' : parseTaskPriority(value.priority),
     estimateMinutes:
       value.estimateMinutes === null
         ? null
@@ -907,6 +951,16 @@ function parseTaskStatus(value: unknown): StudyTaskStatus {
   return value as StudyTaskStatus
 }
 
+function parseTaskPriority(value: unknown): StudyTaskPriority {
+  if (
+    typeof value !== 'string' ||
+    !TASK_PRIORITIES.includes(value as StudyTaskPriority)
+  ) {
+    throw new Error('Invalid Study task priority.')
+  }
+  return value as StudyTaskPriority
+}
+
 function parseNullableTaskStatus(value: unknown): StudyTaskStatus | null {
   return value === null ? null : parseTaskStatus(value)
 }
@@ -949,6 +1003,15 @@ function parseDateOnly(value: unknown, label: string): string | null {
   const date = requireText(value, label)
   if (!isDateOnly(date)) throw new Error(`${label} must use YYYY-MM-DD.`)
   return date
+}
+
+function parseNullableIsoDateTime(value: unknown, label: string): string | null {
+  if (value === null) return null
+  const dateTime = requireText(value, label)
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(dateTime) || !Number.isFinite(Date.parse(dateTime))) {
+    throw new Error(`${label} must use an ISO datetime.`)
+  }
+  return dateTime
 }
 
 function parseTextArray(value: unknown, label: string): string[] {

@@ -24,7 +24,7 @@ function updateScratchpad(event: Event) {
 
 <template>
   <section class="focus-view">
-    <button class="back" @click="emit('back')"><ArrowLeft :size="18" />回到今天</button>
+    <button class="back" @click="emit('back')"><ArrowLeft :size="18" />今天</button>
 
     <div class="focus-heading">
       <p>{{ running ? '正在学习' : '已暂停' }}</p>
@@ -39,13 +39,12 @@ function updateScratchpad(event: Event) {
     </div>
 
     <label class="scratchpad">
-      <span>临时记录，不需要整理</span>
+      <span>随手记</span>
       <textarea
         :value="scratchpad"
         placeholder="随手写下线索、疑问或关键代码……"
         @input="updateScratchpad"
       />
-      <small>内容会保存在本地，结束时可以整理成学习记录。</small>
     </label>
 
     <div class="focus-actions">
@@ -96,7 +95,7 @@ function updateScratchpad(event: Event) {
 
 .focus-heading strong {
   font-variant-numeric: tabular-nums;
-  font-size: 54px;
+  font-size: 28px;
   font-weight: 570;
   letter-spacing: -0.055em;
 }
@@ -110,7 +109,7 @@ function updateScratchpad(event: Event) {
 h1 {
   max-width: 620px;
   margin: 0;
-  font-size: clamp(30px, 4vw, 42px);
+  font-size: 22px;
   line-height: 1.2;
   font-weight: 650;
   letter-spacing: -0.035em;
@@ -223,9 +222,7 @@ textarea:focus {
     margin-top: 46px;
   }
 
-  .focus-heading strong {
-    font-size: 46px;
-  }
+  .focus-heading strong { font-size: 27px; }
 
   .focus-actions {
     display: grid;

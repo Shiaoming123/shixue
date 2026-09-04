@@ -106,7 +106,22 @@ transport 返回未知或重复 id 不会让上传计数虚高，也不会确认
 - `schema_version`。
 - 每次变更唯一且可幂等的 `operation_id`。
 
-本轮没有把示例 Todo 直接升级为同步表，避免用一个演示模型替应用决定账号、冲突和删除语义。
+示例 Todo 仍不进入同步。拾学业务使用独立的 `study_state/current` 单快照协调器：它先验证完整 `StudyState`，以 `updatedAt + SHA-256` 形成确定 revision，上传时携带已观察到的远端 revision，下载时通过本地 `expectedUpdatedAt` 做 CAS。远端拒绝或本地 CAS 竞争都会返回显式 `conflict/failed`，不会报告成功或覆盖更新中的本地记录。
+
+该协调器只定义 `StudyCloudAdapter`，不把供应商 SDK、session token 或网络调用带进领域层。`sync=false`、未配置或未登录时不会读取本地快照，也不会触发 pull/push。Supabase/Tauri 适配器必须另外满足下文的钥匙串、RLS 和真实后端验收门禁后才能启用。
+
+## 拾学的 Supabase 原生适配器
+
+仓库提供一个默认不编译、不联网的桌面参考适配器：
+
+1. 在 Supabase 项目应用 `supabase/migrations/202609040001_study_cloud_snapshots.sql`。
+2. 在本地构建环境设置两个公开配置：`VITE_STUDY_SUPABASE_URL=https://<project>.supabase.co` 与 `VITE_STUDY_SUPABASE_PUBLISHABLE_KEY=<publishable-key>`。不要使用 `service_role` key。
+3. 以 `sync` Cargo feature 启动或构建 Tauri，例如 `npm run tauri dev -- --features sync`。
+4. 设置页只在桌面 Tauri 且两个公开配置都存在时显示账号入口。登录密码只经过一次 IPC；access/refresh token 只保存于系统钥匙串，WebView 只能读取 signed-in/signed-out、user id 和 email。
+
+生产适配器只接受 `https://*.supabase.co:443`，本地开发只额外接受 `localhost`、`127.0.0.1` 或 `::1` 回环地址。任意自托管域名应实现新的受信任适配器或固定域名策略，不能把任意 URL 与钥匙串 token 拼接使用。
+
+同步在本地写入后 1.5 秒防抖触发，登录期间每 30 秒复核一次；失败与 CAS 冲突会保留本地状态并在设置中显式显示。仓库测试覆盖输入验证、命令注册、token 不出原生边界、RLS/CAS migration 结构及 feature 组合编译。由于本次没有真实 Supabase 项目，真实登录、migration 部署、跨用户 RLS 和双设备 E2E 状态为 **NOT_RUN**，不能等同于生产验证。
 
 ## 冲突策略
 
@@ -119,7 +134,7 @@ transport 返回未知或重复 id 不会让上传计数虚高，也不会确认
 
 | 方案 | 推荐接入 | 适用场景 | 注意事项 |
 | --- | --- | --- | --- |
-| [Supabase Auth + Postgres/RLS](https://supabase.com/docs/guides/auth) | Auth 获取短期 token；Edge Function/服务实现 HTTP transport | 开源、可自托管的账号与业务数据参考实现 | Supabase Auth/Realtime 本身不等于离线冲突引擎 |
+| [Supabase Auth + Postgres/RLS](https://supabase.com/docs/guides/auth) | 拾学桌面参考适配器；其他领域也可通过 Edge Function/HTTP transport 接入 | 托管 Supabase 或本地 CLI 开发 | 原生适配器不接受任意自托管域名；真实 RLS/双设备验证仍是部署门禁 |
 | [Firebase Firestore](https://firebase.google.com/docs/firestore/manage-data/enable-offline) | 独立 `SyncProvider` | 希望快速获得 Web 离线缓存与账号体系 | 数据模型和冲突语义绑定 Firestore |
 | [PowerSync](https://docs.powersync.com/client-sdks/reference/javascript-web) | 替换内置 outbox 的 `SyncProvider` | SQLite/local-first 体验优先 | Web SDK 成熟度与 Rust SDK 状态要分别评估 |
 | [Electric](https://electric-sql.com/docs/intro) | 独立 `SyncProvider` | Postgres 下行数据同步 | 写入与冲突链路需应用设计 |

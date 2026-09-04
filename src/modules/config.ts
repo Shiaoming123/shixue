@@ -20,7 +20,7 @@ export type ModuleConfig = Record<ModuleId, boolean> & {
 
 /**
  * 默认配置：保留脚手架「开箱即用」的现有体验。
- * core 始终启用；sqlite/tray/updater/themes 默认开；agent 与 P1/P3 新增默认关。
+ * core 始终启用；sqlite/tray/updater/themes、快捷捕捉与通知默认开；其余可选能力默认关。
  */
 export const defaultModuleConfig: ModuleConfig = {
   core: true,
@@ -32,9 +32,9 @@ export const defaultModuleConfig: ModuleConfig = {
   updater: true,
   themes: true,
   agent: false,
-  shortcut: false,
+  shortcut: true,
   clipboard: false,
-  notification: false,
+  notification: true,
   autostart: false,
   mcp: false,
 }
