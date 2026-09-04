@@ -11,7 +11,6 @@ import {
   type CapabilityClock,
   type CapabilityCommand,
   type CapabilityCommandContext,
-  type CapabilityCommandHandler,
   type CapabilityIdGenerator,
   type CapabilityQuery,
   type CommandApplication,
@@ -31,7 +30,6 @@ export function createTaskCapabilityService(
   store: WorkspaceStore,
   clock: CapabilityClock,
   ids: CapabilityIdGenerator,
-  additionalHandlers: readonly CapabilityCommandHandler[] = [],
 ): TaskCapabilityService {
   return {
     async query<Q extends CapabilityQuery>(query: Q): Promise<QueryResult<Q>> {
@@ -78,19 +76,19 @@ export function createTaskCapabilityService(
       try {
         assertEnvelope(current, envelope)
         const draft = structuredClone(current)
-        let previewId = 0
+        const previewIds = createPreviewIdGenerator(current)
         const application = applyCapabilityCommand(
           draft,
           envelope.command,
-          { now: clock(), id: (kind) => `preview:${kind}:${++previewId}` },
-          additionalHandlers,
+          { now: clock(), id: previewIds },
         )
         parseWorkspaceState(draft)
+        const impact = publicPreviewImpact(envelope.command, application)
         return {
           accepted: true,
           descriptor,
-          affected: application.affected,
-          changes: application.changes,
+          affected: impact.affected,
+          changes: impact.changes,
           validationErrors: [],
           confirmation,
         }
@@ -109,13 +107,21 @@ export function createTaskCapabilityService(
     async execute(envelope: CommandEnvelope): Promise<CommandResult> {
       const current = await store.load()
       const now = clock()
+      const requestFingerprint = fingerprintRequest(envelope)
       const cached = current.commandReceipts.find(({ idempotencyKey, expiresAt }) =>
         idempotencyKey === envelope.idempotencyKey && Date.parse(expiresAt) > Date.parse(now))
-      if (cached) return structuredClone(cached.result) as unknown as CommandResult
+      if (cached) {
+        if (cached.requestFingerprint !== requestFingerprint) {
+          throw new DomainCommandError('IDEMPOTENCY_KEY_CONFLICT', 'Idempotency key belongs to a different request.', {
+            idempotencyKey: envelope.idempotencyKey,
+          })
+        }
+        return structuredClone(cached.result) as unknown as CommandResult
+      }
       assertEnvelope(current, envelope)
 
       const draft = structuredClone(current)
-      const application = applyCapabilityCommand(draft, envelope.command, { now, id: ids }, additionalHandlers)
+      const application = applyCapabilityCommand(draft, envelope.command, { now, id: ids })
       draft.revision = current.revision + 1
       draft.updatedAt = nextUpdatedAt(current.updatedAt, now)
       application.affected = application.affected.map((entity) =>
@@ -140,6 +146,7 @@ export function createTaskCapabilityService(
       const receipt: CommandReceipt = {
         id: receiptId,
         idempotencyKey: envelope.idempotencyKey,
+        requestFingerprint,
         commandType: envelope.command.type,
         source: envelope.source,
         workspaceRevision: draft.revision,
@@ -177,15 +184,12 @@ function applyCapabilityCommand(
   state: WorkspaceStateV3,
   command: CapabilityCommand,
   context: CapabilityCommandContext,
-  additionalHandlers: readonly CapabilityCommandHandler[],
 ): CommandApplication {
   if (command.type.startsWith('task.')) {
     return applyTaskCommand(state, command as TaskCapabilityCommand, context)
   }
   if (command.type === 'workspace.import') return applyWorkspaceImport(state, command)
   if (command.type === 'undo.apply') return applyUndo(state, command, context)
-  const handler = additionalHandlers.find(({ type }) => type === command.type)
-  if (handler) return handler.apply(state, command, context)
   throw new DomainCommandError('COMMAND_NOT_FOUND', `Command is not implemented: ${command.type}.`)
 }
 
@@ -196,6 +200,7 @@ function applyWorkspaceImport(state: WorkspaceStateV3, command: WorkspaceImportC
   } catch (error) {
     throw new DomainCommandError('IMPORT_INVALID', errorMessage(error))
   }
+  imported.commandReceipts = []
   const currentRevision = state.revision
   Object.assign(state, structuredClone(imported))
   const affected: EntityRef = { type: 'workspace', id: 'workspace', revision: currentRevision }
@@ -273,14 +278,16 @@ function applyUndo(
       restoredTask.revision = current.revision + 1
       restoredTask.updatedAt = context.now
       state.tasks[index] = restoredTask
-      events.push(appendUndoEvent(
-        state,
-        restoredTask,
-        eventTypeForRestore(restoredTask),
-        current.status,
-        context,
-        original.id,
-      ))
+      if (current.status !== restoredTask.status) {
+        events.push(appendUndoEvent(
+          state,
+          restoredTask,
+          eventTypeForRestore(current.status, restoredTask.status),
+          current.status,
+          context,
+          original.id,
+        ))
+      }
       restored.push(restoredTask)
     }
     for (const prior of token.compensation.sessions) {
@@ -335,6 +342,38 @@ function previewAffected(
   })
 }
 
+function publicPreviewImpact(
+  command: CommandEnvelope['command'],
+  application: CommandApplication,
+): Pick<CommandApplication, 'affected' | 'changes'> {
+  if (command.type !== 'task.create' || command.taskId !== undefined) {
+    return { affected: application.affected, changes: application.changes }
+  }
+  const entity: EntityRef = { type: 'task', id: 'new' }
+  return {
+    affected: [entity],
+    changes: [{ entity, operation: 'create', fields: ['task'] }],
+  }
+}
+
+function createPreviewIdGenerator(state: WorkspaceStateV3): CapabilityIdGenerator {
+  const used = new Set<string>()
+  for (const collection of Object.values(state)) {
+    if (!Array.isArray(collection)) continue
+    for (const item of collection) {
+      if (isRecord(item) && typeof item.id === 'string') used.add(item.id)
+    }
+  }
+  let sequence = 0
+  return (kind) => {
+    let candidate: string
+    do candidate = `preview:${kind}:${++sequence}`
+    while (used.has(candidate))
+    used.add(candidate)
+    return candidate
+  }
+}
+
 function appendUndoEvent(
   state: WorkspaceStateV3,
   task: Task,
@@ -352,12 +391,13 @@ function appendUndoEvent(
   return event
 }
 
-function eventTypeForRestore(task: Task): TaskEvent['type'] {
-  if (task.status === 'planned') return 'rescheduled'
-  if (task.status === 'in_progress') return 'resumed'
-  if (task.status === 'blocked') return 'blocked'
-  if (task.status === 'completed') return 'completed'
-  if (task.status === 'cancelled') return 'cancelled'
+function eventTypeForRestore(fromStatus: Task['status'], toStatus: Task['status']): TaskEvent['type'] {
+  if (toStatus === 'completed') return 'completed'
+  if (toStatus === 'cancelled') return 'cancelled'
+  if (fromStatus === 'completed' || fromStatus === 'cancelled') return 'reopened'
+  if (toStatus === 'planned') return 'rescheduled'
+  if (toStatus === 'in_progress') return 'resumed'
+  if (toStatus === 'blocked') return 'blocked'
   return 'reopened'
 }
 
@@ -366,8 +406,17 @@ function taskRef(task: Task): { type: 'task'; id: string; revision: number } {
 }
 
 function pruneReceipts(receipts: readonly CommandReceipt[], now: string, limit: number): CommandReceipt[] {
-  const active = receipts.filter(({ expiresAt }) => Date.parse(expiresAt) > Date.parse(now))
-  return structuredClone(active.slice(-limit))
+  const active = receipts
+    .map((receipt, index) => ({ receipt, index }))
+    .filter(({ receipt }) => Date.parse(receipt.expiresAt) > Date.parse(now))
+    .sort((left, right) => (
+      Date.parse(left.receipt.createdAt) - Date.parse(right.receipt.createdAt)
+      || left.receipt.id.localeCompare(right.receipt.id)
+      || left.index - right.index
+    ))
+    .slice(-limit)
+    .map(({ receipt }) => receipt)
+  return structuredClone(active)
 }
 
 function domainError(error: unknown): DomainError {
@@ -391,12 +440,24 @@ function sameJson(left: JsonValue | undefined, right: unknown): boolean {
   return canonicalJson(left) === canonicalJson(right)
 }
 
+function fingerprintRequest(envelope: CommandEnvelope): string {
+  return canonicalJson({
+    protocolVersion: envelope.protocolVersion,
+    source: envelope.source,
+    expectedWorkspaceRevision: envelope.expectedWorkspaceRevision,
+    command: envelope.command,
+  })
+}
+
 function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (Array.isArray(value)) return `[${value.map((entry) => entry === undefined ? 'null' : canonicalJson(entry)).join(',')}]`
   if (isRecord(value)) {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
+    return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
   }
-  return JSON.stringify(value)
+  const serialized = JSON.stringify(value)
+  if (serialized === undefined) throw new DomainCommandError('VALIDATION_ERROR', 'Command request must be JSON-safe.')
+  return serialized
 }
 
 function isRecord(value: unknown): value is Record<string, JsonValue> {

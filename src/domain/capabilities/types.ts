@@ -36,6 +36,7 @@ export interface ChangeSummary {
 export type DomainErrorCode =
   | 'UNSUPPORTED_PROTOCOL_VERSION'
   | 'IDEMPOTENCY_KEY_REQUIRED'
+  | 'IDEMPOTENCY_KEY_CONFLICT'
   | 'COMMAND_NOT_FOUND'
   | 'WORKSPACE_REVISION_CONFLICT'
   | 'ENTITY_REVISION_CONFLICT'
@@ -285,11 +286,6 @@ export interface CommandApplication {
 export interface CapabilityCommandContext {
   now: string
   id: CapabilityIdGenerator
-}
-
-export interface CapabilityCommandHandler<C extends CapabilityCommand = CapabilityCommand> {
-  readonly type: C['type']
-  apply(state: WorkspaceStateV3, command: C, context: CapabilityCommandContext): CommandApplication
 }
 
 export interface TaskCapabilityService {

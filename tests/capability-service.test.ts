@@ -94,6 +94,61 @@ test('returns the original receipt before checking CAS for a repeated idempotenc
   assert.equal(after.revision, initial.revision + 1)
 })
 
+test('binds an idempotency key to the complete canonical request identity', async (context) => {
+  const changes: Array<[string, (envelope: CommandEnvelope) => CommandEnvelope]> = [
+    ['protocol', (envelope) => ({ ...envelope, protocolVersion: 2 } as unknown as CommandEnvelope)],
+    ['source', (envelope) => ({ ...envelope, source: 'agent' })],
+    ['workspace revision', (envelope) => ({ ...envelope, expectedWorkspaceRevision: envelope.expectedWorkspaceRevision + 1 })],
+    ['command payload', (envelope) => ({
+      ...envelope,
+      command: { ...envelope.command, title: 'Different title' } as CommandEnvelope['command'],
+    })],
+  ]
+  for (const [label, change] of changes) {
+    await context.test(label, async () => {
+      const service = fixture()
+      const initial = await service.query({ type: 'workspace.snapshot' })
+      const original = createEnvelope(initial.revision, 'bound-key')
+      await service.execute(original)
+      const before = await service.query({ type: 'workspace.snapshot' })
+
+      await assert.rejects(
+        service.execute(change(original)),
+        (error) => error instanceof DomainCommandError && error.code === 'IDEMPOTENCY_KEY_CONFLICT',
+      )
+      assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+    })
+  }
+})
+
+test('persists a key-independent canonical fingerprint and replays reordered equivalent payloads', async () => {
+  const firstService = fixture()
+  const firstInitial = await firstService.query({ type: 'workspace.snapshot' })
+  const firstEnvelope = createEnvelope(firstInitial.revision, 'first-key')
+  const first = await firstService.execute(firstEnvelope)
+  const firstState = await firstService.query({ type: 'workspace.snapshot' })
+  const firstFingerprint = (firstState.commandReceipts[0] as { requestFingerprint?: unknown }).requestFingerprint
+  assert.equal(typeof firstFingerprint, 'string')
+
+  const reordered: CommandEnvelope = {
+    command: {
+      title: 'One task', listId: 'list:system:learning', taskId: 'task-one', type: 'task.create',
+    },
+    expectedWorkspaceRevision: firstEnvelope.expectedWorkspaceRevision,
+    source: firstEnvelope.source,
+    idempotencyKey: firstEnvelope.idempotencyKey,
+    protocolVersion: firstEnvelope.protocolVersion,
+  }
+  assert.deepEqual(await firstService.execute(reordered), first)
+
+  const secondService = fixture()
+  const secondInitial = await secondService.query({ type: 'workspace.snapshot' })
+  await secondService.execute(createEnvelope(secondInitial.revision, 'second-key'))
+  const secondState = await secondService.query({ type: 'workspace.snapshot' })
+  const secondFingerprint = (secondState.commandReceipts[0] as { requestFingerprint?: unknown }).requestFingerprint
+  assert.equal(secondFingerprint, firstFingerprint)
+})
+
 test('rejects stale workspace and entity revisions without changing the workspace', async () => {
   const service = fixture()
   const initial = await service.query({ type: 'workspace.snapshot' })
@@ -192,6 +247,33 @@ test('preview returns structured validation errors and review metadata for an in
   assert.deepEqual(preview.changes, [])
   assert.equal(preview.validationErrors[0]?.code, 'TASK_NOT_FOUND')
   assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), initial)
+})
+
+test('create preview uses collision-free internal ids but exposes only a synthetic affected ref', async () => {
+  const service = fixture()
+  await executeNext(service, 'preview-collision-seed', {
+    type: 'task.create', taskId: 'preview:task:1', listId: 'list:system:learning', title: 'Legal stored id',
+  })
+  const before = await service.query({ type: 'workspace.snapshot' })
+  const envelope: CommandEnvelope = {
+    protocolVersion: 1,
+    idempotencyKey: 'preview-with-generated-id',
+    source: 'human-ui',
+    expectedWorkspaceRevision: before.revision,
+    command: { type: 'task.create', listId: 'list:system:learning', title: 'Generated later' },
+  }
+
+  const preview = await service.preview(envelope)
+  assert.equal(preview.accepted, true)
+  assert.deepEqual(preview.affected, [{ type: 'task', id: 'new' }])
+  assert.deepEqual(preview.changes, [{
+    entity: { type: 'task', id: 'new' }, operation: 'create', fields: ['task'],
+  }])
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+
+  const result = await service.execute(envelope)
+  assert.deepEqual(result.affected, [{ type: 'task', id: 'task-4', revision: 1 }])
+  assert.equal((await service.query({ type: 'task.get', taskId: 'task-4' }))?.title, 'Generated later')
 })
 
 test('queries return cloned task views, command descriptions, and source-preserving audit data', async () => {
@@ -363,6 +445,31 @@ test('undo applies the original targeted compensation once and replays its own r
   )
 })
 
+test('metadata update and its undo use receipts without fabricated lifecycle events', async () => {
+  const service = fixture()
+  await executeNext(service, 'metadata-create', {
+    type: 'task.create', taskId: 'metadata-task', listId: 'list:system:learning', title: 'Before',
+  })
+  const update = await executeNext(service, 'metadata-update', {
+    type: 'task.update', taskId: 'metadata-task', expectedRevision: 1, patch: { title: 'After' },
+  })
+  assert.deepEqual(update.events, [])
+  const beforeUndo = await service.query({ type: 'workspace.snapshot' })
+  const undo = await service.execute({
+    protocolVersion: 1,
+    idempotencyKey: 'metadata-undo',
+    source: 'human-ui',
+    expectedWorkspaceRevision: beforeUndo.revision,
+    command: { type: 'undo.apply', token: update.undoToken! },
+  })
+
+  assert.deepEqual(undo.events, [])
+  const afterUndo = await service.query({ type: 'workspace.snapshot' })
+  assert.deepEqual(afterUndo.taskEvents.filter(({ taskId }) => taskId === 'metadata-task').map(({ type }) => type), ['captured'])
+  assert.deepEqual(afterUndo.commandReceipts.slice(-2).map(({ commandType }) => commandType), ['task.update', 'undo.apply'])
+  assert.equal(afterUndo.tasks.find(({ id }) => id === 'metadata-task')?.title, 'Before')
+})
+
 test('undo token revision rejects compensation after an intervening command without saving', async () => {
   const service = fixture()
   await executeNext(service, 'cas-create', {
@@ -421,7 +528,98 @@ test('workspace import parses the complete candidate before replacement and cann
   assert.equal(after.commandReceipts.at(-1)?.commandType, 'workspace.import')
 })
 
-test('receipt cache ignores expired replay entries and keeps only the newest 500 active receipts', async () => {
+test('workspace import discards a forged replay receipt before later commands execute', async () => {
+  const service = fixture()
+  const initial = await service.query({ type: 'workspace.snapshot' })
+  const imported = structuredClone(initial)
+  imported.commandReceipts = [{
+    id: 'forged-replay-receipt',
+    idempotencyKey: 'future-create',
+    requestFingerprint: 'forged-replay-fingerprint',
+    commandType: 'task.create',
+    source: 'agent',
+    workspaceRevision: imported.revision,
+    result: {
+      receiptId: 'forged-result', workspaceRevision: imported.revision,
+      affected: [], events: [], undoToken: null, data: null,
+    },
+    createdAt: '2026-09-04T00:00:00.000Z',
+    expiresAt: '2026-10-04T00:00:00.000Z',
+  }]
+  await service.execute({
+    protocolVersion: 1,
+    idempotencyKey: 'trusted-import',
+    source: 'human-ui',
+    expectedWorkspaceRevision: initial.revision,
+    command: { type: 'workspace.import', state: imported },
+  })
+  const afterImport = await service.query({ type: 'workspace.snapshot' })
+  assert.deepEqual(afterImport.commandReceipts.map(({ idempotencyKey }) => idempotencyKey), ['trusted-import'])
+
+  const result = await service.execute({
+    protocolVersion: 1,
+    idempotencyKey: 'future-create',
+    source: 'agent',
+    expectedWorkspaceRevision: afterImport.revision,
+    command: {
+      type: 'task.create', taskId: 'future-task', listId: 'list:system:learning', title: 'Executed locally',
+    },
+  })
+  assert.notEqual(result.receiptId, 'forged-result')
+  assert.equal((await service.query({ type: 'task.get', taskId: 'future-task' }))?.title, 'Executed locally')
+})
+
+test('workspace import discards forged receipt authority before undo validation', async () => {
+  const service = fixture()
+  await executeNext(service, 'create-victim', {
+    type: 'task.create', taskId: 'victim', listId: 'list:system:learning', title: 'Must survive forged undo',
+  })
+  const initial = await service.query({ type: 'workspace.snapshot' })
+  const token = {
+    protocolVersion: 1 as const,
+    id: 'forged-undo-token',
+    commandReceiptId: 'forged-origin-receipt',
+    expectedWorkspaceRevision: initial.revision + 1,
+    compensation: { type: 'task.remove_created' as const, taskIds: ['victim'] },
+  }
+  const imported = structuredClone(initial)
+  imported.commandReceipts = [{
+    id: 'forged-origin-receipt',
+    idempotencyKey: 'forged-origin-key',
+    requestFingerprint: 'forged-undo-fingerprint',
+    commandType: 'task.create',
+    source: 'agent',
+    workspaceRevision: imported.revision,
+    result: {
+      receiptId: 'forged-origin-receipt', workspaceRevision: imported.revision,
+      affected: [], events: [], undoToken: token, data: null,
+    },
+    createdAt: '2026-09-04T00:00:00.000Z',
+    expiresAt: '2026-10-04T00:00:00.000Z',
+  }]
+  await service.execute({
+    protocolVersion: 1,
+    idempotencyKey: 'trusted-import',
+    source: 'human-ui',
+    expectedWorkspaceRevision: initial.revision,
+    command: { type: 'workspace.import', state: imported },
+  })
+  const afterImport = await service.query({ type: 'workspace.snapshot' })
+
+  await assert.rejects(
+    service.execute({
+      protocolVersion: 1,
+      idempotencyKey: 'forged-undo-attempt',
+      source: 'agent',
+      expectedWorkspaceRevision: afterImport.revision,
+      command: { type: 'undo.apply', token },
+    }),
+    (error) => error instanceof DomainCommandError && error.code === 'UNDO_TOKEN_NOT_FOUND',
+  )
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), afterImport)
+})
+
+test('receipt cache ignores expired replay entries and keeps the newest 500 by created time with a stable tie-breaker', async () => {
   const seedStore = createInMemoryWorkspaceStore()
   const seed = await seedStore.load()
   seed.commandReceipts = Array.from({ length: 501 }, (_, index) => {
@@ -430,6 +628,7 @@ test('receipt cache ignores expired replay entries and keeps only the newest 500
     return {
       id,
       idempotencyKey: expired ? 'receipt-prune-new' : `seed-key-${index}`,
+      requestFingerprint: `seed-fingerprint-${index}`,
       commandType: 'task.update',
       source: 'human-ui' as const,
       workspaceRevision: seed.revision,
@@ -438,7 +637,13 @@ test('receipt cache ignores expired replay entries and keeps only the newest 500
         workspaceRevision: seed.revision,
         affected: [], events: [], undoToken: null, data: null,
       },
-      createdAt: '2026-09-01T00:00:00.000Z',
+      createdAt: index === 0
+        ? '2026-09-01T23:30:00.000-02:00'
+        : index === 1
+          ? '2026-09-02T00:00:00.000+02:00'
+          : index === 2
+            ? '2026-09-01T22:00:00.000Z'
+            : '2026-09-02T00:30:00.000+02:00',
       expiresAt: expired ? '2026-09-03T00:00:00.000Z' : '2026-10-05T00:00:00.000Z',
     }
   })
@@ -448,7 +653,9 @@ test('receipt cache ignores expired replay entries and keeps only the newest 500
 
   assert.equal(after.commandReceipts.length, 500)
   assert.equal(after.commandReceipts.some(({ id }) => id === 'seed-receipt-500'), false)
-  assert.equal(after.commandReceipts.some(({ id }) => id === 'seed-receipt-0'), false)
+  assert.equal(after.commandReceipts.some(({ id }) => id === 'seed-receipt-0'), true)
+  assert.equal(after.commandReceipts.some(({ id }) => id === 'seed-receipt-1'), false)
+  assert.equal(after.commandReceipts.some(({ id }) => id === 'seed-receipt-2'), true)
   assert.equal(after.commandReceipts.at(-1)?.idempotencyKey, 'receipt-prune-new')
   assert.equal(after.tasks.some(({ id }) => id === 'task-one'), true)
 })
@@ -483,6 +690,35 @@ test('runtime protocol errors have stable codes and command source never bypasse
       command: { type: 'task.reopen', taskId: 'source-task', expectedRevision: 1 },
     }),
     (error) => error instanceof DomainCommandError && error.code === 'TASK_INVALID_TRANSITION',
+  )
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+})
+
+test('factory has no custom handler escape hatch around the catalog and central dispatcher', async () => {
+  let nextId = 0
+  const service = createTaskCapabilityService(
+    createInMemoryWorkspaceStore(),
+    () => NOW,
+    (kind) => `${kind}-${++nextId}`,
+    [{
+      type: 'custom.escape',
+      apply(state: { lists: Array<{ title: string }> }) {
+        state.lists[0]!.title = 'Escaped catalog'
+        return { affected: [], changes: [], events: [], compensation: null, data: null }
+      },
+    }] as never,
+  )
+  const before = await service.query({ type: 'workspace.snapshot' })
+
+  await assert.rejects(
+    service.execute({
+      protocolVersion: 1,
+      idempotencyKey: 'custom-escape',
+      source: 'agent',
+      expectedWorkspaceRevision: before.revision,
+      command: { type: 'custom.escape' },
+    } as unknown as CommandEnvelope),
+    (error) => error instanceof DomainCommandError && error.code === 'COMMAND_NOT_FOUND',
   )
   assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
 })
