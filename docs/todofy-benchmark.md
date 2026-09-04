@@ -27,7 +27,7 @@ UI 沿用 `study` 主题和既有 token，并把色板收敛为雾灰玻璃、�
 
 Todofy 仓库声明的许可不允许直接复制，因此这里只借鉴交互与架构事实，所有拾学代码均按自己的领域模型独立实现。
 
-TickTick 的公开产品形态以其[功能页](https://ticktick.com/features)、[Windows 页面](https://ticktick.com/windows)、[更新记录](https://ticktick.com/public/changelog/en.html)与[帮助中心](https://help.ticktick.com/)为准。本轮借鉴三栏桌面信息架构、移动端单栏推进、智能清单、清单管理、日期与多级优先级的产品模式；没有把日历多视图、协作、习惯、倒数日或 AI 扩进核心待办范围。未登录付费账号，因此付费边界与登录后拖动手感不作为已验证事实。
+TickTick 的公开产品形态以其[功能页](https://ticktick.com/features)、[Windows 页面](https://ticktick.com/windows)、[更新记录](https://ticktick.com/public/changelog/en.html)与[帮助中心](https://help.ticktick.com/)为准。v0.2.3 已借鉴三栏桌面信息架构、移动端单栏推进、智能清单、清单管理、日期与多级优先级；2026-09-04 确认的下一阶段再引入日历多视图、重复规则、离线自然语言和多提醒。协作、习惯、倒数日与 AI 执行仍不在本阶段。未登录付费账号，因此付费边界与登录后拖动手感不作为已验证事实。
 
 ## 3. 功能对比与取舍
 
@@ -57,10 +57,10 @@ TickTick 的公开产品形态以其[功能页](https://ticktick.com/features)�
 ### 不直接照搬的 Todofy 模块
 
 - `pinboard`：优先级已经进入任务模型、筛选与排序，不再增加一套相互竞争的置顶事实源。
-- 重复任务：Todofy 完成后推进同一任务日期；拾学完成会冻结一条证据记录，并通过 `nextAction` 生成下一任务、通过 `nextReviewOn` 安排复习。直接循环原任务会模糊每轮证据归属。
+- 重复任务：Todofy 完成后推进同一任务日期；下一阶段改为 `RecurrenceSeries + TaskOccurrence`，完成/跳过只改变当前发生项，并继续保留学习证据归属。
 - Pomodoro 与 Journal：拾学已有可暂停/恢复的 `StudySession`、scratchpad 和 completion records；重复引入同类模型会造成两套计时和笔记事实源。
-- 自然语言日期解析：对中文日期、时区与跨端一致性的验收成本高，本轮保留明确日期控件，避免误计划。
-- 指针拖拽：Todofy 为规避 WebView 原生 DnD 问题自行实现 Pointer Events。拾学本轮保留可访问的显式排序与键盘导航，跨清单拖拽留到独立位置字段落地后再做，避免改变全局数组顺序。
+- 自然语言日期解析：下一阶段以完全离线、确定性的中英文解析器实现；识别结果先显示为可编辑 chip，默认不删除标题原文，避免误计划。
+- 指针拖拽：Todofy 为规避 WebView 原生 DnD 问题自行实现 Pointer Events。拾学的日历拖动同样采用 Pointer Events，但释放前只更新预览，释放后统一调用能力命令，并提供完整键盘替代。
 
 ## 4. 模块拆分与验收点
 
@@ -93,3 +93,7 @@ npm run smoke:web-persistence
 ```
 
 Web 烟测会真实走过重置、快速新增、刷新持久化、编辑日期/优先级/笔记、搜索、即时完成、已完成视图、桌面三栏与移动深色截图，并把 console/page error 作为失败处理。
+
+## 6. 下一阶段详细方案
+
+2026-09-04 的产品访谈已确认“时间规划优先”的六 PR 路线。总规格见[拾学通用待办与时间规划基础规格](./superpowers/specs/2026-09-04-shixue-time-planning-foundation.md)，其中包含 v2→v3 数据迁移、重复发生项、多提醒、日历、离线快速新增、统一控件和未来“小拾”能力协议边界。根目录 `DESIGN.md` 与 `VISUAL_QA.md` 分别约束视觉实现和验收；在代表性方案得到确认前，业务实现不得自行冻结新视觉。

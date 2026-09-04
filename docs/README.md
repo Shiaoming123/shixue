@@ -21,6 +21,7 @@
 | 配置本地开发与 exFAT 工作区 | [development.md](./development.md) |
 | 定义产品目标、数据与交付边界 | [application-protocol.md](./application-protocol.md) |
 | 查看拾学与 Todofy 的源码级功能对标 | [todofy-benchmark.md](./todofy-benchmark.md) |
+| 评审拾学下一阶段时间规划方案 | [时间规划总规格](./superpowers/specs/2026-09-04-shixue-time-planning-foundation.md) · [视觉合同](../DESIGN.md) · [视觉验收](../VISUAL_QA.md) |
 | 了解 Release Kit 与发布边界 | [release-kit.md](./release-kit.md) |
 | 下载 Windows 免安装版、了解 Authenticode | [windows-distribution.md](./windows-distribution.md) |
 | 复盘 Windows v0.2.3 发布事故与门禁 | [windows-v0.2.3-release-retrospective.md](./windows-v0.2.3-release-retrospective.md) |
@@ -56,6 +57,8 @@
 | development.md | 本地开发：环境诊断、验证命令与 exFAT 处理 |
 | application-protocol.md | 应用协议：产品意图、能力、数据、降级与证据边界 |
 | todofy-benchmark.md | Todofy 固定提交的源码审计、功能取舍、落地模块与验收点 |
+| superpowers/specs/2026-09-04-shixue-time-planning-foundation.md | 通用任务、重复、NLP、多提醒、日历与未来 Agent 能力协议的总规格 |
+| ../DESIGN.md / ../VISUAL_QA.md | 时间规划视觉合同、统一控件规则与固定视口验收矩阵 |
 | release-kit.md | Release Kit：配置检查与发布成熟度边界 |
 | windows-distribution.md | Windows 免安装交付、SmartScreen 与 Authenticode 选择指南 |
 | windows-v0.2.3-release-retrospective.md | v0.2.3 Windows 交付事故、证据边界与防复发清单 |
