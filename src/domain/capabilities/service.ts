@@ -468,7 +468,12 @@ function canonicalJson(value: unknown, ancestors = new Set<object>()): string {
   if (ancestors.has(value)) throw jsonSafetyError()
   ancestors.add(value)
   try {
-    if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry, ancestors)).join(',')}]`
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.prototype.hasOwnProperty.call(value, index)) throw jsonSafetyError()
+      }
+      return `[${value.map((entry) => canonicalJson(entry, ancestors)).join(',')}]`
+    }
     if (!isRecord(value)) throw jsonSafetyError()
     return `{${Object.keys(value).sort()
       .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key], ancestors)}`).join(',')}}`

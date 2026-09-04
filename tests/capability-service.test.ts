@@ -789,6 +789,40 @@ test('rejects non-JSON-safe import requests with one stable domain error and no 
   }
 })
 
+test('rejects a sparse import array instead of replaying an empty-array receipt', async () => {
+  const service = fixture()
+  const initial = await service.query({ type: 'workspace.snapshot' })
+  const empty = structuredClone(initial)
+  empty.lists[0]!.successCriteria = []
+  const envelope: CommandEnvelope = {
+    protocolVersion: 1,
+    idempotencyKey: 'sparse-array-import',
+    source: 'human-ui',
+    expectedWorkspaceRevision: initial.revision,
+    command: { type: 'workspace.import', state: empty },
+  }
+  await service.execute(envelope)
+  const afterFirst = await service.query({ type: 'workspace.snapshot' })
+
+  const sparse = structuredClone(empty)
+  sparse.lists[0]!.successCriteria = new Array<string>(1)
+  await assert.rejects(
+    service.execute({ ...envelope, command: { type: 'workspace.import', state: sparse } }),
+    (error) => error instanceof DomainCommandError
+      && error.code === 'VALIDATION_ERROR'
+      && error.message === '[VALIDATION_ERROR] Command request must be JSON-safe.',
+  )
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), afterFirst)
+
+  const explicitNull = structuredClone(empty)
+  explicitNull.lists[0]!.successCriteria = [null] as unknown as string[]
+  await assert.rejects(
+    service.execute({ ...envelope, command: { type: 'workspace.import', state: explicitNull } }),
+    (error) => error instanceof DomainCommandError && error.code === 'IDEMPOTENCY_KEY_CONFLICT',
+  )
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), afterFirst)
+})
+
 test('factory has no custom handler escape hatch around the catalog and central dispatcher', async () => {
   let nextId = 0
   const service = createTaskCapabilityService(
