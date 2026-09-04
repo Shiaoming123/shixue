@@ -45,9 +45,10 @@ test('uses stable ASCII delivery filenames for the three Windows artifacts', () 
 
 test('uses one deterministic Cargo target root for custom and default builds', () => {
   const root = resolve('D:/repo')
+  const absoluteTarget = resolve(root, '..', 'shared', 'cargo')
   assert.equal(resolveCargoTargetRoot(root, {}), resolve(root, 'src-tauri', 'target'))
   assert.equal(resolveCargoTargetRoot(root, { CARGO_TARGET_DIR: 'build/cargo' }), resolve(root, 'build/cargo'))
-  assert.equal(resolveCargoTargetRoot(root, { CARGO_TARGET_DIR: 'D:/shared/cargo' }), resolve('D:/shared/cargo'))
+  assert.equal(resolveCargoTargetRoot(root, { CARGO_TARGET_DIR: absoluteTarget }), absoluteTarget)
 })
 
 test('uses Tauri mainBinaryName when the executable is renamed', async (t) => {
