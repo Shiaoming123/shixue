@@ -69,3 +69,10 @@ function parseValue(value: unknown): unknown {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
+
+export {
+  createWorkspaceExport,
+  parseWorkspaceExport,
+  WORKSPACE_EXPORT_FORMAT,
+  WORKSPACE_EXPORT_VERSION,
+} from '../workspace/data-port.ts'

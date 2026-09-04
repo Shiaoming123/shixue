@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { StudyState, StudyStateV1 } from '../study/types.ts'
+import type { WorkspaceStateV3 } from '../../domain/workspace/types.ts'
 
 export const DEFAULT_WEB_DATABASE_NAME = 'meow-study'
 
@@ -20,7 +21,7 @@ interface MeowDatabaseSchema extends DBSchema {
     key: string
     value: {
       key: string
-      state: StudyState | StudyStateV1
+      state: StudyState | StudyStateV1 | WorkspaceStateV3
     }
   }
 }
