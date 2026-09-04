@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-04
+
+### Fixed
+
+- 发布流水线改用当前 `tauri-action@v0` 实际接受的 `includeUpdaterJson` 与 `assetNamePattern` 参数。
+
 ## [0.2.1] - 2026-09-04
 
 ### Fixed

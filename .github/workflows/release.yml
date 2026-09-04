@@ -50,8 +50,8 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --bundles nsis,msi
-          uploadUpdaterJson: true
+          includeUpdaterJson: true
           # 让 Windows 优先分发 NSIS 安装包（.exe）而不是 MSI
           updaterJsonPreferNsis: true
           # 中文 productName 在 GitHub asset 名称中会被清洗；使用稳定 ASCII 名称保证签名匹配和 latest.json 生成。
-          releaseAssetNamePattern: 'Shixue_[version]_[arch][setup][ext]'
+          assetNamePattern: 'Shixue_[version]_[arch][setup][ext]'
