@@ -107,11 +107,11 @@ export function createTaskCapabilityService(
     async execute(envelope: CommandEnvelope): Promise<CommandResult> {
       const current = await store.load()
       const now = clock()
-      const requestFingerprint = fingerprintRequest(envelope)
+      const requestFingerprint = await fingerprintRequest(envelope)
       const cached = current.commandReceipts.find(({ idempotencyKey, expiresAt }) =>
         idempotencyKey === envelope.idempotencyKey && Date.parse(expiresAt) > Date.parse(now))
       if (cached) {
-        if (cached.requestFingerprint !== requestFingerprint) {
+        if (cached.requestFingerprint === null || cached.requestFingerprint !== requestFingerprint) {
           throw new DomainCommandError('IDEMPOTENCY_KEY_CONFLICT', 'Idempotency key belongs to a different request.', {
             idempotencyKey: envelope.idempotencyKey,
           })
@@ -221,7 +221,7 @@ function applyUndo(
   const token = command.token
   const original = state.commandReceipts.find(({ id }) => id === token.commandReceiptId)
   const storedToken = original?.result.undoToken
-  if (!original || !sameJson(storedToken, token)) {
+  if (!original || original.requestFingerprint === null || !sameJson(storedToken, token)) {
     throw new DomainCommandError('UNDO_TOKEN_NOT_FOUND', `Undo token is not backed by its command receipt: ${token.id}.`, {
       undoTokenId: token.id,
     })
@@ -440,27 +440,48 @@ function sameJson(left: JsonValue | undefined, right: unknown): boolean {
   return canonicalJson(left) === canonicalJson(right)
 }
 
-function fingerprintRequest(envelope: CommandEnvelope): string {
-  return canonicalJson({
-    protocolVersion: envelope.protocolVersion,
-    source: envelope.source,
-    expectedWorkspaceRevision: envelope.expectedWorkspaceRevision,
-    command: envelope.command,
-  })
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map((entry) => entry === undefined ? 'null' : canonicalJson(entry)).join(',')}]`
-  if (isRecord(value)) {
-    return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
+async function fingerprintRequest(envelope: CommandEnvelope): Promise<string> {
+  let request: string
+  try {
+    request = canonicalJson({
+      protocolVersion: envelope.protocolVersion,
+      source: envelope.source,
+      expectedWorkspaceRevision: envelope.expectedWorkspaceRevision,
+      command: envelope.command,
+    })
+  } catch (error) {
+    if (error instanceof DomainCommandError) throw error
+    throw jsonSafetyError()
   }
-  const serialized = JSON.stringify(value)
-  if (serialized === undefined) throw new DomainCommandError('VALIDATION_ERROR', 'Command request must be JSON-safe.')
-  return serialized
+  const bytes = new TextEncoder().encode(request)
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+  return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
 }
 
-function isRecord(value: unknown): value is Record<string, JsonValue> {
+function canonicalJson(value: unknown, ancestors = new Set<object>()): string {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw jsonSafetyError()
+    return JSON.stringify(value)
+  }
+  if (typeof value !== 'object') throw jsonSafetyError()
+  if (ancestors.has(value)) throw jsonSafetyError()
+  ancestors.add(value)
+  try {
+    if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry, ancestors)).join(',')}]`
+    if (!isRecord(value)) throw jsonSafetyError()
+    return `{${Object.keys(value).sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key], ancestors)}`).join(',')}}`
+  } finally {
+    ancestors.delete(value)
+  }
+}
+
+function jsonSafetyError(): DomainCommandError {
+  return new DomainCommandError('VALIDATION_ERROR', 'Command request must be JSON-safe.')
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && !Array.isArray(value) && typeof value === 'object'
 }
 

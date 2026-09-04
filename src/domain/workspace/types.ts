@@ -173,7 +173,7 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
 export interface CommandReceipt {
   id: string
   idempotencyKey: string
-  requestFingerprint: string
+  requestFingerprint: string | null
   commandType: string
   source: CommandSource
   workspaceRevision: number

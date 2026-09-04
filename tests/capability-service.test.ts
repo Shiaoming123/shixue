@@ -128,7 +128,7 @@ test('persists a key-independent canonical fingerprint and replays reordered equ
   const first = await firstService.execute(firstEnvelope)
   const firstState = await firstService.query({ type: 'workspace.snapshot' })
   const firstFingerprint = (firstState.commandReceipts[0] as { requestFingerprint?: unknown }).requestFingerprint
-  assert.equal(typeof firstFingerprint, 'string')
+  assert.match(String(firstFingerprint), /^sha256:[0-9a-f]{64}$/)
 
   const reordered: CommandEnvelope = {
     command: {
@@ -147,6 +147,71 @@ test('persists a key-independent canonical fingerprint and replays reordered equ
   const secondState = await secondService.query({ type: 'workspace.snapshot' })
   const secondFingerprint = (secondState.commandReceipts[0] as { requestFingerprint?: unknown }).requestFingerprint
   assert.equal(secondFingerprint, firstFingerprint)
+})
+
+test('keeps large repeated workspace import fingerprints bounded and snapshots loadable', async () => {
+  const service = fixture()
+  const initial = await service.query({ type: 'workspace.snapshot' })
+  const large = structuredClone(initial)
+  large.lists[0]!.goal = 'g'.repeat(100_000)
+  let candidate = large
+
+  for (let index = 0; index < 3; index += 1) {
+    const before = await service.query({ type: 'workspace.snapshot' })
+    await service.execute({
+      protocolVersion: 1,
+      idempotencyKey: `large-import-${index}`,
+      source: 'human-ui',
+      expectedWorkspaceRevision: before.revision,
+      command: { type: 'workspace.import', state: candidate },
+    })
+    const after = await service.query({ type: 'workspace.snapshot' })
+    assert.equal(after.lists[0]?.goal.length, 100_000)
+    assert.equal(after.commandReceipts.length, 1)
+    assert.match(String(after.commandReceipts[0]?.requestFingerprint), /^sha256:[0-9a-f]{64}$/)
+    candidate = structuredClone(after)
+  }
+})
+
+test('loads legacy unbound receipts but grants them neither replay nor undo authority', async () => {
+  const writer = fixture()
+  await executeNext(writer, 'legacy-create', {
+    type: 'task.create', taskId: 'legacy-task', listId: 'list:system:learning', title: 'Before',
+  })
+  const update = await executeNext(writer, 'legacy-update', {
+    type: 'task.update', taskId: 'legacy-task', expectedRevision: 1, patch: { title: 'After' },
+  })
+  const legacyState = await writer.query({ type: 'workspace.snapshot' })
+  for (const receipt of legacyState.commandReceipts) {
+    delete (receipt as { requestFingerprint?: string }).requestFingerprint
+  }
+
+  const service = fixture(legacyState)
+  const loaded = await service.query({ type: 'workspace.snapshot' })
+  assert.deepEqual(loaded.commandReceipts.map(({ requestFingerprint }) => requestFingerprint), [null, null])
+  await assert.rejects(
+    service.execute({
+      protocolVersion: 1,
+      idempotencyKey: 'legacy-update',
+      source: 'agent',
+      expectedWorkspaceRevision: loaded.revision,
+      command: { type: 'task.delete', taskId: 'legacy-task', expectedRevision: 2 },
+    }),
+    (error) => error instanceof DomainCommandError && error.code === 'IDEMPOTENCY_KEY_CONFLICT',
+  )
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), loaded)
+
+  await assert.rejects(
+    service.execute({
+      protocolVersion: 1,
+      idempotencyKey: 'legacy-undo',
+      source: 'human-ui',
+      expectedWorkspaceRevision: loaded.revision,
+      command: { type: 'undo.apply', token: update.undoToken! },
+    }),
+    (error) => error instanceof DomainCommandError && error.code === 'UNDO_TOKEN_NOT_FOUND',
+  )
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), loaded)
 })
 
 test('rejects stale workspace and entity revisions without changing the workspace', async () => {
@@ -546,6 +611,7 @@ test('workspace import discards a forged replay receipt before later commands ex
     createdAt: '2026-09-04T00:00:00.000Z',
     expiresAt: '2026-10-04T00:00:00.000Z',
   }]
+  delete (imported.commandReceipts[0] as { requestFingerprint?: string }).requestFingerprint
   await service.execute({
     protocolVersion: 1,
     idempotencyKey: 'trusted-import',
@@ -692,6 +758,35 @@ test('runtime protocol errors have stable codes and command source never bypasse
     (error) => error instanceof DomainCommandError && error.code === 'TASK_INVALID_TRANSITION',
   )
   assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+})
+
+test('rejects non-JSON-safe import requests with one stable domain error and no save', async (context) => {
+  const cyclic: Record<string, unknown> = { version: 3 }
+  cyclic.self = cyclic
+  const cases: Array<[string, unknown]> = [
+    ['bigint', { version: 3, unsupported: 1n }],
+    ['cycle', cyclic],
+  ]
+
+  for (const [label, state] of cases) {
+    await context.test(label, async () => {
+      const service = fixture()
+      const before = await service.query({ type: 'workspace.snapshot' })
+      await assert.rejects(
+        service.execute({
+          protocolVersion: 1,
+          idempotencyKey: `unsafe-${label}`,
+          source: 'human-ui',
+          expectedWorkspaceRevision: before.revision,
+          command: { type: 'workspace.import', state },
+        }),
+        (error) => error instanceof DomainCommandError
+          && error.code === 'VALIDATION_ERROR'
+          && error.message === '[VALIDATION_ERROR] Command request must be JSON-safe.',
+      )
+      assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+    })
+  }
 })
 
 test('factory has no custom handler escape hatch around the catalog and central dispatcher', async () => {

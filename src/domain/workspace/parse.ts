@@ -362,7 +362,9 @@ function parseCommandReceipt(raw: unknown, index: number): CommandReceipt {
   const value = requireRecord(raw, `Command receipt ${index}`)
   return {
     id: requireText(value.id, 'Command receipt id'), idempotencyKey: requireText(value.idempotencyKey, 'Command receipt idempotencyKey'),
-    requestFingerprint: requireText(value.requestFingerprint, 'Command receipt requestFingerprint'),
+    requestFingerprint: value.requestFingerprint === undefined || value.requestFingerprint === null
+      ? null
+      : requireText(value.requestFingerprint, 'Command receipt requestFingerprint'),
     commandType: requireText(value.commandType, 'Command receipt commandType'),
     source: parseEnum(value.source, ['human-ui', 'keyboard', 'notification', 'agent'], 'Command receipt source'),
     workspaceRevision: requirePositiveInteger(value.workspaceRevision, 'Command receipt workspaceRevision'),
