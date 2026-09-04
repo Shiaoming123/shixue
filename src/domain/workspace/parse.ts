@@ -351,7 +351,7 @@ function parseReviewTaskLink(raw: unknown, index: number): ReviewTaskLink {
   const value = requireRecord(raw, `Review task link ${index}`)
   return {
     id: requireText(value.id, 'Review task link id'), completionRecordId: requireText(value.completionRecordId, 'Review task link completionRecordId'),
-    taskId: requireText(value.taskId, 'Review task link taskId'), occurrenceId: parseNullableText(value.occurrenceId, 'Review task link occurrenceId'),
+    reviewTaskId: requireText(value.reviewTaskId, 'Review task link reviewTaskId'), occurrenceId: parseNullableText(value.occurrenceId, 'Review task link occurrenceId'),
     reviewStage: requireRangeInteger(value.reviewStage, 0, 3, 'Review task link reviewStage') as ReviewTaskLink['reviewStage'],
     dueOn: requireDateOnly(value.dueOn, 'Review task link dueOn'), completedAt: parseNullableIsoDateTime(value.completedAt, 'Review task link completedAt'),
     createdAt: requireIsoDateTime(value.createdAt, 'Review task link createdAt'), updatedAt: requireIsoDateTime(value.updatedAt, 'Review task link updatedAt'),
@@ -440,9 +440,8 @@ function assertReferences(state: WorkspaceStateV3): void {
   for (const link of state.reviewTaskLinks) {
     const record = records.get(link.completionRecordId)
     if (!record) throw new Error(`Review task link ${link.id} has unknown completionRecordId.`)
-    if (!tasks.has(link.taskId)) throw new Error(`Review task link ${link.id} has unknown taskId.`)
-    if (record.taskId !== link.taskId) throw new Error(`Review task link ${link.id} completion belongs to another task.`)
-    if (link.occurrenceId) assertOccurrenceTask(occurrences.get(link.occurrenceId), series, link.taskId, `Review task link ${link.id}`)
+    if (!tasks.has(link.reviewTaskId)) throw new Error(`Review task link ${link.id} has unknown reviewTaskId.`)
+    if (link.occurrenceId) assertOccurrenceTask(occurrences.get(link.occurrenceId), series, link.reviewTaskId, `Review task link ${link.id}`)
   }
 }
 

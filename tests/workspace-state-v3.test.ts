@@ -247,7 +247,7 @@ test('rejects an id reused by different root entity kinds', () => {
   assert.throws(() => parseWorkspaceState(state), /duplicate entity id/)
 })
 
-test('rejects a review link whose completion record belongs to another task', () => {
+test('accepts a link from a source completion task to a distinct visible review task', () => {
   const state = validWorkspaceState()
   state.tasks.push({ ...state.tasks[0], id: 'task-2', title: 'Review rent' })
   state.taskEvents.push({ ...state.taskEvents[0], id: 'event-2', sequence: 2, taskId: 'task-2' })
@@ -274,7 +274,7 @@ test('rejects a review link whose completion record belongs to another task', ()
   state.reviewTaskLinks.push({
     id: 'review-link-1',
     completionRecordId: 'record-1',
-    taskId: 'task-2',
+    reviewTaskId: 'task-2',
     occurrenceId: null,
     reviewStage: 0,
     dueOn: '2026-09-05',
@@ -283,7 +283,53 @@ test('rejects a review link whose completion record belongs to another task', ()
     updatedAt: '2026-09-04T09:00:00+08:00',
   })
 
-  assert.throws(() => parseWorkspaceState(state), /completion belongs to another task/)
+  assert.deepEqual(parseWorkspaceState(state), state)
+})
+
+test('rejects a review link with an unknown visible review task', () => {
+  const state = validWorkspaceState()
+  state.completionRecords.push({
+    id: 'record-1', taskId: 'task-1', topicId: null, sessionIds: [], taskTitleSnapshot: 'Pay rent',
+    learned: 'Paid on time', evidence: 'Bank receipt', blocker: '', nextAction: 'Review next month', mastery: null,
+    completedAt: '2026-09-04T09:00:00+08:00', reviewStage: 0, nextReviewOn: null, lastReviewResult: null,
+    lastReviewedAt: null, createdAt: '2026-09-04T09:00:00+08:00', updatedAt: '2026-09-04T09:00:00+08:00', deletedAt: null,
+  })
+  state.reviewTaskLinks.push({
+    id: 'review-link-1', completionRecordId: 'record-1', reviewTaskId: 'missing', occurrenceId: null,
+    reviewStage: 0, dueOn: '2026-09-05', completedAt: null,
+    createdAt: '2026-09-04T09:00:00+08:00', updatedAt: '2026-09-04T09:00:00+08:00',
+  })
+
+  assert.throws(() => parseWorkspaceState(state), /unknown reviewTaskId/)
+})
+
+test('rejects a review occurrence that does not belong to its visible review task', () => {
+  const state = validWorkspaceState()
+  state.tasks.push({ ...state.tasks[0], id: 'task-2', title: 'Review rent' })
+  state.taskEvents.push({ ...state.taskEvents[0], id: 'event-2', sequence: 2, taskId: 'task-2' })
+  state.completionRecords.push({
+    id: 'record-1', taskId: 'task-1', topicId: null, sessionIds: [], taskTitleSnapshot: 'Pay rent',
+    learned: 'Paid on time', evidence: 'Bank receipt', blocker: '', nextAction: 'Review next month', mastery: null,
+    completedAt: '2026-09-04T09:00:00+08:00', reviewStage: 0, nextReviewOn: null, lastReviewResult: null,
+    lastReviewedAt: null, createdAt: '2026-09-04T09:00:00+08:00', updatedAt: '2026-09-04T09:00:00+08:00', deletedAt: null,
+  })
+  state.recurrenceSeries.push({
+    id: 'series-1', revision: 1, taskId: 'task-1', cadence: { kind: 'daily', interval: 1 },
+    basis: 'fixed_schedule', anchorAt: '2026-09-04T09:00:00+08:00', end: { kind: 'never' },
+    timezone: 'Asia/Shanghai', createdThrough: null, createdCount: 0,
+  })
+  state.tasks[0].recurrenceSeriesId = 'series-1'
+  state.occurrences.push({
+    id: 'occurrence-1', seriesId: 'series-1', ordinal: 1, scheduledAt: '2026-09-04T09:00:00+08:00',
+    status: 'pending', override: null, completedAt: null, revision: 1,
+  })
+  state.reviewTaskLinks.push({
+    id: 'review-link-1', completionRecordId: 'record-1', reviewTaskId: 'task-2', occurrenceId: 'occurrence-1',
+    reviewStage: 0, dueOn: '2026-09-05', completedAt: null,
+    createdAt: '2026-09-04T09:00:00+08:00', updatedAt: '2026-09-04T09:00:00+08:00',
+  })
+
+  assert.throws(() => parseWorkspaceState(state), /occurrence belongs to another task/)
 })
 
 test('rejects a delivery occurrence that differs from its occurrence-scoped reminder rule', () => {

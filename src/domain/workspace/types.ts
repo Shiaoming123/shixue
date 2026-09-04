@@ -158,7 +158,7 @@ export interface ReminderDelivery {
 export interface ReviewTaskLink {
   id: string
   completionRecordId: string
-  taskId: string
+  reviewTaskId: string
   occurrenceId: string | null
   reviewStage: 0 | 1 | 2 | 3
   dueOn: string
