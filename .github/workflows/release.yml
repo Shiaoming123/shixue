@@ -14,9 +14,18 @@ jobs:
   publish:
     permissions:
       contents: write
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Require version tag source
+        if: github.ref_type != 'tag'
+        shell: bash
+        run: |
+          echo "Release workflow must run from an existing version tag." >&2
+          exit 1
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -46,8 +55,14 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: 'v__VERSION__'
-          releaseBody: '更新内容见 CHANGELOG。'
-          releaseDraft: false
+          releaseBody: |
+            更新内容见 CHANGELOG。
+
+            Windows 用户可直接下载名称以 `_x64_Portable.exe` 结尾的文件免安装运行。
+            便携版仍将学习数据写入当前用户的 AppData，不会把数据保存在 EXE 旁边；运行环境需要 Microsoft Edge WebView2 Runtime。
+            当前 Windows 二进制未进行 Authenticode 代码签名，首次运行可能出现 SmartScreen 提示。
+          # 先保持草稿；Portable EXE 上传并核验成功后才公开，避免留下不完整正式发布。
+          releaseDraft: true
           prerelease: false
           args: --bundles nsis,msi
           includeUpdaterJson: true
@@ -55,3 +70,55 @@ jobs:
           updaterJsonPreferNsis: true
           # 中文 productName 在 GitHub asset 名称中会被清洗；使用稳定 ASCII 名称保证签名匹配和 latest.json 生成。
           assetNamePattern: 'Shixue_[version]_[arch][setup][ext]'
+
+      - name: Stage portable Windows EXE
+        id: portable
+        shell: pwsh
+        run: node scripts/stage-windows-portable.mjs
+
+      - name: Upload portable Windows EXE
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.portable.outputs.tag }}" `
+            "${{ steps.portable.outputs.portable_path }}" `
+            "${{ steps.portable.outputs.checksum_path }}" `
+            --clobber
+
+      - name: Verify portable Windows release asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $release = gh release view "${{ steps.portable.outputs.tag }}" --json assets | ConvertFrom-Json
+          $portableName = "${{ steps.portable.outputs.portable_name }}"
+          $checksumName = "${{ steps.portable.outputs.checksum_name }}"
+          $portableAsset = $release.assets | Where-Object name -eq $portableName | Select-Object -First 1
+          if (-not $portableAsset) {
+            throw "GitHub Release is missing required portable asset: $portableName"
+          }
+          $expectedDigest = "sha256:${{ steps.portable.outputs.sha256 }}"
+          if ($portableAsset.digest -ne $expectedDigest) {
+            throw "Portable asset digest mismatch: expected $expectedDigest, got $($portableAsset.digest)"
+          }
+          if ($release.assets.name -notcontains $checksumName) {
+            throw "GitHub Release is missing required checksum asset: $checksumName"
+          }
+          $checksumDirectory = Join-Path $env:RUNNER_TEMP 'shixue-portable-verification'
+          New-Item -ItemType Directory -Path $checksumDirectory -Force | Out-Null
+          gh release download "${{ steps.portable.outputs.tag }}" `
+            --pattern $checksumName `
+            --dir $checksumDirectory `
+            --clobber
+          $uploadedChecksum = (Get-Content -Raw (Join-Path $checksumDirectory $checksumName)).Trim()
+          $expectedChecksum = "${{ steps.portable.outputs.sha256 }}  $portableName"
+          if ($uploadedChecksum -ne $expectedChecksum) {
+            throw "Portable checksum asset content does not match the staged executable"
+          }
+
+      - name: Publish verified GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ steps.portable.outputs.tag }}" --draft=false

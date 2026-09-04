@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-04
+
+### Added
+
+- GitHub Release 现提供稳定命名的 Windows x64 Portable EXE 与独立 SHA-256 校验文件；上传并回查成功后才公开 Release。
+- 新增个人开发者 Windows 分发与 Authenticode 选择指南，明确 Portable、WebView2、AppData、updater 签名与 SmartScreen 边界。
+
+### Changed
+
+- 中英文 README 重写为完整产品入口，并显眼标注拾学基于 MeowStarter 构建。
+
 ## [0.2.2] - 2026-09-04
 
 ### Fixed

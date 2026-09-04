@@ -14,7 +14,14 @@ import { fileURLToPath } from 'node:url'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const releaseRoot = resolve(projectRoot, 'release-artifacts', 'windows')
-const tauriTarget = resolve(projectRoot, 'src-tauri', 'target', 'release')
+
+export function resolveCargoTargetRoot(root = projectRoot, environment = process.env) {
+  const configured = environment.CARGO_TARGET_DIR?.trim()
+  return configured ? resolve(root, configured) : resolve(root, 'src-tauri', 'target')
+}
+
+const cargoTargetRoot = resolveCargoTargetRoot()
+const tauriTarget = resolve(cargoTargetRoot, 'release')
 
 export function assertDeliveryPath(root, candidate) {
   const resolvedRoot = resolve(root)
@@ -46,12 +53,52 @@ export function selectSingleArtifact(candidates, extension, version) {
   return matches[0]
 }
 
+export function assertArtifactSet(artifacts) {
+  if (!Array.isArray(artifacts) || artifacts.length !== 3) {
+    throw new Error('Windows delivery manifest must describe NSIS, MSI, and portable artifacts.')
+  }
+  const kinds = artifacts.map((artifact) => artifact.kind)
+  const files = artifacts.map((artifact) => artifact.file)
+  if (new Set(kinds).size !== 3 || !['nsis', 'msi', 'portable'].every((kind) => kinds.includes(kind))) {
+    throw new Error('Windows delivery manifest must contain one unique NSIS, MSI, and portable artifact.')
+  }
+  if (new Set(files).size !== files.length) {
+    throw new Error('Windows delivery manifest artifact filenames must be unique.')
+  }
+}
+
+export function hasWindowsBinaryHeader(contents, kind) {
+  if (kind === 'msi') {
+    return contents.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]))
+  }
+  const peOffset = contents.length >= 0x40 ? contents.readUInt32LE(0x3c) : -1
+  return contents.subarray(0, 2).equals(Buffer.from('MZ'))
+    && peOffset >= 0
+    && peOffset <= contents.length - 4
+    && contents.subarray(peOffset, peOffset + 4).equals(Buffer.from([0x50, 0x45, 0, 0]))
+}
+
+export function assertDeliveryMetadata(manifest, expected) {
+  for (const field of ['productName', 'packageName', 'binaryName', 'identifier', 'version', 'architecture']) {
+    if (manifest[field] !== expected[field]) {
+      throw new Error(`Windows delivery manifest ${field} does not match the current build configuration.`)
+    }
+  }
+}
+
+export function assertUniqueArtifactDigests(digests) {
+  if (new Set(digests).size !== digests.length) {
+    throw new Error('Windows delivery artifacts must not contain byte-identical binaries.')
+  }
+}
+
 function runCommand(command, args) {
   return new Promise((resolveCommand, rejectCommand) => {
     const child = spawn(command, args, {
       cwd: projectRoot,
       stdio: 'inherit',
       windowsHide: true,
+      env: { ...process.env, CARGO_TARGET_DIR: cargoTargetRoot },
     })
     child.once('error', rejectCommand)
     child.once('exit', (code, signal) => {
@@ -78,25 +125,22 @@ async function sha256(path) {
 
 async function assertBinaryHeader(path, kind) {
   const contents = await readFile(path)
-  const expected = kind === 'msi'
-    ? Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
-    : Buffer.from('MZ')
-  if (!contents.subarray(0, expected.length).equals(expected)) {
+  if (!hasWindowsBinaryHeader(contents, kind)) {
     throw new Error(`Invalid ${kind.toUpperCase()} binary header: ${path}`)
   }
 }
 
-export async function auditWindowsDelivery(directory) {
+export async function auditWindowsDelivery(directory, expected) {
   const manifestPath = resolve(directory, 'manifest.json')
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   if (manifest.platform !== 'windows' || manifest.signing !== 'unsigned-local') {
     throw new Error('Windows delivery manifest has an unexpected platform or signing status.')
   }
-  if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length !== 3) {
-    throw new Error('Windows delivery manifest must describe NSIS, MSI, and portable artifacts.')
-  }
+  assertArtifactSet(manifest.artifacts)
+  assertDeliveryMetadata(manifest, expected)
 
   const checksums = []
+  const artifactDigests = []
   for (const artifact of manifest.artifacts) {
     const artifactPath = assertDeliveryPath(directory, resolve(directory, artifact.file))
     const artifactStat = await stat(artifactPath)
@@ -107,9 +151,11 @@ export async function auditWindowsDelivery(directory) {
     if (digest !== artifact.sha256) {
       throw new Error(`Windows delivery artifact checksum mismatch: ${artifact.file}`)
     }
+    artifactDigests.push(digest)
     await assertBinaryHeader(artifactPath, artifact.kind)
     checksums.push(`${digest}  ${artifact.file}`)
   }
+  assertUniqueArtifactDigests(artifactDigests)
 
   const expectedChecksums = `${checksums.sort().join('\n')}\n`
   const actualChecksums = await readFile(resolve(directory, 'SHA256SUMS.txt'), 'utf8')
@@ -119,11 +165,11 @@ export async function auditWindowsDelivery(directory) {
   return manifest
 }
 
-async function readConfiguration() {
+export async function readWindowsBuildMetadata(root = projectRoot) {
   const [packageJson, tauriConfig, cargoManifest] = await Promise.all([
-    readFile(resolve(projectRoot, 'package.json'), 'utf8').then(JSON.parse),
-    readFile(resolve(projectRoot, 'src-tauri', 'tauri.conf.json'), 'utf8').then(JSON.parse),
-    readFile(resolve(projectRoot, 'src-tauri', 'Cargo.toml'), 'utf8'),
+    readFile(resolve(root, 'package.json'), 'utf8').then(JSON.parse),
+    readFile(resolve(root, 'src-tauri', 'tauri.conf.json'), 'utf8').then(JSON.parse),
+    readFile(resolve(root, 'src-tauri', 'Cargo.toml'), 'utf8'),
   ])
   const cargoVersion = cargoManifest.match(/^version\s*=\s*"([^"]+)"/m)?.[1]
   const cargoPackageName = cargoManifest.match(/^name\s*=\s*"([^"]+)"/m)?.[1]
@@ -135,7 +181,8 @@ async function readConfiguration() {
     throw new Error('Windows packaging requires a product name and identifier.')
   }
   return {
-    cargoPackageName,
+    packageName: cargoPackageName,
+    binaryName: tauriConfig.mainBinaryName?.trim() || cargoPackageName,
     identifier: tauriConfig.identifier,
     productName: tauriConfig.productName,
     version: packageJson.version,
@@ -144,7 +191,7 @@ async function readConfiguration() {
 
 async function buildDelivery() {
   if (process.platform !== 'win32') throw new Error('Windows delivery packaging only runs on Windows.')
-  const config = await readConfiguration()
+  const config = await readWindowsBuildMetadata()
   const architecture = process.arch === 'x64' ? 'x64' : process.arch
   const outputDirectory = assertDeliveryPath(releaseRoot, resolve(releaseRoot, config.version))
 
@@ -166,7 +213,7 @@ async function buildDelivery() {
   const sources = {
     nsis: selectSingleArtifact(nsisCandidates, '-setup.exe', config.version),
     msi: selectSingleArtifact(msiCandidates, '.msi', config.version),
-    portable: resolve(tauriTarget, `${config.cargoPackageName}.exe`),
+    portable: resolve(tauriTarget, `${config.binaryName}.exe`),
   }
   const portableStat = await stat(sources.portable)
   if (!portableStat.isFile()) throw new Error(`Missing Tauri release executable: ${sources.portable}`)
@@ -191,7 +238,8 @@ async function buildDelivery() {
   const manifest = {
     schemaVersion: 1,
     productName: config.productName,
-    packageName: config.cargoPackageName,
+    packageName: config.packageName,
+    binaryName: config.binaryName,
     identifier: config.identifier,
     version: config.version,
     platform: 'windows',
@@ -220,14 +268,15 @@ async function buildDelivery() {
     ].join('\r\n'),
   )
 
-  await auditWindowsDelivery(outputDirectory)
+  await auditWindowsDelivery(outputDirectory, { ...config, architecture })
   console.log(`Windows delivery package passed audit: ${relative(projectRoot, outputDirectory)}`)
 }
 
 async function auditExistingDelivery() {
-  const { version } = await readConfiguration()
-  const outputDirectory = assertDeliveryPath(releaseRoot, resolve(releaseRoot, version))
-  await auditWindowsDelivery(outputDirectory)
+  const config = await readWindowsBuildMetadata()
+  const architecture = process.arch === 'x64' ? 'x64' : process.arch
+  const outputDirectory = assertDeliveryPath(releaseRoot, resolve(releaseRoot, config.version))
+  await auditWindowsDelivery(outputDirectory, { ...config, architecture })
   console.log(`Windows delivery package passed audit: ${relative(projectRoot, outputDirectory)}`)
 }
 

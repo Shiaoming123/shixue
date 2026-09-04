@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import test from 'node:test'
 import { findAppleDoubleFiles, removeAppleDoubleFiles } from '../scripts/release-kit/appledouble.mjs'
-import { inspectReleaseConfig } from '../scripts/release-kit/config.mjs'
+import { inspectReleaseConfig, validateWindowsReleaseWorkflow } from '../scripts/release-kit/config.mjs'
 import { inspectEnvironment, prepareCargoEnvironment } from '../scripts/release-kit/environment.mjs'
 import { getNpmInvocation, runNpmCommand } from '../scripts/release-kit/npm-command.mjs'
 import { createReleaseProvenance } from '../scripts/release-kit/provenance.mjs'
@@ -274,10 +274,87 @@ test('accepts a non-placeholder HTTPS updater endpoint', async (t) => {
       },
     },
   }))
+  await mkdir(join(fixtureRoot, '.github', 'workflows'), { recursive: true })
+  await writeFile(join(fixtureRoot, '.github', 'workflows', 'release.yml'), `
+runs-on: windows-latest
+uses: tauri-apps/tauri-action@v0
+args: --bundles nsis,msi
+releaseDraft: true
+- name: Require version tag source
+  if: github.ref_type != 'tag'
+- name: Stage portable Windows EXE
+  run: node scripts/stage-windows-portable.mjs
+- name: Upload portable Windows EXE
+  run: gh release upload tag path --clobber
+- name: Verify portable Windows release asset
+  run: |
+    gh release view tag --json assets
+    if ($portableAsset.digest -ne $expectedDigest) { throw 'digest mismatch' }
+    gh release download tag
+    if ($uploadedChecksum -ne $expectedChecksum) { throw 'checksum mismatch' }
+- name: Publish verified GitHub Release
+  run: gh release edit tag --draft=false
+`)
 
   const result = await inspectReleaseConfig(fixtureRoot, 'release')
   assert.deepEqual(result.errors, [])
   assert.deepEqual(result.warnings, [])
+})
+
+test('formal Windows releases require staging, uploading, and verifying the portable EXE', () => {
+  const validWorkflow = `
+runs-on: windows-latest
+uses: tauri-apps/tauri-action@v0
+args: --bundles nsis,msi
+releaseDraft: true
+- name: Require version tag source
+  if: github.ref_type != 'tag'
+- name: Stage portable Windows EXE
+  run: node scripts/stage-windows-portable.mjs
+- name: Upload portable Windows EXE
+  run: gh release upload tag path --clobber
+- name: Verify portable Windows release asset
+  run: |
+    gh release view tag --json assets
+    if ($portableAsset.digest -ne $expectedDigest) { throw 'digest mismatch' }
+    gh release download tag
+    if ($uploadedChecksum -ne $expectedChecksum) { throw 'checksum mismatch' }
+- name: Publish verified GitHub Release
+  run: gh release edit tag --draft=false
+`
+  assert.deepEqual(validateWindowsReleaseWorkflow(validWorkflow), [])
+  assert.match(
+    validateWindowsReleaseWorkflow(validWorkflow.replace(/gh release upload[^\n]+/, '')).join('\n'),
+    /upload the staged portable EXE/,
+  )
+  assert.match(
+    validateWindowsReleaseWorkflow(validWorkflow.replace(/gh release view[^\n]+/, '')).join('\n'),
+    /verify uploaded portable bytes and checksum content/,
+  )
+  assert.match(
+    validateWindowsReleaseWorkflow(validWorkflow.replace('releaseDraft: true', 'releaseDraft: false')).join('\n'),
+    /keep the Release in draft/,
+  )
+  assert.match(
+    validateWindowsReleaseWorkflow(validWorkflow.replace("github.ref_type != 'tag'", "github.ref_type == 'branch'")).join('\n'),
+    /reject branch-based manual dispatches/,
+  )
+  assert.match(
+    validateWindowsReleaseWorkflow(validWorkflow.replace('$portableAsset.digest', '$portableAsset.name')).join('\n'),
+    /verify uploaded portable bytes and checksum content/,
+  )
+  assert.match(
+    validateWindowsReleaseWorkflow(validWorkflow.replace('gh release download tag', '# no checksum download')).join('\n'),
+    /verify uploaded portable bytes and checksum content/,
+  )
+  assert.notDeepEqual(
+    validateWindowsReleaseWorkflow(validWorkflow.split('\n').map((line) => `# ${line}`).join('\n')),
+    [],
+  )
+  const publishBeforeVerify = validWorkflow
+    .replace('- name: Verify portable Windows release asset', '- name: Publish verified GitHub Release')
+    .replace('- name: Publish verified GitHub Release\n  run: gh release edit tag --draft=false', '- name: Verify portable Windows release asset\n  run: gh release edit tag --draft=false')
+  assert.match(validateWindowsReleaseWorkflow(publishBeforeVerify).join('\n'), /in that order/)
 })
 
 test('reports missing updater signing configuration according to inspection mode', async (t) => {

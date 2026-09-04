@@ -55,9 +55,19 @@ database. NSIS uses Simplified Chinese and installs for the current user.
 Only `template` and `release` are valid mode values. Unknown values fail instead of falling back to template mode.
 
 Tag releases run that strict mode before the Windows-only `tauri-action` starts. Successful
-`v*.*.*` builds publish NSIS and MSI assets plus updater metadata to a non-draft GitHub Release.
+`v*.*.*` builds publish NSIS and MSI assets, updater metadata, and the stable-name
+`Shixue_<version>_x64_Portable.exe` plus its `.sha256` proof to a non-draft GitHub Release.
 Release assets use the stable `Shixue_<version>_<arch>` ASCII prefix so GitHub does not
 sanitize the Chinese product name and break updater-signature matching.
+After `tauri-action` creates the draft and attaches installer assets, the workflow stages the release
+binary under `release-artifacts/github-release/windows/<version>/`, uploads both files
+with `gh release upload --clobber`, and
+queries the created Release to fail the job if the portable EXE is absent. Strict
+`npm run release:check -- --mode=release` also rejects a workflow that removes the
+stage, upload, or post-upload verification steps.
+The Release stays a draft through those steps and is published only after both the
+portable EXE and checksum are confirmed, so a failed upload cannot leave an incomplete
+formal Release visible to users.
 They also run:
 
 ```bash
@@ -115,6 +125,20 @@ source. Upload them as release assets only after the source commit and release
 tag are fixed. The current local package is explicitly marked
 `unsigned-local`; Windows SmartScreen may warn and this package must not be
 described as a signed public release.
+
+The portable EXE is “no installer required”, not “self-contained data”. It uses the
+same Tauri application identity as the installed editions, so SQLite and application
+preferences remain under the current Windows user's AppData-managed application
+directory rather than beside the EXE. Moving or deleting the EXE does not move or
+delete that learning data. The raw executable also depends on the Microsoft Edge
+WebView2 Runtime already being available on the computer; unlike the installers, it
+does not bootstrap that runtime for the user.
+
+Tauri updater signatures and Authenticode are separate trust mechanisms. The release
+workflow can sign updater payloads with `TAURI_SIGNING_PRIVATE_KEY`, but no Windows
+code-signing certificate is configured here. Therefore the portable EXE, NSIS, and MSI
+must be described as not Authenticode-signed until a certificate-backed verification
+proves otherwise, and Windows SmartScreen may warn on download or first launch.
 
 ## Credentials and handoff
 
