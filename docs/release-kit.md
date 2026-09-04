@@ -56,6 +56,8 @@ Only `template` and `release` are valid mode values. Unknown values fail instead
 
 Tag releases run that strict mode before the Windows-only `tauri-action` starts. Successful
 `v*.*.*` builds publish NSIS and MSI assets plus updater metadata to a non-draft GitHub Release.
+Release assets use the stable `Shixue_<version>_<arch>` ASCII prefix so GitHub does not
+sanitize the Chinese product name and break updater-signature matching.
 They also run:
 
 ```bash
