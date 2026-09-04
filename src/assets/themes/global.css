@@ -10,16 +10,27 @@
  */
 
 :root {
-  font-family:
+  --font-sans:
+    'Manrope Variable',
+    'Noto Sans SC Variable',
     -apple-system,
     BlinkMacSystemFont,
-    'SF Pro Display',
-    'SF Pro Text',
     system-ui,
     'Segoe UI',
     'PingFang SC',
     'Microsoft YaHei',
     sans-serif;
+  --font-display:
+    'Manrope Variable',
+    'Noto Sans SC Variable',
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+  font-family: var(--font-sans);
   color-scheme: light dark;
   font-size: 16px;
   font-synthesis: none;
@@ -119,6 +130,12 @@ html {
 body {
   min-height: 100vh;
   min-height: 100dvh;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
 }
 
 button,

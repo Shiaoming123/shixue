@@ -98,6 +98,15 @@ src/
 
 > 正文和普通控件优先使用 400 / 500；标题可在 550–650 之间建立清晰层级，避免大面积使用 700。
 
+**字体**（离线随应用分发）：
+
+| Token | 字体栈 | 用途 |
+|---|---|---|
+| `--font-sans` | Manrope Variable → Noto Sans SC Variable → 系统字体 | 正文、控件、中英文混排 |
+| `--font-display` | Manrope Variable → Noto Sans SC Variable → 系统字体 | 页面标题、面板标题 |
+
+Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 Fontsource 包本地加载，不依赖在线字体服务；发行产物同时包含 `third-party-font-licenses.txt`。保留系统字体回退，确保字体资源异常时界面仍可读。
+
 **阴影**（三层叠加）：
 
 | Token | 值 | 适用 |
