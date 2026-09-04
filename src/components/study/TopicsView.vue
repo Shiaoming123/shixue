@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ArrowRight, Check, ChevronRight, Plus } from '@lucide/vue'
+import { Archive, ArrowRight, Check, ChevronRight, Folder, Pencil, Plus } from '@lucide/vue'
 
 export interface TopicViewItem {
   id: string
@@ -17,6 +17,7 @@ export interface TopicViewItem {
 
 const props = defineProps<{
   topics: TopicViewItem[]
+  groups?: Array<{ id: string; title: string }>
   selectedId: string
 }>()
 
@@ -24,6 +25,10 @@ const emit = defineEmits<{
   select: [id: string]
   create: []
   start: [id: string]
+  edit: [id: string]
+  archive: [id: string]
+  createGroup: []
+  editGroup: [id: string]
 }>()
 
 const selectedTopic = computed(() => props.topics.find((topic) => topic.id === props.selectedId))
@@ -32,12 +37,11 @@ const selectedTopic = computed(() => props.topics.find((topic) => topic.id === p
 <template>
   <section class="topics-view">
     <header>
-      <div>
-        <p>学习主题</p>
-        <h1>把想学会的事，走成一条路</h1>
-      </div>
-      <button class="add" @click="emit('create')"><Plus :size="18" />新建主题</button>
+      <div><h1>清单与主题</h1><p>{{ topics.length }} 项</p></div>
+      <div class="header-actions"><button class="secondary-add" title="新建分组" aria-label="新建分组" @click="emit('createGroup')"><Folder :size="17" /></button><button class="add" title="新建清单" @click="emit('create')"><Plus :size="18" />新建</button></div>
     </header>
+
+    <div v-if="groups?.length" class="group-strip" aria-label="清单分组"><button v-for="group in groups" :key="group.id" :title="`编辑分组 ${group.title}`" @click="emit('editGroup', group.id)"><Folder :size="14" />{{ group.title }}<Pencil :size="12" /></button></div>
 
     <div class="topic-layout">
       <aside class="topic-list">
@@ -58,10 +62,10 @@ const selectedTopic = computed(() => props.topics.find((topic) => topic.id === p
       <article v-if="selectedTopic" class="topic-detail">
         <div class="detail-heading">
           <div>
-            <p>最终目标</p>
             <h2>{{ selectedTopic.title }}</h2>
             <span>{{ selectedTopic.goal }}</span>
           </div>
+          <div class="topic-actions"><button title="编辑" aria-label="编辑清单" @click="emit('edit', selectedTopic.id)"><Pencil :size="17" /></button><button title="归档" aria-label="归档清单" @click="emit('archive', selectedTopic.id)"><Archive :size="17" /></button></div>
         </div>
 
         <section class="success-criteria">
@@ -120,7 +124,7 @@ header p,
 
 h1 {
   margin: 0;
-  font-size: clamp(28px, 3.1vw, 38px);
+  font-size: 22px;
   line-height: 1.2;
   font-weight: 650;
   letter-spacing: -0.035em;
@@ -141,6 +145,7 @@ h1 {
   font-weight: 600;
   cursor: pointer;
 }
+.header-actions { display: flex; gap: 8px; }.secondary-add { width: 45px; min-height: 45px; display: grid; place-items: center; border: 1px solid var(--hairline); border-radius: 12px; background: var(--control-fill); color: var(--muted); }.group-strip { display: flex; gap: 7px; padding: 14px 0 0; overflow-x: auto; }.group-strip button { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--hairline); border-radius: var(--radius-full); background: var(--control-fill); color: var(--muted); font-size: 11px; white-space: nowrap; }
 
 .topic-layout {
   display: grid;
@@ -215,6 +220,7 @@ h1 {
   justify-content: space-between;
   gap: 16px;
 }
+.topic-actions { display: flex; gap: 4px; }.topic-actions button { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: var(--control-fill); color: var(--muted); }.topic-actions button:hover { color: var(--accent); }
 
 .detail-heading h2 {
   margin: 0 0 8px;
@@ -342,6 +348,7 @@ h3 {
     align-items: flex-start;
     flex-direction: column;
   }
+  .header-actions { width: 100%; }.add { flex: 1; justify-content: center; }
 
   .topic-layout {
     display: block;

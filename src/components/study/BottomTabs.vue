@@ -1,16 +1,32 @@
 <script setup lang="ts">
-import { BookOpen, CalendarDays, History, ListTodo } from '@lucide/vue'
-import type { StudyPage } from './AppSidebar.vue'
+import { BookOpen, CalendarDays, History, Inbox } from '@lucide/vue'
+import type { StudyPage, StudySmartView } from './AppSidebar.vue'
 
 defineProps<{ active: StudyPage }>()
-const emit = defineEmits<{ navigate: [page: StudyPage] }>()
 
-const items = [
-  { key: 'today' as const, label: '今天', icon: CalendarDays },
-  { key: 'tasks' as const, label: '任务', icon: ListTodo },
-  { key: 'topics' as const, label: '主题', icon: BookOpen },
-  { key: 'review' as const, label: '回顾', icon: History },
+const emit = defineEmits<{
+  navigate: [page: StudyPage]
+  'smart-view': [view: StudySmartView]
+}>()
+
+type MobileNavItem = {
+  key: StudyPage
+  label: string
+  icon: typeof CalendarDays
+  smartView?: StudySmartView
+}
+
+const items: MobileNavItem[] = [
+  { key: 'today', label: '今天', icon: CalendarDays, smartView: 'today' },
+  { key: 'tasks', label: '收件箱', icon: Inbox, smartView: 'inbox' },
+  { key: 'topics', label: '主题', icon: BookOpen },
+  { key: 'review', label: '回顾', icon: History },
 ]
+
+function activate(item: MobileNavItem) {
+  if (item.smartView) emit('smart-view', item.smartView)
+  emit('navigate', item.key)
+}
 </script>
 
 <template>
@@ -21,12 +37,14 @@ const items = [
       class="tab"
       :class="{ active: active === item.key }"
       :aria-current="active === item.key ? 'page' : undefined"
-      @click="emit('navigate', item.key)"
+      :aria-label="item.label"
+      :title="item.label"
+      @click="activate(item)"
     >
-      <span class="icon-wrap">
-        <component :is="item.icon" :size="22" :stroke-width="1.7" />
+      <span class="icon-wrap" aria-hidden="true">
+        <component :is="item.icon" :size="21" :stroke-width="1.8" />
       </span>
-      <span>{{ item.label }}</span>
+      <span class="tab-label">{{ item.label }}</span>
     </button>
   </nav>
 </template>
@@ -40,48 +58,65 @@ const items = [
   .tabbar {
     position: fixed;
     z-index: var(--z-sticky);
-    left: 10px;
-    right: 10px;
+    left: 12px;
+    right: 12px;
     bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    min-height: 64px;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    min-height: 68px;
-    padding: 7px 9px;
-    padding-bottom: calc(7px + env(safe-area-inset-bottom, 0px));
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-2xl);
-    background: var(--material-regular);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 6px 8px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, white 22%, var(--hairline));
+    border-radius: var(--radius-xl);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, white 7%, transparent), transparent 64%),
+      var(--material-regular);
     box-shadow: var(--shadow-lg);
     backdrop-filter: saturate(180%) blur(28px);
     -webkit-backdrop-filter: saturate(180%) blur(28px);
   }
 
   .tab {
-    min-height: 52px;
+    min-width: 0;
+    min-height: 50px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 2px;
+    padding: 2px 4px;
     border: 0;
+    border-radius: var(--radius-lg);
     background: transparent;
     color: var(--muted);
-    font-size: 11px;
-    font-weight: 500;
-    cursor: pointer;
+    font-size: var(--text-xs);
+    font-weight: var(--font-medium);
   }
 
   .icon-wrap {
     width: 38px;
-    height: 30px;
+    height: 29px;
     display: grid;
     place-items: center;
+    border: 1px solid transparent;
     border-radius: var(--radius-full);
-    transition: background var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease-spring);
+    transition:
+      background var(--motion-fast) var(--ease),
+      border-color var(--motion-fast) var(--ease),
+      color var(--motion-fast) var(--ease),
+      transform var(--motion-fast) var(--ease-spring);
+  }
+
+  .tab-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .tab:active .icon-wrap {
-    transform: scale(0.92);
+    transform: scale(0.9);
   }
 
   .tab.active {
@@ -89,8 +124,26 @@ const items = [
   }
 
   .tab.active .icon-wrap {
-    background: color-mix(in srgb, var(--accent) 13%, var(--surface));
-    box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--accent) 15%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 13%, var(--hairline));
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+@media (max-width: 359px) {
+  .tabbar {
+    left: 8px;
+    right: 8px;
+  }
+
+  .tab {
+    font-size: 10px;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .tabbar {
+    background: var(--surface);
   }
 }
 </style>

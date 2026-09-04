@@ -135,65 +135,56 @@ async function main() {
       await page.getByRole('button', { name: '确认恢复', exact: true }).click()
 
       const marker = createStudyMarker()
-      const scratchpad = `${marker}-scratchpad`
-      await page.getByRole('button', { name: '任务', exact: true }).click()
-      await page.getByRole('textbox', { name: '记录学习想法' }).fill(marker)
-      await page.getByTitle('加入收件箱').click()
+      const editedMarker = `${marker}-edited`
+      await page.getByRole('button', { name: /^收件箱/ }).click()
+      await page.keyboard.press('/')
+      const taskSearch = page.getByRole('searchbox', { name: '搜索任务' })
+      await taskSearch.waitFor({ state: 'visible' })
+      if (!(await taskSearch.evaluate((element) => element === document.activeElement))) {
+        throw new Error('The task search shortcut did not move focus to the search field.')
+      }
+      await taskSearch.fill('')
+      await page.getByRole('textbox', { name: '新建任务' }).fill(marker)
+      await page.getByRole('button', { name: '添加', exact: true }).click()
       await page.locator('.task-row').filter({ hasText: marker }).waitFor({ state: 'visible' })
 
       await page.reload({ waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: '任务', exact: true }).click()
+      await page.getByRole('button', { name: /^收件箱/ }).click()
       const inboxRow = page.locator('.task-row').filter({ hasText: marker })
       await inboxRow.getByText(marker, { exact: true }).waitFor({ state: 'visible' })
-      await inboxRow.getByRole('button', { name: '安排', exact: true }).click()
-      await page.getByText('把想法变成可开始的任务', { exact: true }).waitFor({ state: 'visible' })
-      await page.getByText('完成标准', { exact: true }).locator('..').getByRole('textbox').fill('能够展示一条可复核的学习证据')
-      await page.getByRole('button', { name: '保存任务', exact: true }).click()
-
-      await page.getByRole('button', { name: '已计划', exact: true }).click()
-      const plannedRow = page.locator('.task-row').filter({ hasText: marker })
-      await plannedRow.getByText(marker, { exact: true }).waitFor({ state: 'visible' })
-      await plannedRow.getByRole('button', { name: '开始', exact: true }).click()
-      const scratchbox = page.getByPlaceholder('随手写下线索、疑问或关键代码……')
-      await scratchbox.fill(scratchpad)
-      await page.getByRole('button', { name: '暂停', exact: true }).click()
-      await page.waitForTimeout(700)
-
+      await inboxRow.locator('.task-main').click()
+      await page.getByRole('button', { name: '编辑任务' }).click()
+      await page.getByRole('dialog', { name: '编辑任务' }).getByLabel('任务标题').fill(editedMarker)
+      await page.getByRole('dialog', { name: '编辑任务' }).getByLabel('任务备注').fill('持久化编辑验证')
+      const today = new Date().toLocaleDateString('sv-SE')
+      await page.getByRole('dialog', { name: '编辑任务' }).getByLabel('日期').fill(today)
+      await page.getByRole('dialog', { name: '编辑任务' }).getByLabel('优先级').selectOption('high')
+      await page.getByRole('button', { name: '保存', exact: true }).click()
+      await page.getByRole('button', { name: /^今天/ }).click()
+      await page.locator('.task-row').getByText(editedMarker, { exact: true }).waitFor({ state: 'visible' })
       await page.reload({ waitUntil: 'networkidle' })
-      await scratchbox.waitFor({ state: 'visible' })
-      if ((await scratchbox.inputValue()) !== scratchpad) {
-        throw new Error('The paused Study scratchpad did not survive reload.')
-      }
-      await page.getByRole('button', { name: '完成并记录', exact: true }).click()
-      await page.getByLabel('成果或证据在哪里？').fill(`${marker}-evidence`)
-      await page.getByLabel('下一步具体做什么？').fill(`${marker}-next`)
-      await page.getByRole('button', { name: '保存学习记录', exact: true }).click()
+      await page.getByRole('button', { name: /^今天/ }).click()
+      await page.getByRole('searchbox', { name: '搜索任务' }).fill('持久化编辑验证')
+      await page.locator('.task-row').getByText(editedMarker, { exact: true }).waitFor({ state: 'visible' })
+      await page.getByRole('searchbox', { name: '搜索任务' }).fill('')
+      await page.getByRole('button', { name: `完成 ${editedMarker}` }).click()
+      await page.getByRole('button', { name: /^已完成/ }).click()
+      await page.getByText(editedMarker, { exact: true }).waitFor({ state: 'visible' })
 
-      await page.getByRole('button', { name: '回顾', exact: true }).click()
-      await page.getByRole('button', { name: '完成记录', exact: true }).click()
-      await page.getByRole('textbox', { name: '搜索完成记录' }).fill(marker)
-      await page.getByText(`${marker}-evidence`, { exact: false }).waitFor({ state: 'visible' })
-
-      await page.getByRole('button', { name: '设置', exact: true }).click()
-      await page.getByRole('button', { name: /恢复演示内容/ }).click()
-      await page.getByRole('button', { name: '确认恢复', exact: true }).click()
-      await page.getByRole('button', { name: '任务', exact: true }).click()
-      await page.getByRole('heading', { name: '任务', exact: true }).waitFor({ state: 'visible' })
-      await page.getByRole('button', { name: '已完成', exact: true }).click()
-      await page.locator('.task-row').first().locator('.row-main').click()
-      await page.getByLabel('任务详情').waitFor({ state: 'visible' })
+      await page.locator('.task-row').filter({ hasText: editedMarker }).getByRole('button').nth(1).click()
+      await page.getByRole('complementary', { name: '任务详情', exact: true }).waitFor({ state: 'visible' })
       await page.screenshot({
         path: resolve(projectRoot, 'docs', 'design', 'shixue-tasks-desktop-implementation.png'),
       })
 
       await page.setViewportSize({ width: 390, height: 844 })
+      await page.evaluate(() => localStorage.setItem('meow-study-appearance', 'dark'))
       await page.reload({ waitUntil: 'networkidle' })
       await page.getByRole('navigation', { name: '移动端主导航' }).waitFor({ state: 'visible' })
       await page
         .getByRole('navigation', { name: '移动端主导航' })
-        .getByRole('button', { name: '任务', exact: true })
+        .getByRole('button', { name: '今天', exact: true })
         .click()
-      await page.getByRole('button', { name: '已计划', exact: true }).click()
       await page.screenshot({
         path: resolve(projectRoot, 'docs', 'design', 'shixue-tasks-mobile-implementation.png'),
       })
@@ -201,7 +192,7 @@ async function main() {
         .getByRole('navigation', { name: '移动端主导航' })
         .getByRole('button', { name: '主题', exact: true })
         .click()
-      await page.getByRole('heading', { name: '把想学会的事，走成一条路' }).waitFor({ state: 'visible' })
+      await page.getByRole('heading', { name: '清单与主题' }).waitFor({ state: 'visible' })
 
       if (errors.length > 0) {
         throw new Error(`Web preview emitted errors:\n${errors.join('\n')}`)

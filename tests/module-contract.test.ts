@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
   auditModuleContract,
@@ -64,7 +65,8 @@ test('audit reports every missing native requirement for an enabled module', () 
 
   assert.deepEqual(result.errors, [
     'Module "shortcut" requires Cargo feature "shortcut".',
-    'Module "shortcut" requires Tauri permission "global-shortcut:default".',
+    'Module "shortcut" requires Tauri permission "global-shortcut:allow-register".',
+    'Module "shortcut" requires Tauri permission "global-shortcut:allow-unregister".',
   ])
 })
 
@@ -79,4 +81,33 @@ test('capability permissions apply only to the matching runtime targets', () => 
     'updater:default',
   ])
   assert.deepEqual(capabilityPermissions(capabilities, 'mobile'), ['core:default'])
+})
+
+test('quick capture declares the concrete shortcut commands it invokes', () => {
+  assert.deepEqual(moduleContracts.shortcut.nativeBuild.permissions, [
+    'global-shortcut:allow-register',
+    'global-shortcut:allow-unregister',
+  ])
+})
+
+test('quick capture and notifications are enabled across frontend, Cargo defaults, and desktop permissions', () => {
+  const root = new URL('../', import.meta.url)
+  const cargoToml = readFileSync(new URL('src-tauri/Cargo.toml', root), 'utf8')
+  const capabilities = JSON.parse(
+    readFileSync(new URL('src-tauri/capabilities/default.json', root), 'utf8'),
+  )
+
+  assert.equal(defaultModuleConfig.shortcut, true)
+  assert.equal(defaultModuleConfig.notification, true)
+  assert.match(cargoToml, /^default = \["shortcut", "notification"\]$/m)
+  assert.deepEqual(
+    auditModuleContract({
+      contracts: [moduleContracts.shortcut, moduleContracts.notification],
+      config: defaultModuleConfig,
+      platform: 'desktop',
+      cargoToml,
+      permissions: capabilityPermissions(capabilities, 'desktop'),
+    }).errors,
+    [],
+  )
 })

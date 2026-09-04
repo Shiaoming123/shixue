@@ -4,6 +4,10 @@ use tauri::{Manager, WindowEvent};
 #[cfg(feature = "agent")]
 mod agent;
 mod db;
+#[cfg(all(desktop, feature = "notification"))]
+mod reminder_scheduler;
+#[cfg(feature = "sync")]
+mod study_cloud;
 #[cfg(desktop)]
 mod tray;
 
@@ -36,7 +40,7 @@ pub fn run() {
 
     // —— 可选模块：按 Cargo feature 装配（与前端 modules.config.ts 的 P1 模块对应） ——
 
-    #[cfg(feature = "shortcut")]
+    #[cfg(all(desktop, feature = "shortcut"))]
     {
         builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
@@ -59,7 +63,24 @@ pub fn run() {
         ));
     }
 
-    #[cfg(feature = "agent")]
+    #[cfg(all(feature = "agent", feature = "sync"))]
+    {
+        builder = builder.invoke_handler(tauri::generate_handler![
+            greet,
+            agent::set_api_key,
+            agent::has_api_key,
+            agent::delete_api_key,
+            agent::proxy_json,
+            agent::proxy_stream,
+            study_cloud::study_cloud_sign_in,
+            study_cloud::study_cloud_session_status,
+            study_cloud::study_cloud_sign_out,
+            study_cloud::study_cloud_pull,
+            study_cloud::study_cloud_push
+        ]);
+    }
+
+    #[cfg(all(feature = "agent", not(feature = "sync")))]
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
@@ -71,7 +92,19 @@ pub fn run() {
         ]);
     }
 
-    #[cfg(not(feature = "agent"))]
+    #[cfg(all(not(feature = "agent"), feature = "sync"))]
+    {
+        builder = builder.invoke_handler(tauri::generate_handler![
+            greet,
+            study_cloud::study_cloud_sign_in,
+            study_cloud::study_cloud_session_status,
+            study_cloud::study_cloud_sign_out,
+            study_cloud::study_cloud_pull,
+            study_cloud::study_cloud_push
+        ]);
+    }
+
+    #[cfg(all(not(feature = "agent"), not(feature = "sync")))]
     {
         builder = builder.invoke_handler(tauri::generate_handler![greet]);
     }
@@ -85,6 +118,9 @@ pub fn run() {
             }))
             .setup(|app| {
                 tray::create_tray(app.handle())?;
+
+                #[cfg(feature = "notification")]
+                reminder_scheduler::start(app.handle());
 
                 // 托盘常驻应用：点关闭按钮时隐藏窗口而不是退出进程，
                 // 真正的退出走托盘菜单里的「退出」。

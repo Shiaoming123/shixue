@@ -1,0 +1,95 @@
+# 拾学 × Todofy 功能对标与落地说明
+
+> 状态：实现基线（2026-09-04）
+>
+> Todofy 审计基线：[`ff736f53`](https://github.com/salarzeidanlou/todofy/tree/ff736f53eda116ce22a3d933d35f3054899c95d7)
+> 方法：以提交固定的 React、Zustand、Tauri/Rust、SQLite、提醒与同步源码为依据，不以 README 或截图代替实现审计。
+
+## 1. 当前项目基线
+
+拾学沿用 MeowStarter 的 Vue 3 + TypeScript + Vite + Tauri 2 技术栈。桌面端以 SQLite 保存一个经过版本化校验的 `StudyState` 快照，Web 端以 IndexedDB 保存同一数据模型；模块能力同时受前端配置、运行时 capability、Cargo feature 与 Tauri permission 约束。
+
+UI 沿用 `study` 主题和既有 token，并把色板收敛为雾灰玻璃、深墨与叶绿强调色；桌面采用导航、列表、详情三栏，移动端采用单栏与底部导航。此次没有引入新组件库或第二套设计语言。
+
+任务主模型是 `StudyTask`，不是脚手架遗留的 `Todo`：任务拥有收件箱、计划、进行中、阻塞、完成、取消状态，并通过连续 `TaskEvent`、专注 `StudySession` 和 `CompletionRecord` 形成可追溯学习证据链。
+
+## 2. 实际源码审计范围
+
+审计覆盖 Todofy 的以下实现，而不只包括展示材料：
+
+- CRUD 与状态：[`commands.rs`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src-tauri/src/commands.rs)、[`store.ts`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src/store.ts)
+- 快速新增与全局捕捉：[`QuickAdd.tsx`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src/components/QuickAdd.tsx)、[`QuickCapture.tsx`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src/components/QuickCapture.tsx)
+- 详情编辑与子任务：[`TaskDetail.tsx`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src/components/TaskDetail.tsx)、[`SubtaskList.tsx`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src/components/SubtaskList.tsx)
+- 搜索、过滤、分组与排序：[`SearchBar.tsx`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src/components/SearchBar.tsx)、[`grouping.ts`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src/lib/grouping.ts)
+- 快捷键：[`useKeyboard.ts`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src/lib/useKeyboard.ts)
+- 本地数据库、提醒、重复任务与调度：[`db.rs`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src-tauri/src/db.rs)、[`notify.rs`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src-tauri/src/notify.rs)、[`recur.rs`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src-tauri/src/recur.rs)
+- 账号与同步：[`auth.ts`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src/lib/auth.ts)、[`sync.ts`](https://github.com/salarzeidanlou/todofy/blob/ff736f53eda116ce22a3d933d35f3054899c95d7/src/lib/sync.ts)、Supabase migrations 与 Rust secret/sync 命令。
+
+Todofy 仓库声明的许可不允许直接复制，因此这里只借鉴交互与架构事实，所有拾学代码均按自己的领域模型独立实现。
+
+TickTick 的公开产品形态以其[功能页](https://ticktick.com/features)、[Windows 页面](https://ticktick.com/windows)、[更新记录](https://ticktick.com/public/changelog/en.html)与[帮助中心](https://help.ticktick.com/)为准。本轮借鉴三栏桌面信息架构、移动端单栏推进、智能清单、清单管理、日期与多级优先级的产品模式；没有把日历多视图、协作、习惯、倒数日或 AI 扩进核心待办范围。未登录付费账号，因此付费边界与登录后拖动手感不作为已验证事实。
+
+## 3. 功能对比与取舍
+
+| 能力 | Todofy 实现事实 | 拾学取舍 | 当前落地 |
+| --- | --- | --- | --- |
+| 新增 | 快速输入支持日期、优先级、重复和标签 | 直接借鉴低摩擦输入；高级字段留在编辑步骤 | 视图感知快速新增；今天视图自动带入今天；`N` 与 `Ctrl+Alt+A` 可聚焦输入 |
+| 查询 | SQLite 全量读取，前端派生视图 | 按现有快照 Store 重写 | SQLite/IndexedDB 共用版本化 `StudyState` |
+| 编辑 | 标题/笔记失焦保存，其他字段立即保存 | 重写为显式表单事务，避免多个字段部分成功 | 标题、笔记、清单、计划/截止日期、精确提醒、优先级、时长、完成标准一次校验保存 |
+| 删除 | SQLite tombstone 软删除 | 直接借鉴 tombstone 思路，但必须保留证据链并结束活动 session | 单项/批量二次确认；任务隐藏，事件、session、completion evidence 保留 |
+| 状态 | active/done 二态 | 与拾学证据闭环冲突，分成即时勾选与学习收尾 | 普通勾选立即完成/重开；专注完成仍可记录成果、证据、下一步与复习 |
+| 分类 | 多对多 labels，没有独立清单实体 | 按拾学方式重写 | 保留 `StudyTopic` 作为学习清单业务实体，并新增独立 `StudyListGroup`：清单可创建、编辑、归档、分组、筛选和移动任务，同时继续承载学习目标；不再为同一业务重复维护一套 `TaskList` |
+| 过滤 | smart view + label/priority 多选 | 复用交互层次 | 收件箱、今天（含逾期）、最近 7 天、全部、已完成；清单与优先级可组合筛选 |
+| 排序 | 手动 orderIndex 为主，分组内 pinned first | 做得更好：用户可显式选择且结果确定 | 手动顺序、最近更新、截止日期、优先级、标题；纯函数且不改输入 |
+| 搜索 | 标题和笔记的大小写不敏感子串 | 做得更好 | 标题、笔记、主题、完成标准、检查项、阻塞原因统一搜索；`/` 聚焦 |
+| 子任务 | JSON 数组整体重写 | 按学习动作语义重写 | checklist 稳定 ID、逐项切换与新增；不会误触发任务完成 |
+| 批量 | 只有“逾期移到今天” | 做得更好 | 多选后批量完成、移到今天、软删除；写入保留 CAS 与事件链 |
+| 持久化 | Tauri SQLite，本地优先 | 保持现有跨端抽象 | 桌面 SQLite、Web IndexedDB；导入前完整校验，失败不覆盖 |
+| 导入导出 | 参考项目不是本轮重点 | 补齐前两日建议 | JSON 导出；JSON 文件选择、风险确认、版本迁移和完整替换 |
+| 键盘 | `/`、`n`、`j/k`、`e`、完成、删除、帮助等 | 按 Vue 事件层重写 | `/`、`N`、`J/K`、`E`、`C`；输入控件内不劫持按键 |
+| 全局捕捉 | 独立 always-on-top 窗口 | 使用现有主窗口与模块契约重写，减少窗口状态复杂度 | 桌面 `Ctrl+Alt+A` 显示/恢复/聚焦主窗口并进入收件箱输入 |
+| 提醒 | Rust 后台每 20 秒检查，窗口隐藏时仍可提醒 | 按现有 notification 模块与快照数据重写 | 任务保存 ISO 精确时间；桌面 Rust 调度器每 20 秒从 SQLite 快照选取到点任务，并用独立投递表去重，窗口隐藏时仍可提醒；移动前台保留 30 秒检查；每日摘要与非致命权限失败处理仍保留 |
+| 账号同步 | Supabase、LWW、1.5 秒 debounce、30 秒轮询 | 保持可选且 fail-closed；token 不进入 WebView 持久层 | 快照协调器、Rust/keyring 适配器、RLS/CAS migration 与可选设置入口；未配置/未登录时零网络 |
+| 空/错状态 | 视图区分空状态；CRUD 错误多为静默 | 做得更好 | 搜索/筛选空状态可恢复，存储错误使用 alert 与 toast，写入失败不伪装成功 |
+| 移动端 | 小屏隐藏部分导航且无完全替代 | 做得更好 | 全部核心导航保留，详情全屏，筛选/批量操作可触控且不横向遮挡 |
+| 无障碍 | 有焦点环；dialog、嵌套交互、拖拽仍有缺口 | 做得更好 | 原生 button/input/select、显式 label、dialog/alertdialog、aria-live、44px 触控目标、reduced-motion |
+
+### 不直接照搬的 Todofy 模块
+
+- `pinboard`：优先级已经进入任务模型、筛选与排序，不再增加一套相互竞争的置顶事实源。
+- 重复任务：Todofy 完成后推进同一任务日期；拾学完成会冻结一条证据记录，并通过 `nextAction` 生成下一任务、通过 `nextReviewOn` 安排复习。直接循环原任务会模糊每轮证据归属。
+- Pomodoro 与 Journal：拾学已有可暂停/恢复的 `StudySession`、scratchpad 和 completion records；重复引入同类模型会造成两套计时和笔记事实源。
+- 自然语言日期解析：对中文日期、时区与跨端一致性的验收成本高，本轮保留明确日期控件，避免误计划。
+- 指针拖拽：Todofy 为规避 WebView 原生 DnD 问题自行实现 Pointer Events。拾学本轮保留可访问的显式排序与键盘导航，跨清单拖拽留到独立位置字段落地后再做，避免改变全局数组顺序。
+
+## 4. 模块拆分与验收点
+
+| 顺序 | 模块 | 验收点 | 状态 |
+| --- | --- | --- | --- |
+| 1 | 数据模型与持久化 | 旧 v1 可迁移；v2 事件链连续；SQLite/IndexedDB 均可重开；非法导入不覆盖 | 已通过 |
+| 2 | 查询层 | 搜索/状态/主题/排序可组合；不修改输入；删除项永不出现 | 已通过 |
+| 3 | 单项组件 | 三栏任务工作区、优先级与提醒元信息、详情抽屉、检查项、无文案空状态 | 已通过 |
+| 4 | 增删改 | 快速新增；元数据 CAS 更新；删除保留证据；编辑/删除有确认和反馈 | 已通过 |
+| 5 | 状态切换 | 普通勾选即时完成/重开；证据式完成继续生成 CompletionRecord；活动 session 安全结束 | 已通过 |
+| 6 | 筛选分类排序 | 五个智能清单 + 清单分组 + Topic + priority + search 组合；五种确定排序；桌面与移动端均可管理和切换 | 已通过 |
+| 7 | 批量操作 | 完成、移到今天、软删除均有明确反馈；领域批量命令保持全量预验证 | 已通过 |
+| 8 | 导入导出 | 浏览器真实下载和文件选择；确认后校验替换；学习证据可找回 | 已通过 |
+| 9 | 快捷键 | 输入控件内不劫持；`/`/`N`/`J`/`K`/`E`/`?` 可用；全局快捷键只在桌面注册一次 | 已通过 |
+| 10 | 提醒 | 精确时间触发按任务和提醒值去重；每日摘要当天去重；关闭时不请求权限；失败不影响本地任务 | 已通过 |
+| 11 | 账号同步 | 默认关闭；无配置/会话时零请求；冲突可解释；token 仅在 Rust/keyring；RLS 隔离用户 | 代码与离线门禁已通过；真实 Supabase/RLS/双设备 E2E 为 NOT_RUN |
+| 12 | 响应式与无障碍 | 1440×960 与 390×844 实测；无 console/page error；对话框语义和焦点可见 | 已通过 |
+
+## 5. 验证入口
+
+```powershell
+npm test
+npm run check:protocol
+npm run check:modules
+npm run typecheck
+npm run build
+npm run build:web
+npm run rust:verify
+npm run smoke:web-persistence
+```
+
+Web 烟测会真实走过重置、快速新增、刷新持久化、编辑日期/优先级/笔记、搜索、即时完成、已完成视图、桌面三栏与移动深色截图，并把 console/page error 作为失败处理。

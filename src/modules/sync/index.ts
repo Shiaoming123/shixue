@@ -10,4 +10,5 @@ const sync: Module = {
 }
 
 export default sync
-export * from '../../sync'
+export * from '../../sync/index.ts'
+export * from '../../lib/study-cloud-sync.ts'

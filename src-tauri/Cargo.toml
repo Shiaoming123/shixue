@@ -31,9 +31,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # —— 可选能力模块（P1，由 feature 门控，未启用不编译、不占体积） ——
-tauri-plugin-global-shortcut = { version = "2", optional = true }
 tauri-plugin-clipboard-manager = { version = "2", optional = true }
 tauri-plugin-notification = { version = "2", optional = true }
+chrono = { version = "0.4", default-features = false, features = ["clock"], optional = true }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"], optional = true }
+tokio = { version = "1", features = ["time"], optional = true }
 tauri-plugin-autostart = { version = "2", optional = true }
 
 # —— Agent 能力（P2：密钥代理 + 本地推理，由 feature 门控） ——
@@ -48,16 +50,18 @@ futures-util = { version = "0.3", optional = true }
 # 功能模块开关（与前端 modules.config.ts 对应）
 # 核心能力（sqlite/store/updater/tray）始终启用，无需 feature
 [features]
-default = []
+default = ["shortcut", "notification"]
 shortcut = ["dep:tauri-plugin-global-shortcut"]
 clipboard = ["dep:tauri-plugin-clipboard-manager"]
-notification = ["dep:tauri-plugin-notification"]
+notification = ["dep:tauri-plugin-notification", "dep:chrono", "dep:sqlx", "dep:tokio"]
 autostart = ["dep:tauri-plugin-autostart"]
+sync = ["dep:keyring", "dep:reqwest"]
 # Agent 能力：agent = 密钥代理（keyring + reqwest）；agent-sidecar = 上述 + Pi RPC sidecar（P3）
 agent = ["dep:keyring", "dep:reqwest", "dep:futures-util"]
 agent-sidecar = ["agent"]
 
 # 单实例是桌面端专有能力，移动端目标不参与编译
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-global-shortcut = { version = "2", optional = true }
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"

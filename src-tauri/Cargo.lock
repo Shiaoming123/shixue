@@ -2818,11 +2818,13 @@ dependencies = [
 name = "meow-study"
 version = "0.2.3"
 dependencies = [
+ "chrono",
  "futures-util",
  "keyring",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sqlx",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -2836,6 +2838,7 @@ dependencies = [
  "tauri-plugin-sql",
  "tauri-plugin-store",
  "tauri-plugin-updater",
+ "tokio",
 ]
 
 [[package]]

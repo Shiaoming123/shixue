@@ -1,8 +1,8 @@
-export { createOutboxSyncEngine } from './engine'
-export { createInMemorySyncStateStore } from './in-memory-store'
-export { createIndexedDbSyncStateStore } from './indexeddb-store'
-export { createAllowlistSyncPolicy } from './policy'
-export { createHttpSyncTransport } from './transports/http'
+export { createOutboxSyncEngine } from './engine.ts'
+export { createInMemorySyncStateStore } from './in-memory-store.ts'
+export { createIndexedDbSyncStateStore } from './indexeddb-store.ts'
+export { createAllowlistSyncPolicy } from './policy.ts'
+export { createHttpSyncTransport } from './transports/http.ts'
 export type {
   SyncMutation,
   SyncPolicy,
@@ -10,4 +10,4 @@ export type {
   SyncResult,
   SyncStateStore,
   SyncTransport,
-} from './types'
+} from './types.ts'

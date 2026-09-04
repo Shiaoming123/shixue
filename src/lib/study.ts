@@ -6,9 +6,11 @@ import {
   parseStudyState,
   type CompletionRecord,
   type ReviewResult,
+  type StudyListGroup,
   type StudySession,
   type StudyState,
   type StudyTask,
+  type StudyTaskPriority,
   type StudyTaskStatus,
   type StudyTopic,
   type TaskChecklistItem,
@@ -20,10 +22,12 @@ export type {
   CompletionRecord,
   ReviewResult,
   ReviewStage,
+  StudyListGroup,
   StudySession,
   StudySessionState,
   StudyState,
   StudyTask,
+  StudyTaskPriority,
   StudyTaskStatus,
   StudyTopic,
   TaskChecklistItem,
@@ -39,6 +43,40 @@ export interface StudyWriteOptions {
 export interface TaskCommandOptions extends StudyWriteOptions {
   eventId?: string
 }
+
+export interface BulkTaskTarget {
+  taskId: string
+  expectedRevision?: number
+  eventId?: string
+}
+
+export interface BulkTaskCommandOptions extends StudyWriteOptions {
+  reason?: string
+}
+
+export type StudyTaskMetadataUpdate = Partial<Pick<StudyTask,
+  | 'topicId'
+  | 'title'
+  | 'notes'
+  | 'plannedOn'
+  | 'dueOn'
+  | 'reminderAt'
+  | 'priority'
+  | 'estimateMinutes'
+  | 'acceptanceCriteria'
+>>
+
+export type StudyTaskCreationInput = Pick<StudyTask, 'title'> &
+  Partial<Pick<StudyTask,
+    | 'topicId'
+    | 'notes'
+    | 'plannedOn'
+    | 'dueOn'
+    | 'reminderAt'
+    | 'priority'
+    | 'estimateMinutes'
+    | 'acceptanceCriteria'
+  >>
 
 export function loadStudyState(): Promise<StudyState> {
   return getStudyStore().load()
@@ -57,6 +95,33 @@ export async function saveStudyTopic(topic: StudyTopic): Promise<void> {
   if (index >= 0) current.topics[index] = structuredClone(topic)
   else current.topics.push(structuredClone(topic))
   await persist(current, topic.updatedAt)
+}
+
+export async function saveStudyListGroup(group: StudyListGroup): Promise<void> {
+  const current = await loadStudyState()
+  const groups = current.listGroups ?? (current.listGroups = [])
+  const index = groups.findIndex(({ id }) => id === group.id)
+  if (index >= 0) groups[index] = structuredClone(group)
+  else groups.push(structuredClone(group))
+  await persist(current, group.updatedAt)
+}
+
+export async function archiveStudyListGroup(
+  groupId: string,
+  archivedAt = new Date().toISOString(),
+): Promise<void> {
+  const current = await loadStudyState()
+  const group = (current.listGroups ?? []).find(({ id, archivedAt: archived }) => id === groupId && !archived)
+  if (!group) throw new Error(`Study list group not found: ${groupId}.`)
+  group.archivedAt = archivedAt
+  group.updatedAt = archivedAt
+  current.topics.forEach((topic) => {
+    if (topic.groupId === groupId) {
+      topic.groupId = null
+      topic.updatedAt = archivedAt
+    }
+  })
+  await persist(current, archivedAt)
 }
 
 export async function saveStudySession(
@@ -94,22 +159,112 @@ export async function saveStudyScratchpad(
 }
 
 export async function captureStudyTask(
-  input: { title: string; notes?: string },
+  input: StudyTaskCreationInput,
   options: TaskCommandOptions & { taskId?: string } = {},
 ): Promise<StudyTask> {
   const state = await loadStudyState()
   const now = commandTime(options.now)
   const task: StudyTask = {
-    id: makeId('task', options.taskId), revision: 1, topicId: null,
+    id: makeId('task', options.taskId), revision: 1, topicId: input.topicId ?? null,
     title: input.title, notes: input.notes ?? '', status: 'inbox',
-    plannedOn: null, dueOn: null, estimateMinutes: null,
-    acceptanceCriteria: [], checklist: [], blockedReason: null,
+    plannedOn: input.plannedOn ?? null, dueOn: input.dueOn ?? null,
+    reminderAt: input.reminderAt ?? null, priority: input.priority ?? 'none',
+    estimateMinutes: input.estimateMinutes ?? null,
+    acceptanceCriteria: input.acceptanceCriteria ?? [], checklist: [], blockedReason: null,
     createdAt: now, updatedAt: now, deletedAt: null,
   }
   state.tasks.push(task)
   appendEvent(state, task, 'captured', null, 'inbox', options.eventId, now)
   await persist(state, now)
   return structuredClone(task)
+}
+
+export async function updateStudyTask(
+  taskId: string,
+  input: StudyTaskMetadataUpdate,
+  options: StudyWriteOptions = {},
+): Promise<StudyTask> {
+  const state = await loadStudyState()
+  const task = requireTask(state, taskId, options.expectedRevision)
+  const now = commandTime(options.now)
+  Object.assign(task, withoutUndefined(input))
+  advanceTask(task, now)
+  await persist(state, now)
+  return structuredClone(task)
+}
+
+export async function deleteStudyTask(
+  taskId: string,
+  options: TaskCommandOptions = {},
+): Promise<StudyTask> {
+  const state = await loadStudyState()
+  const task = requireTask(state, taskId, options.expectedRevision)
+  const now = commandTime(options.now)
+  softDeleteTask(state, task, now, options.eventId)
+  await persist(state, now)
+  return structuredClone(task)
+}
+
+export async function bulkDeleteStudyTasks(
+  targets: readonly BulkTaskTarget[],
+  options: BulkTaskCommandOptions = {},
+): Promise<StudyTask[]> {
+  const state = await loadStudyState()
+  const tasks = requireBulkTasks(state, targets)
+  const now = commandTime(options.now)
+  tasks.forEach((task, index) => softDeleteTask(state, task, now, targets[index].eventId, options.reason))
+  await persist(state, now)
+  return structuredClone(tasks)
+}
+
+export async function bulkCancelStudyTasks(
+  targets: readonly BulkTaskTarget[],
+  options: BulkTaskCommandOptions = {},
+): Promise<StudyTask[]> {
+  const state = await loadStudyState()
+  const tasks = requireBulkTasks(state, targets)
+  for (const task of tasks) {
+    if (task.status === 'completed' || task.status === 'cancelled') {
+      throw new Error(`Study task cannot transition from ${task.status} to cancelled.`)
+    }
+  }
+  const now = commandTime(options.now)
+  tasks.forEach((task, index) => {
+    const fromStatus = task.status
+    finishActiveTaskSession(state, task.id, now)
+    task.status = 'cancelled'
+    task.blockedReason = null
+    advanceTask(task, now)
+    appendEvent(state, task, 'cancelled', fromStatus, 'cancelled', targets[index].eventId, now, options.reason)
+  })
+  await persist(state, now)
+  return structuredClone(tasks)
+}
+
+export async function bulkRescheduleStudyTasks(
+  targets: readonly BulkTaskTarget[],
+  plannedOn: string | null,
+  options: BulkTaskCommandOptions = {},
+): Promise<StudyTask[]> {
+  const state = await loadStudyState()
+  const tasks = requireBulkTasks(state, targets)
+  for (const task of tasks) {
+    if (task.status === 'completed' || task.status === 'cancelled') {
+      throw new Error('A completed or cancelled Study task cannot be rescheduled.')
+    }
+  }
+  const now = commandTime(options.now)
+  tasks.forEach((task, index) => {
+    const fromStatus = task.status
+    finishActiveTaskSession(state, task.id, now)
+    task.status = 'planned'
+    task.plannedOn = plannedOn
+    task.blockedReason = null
+    advanceTask(task, now)
+    appendEvent(state, task, 'rescheduled', fromStatus, 'planned', targets[index].eventId, now, options.reason)
+  })
+  await persist(state, now)
+  return structuredClone(tasks)
 }
 
 export async function planStudyTask(
@@ -120,6 +275,8 @@ export async function planStudyTask(
     notes?: string
     plannedOn?: string | null
     dueOn?: string | null
+    reminderAt?: string | null
+    priority?: StudyTaskPriority
     estimateMinutes?: number | null
     acceptanceCriteria?: string[]
   },
@@ -410,6 +567,33 @@ export async function completeStudyTask(
   return { task: structuredClone(task), record: structuredClone(record) }
 }
 
+export async function toggleStudyTaskCompletion(
+  taskId: string,
+  options: TaskCommandOptions = {},
+): Promise<StudyTask> {
+  const state = await loadStudyState()
+  const task = requireTask(state, taskId, options.expectedRevision)
+  if (task.status === 'cancelled') {
+    throw new Error('A cancelled Study task cannot be completion-toggled.')
+  }
+  const now = commandTime(options.now)
+  const fromStatus = task.status
+  if (fromStatus === 'completed') {
+    task.status = task.plannedOn ? 'planned' : 'inbox'
+    task.blockedReason = null
+    advanceTask(task, now)
+    appendEvent(state, task, 'reopened', fromStatus, task.status, options.eventId, now)
+  } else {
+    finishActiveTaskSession(state, task.id, now)
+    task.status = 'completed'
+    task.blockedReason = null
+    advanceTask(task, now)
+    appendEvent(state, task, 'completed', fromStatus, 'completed', options.eventId, now)
+  }
+  await persist(state, now)
+  return structuredClone(task)
+}
+
 export async function reviewCompletionRecord(
   recordId: string,
   result: ReviewResult,
@@ -441,6 +625,7 @@ export async function createTaskFromNextAction(
     id: makeId('task', options.taskId), revision: 1, topicId: record.topicId,
     title: record.nextAction, notes: '', status: planned ? 'planned' : 'inbox',
     plannedOn: options.plannedOn ?? null, dueOn: null, estimateMinutes: null,
+    reminderAt: null, priority: 'none',
     acceptanceCriteria: [], checklist: [], blockedReason: null,
     createdAt: now, updatedAt: now, deletedAt: null,
   }
@@ -487,6 +672,34 @@ function requireTask(state: StudyState, taskId: string, expectedRevision?: numbe
     throw new Error(`Study task revision conflict: expected ${expectedRevision}, found ${task.revision}.`)
   }
   return task
+}
+
+function requireBulkTasks(state: StudyState, targets: readonly BulkTaskTarget[]): StudyTask[] {
+  const ids = targets.map(({ taskId }) => taskId)
+  if (new Set(ids).size !== ids.length) {
+    throw new Error('Bulk Study task command cannot contain duplicate ids.')
+  }
+  return targets.map(({ taskId, expectedRevision }) =>
+    requireTask(state, taskId, expectedRevision))
+}
+
+function finishActiveTaskSession(state: StudyState, taskId: string, now: string): void {
+  const active = state.sessions.find(({ taskId: id, state, deletedAt }) =>
+    id === taskId && !deletedAt && (state === 'running' || state === 'paused'))
+  if (active) finishSession(active, now)
+}
+
+function softDeleteTask(
+  state: StudyState,
+  task: StudyTask,
+  now: string,
+  eventId?: string,
+  reason?: string,
+): void {
+  finishActiveTaskSession(state, task.id, now)
+  task.deletedAt = now
+  advanceTask(task, now)
+  appendEvent(state, task, 'deleted', task.status, task.status, eventId, now, reason)
 }
 
 function requireSession(state: StudyState, sessionId: string): StudySession {
