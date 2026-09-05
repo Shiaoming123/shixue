@@ -533,8 +533,14 @@ async function executeCommand(command: CapabilityCommand, now: string): Promise<
     idempotencyKey: `study:${crypto.randomUUID()}`,
     source: 'human-ui',
     expectedWorkspaceRevision: current.revision,
-    command,
+    command: withoutUndefinedFields(command),
   })
+}
+
+function withoutUndefinedFields<T extends object>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, field]) => field !== undefined),
+  ) as T
 }
 
 function taskPatch(input: StudyTaskMetadataUpdate) {

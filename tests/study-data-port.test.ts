@@ -6,9 +6,9 @@ import {
   parseStudyExport,
   STUDY_EXPORT_FORMAT,
 } from '../src/storage/study/data-port.ts'
-import { createInMemoryStudyStore } from '../src/storage/study/in-memory.ts'
-import { registerStudyStore } from '../src/storage/study/registry.ts'
+import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { createSeedStudyState } from '../src/storage/study/types.ts'
+import { registerWorkspaceStore } from '../src/storage/workspace/registry.ts'
 
 test('Study export is versioned and round-trips the complete snapshot', () => {
   const state = createSeedStudyState('2026-09-04T00:00:00.000Z')
@@ -51,33 +51,35 @@ test('Study import accepts a v1 envelope and deterministically migrates it to v2
 
 test('Study import rejects invalid nested records before replacing storage', async () => {
   const original = createSeedStudyState('2026-09-04T00:00:00.000Z')
-  registerStudyStore(createInMemoryStudyStore(original))
+  const store = createInMemoryWorkspaceStore(original)
+  registerWorkspaceStore(store)
+  const before = await store.load()
   const invalid = createStudyExport(original, '2026-09-05T00:00:00.000Z')
   invalid.state.topics[0].weeklyTargetMinutes = -1
 
   await assert.rejects(importStudyState(JSON.stringify(invalid)), /weeklyTargetMinutes/)
-  assert.deepEqual(JSON.parse(await exportStudyState('2026-09-05T00:00:00.000Z')).state, original)
+  assert.deepEqual(JSON.parse(await exportStudyState('2026-09-05T00:00:00.000Z')).state, before)
 })
 
 test('Study import replaces storage only after complete validation', async () => {
   const original = createSeedStudyState('2026-09-04T00:00:00.000Z')
   const replacement = createSeedStudyState('2026-09-06T00:00:00.000Z')
   replacement.topics[0].title = 'Imported topic'
-  registerStudyStore(createInMemoryStudyStore(original))
+  registerWorkspaceStore(createInMemoryWorkspaceStore(original))
 
   await importStudyState(
     JSON.stringify(createStudyExport(replacement, '2026-09-06T01:00:00.000Z')),
   )
 
-  assert.equal(
-    JSON.parse(await exportStudyState('2026-09-06T02:00:00.000Z')).state.topics[0].title,
-    'Imported topic',
-  )
+  const exported = JSON.parse(await exportStudyState('2026-09-06T02:00:00.000Z'))
+  assert.equal(exported.state.lists.find(({ id }: { id: string }) => id === 'topic-langgraph')?.title, 'Imported topic')
 })
 
 test('Study import rejects a broken task event chain before replacing storage', async () => {
   const original = createSeedStudyState('2026-09-04T00:00:00.000Z')
-  registerStudyStore(createInMemoryStudyStore(original))
+  const store = createInMemoryWorkspaceStore(original)
+  registerWorkspaceStore(store)
+  const before = await store.load()
   const invalid = createStudyExport(original, '2026-09-05T00:00:00.000Z')
   const completed = invalid.state.taskEvents.find(({ type }) => type === 'completed')
   if (!completed) throw new Error('Seed must contain a completion event.')
@@ -86,6 +88,6 @@ test('Study import rejects a broken task event chain before replacing storage', 
   await assert.rejects(importStudyState(JSON.stringify(invalid)), /event chain/i)
   assert.deepEqual(
     JSON.parse(await exportStudyState('2026-09-05T00:00:00.000Z')).state,
-    original,
+    before,
   )
 })
