@@ -233,7 +233,7 @@ Automated package, isolated install, and process-liveness smoke is `PASS`. The n
 
 Run: `npm test; npm run typecheck; npm run build; npm run build:web; npm run rust:verify; npm run check:docs; npm run release:check; git diff --check`
 
-- [ ] **Step 5: Commit and push PR 4**
+- [x] **Step 5: Commit and push PR 4**
 
 ```powershell
 git add scripts/smoke-windows-package.mjs docs/windows-distribution.md docs/todofy-benchmark.md
