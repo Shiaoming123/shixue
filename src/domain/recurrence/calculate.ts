@@ -12,13 +12,11 @@ function nextOccurrence(series: RecurrenceSeries, thresholdIso: string, strictAf
   const threshold = new Date(thresholdIso)
   if (Number.isNaN(threshold.getTime())) throw new Error(`Invalid datetime: ${thresholdIso}`)
   const anchor = parseZonedDateTime(series.anchorAt, series.timezone)
-  const horizonDate = addCalendarDays(anchor.date, OCCURRENCE_HORIZON_DAYS)
   const limit = series.end.kind === 'after' ? series.end.count : MAX_SEARCH_STEPS
 
   if (series.cadence.kind === 'daily') {
     for (let occurrence = 1; occurrence <= limit; occurrence += 1) {
       const date = addCalendarDays(anchor.date, (occurrence - 1) * series.cadence.interval)
-      if (date > horizonDate) break
       if (series.end.kind === 'on' && date > series.end.date) break
       const instant = zonedDateTimeToInstant(date, anchor.time, series.timezone)
       if (strictAfter ? instant > threshold : instant.getTime() >= threshold.getTime()) return instant.toISOString()
@@ -28,9 +26,8 @@ function nextOccurrence(series: RecurrenceSeries, thresholdIso: string, strictAf
 
   if (series.cadence.kind === 'weekly') {
     let matched = 0
-    for (let dayOffset = 0; dayOffset <= OCCURRENCE_HORIZON_DAYS; dayOffset += 1) {
+    for (let dayOffset = 0; dayOffset <= MAX_SEARCH_STEPS * 7; dayOffset += 1) {
       const date = addCalendarDays(anchor.date, dayOffset)
-      if (date > horizonDate) break
       if (series.end.kind === 'on' && date > series.end.date) break
       const weekOffset = Math.floor(dayOffset / 7)
       if (weekOffset % series.cadence.interval !== 0) continue
@@ -48,7 +45,6 @@ function nextOccurrence(series: RecurrenceSeries, thresholdIso: string, strictAf
       series.cadence.kind === 'monthly'
         ? addCalendarMonths(anchor.date, (occurrence - 1) * series.cadence.interval, series.cadence.dayOfMonth)
         : addCalendarYears(anchor.date, (occurrence - 1) * series.cadence.interval, series.cadence.month, series.cadence.dayOfMonth)
-    if (date > horizonDate) break
     if (series.end.kind === 'on' && date > series.end.date) break
     const instant = zonedDateTimeToInstant(date, anchor.time, series.timezone)
     if (strictAfter ? instant > threshold : instant.getTime() >= threshold.getTime()) return instant.toISOString()

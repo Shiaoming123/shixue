@@ -82,4 +82,30 @@ test('materialization caps pending occurrences at fifty and within the 90-day wi
   const result = materializeOccurrenceWindow(base, 'series-1', '2026-09-01T00:00:00Z')
   assert.equal(result.created.length, 50)
   assert.equal(result.created.at(-1)?.ordinal, 50)
+  assert.ok(new Date(result.created.at(-1)!.scheduledAt).getTime() <= new Date('2026-11-30T00:00:00Z').getTime())
+})
+
+test('materialization uses now local date for the ninety-calendar-day horizon', () => {
+  const base = state()
+  base.occurrences = []
+  base.recurrenceSeries[0]!.cadence = { kind: 'weekly', interval: 1, weekdays: [5] }
+  base.recurrenceSeries[0]!.anchorAt = '2026-09-04T09:00:00-04:00'
+  const result = materializeOccurrenceWindow(base, 'series-1', '2026-09-04T12:00:00Z')
+  assert.equal(result.created.length, 13)
+  assert.equal(result.created.at(-1)?.scheduledAt, '2026-11-27T14:00:00.000Z')
+})
+
+test('after-completion creates only the first item, then one item after completion', () => {
+  const base = state()
+  base.recurrenceSeries[0]!.basis = 'after_completion'
+  base.occurrences = []
+  const first = materializeOccurrenceWindow(base, 'series-1', '2026-09-01T00:00:00Z')
+  assert.deepEqual(first.created.map((item) => item.ordinal), [1])
+  const waiting = materializeOccurrenceWindow(first.state, 'series-1', '2026-09-01T00:00:00Z')
+  assert.equal(waiting.created.length, 0)
+  const completedState = { ...first.state, occurrences: first.state.occurrences.map((item) => ({ ...item, status: 'completed' as const, completedAt: '2026-09-05T14:00:00.000Z' })) }
+  const next = materializeOccurrenceWindow(completedState, 'series-1', '2026-09-05T15:00:00.000Z')
+  assert.deepEqual(next.created.map((item) => item.ordinal), [2])
+  const idem = materializeOccurrenceWindow(next.state, 'series-1', '2026-09-05T15:00:00.000Z')
+  assert.equal(idem.created.length, 0)
 })

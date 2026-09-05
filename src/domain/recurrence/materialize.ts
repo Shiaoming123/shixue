@@ -1,5 +1,5 @@
 import type { WorkspaceStateV3, RecurrenceSeries, TaskOccurrence } from '../workspace/types.ts'
-import { MAX_PENDING_OCCURRENCES, OCCURRENCE_HORIZON_DAYS } from './calculate.ts'
+import { MAX_PENDING_OCCURRENCES, OCCURRENCE_HORIZON_DAYS, nextAfterCompletion } from './calculate.ts'
 
 export interface MaterializeResult {
   state: WorkspaceStateV3
@@ -17,9 +17,11 @@ export function materializeOccurrenceWindow(
   const threshold = new Date(now)
   if (Number.isNaN(threshold.getTime())) throw new Error(`Invalid datetime: ${now}`)
 
-  const anchor = parseZonedDateTime(series.anchorAt, series.timezone)
-  const horizonDate = addCalendarDays(anchor.date, OCCURRENCE_HORIZON_DAYS)
   const existing = state.occurrences.filter((occurrence) => occurrence.seriesId === seriesId)
+  if (series.basis === 'after_completion') return materializeAfterCompletion(state, series, existing, now)
+
+  const anchor = parseZonedDateTime(series.anchorAt, series.timezone)
+  const horizonDate = addCalendarDays(parseZonedDateTime(now, series.timezone).date, OCCURRENCE_HORIZON_DAYS)
   const existingById = new Map(existing.map((occurrence) => [occurrence.id, occurrence]))
   const pending = existing.filter((occurrence) => occurrence.status === 'pending')
   const created: TaskOccurrence[] = []
@@ -70,6 +72,37 @@ export function materializeOccurrenceWindow(
   return { state: nextState, created, pendingCount }
 }
 
+function materializeAfterCompletion(
+  state: WorkspaceStateV3,
+  series: RecurrenceSeries,
+  existing: TaskOccurrence[],
+  now: string,
+): MaterializeResult {
+  const latest = [...existing].sort((left, right) => right.ordinal - left.ordinal)[0]
+  let scheduledAt: string | null
+  let ordinal: number
+  if (!latest) {
+    scheduledAt = series.anchorAt
+    ordinal = 1
+  } else if (latest.status === 'completed' && latest.completedAt) {
+    scheduledAt = nextAfterCompletion(series, latest.completedAt)
+    ordinal = latest.ordinal + 1
+  } else {
+    return { state, created: [], pendingCount: existing.filter((occurrence) => occurrence.status === 'pending').length }
+  }
+  if (!scheduledAt || (series.end.kind === 'after' && ordinal > series.end.count)) {
+    return { state, created: [], pendingCount: existing.filter((occurrence) => occurrence.status === 'pending').length }
+  }
+  const occurrence: TaskOccurrence = {
+    id: occurrenceId(series.id, ordinal), seriesId: series.id, ordinal, scheduledAt,
+    status: 'pending', override: null, completedAt: null, revision: series.revision,
+  }
+  const nextState: WorkspaceStateV3 = {
+    ...state, revision: state.revision + 1, occurrences: [...state.occurrences, occurrence], updatedAt: now,
+  }
+  return { state: nextState, created: [occurrence], pendingCount: existing.filter((item) => item.status === 'pending').length + 1 }
+}
+
 function occurrenceDate(series: RecurrenceSeries, anchorDate: string, ordinal: number): string | null {
   const offset = ordinal - 1
   if (series.cadence.kind === 'daily') return addCalendarDays(anchorDate, offset * series.cadence.interval)
@@ -80,7 +113,7 @@ function occurrenceDate(series: RecurrenceSeries, anchorDate: string, ordinal: n
 
 function weeklyDate(anchorDate: string, interval: number, weekdays: readonly number[], offset: number): string | null {
   let seen = 0
-  for (let dayOffset = 0; dayOffset <= OCCURRENCE_HORIZON_DAYS; dayOffset += 1) {
+  for (let dayOffset = 0; dayOffset <= MAX_SEARCH_STEPS * 7; dayOffset += 1) {
     const date = addCalendarDays(anchorDate, dayOffset)
     if (Math.floor(dayOffset / 7) % interval !== 0) continue
     if (!weekdays.includes(weekdayOf(date))) continue
