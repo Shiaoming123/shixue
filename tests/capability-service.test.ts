@@ -67,6 +67,31 @@ test('task.plan preserves an explicit precise schedule after its deadline', asyn
   assert.equal(task?.deadline.dueOn, '2026-09-06')
 })
 
+test('task capability rejects invalid schedule shapes without saving', async (context) => {
+  const commands: Array<[string, CommandEnvelope['command']]> = [
+    ['dual representation', {
+      type: 'task.create', taskId: 'dual', listId: 'list:system:learning', title: 'Dual schedule',
+      startAt: '2026-09-07T06:00:00.000Z', startOn: '2026-09-07',
+    }],
+    ['invalid date', {
+      type: 'task.create', taskId: 'invalid-date', listId: 'list:system:learning', title: 'Invalid date',
+      startOn: '2026-02-30',
+    }],
+  ]
+
+  for (const [label, command] of commands) {
+    await context.test(label, async () => {
+      const service = fixture()
+      const before = await service.query({ type: 'workspace.snapshot' })
+      await assert.rejects(
+        executeNext(service, `invalid-${label}`, command),
+        (error) => error instanceof DomainCommandError && error.code === 'VALIDATION_ERROR',
+      )
+      assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+    })
+  }
+})
+
 test('does not save when one target in a batch is invalid', async () => {
   const service = fixture()
   const initial = await service.query({ type: 'workspace.snapshot' })

@@ -149,7 +149,6 @@ export async function captureStudyTask(
   options: TaskCommandOptions & { taskId?: string } = {},
 ): Promise<StudyTask> {
   const now = commandTime(options.now)
-  assertStudyDateOrder(input.plannedOn ?? null, input.dueOn ?? null)
   const taskId = makeId('task', options.taskId)
   await executeCommand({
     type: 'task.create',
@@ -175,8 +174,6 @@ export async function updateStudyTask(
   input: StudyTaskMetadataUpdate,
   options: StudyWriteOptions = {},
 ): Promise<StudyTask> {
-  const current = requireTask(await loadStudyState(), taskId)
-  assertStudyDateOrder(effectivePlanDate(input, current.plannedOn), input.dueOn ?? current.dueOn)
   const now = commandTime(options.now)
   await executeCommand({
     type: 'task.update',
@@ -561,11 +558,6 @@ function taskPatch(input: StudyTaskMetadataUpdate) {
   return patch
 }
 
-function effectivePlanDate(input: StudyTaskMetadataUpdate, currentPlannedOn: string | null): string | null {
-  if (input.plannedAt !== undefined) return input.plannedAt?.slice(0, 10) ?? null
-  return input.plannedOn ?? currentPlannedOn
-}
-
 function projectTask(task: Task, reminderAt: string | null): StudyTask {
   return {
     id: task.id,
@@ -621,10 +613,6 @@ function sameSessionLifecycle(current: StudySession, candidate: StudySession): b
     current.elapsedSeconds === candidate.elapsedSeconds &&
     current.createdAt === candidate.createdAt &&
     current.deletedAt === candidate.deletedAt
-}
-
-function assertStudyDateOrder(plannedOn: string | null, dueOn: string | null): void {
-  if (plannedOn && dueOn && dueOn < plannedOn) throw new Error('Study task dueOn cannot precede plannedOn.')
 }
 
 function assertUniqueTargets(targets: readonly BulkTaskTarget[], message: string): void {

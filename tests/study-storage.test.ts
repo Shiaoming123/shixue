@@ -220,6 +220,41 @@ test('task creation and planning persist todo metadata atomically', async () => 
   assert.equal(planned.priority, 'low')
 })
 
+test('capture preserves a date-only schedule after its deadline', async () => {
+  const store = createInMemoryWorkspaceStore(emptyState())
+  registerWorkspaceStore(store)
+
+  const captured = await captureStudyTask({
+    title: 'Captured conflict',
+    plannedOn: '2026-09-07',
+    dueOn: '2026-09-06',
+  }, { taskId: 'captured-conflict', eventId: 'capture-conflict', now: '2026-09-04T08:00:00.000Z' })
+
+  assert.equal(captured.plannedOn, '2026-09-07')
+  assert.equal(captured.dueOn, '2026-09-06')
+  const persisted = (await store.load()).tasks.find(({ id }) => id === 'captured-conflict')
+  assert.equal(persisted?.schedule.startOn, '2026-09-07')
+  assert.equal(persisted?.deadline.dueOn, '2026-09-06')
+})
+
+test('metadata update preserves a precise schedule after its deadline', async () => {
+  const store = createInMemoryWorkspaceStore(emptyState())
+  registerWorkspaceStore(store)
+  await captureStudyTask({
+    title: 'Updated conflict',
+    dueOn: '2026-09-06',
+  }, { taskId: 'updated-conflict', eventId: 'capture-before-update', now: '2026-09-04T08:00:00.000Z' })
+
+  await updateStudyTask('updated-conflict', {
+    plannedAt: '2026-09-07T06:00:00.000Z',
+  }, { now: '2026-09-04T08:01:00.000Z' })
+
+  const persisted = (await store.load()).tasks.find(({ id }) => id === 'updated-conflict')
+  assert.equal(persisted?.schedule.startAt, '2026-09-07T06:00:00.000Z')
+  assert.equal(persisted?.schedule.startOn, null)
+  assert.equal(persisted?.deadline.dueOn, '2026-09-06')
+})
+
 test('planning preserves a precise start after its deadline for an explicit conflict', async () => {
   const store = createInMemoryWorkspaceStore(emptyState())
   registerWorkspaceStore(store)
