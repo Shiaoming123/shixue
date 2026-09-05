@@ -10,7 +10,8 @@ export interface TaskEditValue {
   title: string
   notes: string
   topicId: string | null
-  plannedOn: string | null
+  plannedOn?: string | null
+  plannedAt?: string | null
   dueOn: string | null
   reminderAt: string | null
   priority: StudyTaskPriority
@@ -26,6 +27,7 @@ const props = defineProps<{
   topics: StudyTopic[]
   recurrenceRule?: RecurrenceRule | null
   learning?: boolean
+  plannedAt?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -38,6 +40,7 @@ const title = ref('')
 const notes = ref('')
 const topicId = ref('')
 const plannedOn = ref('')
+const plannedTimed = ref(false)
 const dueOn = ref('')
 const reminderAt = ref('')
 const priority = ref<StudyTaskPriority>('none')
@@ -60,7 +63,8 @@ watch(() => [props.open, props.task, props.recurrenceRule] as const, ([open, tas
   title.value = task.title
   notes.value = task.notes
   topicId.value = task.topicId ?? ''
-  plannedOn.value = task.plannedOn ?? ''
+  plannedTimed.value = Boolean(props.plannedAt)
+  plannedOn.value = props.plannedAt ? toLocalDateTime(props.plannedAt) : task.plannedOn ?? ''
   dueOn.value = task.dueOn ?? ''
   reminderAt.value = task.reminderAt ? toLocalDateTime(task.reminderAt) : ''
   priority.value = task.priority
@@ -76,7 +80,9 @@ function save() {
     title: normalizedTitle,
     notes: notes.value.trim(),
     topicId: topicId.value || null,
-    plannedOn: plannedOn.value || null,
+    ...(plannedTimed.value
+      ? { plannedAt: plannedOn.value ? new Date(plannedOn.value).toISOString() : null }
+      : { plannedOn: plannedOn.value || null }),
     dueOn: dueOn.value || null,
     reminderAt: reminderAt.value ? new Date(reminderAt.value).toISOString() : null,
     priority: priority.value,
@@ -100,7 +106,7 @@ function toLocalDateTime(value: string) {
       <label><span>备注</span><textarea v-model="notes" aria-label="任务备注" placeholder="备注" /></label>
       <label><span><ListTree :size="15" />清单</span><Listbox v-model="topicId" :options="topicOptions" label="清单" /></label>
       <div class="field-grid">
-        <label><span><CalendarDays :size="15" />日期</span><DateTimePicker v-model="plannedOn" label="日期" placeholder="不设置计划日期" /></label>
+        <label><span><CalendarDays :size="15" />日期</span><DateTimePicker v-model="plannedOn" :mode="plannedTimed ? 'datetime' : 'date'" label="日期" placeholder="不设置计划日期" /></label>
         <label><span>截止</span><DateTimePicker v-model="dueOn" label="截止日期" placeholder="不设置截止日期" /></label>
       </div>
       <label><span><Bell :size="15" />提醒</span><DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" placeholder="不设置提醒" /></label>

@@ -268,6 +268,7 @@ defineExpose({ focus })
         :key="candidate.id"
         :open="activeCandidateId === candidate.id"
         align="start"
+        mobile-sheet
         @update:open="setEditorOpen(candidate, $event)"
       >
         <template #trigger="{ triggerProps }">
@@ -334,6 +335,7 @@ defineExpose({ focus })
   .quick-add-input-row { min-height: 52px; }
   .quick-add-input-row > button { width: 44px; height: 44px; }
   .quick-add-chips { gap: var(--space-2); }
+  .candidate-editor { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 </style>

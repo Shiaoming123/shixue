@@ -8,11 +8,13 @@ const props = withDefaults(defineProps<{
   align?: 'start' | 'end'
   offset?: number
   matchTriggerWidth?: boolean
+  mobileSheet?: boolean
 }>(), {
   kind: 'popover',
   align: 'start',
   offset: 8,
   matchTriggerWidth: false,
+  mobileSheet: false,
 })
 
 const emit = defineEmits<{
@@ -116,6 +118,7 @@ defineExpose({ close: requestClose, updatePosition })
         :id="id"
         ref="panel"
         class="popover-panel"
+        :class="{ 'popover-panel--mobile-sheet': mobileSheet }"
         :data-overlay-layer="layerId"
         :style="position"
       >
@@ -150,6 +153,20 @@ defineExpose({ close: requestClose, updatePosition })
 .popover-leave-to {
   opacity: 0;
   transform: translateY(4px);
+}
+
+@media (max-width: 599px) {
+  .popover-panel--mobile-sheet {
+    top: auto !important;
+    right: 12px;
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    left: 12px !important;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 104px - env(safe-area-inset-bottom, 0px));
+    border-radius: var(--radius-2xl);
+    background: var(--surface);
+  }
 }
 
 @media (prefers-reduced-transparency: reduce) {

@@ -64,7 +64,7 @@ export type StudyTaskMetadataUpdate = Partial<Pick<StudyTask,
   | 'priority'
   | 'estimateMinutes'
   | 'acceptanceCriteria'
->>
+>> & { plannedAt?: string | null }
 
 export type StudyTaskCreationInput = Pick<StudyTask, 'title'> &
   Partial<Pick<StudyTask,
@@ -176,7 +176,10 @@ export async function updateStudyTask(
   options: StudyWriteOptions = {},
 ): Promise<StudyTask> {
   const current = requireTask(await loadStudyState(), taskId)
-  assertStudyDateOrder(input.plannedOn ?? current.plannedOn, input.dueOn ?? current.dueOn)
+  const nextPlannedOn = input.plannedAt !== undefined
+    ? input.plannedAt?.slice(0, 10) ?? null
+    : input.plannedOn ?? current.plannedOn
+  assertStudyDateOrder(nextPlannedOn, input.dueOn ?? current.dueOn)
   const now = commandTime(options.now)
   await executeCommand({
     type: 'task.update',
@@ -548,7 +551,13 @@ function taskPatch(input: StudyTaskMetadataUpdate) {
   if (input.topicId !== undefined) patch.listId = listIdForTopic(input.topicId)
   if (input.title !== undefined) patch.title = input.title
   if (input.notes !== undefined) patch.notes = input.notes
-  if (input.plannedOn !== undefined) patch.startOn = input.plannedOn
+  if (input.plannedAt !== undefined) {
+    patch.startAt = input.plannedAt
+    patch.startOn = null
+  } else if (input.plannedOn !== undefined) {
+    patch.startAt = null
+    patch.startOn = input.plannedOn
+  }
   if (input.dueOn !== undefined) patch.dueOn = input.dueOn
   if (input.reminderAt !== undefined) patch.reminderAt = input.reminderAt
   if (input.priority !== undefined) patch.priority = input.priority

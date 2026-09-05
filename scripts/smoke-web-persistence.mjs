@@ -118,7 +118,7 @@ async function main() {
     const executablePath = resolveBrowserExecutable()
     const { chromium } = await import('playwright-core')
     const browser = await chromium.launch({ executablePath, headless: true })
-    const context = await browser.newContext({ viewport: { width: 1440, height: 960 } })
+    const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' })
     const page = await context.newPage()
     const consoleErrors = []
     const pageErrors = []
@@ -179,6 +179,22 @@ async function main() {
         throw new Error(`Quick add tag was not preserved after reload: ${await tagValue.textContent()}`)
       }
 
+      await quickAddDetail.getByRole('button', { name: '编辑任务', exact: true }).click()
+      const quickAddEditDialog = page.getByRole('dialog', { name: '编辑任务' })
+      await quickAddEditDialog.getByLabel('任务备注').fill('精确时间编辑验证')
+      await quickAddEditDialog.getByRole('button', { name: '保存', exact: true }).click()
+      await quickAddEditDialog.waitFor({ state: 'hidden' })
+      await page.reload({ waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('searchbox', { name: '搜索任务' }).fill(quickAddTitle)
+      const editedQuickAddRow = page.locator('.task-row').filter({ hasText: quickAddTitle })
+      await editedQuickAddRow.locator('.task-main').click()
+      const editedQuickAddDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
+      await editedQuickAddDetail.getByText('精确时间编辑验证', { exact: true }).waitFor({ state: 'visible' })
+      const editedPlannedValue = editedQuickAddDetail.locator('.facts div').filter({ hasText: '计划日期' }).locator('dd')
+      if ((await editedPlannedValue.textContent()) !== '明天 14:00') {
+        throw new Error(`Quick add timed schedule changed after editing: ${await editedPlannedValue.textContent()}`)
+      }
       const marker = createStudyMarker()
       const editedMarker = `${marker}-edited`
       await page.getByRole('button', { name: /^收件箱/ }).click()
@@ -233,10 +249,21 @@ async function main() {
       const mobileQuickAdd = page.locator('.quick-add-composer')
       await mobileQuickAdd.getByRole('textbox', { name: '新建任务' }).fill(quickAddTitle)
       await mobileQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).click()
+      const mobileScheduleEditor = page.getByRole('dialog', { name: /编辑计划/ })
+      const mobileApply = mobileScheduleEditor.getByRole('button', { name: '应用', exact: true })
+      await mobileApply.waitFor({ state: 'visible' })
+      const [applyBox, bottomNavBox] = await Promise.all([
+        mobileApply.boundingBox(),
+        page.getByRole('navigation', { name: '移动端主导航' }).boundingBox(),
+      ])
+      if (!applyBox || !bottomNavBox || applyBox.y + applyBox.height > bottomNavBox.y) {
+        throw new Error(`Mobile picker actions overlap bottom navigation: apply=${JSON.stringify(applyBox)}, nav=${JSON.stringify(bottomNavBox)}`)
+      }
       await page.screenshot({
         path: resolve(quickAddArtifactRoot, 'quick-add-mobile-picker-390x844.png'),
       })
-      await page.keyboard.press('Escape')
+      await mobileApply.click()
+      await mobileQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).waitFor({ state: 'visible' })
       await page
         .getByRole('navigation', { name: '移动端主导航' })
         .getByRole('button', { name: '主题', exact: true })
