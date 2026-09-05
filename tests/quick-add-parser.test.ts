@@ -62,6 +62,14 @@ test('parses equivalent Chinese and English structured tokens', () => {
   }
 })
 
+test('consumes an English pm suffix and applies it to the resolved time', () => {
+  const input = 'tomorrow 9:30pm review'
+  const result = parseQuickAdd(input, context('2026-09-04T09:00:00+08:00'))
+
+  assert.equal(result.candidates[0]?.value, '2026-09-05T21:30:00+08:00')
+  assert.deepEqual(result.candidates[0]?.source, { start: 0, end: 15, text: 'tomorrow 9:30pm' })
+})
+
 test('maps bilingual priority and recurrence tokens to domain values', () => {
   const cases = [
     ['p1', 'priority', 'high'], ['p2', 'priority', 'medium'],
@@ -93,6 +101,24 @@ test('only resolves exact list and tag tokens and retains unknown tokens in the 
   assert.deepEqual(unknown.candidates, [])
 })
 
+test('never leaks priority or recurrence candidates from inside entity tokens', () => {
+  const known = parseQuickAdd('#foo-p1 #daily @monthly', context('2026-09-04T09:00:00+08:00', 'Asia/Shanghai', {
+    tags: [{ id: 'tag-priority-name', title: 'foo-p1' }, { id: 'tag-daily', title: 'daily' }],
+    lists: [{ id: 'list-monthly', title: 'monthly' }],
+  }))
+  assert.deepEqual(known.candidates.map(({ kind, value }) => [kind, value]), [
+    ['tag', 'tag-priority-name'],
+    ['tag', 'tag-daily'],
+    ['list', 'list-monthly'],
+  ])
+
+  const unknown = parseQuickAdd('#foo-p1 #daily @monthly', context('2026-09-04T09:00:00+08:00', 'Asia/Shanghai', {
+    tags: [],
+    lists: [],
+  }))
+  assert.deepEqual(unknown.candidates, [])
+})
+
 test('treats a qualified Chinese weekday as one date token', () => {
   const result = parseQuickAdd('下周五下午3点', context('2026-09-04T09:00:00+08:00'))
 
@@ -101,6 +127,12 @@ test('treats a qualified Chinese weekday as one date token', () => {
     value: '2026-09-11T15:00:00+08:00',
     text: '下周五下午3点',
   }])
+})
+
+test('places an explicit next-week weekday in the following calendar week', () => {
+  const result = parseQuickAdd('下周五下午3点', context('2026-09-07T09:00:00+08:00'))
+
+  assert.equal(result.candidates[0]?.value, '2026-09-18T15:00:00+08:00')
 })
 
 test('marks duplicate exact entity titles as ambiguous instead of choosing an id', () => {
@@ -165,6 +197,17 @@ test('marks conflicting same-kind date candidates ambiguous rather than selectin
   ])
 })
 
+test('marks conflicting priorities and recurrence rules ambiguous', () => {
+  const result = parseQuickAdd('p1 p2 daily monthly', context('2026-09-04T09:00:00+08:00'))
+
+  assert.deepEqual(result.candidates.map(({ kind, value, status }) => ({ kind, value, status })), [
+    { kind: 'priority', value: 'high', status: 'ambiguous' },
+    { kind: 'priority', value: 'medium', status: 'ambiguous' },
+    { kind: 'recurrence', value: 'daily', status: 'ambiguous' },
+    { kind: 'recurrence', value: 'monthly', status: 'ambiguous' },
+  ])
+})
+
 test('resolves DST gap and fold wall times through the shared timezone policy', () => {
   const spring = parseQuickAdd(
     'tomorrow 2:30am',
@@ -187,5 +230,9 @@ test('rejects an invalid explicit clock or IANA timezone', () => {
   assert.throws(
     () => parseQuickAdd('today', context('2026-09-04T09:00:00+08:00', 'Mars/Olympus_Mons')),
     /Invalid IANA timezone/,
+  )
+  assert.throws(
+    () => parseQuickAdd('today', context('2026-09-04T09:00:00')),
+    /UTC offset required/,
   )
 })

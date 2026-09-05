@@ -21,6 +21,7 @@ interface ParserState {
   context: QuickAddContext
   now: Date
   localNow: { date: string; time: string }
+  entityTokens: QuickAddSourceRange[]
   candidates: QuickAddCandidate[]
 }
 
@@ -69,21 +70,32 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
   assertIanaTimezone(context.timezone)
   const now = new Date(context.now)
   if (Number.isNaN(now.getTime())) throw new Error(`Invalid datetime: ${context.now}`)
+  if (!/(?:Z|[+-]\d{2}:\d{2})$/iu.test(context.now)) {
+    throw new Error(`Invalid datetime (UTC offset required): ${context.now}`)
+  }
   const localNow = parseZonedDateTime(context.now, context.timezone)
-  const state: ParserState = { input, context, now, localNow, candidates: [] }
+  const state: ParserState = {
+    input,
+    context,
+    now,
+    localNow,
+    entityTokens: findTokenRanges(input, ENTITY_PATTERN),
+    candidates: [],
+  }
 
   return resolveTokens(state, [priorityRule, recurrenceRule, entityRule, dateTimeRule, deadlineRule])
 }
 
 function resolveTokens(state: ParserState, rules: readonly Rule[]): QuickAddParse {
   for (const rule of rules) rule(state)
-  markDateConflicts(state.candidates)
+  markSingularConflicts(state.candidates)
   state.candidates.sort((left, right) => left.source.start - right.source.start)
   return { originalTitle: state.input, candidates: state.candidates }
 }
 
 function priorityRule(state: ParserState): void {
   for (const source of findTokenRanges(state.input, PRIORITY_PATTERN)) {
+    if (insideEntityToken(state, source)) continue
     const level = /[1-4]/u.exec(source.text)?.[0]
     if (level) addCandidate(state, 'priority', PRIORITIES.get(level)!, source)
   }
@@ -91,13 +103,14 @@ function priorityRule(state: ParserState): void {
 
 function recurrenceRule(state: ParserState): void {
   for (const source of findTokenRanges(state.input, RECURRENCE_PATTERN)) {
+    if (insideEntityToken(state, source)) continue
     const value = RECURRENCES.get(source.text.toLocaleLowerCase())
     if (value) addCandidate(state, 'recurrence', value, source)
   }
 }
 
 function entityRule(state: ParserState): void {
-  for (const source of findTokenRanges(state.input, ENTITY_PATTERN)) {
+  for (const source of state.entityTokens) {
     const prefix = source.text[0]
     const title = source.text.slice(1)
     const entities = prefix === '#' ? state.context.tags : state.context.lists
@@ -108,9 +121,8 @@ function entityRule(state: ParserState): void {
 }
 
 function dateTimeRule(state: ParserState): void {
-  const entityTokens = findTokenRanges(state.input, ENTITY_PATTERN)
   for (const dateSource of findTokenRanges(state.input, DATE_TOKEN_PATTERN)) {
-    if (isOccupied(state, dateSource) || entityTokens.some((token) => rangesOverlap(token, dateSource))) continue
+    if (isOccupied(state, dateSource) || insideEntityToken(state, dateSource)) continue
     const timeSource = followingTime(state.input, dateSource.end)
     if (deadlinePrefixStart(state.input, dateSource.start) !== null) continue
     addDateCandidate(state, 'schedule', dateSource, timeSource, dateSource.start)
@@ -118,9 +130,8 @@ function dateTimeRule(state: ParserState): void {
 }
 
 function deadlineRule(state: ParserState): void {
-  const entityTokens = findTokenRanges(state.input, ENTITY_PATTERN)
   for (const dateSource of findTokenRanges(state.input, DATE_TOKEN_PATTERN)) {
-    if (entityTokens.some((token) => rangesOverlap(token, dateSource))) continue
+    if (insideEntityToken(state, dateSource)) continue
     const deadlineStart = deadlinePrefixStart(state.input, dateSource.start)
     if (deadlineStart === null) continue
     addDateCandidate(state, 'deadline', dateSource, followingTime(state.input, dateSource.end), deadlineStart)
@@ -162,9 +173,16 @@ function isOccupied(state: ParserState, source: QuickAddSourceRange): boolean {
   return state.candidates.some((candidate) => rangesOverlap(candidate.source, source))
 }
 
+function insideEntityToken(state: ParserState, source: QuickAddSourceRange): boolean {
+  return state.entityTokens.some((token) => rangesOverlap(token, source))
+}
+
 function followingTime(input: string, start: number): QuickAddSourceRange | null {
   const tail = input.slice(start)
-  const match = CHINESE_TIME_PATTERN.exec(tail) ?? ENGLISH_TIME_PATTERN.exec(tail)
+  const matches = [CHINESE_TIME_PATTERN.exec(tail), ENGLISH_TIME_PATTERN.exec(tail)]
+    .filter((match): match is RegExpExecArray => match !== null)
+    .sort((left, right) => right[0].length - left[0].length)
+  const match = matches[0]
   if (!match) return null
   return range(input, start, start + match[0].length)
 }
@@ -210,13 +228,13 @@ function resolveDateToken(source: string, currentDate: string): ParsedDateToken 
   const explicitThis = /^(?:本|这)(?:周|星期)|^this\s+/u.test(token)
   const currentWeekday = weekdayOf(currentDate)
   let days = (weekday - currentWeekday + 7) % 7
-  if (explicitNext && days === 0) days = 7
+  if (explicitNext) days += 7
   if (explicitThis) days = weekday - currentWeekday
   return { date: addDays(currentDate, days), status: 'resolved' }
 }
 
-function markDateConflicts(candidates: QuickAddCandidate[]): void {
-  for (const kind of ['schedule', 'deadline'] as const) {
+function markSingularConflicts(candidates: QuickAddCandidate[]): void {
+  for (const kind of ['schedule', 'deadline', 'priority', 'recurrence'] as const) {
     const matches = candidates.filter((candidate) => candidate.kind === kind)
     if (matches.length > 1) {
       for (const candidate of matches) candidate.status = 'ambiguous'
