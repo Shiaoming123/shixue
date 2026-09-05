@@ -1,6 +1,7 @@
 import { addCalendarDays } from '../storage/study/types.ts'
 import type { StudyTask, StudyTaskStatus, StudyTopic } from '../storage/study/types.ts'
 import type { Task, TaskOccurrence, WorkspaceStateV3 } from '../domain/workspace/types.ts'
+import { parseZonedDateTime } from '../domain/recurrence/timezone.ts'
 
 export type StudyTaskSort = 'manual' | 'updatedAt' | 'dueOn' | 'title'
 export type StudyTaskQuerySort = StudyTaskSort | 'priority'
@@ -43,6 +44,7 @@ export interface TaskProjection {
 export function projectTaskItems(
   state: WorkspaceStateV3,
   range: TaskProjectionRange,
+  timezone = 'UTC',
 ): TaskProjection[] {
   if (range.from > range.to) throw new Error('Task projection range must start on or before it ends.')
 
@@ -63,23 +65,23 @@ export function projectTaskItems(
     if (task.recurrenceSeriesId !== null || occurrences.length) {
       const taskProjections: TaskProjection[] = []
       for (const occurrence of occurrences) {
-        const projection = projectOccurrence(task, occurrence, range)
+        const projection = projectOccurrence(task, occurrence, range, timezone)
         if (projection) taskProjections.push(projection)
       }
       const hasVisiblePending = taskProjections.some(({ occurrence }) => occurrence?.status === 'pending')
       if (!hasVisiblePending && task.status !== 'completed') {
-        const deadlineOn = task.deadline.dueOn ?? datePart(task.deadline.dueAt)
+        const deadlineOn = task.deadline.dueOn ?? datePart(task.deadline.dueAt, timezone)
         const deadlineRelevant = deadlineOn !== null && deadlineOn <= range.to
-        const next = occurrences.filter(({ status }) => status === 'pending').sort((left, right) => resolvedOccurrenceOn(left).localeCompare(resolvedOccurrenceOn(right)))[0]
+        const next = occurrences.filter(({ status }) => status === 'pending').sort((left, right) => resolvedOccurrenceOn(left, timezone).localeCompare(resolvedOccurrenceOn(right, timezone)))[0]
         if (deadlineRelevant) {
-          const projection = next ? projectOccurrence(task, next, range, true) : projectSingleTask(task, range)
+          const projection = next ? projectOccurrence(task, next, range, timezone, true) : projectSingleTask(task, range, timezone)
           if (projection) taskProjections.push(projection)
         }
       }
       projections.push(...taskProjections)
       continue
     }
-    const projection = projectSingleTask(task, range)
+    const projection = projectSingleTask(task, range, timezone)
     if (projection) projections.push(projection)
   }
   return projections
@@ -184,11 +186,11 @@ function compareTasks(left: StudyTask, right: StudyTask, sort: StudyTaskQuerySor
   return 0
 }
 
-function projectSingleTask(task: Task, range: TaskProjectionRange): TaskProjection | null {
+function projectSingleTask(task: Task, range: TaskProjectionRange, timezone: string): TaskProjection | null {
   const scheduledAt = task.schedule.startAt
-  const scheduledOn = task.schedule.startOn ?? datePart(scheduledAt)
+  const scheduledOn = task.schedule.startOn ?? datePart(scheduledAt, timezone)
   const dueAt = task.deadline.dueAt
-  const dueOn = task.deadline.dueOn ?? datePart(dueAt)
+  const dueOn = task.deadline.dueOn ?? datePart(dueAt, timezone)
   const reasons = projectionReasons(task.status, scheduledOn, dueOn, range)
   if (!reasons.length) return null
   return {
@@ -209,14 +211,15 @@ function projectOccurrence(
   task: Task,
   occurrence: TaskOccurrence,
   range: TaskProjectionRange,
+  timezone: string,
   includeDeadline = false,
 ): TaskProjection | null {
   if (occurrence.status === 'cancelled') return null
   const scheduledAt = occurrence.override?.scheduledAt ?? occurrence.scheduledAt
-  const occurrenceOn = occurrence.override?.scheduledOn ?? occurrence.scheduledOn ?? datePart(scheduledAt)
-  const taskPlannedOn = task.schedule.startOn ?? datePart(task.schedule.startAt)
+  const occurrenceOn = occurrence.override?.scheduledOn ?? occurrence.scheduledOn ?? datePart(scheduledAt, timezone)
+  const taskPlannedOn = task.schedule.startOn ?? datePart(task.schedule.startAt, timezone)
   const dueAt = task.deadline.dueAt
-  const dueOn = task.deadline.dueOn ?? datePart(dueAt)
+  const dueOn = task.deadline.dueOn ?? datePart(dueAt, timezone)
   const active = occurrence.status === 'pending'
   const inWindow = occurrenceOn !== null && inRange(occurrenceOn, range)
   const occurrenceOverdue = active && occurrenceOn !== null && occurrenceOn < range.from
@@ -244,8 +247,8 @@ function projectOccurrence(
   }
 }
 
-function resolvedOccurrenceOn(occurrence: TaskOccurrence): string {
-  return occurrence.override?.scheduledOn ?? occurrence.scheduledOn ?? datePart(occurrence.override?.scheduledAt ?? occurrence.scheduledAt) ?? '9999-12-31'
+function resolvedOccurrenceOn(occurrence: TaskOccurrence, timezone: string): string {
+  return occurrence.override?.scheduledOn ?? occurrence.scheduledOn ?? datePart(occurrence.override?.scheduledAt ?? occurrence.scheduledAt, timezone) ?? '9999-12-31'
 }
 
 function projectionReasons(
@@ -262,8 +265,8 @@ function projectionReasons(
   return reasons
 }
 
-function datePart(value: string | null): string | null {
-  return value?.slice(0, 10) ?? null
+function datePart(value: string | null, timezone: string): string | null {
+  return value ? parseZonedDateTime(value, timezone).date : null
 }
 
 function inRange(value: string, range: TaskProjectionRange): boolean {

@@ -117,6 +117,7 @@ const remindersEnabled = ref(false)
 const planningPreferences = ref(loadPlanningPreferences())
 const tasksView = ref<InstanceType<typeof TasksView> | null>(null)
 const runtime = detectRuntimeInfo()
+const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const capabilityService = createTaskCapabilityService(getWorkspaceStore(), () => new Date().toISOString(), (kind) => `${kind}:${crypto.randomUUID()}`)
 const remindersAvailable = hasRuntimeCapability(runtime, 'native-notification')
 const cloudConfig = import.meta.env.VITE_STUDY_SUPABASE_URL?.trim() && import.meta.env.VITE_STUDY_SUPABASE_PUBLISHABLE_KEY?.trim() ? {
@@ -169,7 +170,7 @@ const filteredTaskViews = computed<TaskViewItem[]>(() => queryStudyTasks(liveTas
   smartView: activeSmartView.value === 'today' ? 'all' : activeSmartView.value,
   today: today.value,
 }).filter((task) => taskPriorityFilter.value === 'all' || task.priority === taskPriorityFilter.value).map(toTaskView))
-const todayProjections = computed(() => recurrenceWorkspace.value ? projectTaskItems(recurrenceWorkspace.value, { from: today.value, to: today.value }) : [])
+const todayProjections = computed(() => recurrenceWorkspace.value ? projectTaskItems(recurrenceWorkspace.value, { from: today.value, to: today.value }, timezone) : [])
 const taskViews = computed<TaskViewItem[]>(() => {
   if (activeSmartView.value !== 'today' || !recurrenceWorkspace.value) return filteredTaskViews.value
   const eligible = new Map(filteredTaskViews.value.map((task) => [task.id, task]))
@@ -523,7 +524,7 @@ async function requestRecurrenceEdit(rule: RecurrenceRule) {
         command: {
           type: 'recurrence.create', taskId: task.id, expectedTaskRevision: task.revision,
           cadence: portableRule.cadence, basis: portableRule.basis, anchorOn: selectedTask.value?.plannedOn ?? today.value,
-          end: portableRule.end, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          end: portableRule.end, timezone,
         },
       })
       await refreshState(); taskEditorOpen.value = false; notify('已创建重复规则。')

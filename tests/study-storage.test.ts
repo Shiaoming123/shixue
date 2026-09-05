@@ -12,6 +12,7 @@ import {
   deleteStudyTask,
   loadStudyState,
   planStudyTask,
+  projectWorkspaceState,
   pauseStudySession,
   rescheduleStudyTask,
   resumeStudySession,
@@ -27,6 +28,7 @@ import {
   toggleStudyTaskCompletion,
   updateStudyTask,
 } from '../src/lib/study.ts'
+import { projectTaskItems, selectStudyTaskSmartView, sortStudyTasks } from '../src/lib/study-task-query.ts'
 import { createInMemoryStudyStore, createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { createIndexedDbStudyStore, V1_STUDY_STATE_BACKUP_KEY } from '../src/storage/study/indexeddb.ts'
 import { registerWorkspaceStore } from '../src/storage/workspace/registry.ts'
@@ -253,6 +255,42 @@ test('metadata update preserves a precise schedule after its deadline', async ()
   assert.equal(persisted?.schedule.startAt, '2026-09-07T06:00:00.000Z')
   assert.equal(persisted?.schedule.startOn, null)
   assert.equal(persisted?.deadline.dueOn, '2026-09-06')
+})
+
+test('precise deadline keeps its Shanghai local day through unrelated edit and reload', async () => {
+  const store = createInMemoryWorkspaceStore(emptyState())
+  registerWorkspaceStore(store)
+  await captureStudyTask(
+    { title: 'UTC boundary deadline' },
+    { taskId: 'boundary-deadline', eventId: 'capture-boundary', now: '2026-09-04T08:00:00.000Z' },
+  )
+  await updateStudyTask('boundary-deadline', {
+    dueAt: '2026-09-05T16:30:00.000Z',
+  }, { now: '2026-09-04T08:01:00.000Z' })
+  await updateStudyTask('boundary-deadline', {
+    notes: 'Unrelated edit',
+  }, { now: '2026-09-04T08:02:00.000Z' })
+  await captureStudyTask(
+    { title: 'Earlier deadline', dueOn: '2026-09-05' },
+    { taskId: 'earlier-deadline', eventId: 'capture-earlier', now: '2026-09-04T08:03:00.000Z' },
+  )
+
+  const persisted = await store.load()
+  const exact = persisted.tasks.find(({ id }) => id === 'boundary-deadline')
+  assert.equal(exact?.deadline.dueAt, '2026-09-05T16:30:00.000Z')
+  assert.equal(exact?.deadline.dueOn, null)
+
+  const reloaded = projectWorkspaceState(persisted, 'Asia/Shanghai')
+  const boundary = reloaded.tasks.find(({ id }) => id === 'boundary-deadline')
+  assert.equal(boundary?.dueOn, '2026-09-06')
+  assert.deepEqual(selectStudyTaskSmartView(reloaded.tasks, 'today', '2026-09-05').map(({ id }) => id), ['earlier-deadline'])
+  assert.deepEqual(selectStudyTaskSmartView(reloaded.tasks, 'today', '2026-09-06').map(({ id }) => id), ['boundary-deadline', 'earlier-deadline'])
+  assert.deepEqual(sortStudyTasks(reloaded.tasks, 'dueOn').map(({ id }) => id), ['earlier-deadline', 'boundary-deadline'])
+  assert.deepEqual(
+    projectTaskItems(persisted, { from: '2026-09-07', to: '2026-09-07' }, 'Asia/Shanghai')
+      .find(({ taskId }) => taskId === 'boundary-deadline')?.reasons,
+    ['overdue'],
+  )
 })
 
 test('planning preserves a precise start after its deadline for an explicit conflict', async () => {

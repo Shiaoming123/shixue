@@ -49,9 +49,10 @@ test('candidate editor exposes a named adaptive dialog', () => {
   assert.match(composer, /:id="`quick-add-editor-title-\$\{candidate\.id\}`"/)
 })
 
-test('composer explains that multiple lists conflict while tags remain multi-select', () => {
+test('composer renders the shared candidate conflict state', () => {
   const composer = studySource('QuickAddComposer.vue')
-  assert.match(composer, /检测到多个清单，请只保留一个清单；标签可以多选。/)
+  assert.match(composer, /useQuickAddCandidateState\(acceptedCandidates\)/)
+  assert.match(composer, /conflictedCandidateIds\.includes\(candidate\.id\)/)
 })
 
 test('calendar exposes row-owned grid cells, one tab stop, and month and year navigation', () => {

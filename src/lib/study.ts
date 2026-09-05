@@ -5,6 +5,7 @@ import {
 } from '../domain/capabilities/types.ts'
 import { SYSTEM_LEARNING_LIST_ID } from '../domain/workspace/migrate.ts'
 import type { Task, WorkspaceStateV3 } from '../domain/workspace/types.ts'
+import { parseZonedDateTime } from '../domain/recurrence/timezone.ts'
 import { createWorkspaceExport, parseWorkspaceExport } from '../storage/workspace/data-port.ts'
 import { getWorkspaceStore } from '../storage/workspace/registry.ts'
 import type {
@@ -488,7 +489,10 @@ export async function resetStudyState(now = new Date().toISOString()): Promise<S
   return loadStudyState()
 }
 
-export function projectWorkspaceState(workspace: WorkspaceStateV3): StudyState {
+export function projectWorkspaceState(
+  workspace: WorkspaceStateV3,
+  timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+): StudyState {
   const reminders = new Map<string, string>()
   for (const rule of workspace.reminderRules) {
     if (rule.enabled && rule.occurrenceId === null && rule.trigger.kind === 'absolute' && !reminders.has(rule.taskId)) {
@@ -511,7 +515,7 @@ export function projectWorkspaceState(workspace: WorkspaceStateV3): StudyState {
         updatedAt: list.updatedAt,
         archivedAt: list.archivedAt,
       })),
-    tasks: workspace.tasks.map((task) => projectTask(task, reminders.get(task.id) ?? null)),
+    tasks: workspace.tasks.map((task) => projectTask(task, reminders.get(task.id) ?? null, timezone)),
     sessions: structuredClone(workspace.studySessions),
     taskEvents: structuredClone(workspace.taskEvents),
     completionRecords: structuredClone(workspace.completionRecords),
@@ -564,7 +568,7 @@ function taskPatch(input: StudyTaskMetadataUpdate) {
   return patch
 }
 
-function projectTask(task: Task, reminderAt: string | null): StudyTask {
+function projectTask(task: Task, reminderAt: string | null, timezone: string): StudyTask {
   return {
     id: task.id,
     revision: task.revision,
@@ -572,8 +576,8 @@ function projectTask(task: Task, reminderAt: string | null): StudyTask {
     title: task.title,
     notes: task.notes,
     status: task.status,
-    plannedOn: task.schedule.startOn ?? task.schedule.startAt?.slice(0, 10) ?? null,
-    dueOn: task.deadline.dueOn ?? task.deadline.dueAt?.slice(0, 10) ?? null,
+    plannedOn: task.schedule.startOn ?? localDatePart(task.schedule.startAt, timezone),
+    dueOn: task.deadline.dueOn ?? localDatePart(task.deadline.dueAt, timezone),
     reminderAt,
     priority: task.priority,
     estimateMinutes: task.schedule.estimateMinutes,
@@ -584,6 +588,10 @@ function projectTask(task: Task, reminderAt: string | null): StudyTask {
     updatedAt: task.updatedAt,
     deletedAt: task.deletedAt,
   }
+}
+
+function localDatePart(value: string | null, timezone: string): string | null {
+  return value ? parseZonedDateTime(value, timezone).date : null
 }
 
 function listIdForTopic(topicId: string | null): string {

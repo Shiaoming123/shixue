@@ -258,6 +258,15 @@ defineExpose({ close: requestClose, updatePosition })
   }
 }
 
+@media (max-width: 359px) {
+  .popover-panel--mobile-sheet {
+    right: 0;
+    left: 0 !important;
+    border-right: 0;
+    border-left: 0;
+  }
+}
+
 @media (max-width: 819px) {
   .popover-panel--mobile-sheet {
     bottom: calc(84px + env(safe-area-inset-bottom, 0px));

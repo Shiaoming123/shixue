@@ -371,9 +371,30 @@ async function main() {
           const geometry = await scheduleSheet.evaluate((element) => ({
             scrollWidth: element.scrollWidth,
             clientWidth: element.clientWidth,
+            pageScrollWidth: document.documentElement.scrollWidth,
+            pageClientWidth: document.documentElement.clientWidth,
           }))
           if (geometry.scrollWidth > geometry.clientWidth) {
             throw new Error(`Quick add candidate editor overflows at 320px: ${JSON.stringify(geometry)}`)
+          }
+          if (geometry.pageScrollWidth > geometry.pageClientWidth) {
+            throw new Error(`Quick add page overflows at 320px: ${JSON.stringify(geometry)}`)
+          }
+          const dayBoxes = await scheduleSheet.getByRole('gridcell').evaluateAll((elements) =>
+            elements.map((element) => {
+              const box = element.getBoundingClientRect()
+              return { x: box.x, y: box.y, width: box.width, height: box.height }
+            }),
+          )
+          const undersized = dayBoxes.find(({ width, height }) => width < 44 || height < 44)
+          if (undersized) throw new Error(`Quick add calendar day target is smaller than 44px at 320px: ${JSON.stringify(undersized)}`)
+          for (let index = 1; index < dayBoxes.length; index += 1) {
+            const previous = dayBoxes[index - 1]
+            const current = dayBoxes[index]
+            const sameRow = Math.abs(previous.y - current.y) < 1
+            if (sameRow && previous.x + previous.width > current.x + 0.5) {
+              throw new Error(`Quick add calendar day targets overlap at 320px: ${JSON.stringify({ previous, current })}`)
+            }
           }
           if (!(await apply.isVisible())) throw new Error('Quick add Apply action is not reachable at 320px.')
         }

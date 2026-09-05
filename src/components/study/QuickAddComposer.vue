@@ -13,6 +13,7 @@ import Listbox, { type ListboxOption } from '../ui/Listbox.vue'
 import Popover from '../ui/Popover.vue'
 import TimePicker from '../ui/TimePicker.vue'
 import QuickAddChip from './QuickAddChip.vue'
+import { useQuickAddCandidateState } from './use-quick-add-candidate-state'
 
 const props = withDefaults(defineProps<{
   destinationListId: string
@@ -54,10 +55,11 @@ const parsed = computed(() => {
 const acceptedCandidates = computed(() => parsed.value.candidates
   .filter(({ id }) => !removedIds.value.includes(id))
   .map((candidate) => editedCandidates.value[candidate.id] ?? candidate))
-const hasAmbiguousCandidate = computed(() => acceptedCandidates.value.some((candidate) => candidate.status === 'ambiguous'))
-const ambiguityMessage = computed(() => acceptedCandidates.value.filter(({ kind }) => kind === 'list').length > 1
-  ? '检测到多个清单，请只保留一个清单；标签可以多选。'
-  : '请确认有歧义的识别结果，或移除对应 chip。')
+const {
+  submissionBlocked: hasAmbiguousCandidate,
+  conflictedCandidateIds,
+  message: ambiguityMessage,
+} = useQuickAddCandidateState(acceptedCandidates)
 const canSubmit = computed(() => {
   if (!input.value.trim() || hasAmbiguousCandidate.value || submitting.value) return false
   try {
@@ -278,7 +280,7 @@ defineExpose({ focus })
           <QuickAddChip
             :kind="candidate.kind"
             :label="candidateLabel(candidate)"
-            :ambiguous="candidate.status === 'ambiguous'"
+            :ambiguous="candidate.status === 'ambiguous' || conflictedCandidateIds.includes(candidate.id)"
             :active="activeCandidateId === candidate.id"
             :trigger-props="triggerProps"
             @remove="removeCandidate(candidate)"
@@ -338,6 +340,9 @@ defineExpose({ focus })
   .quick-add-input-row { min-height: 52px; }
   .quick-add-input-row > button { width: 44px; height: 44px; }
   .quick-add-chips { gap: var(--space-2); }
+}
+@media (max-width: 359px) {
+  .candidate-editor { padding-right: var(--space-1); padding-left: var(--space-1); }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 </style>

@@ -46,6 +46,29 @@ test('range projection keeps task reasons stable and excludes unrelated dates', 
   ])
 })
 
+test('precise task instants use the injected device timezone for local-day projection', () => {
+  const workspace = fixture({
+    tasks: [task({
+      id: 'task:boundary',
+      recurrenceSeriesId: null,
+      schedule: { startAt: '2026-09-05T16:30:00.000Z', startOn: null, estimateMinutes: null },
+      deadline: { dueAt: '2026-09-05T16:30:00.000Z', dueOn: null },
+    })],
+    recurrenceSeries: [],
+    occurrences: [],
+  })
+
+  assert.deepEqual(projectTaskItems(workspace, { from: '2026-09-05', to: '2026-09-05' }, 'Asia/Shanghai'), [])
+  const [dueToday] = projectTaskItems(workspace, { from: '2026-09-06', to: '2026-09-06' }, 'Asia/Shanghai')
+  assert.equal(dueToday?.scheduledOn, '2026-09-06')
+  assert.equal(dueToday?.dueOn, '2026-09-06')
+  assert.deepEqual(dueToday?.reasons, ['planned', 'due'])
+  assert.deepEqual(
+    projectTaskItems(workspace, { from: '2026-09-07', to: '2026-09-07' }, 'Asia/Shanghai')[0]?.reasons,
+    ['overdue'],
+  )
+})
+
 test('completed occurrence remains projected as history without advancing task dates', () => {
   const completed = occurrence({
     id: 'occ:done',
@@ -131,7 +154,7 @@ test('the live Today route uses occurrence projection and opens occurrence detai
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const tasks = readFileSync(new URL('../src/components/study/TasksView.vue', import.meta.url), 'utf8')
 
-  assert.match(app, /projectTaskItems\(recurrenceWorkspace\.value, \{ from: today\.value, to: today\.value \}\)/)
+  assert.match(app, /projectTaskItems\(recurrenceWorkspace\.value, \{ from: today\.value, to: today\.value \}, timezone\)/)
   assert.match(app, /@occurrence-open="openOccurrence"/)
   assert.match(app, /:occurrence-id="selectedOccurrence\?\.id"/)
   assert.match(app, /@occurrence-complete="executeOccurrence\(\$event, 'recurrence\.complete'\)"/)
