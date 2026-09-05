@@ -6,6 +6,7 @@ import type {
   ListGroup,
   ListSection,
   OccurrenceOverride,
+  PreviewReceipt,
   RecurrenceCadence,
   RecurrenceSeries,
   ReminderDelivery,
@@ -53,6 +54,9 @@ export function parseWorkspaceState(value: unknown): WorkspaceStateV3 {
     completionRecords: parseArray(state.completionRecords, 'Workspace state completionRecords', parseCompletionRecord),
     reviewTaskLinks: parseArray(state.reviewTaskLinks, 'Workspace state reviewTaskLinks', parseReviewTaskLink),
     commandReceipts: parseArray(state.commandReceipts, 'Workspace state commandReceipts', parseCommandReceipt),
+    previewReceipts: state.previewReceipts === undefined
+      ? []
+      : parseArray(state.previewReceipts, 'Workspace state previewReceipts', parsePreviewReceipt),
     updatedAt: requireIsoDateTime(state.updatedAt, 'Workspace state updatedAt'),
   }
   assertCollectionSizes(parsed)
@@ -373,6 +377,18 @@ function parseCommandReceipt(raw: unknown, index: number): CommandReceipt {
   }
 }
 
+function parsePreviewReceipt(raw: unknown, index: number): PreviewReceipt {
+  const value = requireRecord(raw, `Preview receipt ${index}`)
+  return {
+    id: requireText(value.id, 'Preview receipt id'),
+    requestFingerprint: requireText(value.requestFingerprint, 'Preview receipt requestFingerprint'),
+    expectedWorkspaceRevision: requirePositiveInteger(value.expectedWorkspaceRevision, 'Preview receipt expectedWorkspaceRevision'),
+    commandType: requireText(value.commandType, 'Preview receipt commandType'),
+    createdAt: requireIsoDateTime(value.createdAt, 'Preview receipt createdAt'),
+    expiresAt: requireIsoDateTime(value.expiresAt, 'Preview receipt expiresAt'),
+  }
+}
+
 function assertCollectionSizes(state: WorkspaceStateV3): void {
   for (const collection of Object.values(state)) {
     if (Array.isArray(collection) && collection.length > MAX_ITEMS) throw new Error('Workspace state contains too many records.')
@@ -382,12 +398,12 @@ function assertCollectionSizes(state: WorkspaceStateV3): void {
 function assertUniqueIds(state: WorkspaceStateV3): void {
   assertUnique(state.listGroups, 'list group'); assertUnique(state.lists, 'list'); assertUnique(state.sections, 'section'); assertUnique(state.tags, 'tag'); assertUnique(state.tasks, 'task')
   assertUnique(state.recurrenceSeries, 'recurrence series'); assertUnique(state.occurrences, 'occurrence'); assertUnique(state.reminderRules, 'reminder rule'); assertUnique(state.reminderDeliveries, 'reminder delivery')
-  assertUnique(state.studySessions, 'study session'); assertUnique(state.taskEvents, 'task event'); assertUnique(state.completionRecords, 'completion record'); assertUnique(state.reviewTaskLinks, 'review task link'); assertUnique(state.commandReceipts, 'command receipt')
+  assertUnique(state.studySessions, 'study session'); assertUnique(state.taskEvents, 'task event'); assertUnique(state.completionRecords, 'completion record'); assertUnique(state.reviewTaskLinks, 'review task link'); assertUnique(state.commandReceipts, 'command receipt'); assertUnique(state.previewReceipts, 'preview receipt')
   assertUniqueAcrossEntities([
     state.listGroups, state.lists, state.sections, state.tags, state.tasks,
     state.recurrenceSeries, state.occurrences, state.reminderRules, state.reminderDeliveries,
     state.studySessions, state.taskEvents, state.completionRecords, state.reviewTaskLinks,
-    state.commandReceipts,
+    state.commandReceipts, state.previewReceipts,
   ])
   assertUnique(state.taskEvents.map((event) => ({ id: String(event.sequence) })), 'task event sequence')
   assertUnique(state.commandReceipts.map((receipt) => ({ id: receipt.idempotencyKey })), 'command receipt idempotencyKey')

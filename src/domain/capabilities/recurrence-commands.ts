@@ -116,9 +116,10 @@ function updateRecurrence(
     })
   }
   if (command.scope === 'series') {
+    const priorBasis = series.basis
     applySeriesPatch(series, command.patch)
     series.revision += 1
-    const pending = recomputePendingOccurrences(state, series)
+    const pending = recomputePendingOccurrences(state, series, priorBasis)
     return recurrenceApplication({
       tasks: [],
       series: [series],
@@ -258,9 +259,23 @@ function successorEnd(end: RecurrenceSeries['end'], splitOrdinal: number): Recur
   return { kind: 'after', count: Math.max(1, end.count - splitOrdinal + 1) }
 }
 
-function recomputePendingOccurrences(state: WorkspaceStateV3, series: RecurrenceSeries): TaskOccurrence[] {
+function recomputePendingOccurrences(
+  state: WorkspaceStateV3,
+  series: RecurrenceSeries,
+  priorBasis: RecurrenceSeries['basis'],
+): TaskOccurrence[] {
   const changed: TaskOccurrence[] = []
   for (const occurrence of state.occurrences.filter((item) => item.seriesId === series.id && item.status === 'pending')) {
+    if (priorBasis === 'after_completion') {
+      if (isPastSeriesEnd(series, occurrence.scheduledAt, occurrence.ordinal)) {
+        occurrence.status = 'cancelled'
+        occurrence.override = null
+        occurrence.completedAt = null
+        occurrence.revision += 1
+        changed.push(occurrence)
+      }
+      continue
+    }
     const scheduledAt = occurrenceInstant(series, occurrence.ordinal)
     if (!scheduledAt || isPastSeriesEnd(series, scheduledAt, occurrence.ordinal)) {
       occurrence.status = 'cancelled'

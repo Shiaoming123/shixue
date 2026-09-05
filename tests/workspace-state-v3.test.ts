@@ -97,6 +97,7 @@ function validWorkspaceState() {
     completionRecords: [],
     reviewTaskLinks: [],
     commandReceipts: [],
+    previewReceipts: [],
     updatedAt: at,
   }
 }

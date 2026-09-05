@@ -304,9 +304,9 @@ test('previews on a clone with fixed impact and confirmation metadata without sa
     }],
     validationErrors: [],
     confirmation: 'none',
-    previewFingerprint: preview.previewFingerprint,
+    previewReceiptId: preview.previewReceiptId,
   })
-  assert.match(String(preview.previewFingerprint), /^sha256:[0-9a-f]{64}$/)
+  assert.equal(preview.previewReceiptId, null)
   assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
 })
 
@@ -331,7 +331,7 @@ test('preview returns structured validation errors and review metadata for an in
     reversibility: 'reversible', requiresPreview: true,
   })
   assert.equal(preview.confirmation, 'review')
-  assert.match(String(preview.previewFingerprint), /^sha256:[0-9a-f]{64}$/)
+  assert.equal(preview.previewReceiptId, null)
   assert.deepEqual(preview.affected, [{ type: 'task', id: 'missing' }])
   assert.deepEqual(preview.changes, [])
   assert.equal(preview.validationErrors[0]?.code, 'TASK_NOT_FOUND')

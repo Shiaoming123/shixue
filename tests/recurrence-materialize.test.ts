@@ -60,6 +60,7 @@ function state(): WorkspaceStateV3 {
     completionRecords: [],
     reviewTaskLinks: [],
     commandReceipts: [],
+    previewReceipts: [],
     updatedAt: '2026-09-04T00:00:00Z',
   }
 }

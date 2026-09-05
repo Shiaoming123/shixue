@@ -19,6 +19,8 @@ import type {
 export const CAPABILITY_PROTOCOL_VERSION = 1 as const
 export const COMMAND_RECEIPT_LIMIT = 500 as const
 export const COMMAND_RECEIPT_TTL_DAYS = 30 as const
+export const PREVIEW_RECEIPT_LIMIT = 100 as const
+export const PREVIEW_RECEIPT_TTL_MINUTES = 15 as const
 
 export type CommandRisk = 'low' | 'medium' | 'high'
 export type CommandScope = 'single' | 'batch' | 'series' | 'workspace' | 'external'
@@ -472,7 +474,7 @@ export interface CommandEnvelope<C extends CapabilityCommand = CapabilityCommand
   source: 'human-ui' | 'keyboard' | 'notification' | 'agent'
   expectedWorkspaceRevision: number
   explicitConfirmation?: {
-    previewFingerprint: string
+    previewReceiptId: string
     confirmedAt: string
   }
   command: C
@@ -493,7 +495,7 @@ export interface CommandPreview {
   changes: ChangeSummary[]
   validationErrors: DomainError[]
   confirmation: PreviewConfirmation
-  previewFingerprint: string | null
+  previewReceiptId: string | null
 }
 
 export interface CommandResult {

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
 import type { CommandEnvelope } from '../src/domain/capabilities/types.ts'
+import type { WorkspaceStateV3 } from '../src/domain/workspace/types.ts'
 import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
+import type { WorkspaceStore } from '../src/storage/workspace/types.ts'
 
 const NOW = '2026-09-05T10:00:00.000Z'
 
@@ -46,11 +48,11 @@ async function previewAndConfirm(
   const preview = await service.preview(envelope)
   assert.equal(preview.accepted, true)
   assert.equal(preview.confirmation, 'explicit')
-  assert.match(String(preview.previewFingerprint), /^sha256:[0-9a-f]{64}$/)
+  assert.match(String(preview.previewReceiptId), /^preview:[0-9a-f-]{36}$/)
   return service.execute({
     ...envelope,
     explicitConfirmation: {
-      previewFingerprint: preview.previewFingerprint!,
+      previewReceiptId: preview.previewReceiptId!,
       confirmedAt: NOW,
     },
   })
@@ -184,6 +186,43 @@ test('task.create recurrence validation and CAS failures leave no partial state'
   assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
 })
 
+test('task.create recurrence leaves no draft entities or receipt after save conflict', async () => {
+  const backing = createInMemoryWorkspaceStore()
+  const before = await backing.load()
+  let attempted: WorkspaceStateV3 | null = null
+  const conflictStore: WorkspaceStore = {
+    async load() { return structuredClone(before) },
+    async save(state) {
+      attempted = structuredClone(state)
+      throw new Error('forced save conflict after draft generation')
+    },
+  }
+  const service = createTaskCapabilityService(conflictStore, () => NOW, (kind) => `${kind}-conflict`)
+
+  await assert.rejects(
+    service.execute({
+      protocolVersion: 1,
+      idempotencyKey: 'save-conflict-recurring-create',
+      source: 'human-ui',
+      expectedWorkspaceRevision: before.revision,
+      command: {
+        type: 'task.create', taskId: 'conflict-task', listId: 'list:system:learning', title: 'Conflict recurring task',
+        recurrence: {
+          seriesId: 'conflict-series', cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule',
+          anchorAt: '2026-09-05T09:00:00.000Z', end: { kind: 'never' }, timezone: 'UTC',
+        },
+      },
+    }),
+    /WORKSPACE_SAVE_CONFLICT/,
+  )
+
+  assert.equal(attempted?.tasks.some(({ id }) => id === 'conflict-task'), true)
+  assert.equal(attempted?.recurrenceSeries.some(({ id }) => id === 'conflict-series'), true)
+  assert.equal(attempted?.occurrences.some(({ seriesId }) => seriesId === 'conflict-series'), true)
+  assert.equal(attempted?.commandReceipts.some(({ idempotencyKey }) => idempotencyKey === 'save-conflict-recurring-create'), true)
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+})
+
 test('skip is a reversible single-occurrence operation', async () => {
   const service = await createRecurringTask()
   const skipped = await executeNext(service, 'skip-current', {
@@ -306,17 +345,30 @@ test('future and whole-series updates reject execute without matching explicit p
     service.execute({
       ...future,
       idempotencyKey: 'future-wrong-confirmation',
-      explicitConfirmation: { previewFingerprint: 'sha256:wrong', confirmedAt: NOW },
+      explicitConfirmation: { previewReceiptId: 'preview:forged', confirmedAt: NOW },
     }),
     /Explicit confirmation/,
   )
 
   const preview = await service.preview({ ...future, idempotencyKey: 'future-confirmed' })
+  await assert.rejects(
+    service.execute({
+      ...future,
+      idempotencyKey: 'future-command-mismatch',
+      command: {
+        ...future.command,
+        patch: { end: { kind: 'on', date: '2026-10-02' } },
+      },
+      explicitConfirmation: { previewReceiptId: preview.previewReceiptId!, confirmedAt: NOW },
+    }),
+    /Explicit confirmation/,
+  )
   await service.execute({
     ...future,
     idempotencyKey: 'future-confirmed',
-    explicitConfirmation: { previewFingerprint: preview.previewFingerprint!, confirmedAt: NOW },
+    explicitConfirmation: { previewReceiptId: preview.previewReceiptId!, confirmedAt: NOW },
   })
+  assert.deepEqual((await service.query({ type: 'workspace.snapshot' })).previewReceipts, [])
 })
 
 test('whole-series update previews explicitly, then recomputes pending rows while preserving history', async () => {
@@ -378,11 +430,11 @@ test('whole-series update previews explicitly, then recomputes pending rows whil
 
   assert.equal(preview.accepted, true)
   assert.equal(preview.confirmation, 'explicit')
-  assert.deepEqual(await seeded.query({ type: 'workspace.snapshot' }), before)
+  assert.equal((await seeded.query({ type: 'workspace.snapshot' })).previewReceipts.length, 1)
 
   await seeded.execute({
     ...envelope,
-    explicitConfirmation: { previewFingerprint: preview.previewFingerprint!, confirmedAt: NOW },
+    explicitConfirmation: { previewReceiptId: preview.previewReceiptId!, confirmedAt: NOW },
   })
   const after = await seeded.query({ type: 'workspace.snapshot' })
 
@@ -391,4 +443,33 @@ test('whole-series update previews explicitly, then recomputes pending rows whil
   assert.equal(after.occurrences.find(({ id }) => id === 'occurrence:series-daily:2')?.override, null)
   assert.equal(after.occurrences.find(({ id }) => id === 'occurrence:series-daily:3')?.status, 'completed')
   assert.equal(after.occurrences.find(({ id }) => id === 'occurrence:series-daily:4')?.status, 'skipped')
+})
+
+test('whole-series update preserves pending after-completion schedules', async () => {
+  const service = await createRecurringTask(fixture(), 'after_completion')
+  await executeNext(service, 'complete-after-completion', {
+    type: 'recurrence.complete', occurrenceId: 'occurrence:series-daily:1', expectedOccurrenceRevision: 1,
+  })
+  const before = await service.query({ type: 'workspace.snapshot' })
+  const pending = before.occurrences.find(({ id }) => id === 'occurrence:series-daily:2')!
+  const envelope: CommandEnvelope = {
+    protocolVersion: 1, idempotencyKey: 'after-completion-series-update', source: 'human-ui',
+    expectedWorkspaceRevision: before.revision,
+    command: {
+      type: 'recurrence.update', occurrenceId: 'occurrence:series-daily:1', expectedOccurrenceRevision: 2,
+      scope: 'series', patch: { cadence: { kind: 'weekly', interval: 1, weekdays: [1] }, anchorAt: '2026-10-01T09:00:00.000Z' },
+    },
+  }
+  const preview = await service.preview(envelope)
+  await service.execute({
+    ...envelope,
+    explicitConfirmation: { previewReceiptId: preview.previewReceiptId!, confirmedAt: NOW },
+  })
+  const after = await service.query({ type: 'workspace.snapshot' })
+  const preserved = after.occurrences.find(({ id }) => id === 'occurrence:series-daily:2')!
+
+  assert.equal(preserved.status, 'pending')
+  assert.equal(preserved.scheduledAt, pending.scheduledAt)
+  assert.deepEqual(preserved.override, pending.override)
+  assert.equal(preserved.revision, pending.revision)
 })

@@ -9,6 +9,8 @@ import {
   CAPABILITY_PROTOCOL_VERSION,
   COMMAND_RECEIPT_LIMIT,
   COMMAND_RECEIPT_TTL_DAYS,
+  PREVIEW_RECEIPT_LIMIT,
+  PREVIEW_RECEIPT_TTL_MINUTES,
   DomainCommandError,
   type CapabilityClock,
   type CapabilityCommand,
@@ -77,9 +79,9 @@ export function createTaskCapabilityService(
       const confirmation = previewConfirmationFor(envelope.command, descriptor)
       const current = await store.load()
       const affected = previewAffected(current, envelope.command)
-      let previewFingerprint: string | null = null
+      let previewReceiptId: string | null = null
       try {
-        previewFingerprint = await fingerprintRequest(envelope)
+        const requestFingerprint = await fingerprintRequest(envelope)
         assertEnvelope(current, envelope)
         const draft = structuredClone(current)
         const previewIds = createPreviewIdGenerator(current)
@@ -90,6 +92,27 @@ export function createTaskCapabilityService(
         )
         parseWorkspaceState(draft)
         const impact = publicPreviewImpact(envelope.command, application)
+        if (requiresExplicitExecutionConfirmation(envelope.command)) {
+          const now = clock()
+          const receipt = {
+            id: `preview:${globalThis.crypto.randomUUID()}`,
+            requestFingerprint,
+            expectedWorkspaceRevision: envelope.expectedWorkspaceRevision,
+            commandType: envelope.command.type,
+            createdAt: now,
+            expiresAt: new Date(Date.parse(now) + PREVIEW_RECEIPT_TTL_MINUTES * 60_000).toISOString(),
+          }
+          const receiptDraft = structuredClone(current)
+          receiptDraft.previewReceipts = prunePreviewReceipts(
+            receiptDraft.previewReceipts,
+            now,
+            PREVIEW_RECEIPT_LIMIT - 1,
+          )
+          receiptDraft.previewReceipts.push(receipt)
+          receiptDraft.updatedAt = nextUpdatedAt(current.updatedAt, now)
+          await store.save(parseWorkspaceState(receiptDraft), current.updatedAt)
+          previewReceiptId = receipt.id
+        }
         return {
           accepted: true,
           descriptor,
@@ -97,7 +120,7 @@ export function createTaskCapabilityService(
           changes: impact.changes,
           validationErrors: [],
           confirmation,
-          previewFingerprint,
+          previewReceiptId,
         }
       } catch (error) {
         return {
@@ -107,7 +130,7 @@ export function createTaskCapabilityService(
           changes: [],
           validationErrors: [domainError(error)],
           confirmation,
-          previewFingerprint,
+          previewReceiptId,
         }
       }
     },
@@ -127,9 +150,13 @@ export function createTaskCapabilityService(
         return structuredClone(cached.result) as unknown as CommandResult
       }
       assertEnvelope(current, envelope)
-      assertExplicitConfirmation(envelope, requestFingerprint, previewConfirmationFor(envelope.command, getCommandDescriptor(envelope.command.type)))
+      assertExplicitConfirmation(current, envelope, requestFingerprint, now)
 
       const draft = structuredClone(current)
+      if (requiresExplicitExecutionConfirmation(envelope.command)) {
+        const receiptId = envelope.explicitConfirmation!.previewReceiptId
+        draft.previewReceipts = draft.previewReceipts.filter(({ id }) => id !== receiptId)
+      }
       const application = applyCapabilityCommand(draft, envelope.command, { now, id: ids })
       draft.revision = current.revision + 1
       draft.updatedAt = nextUpdatedAt(current.updatedAt, now)
@@ -442,20 +469,23 @@ function isCoreTaskCommand(command: CapabilityCommand): command is TaskCapabilit
 }
 
 function assertExplicitConfirmation(
+  current: WorkspaceStateV3,
   envelope: CommandEnvelope,
   requestFingerprint: string,
-  confirmation: PreviewConfirmation,
+  now: string,
 ): void {
-  if (confirmation !== 'explicit' || !requiresExplicitExecutionConfirmation(envelope.command)) return
+  if (!requiresExplicitExecutionConfirmation(envelope.command)) return
   const accepted = envelope.explicitConfirmation
-  if (
-    !accepted ||
-    accepted.previewFingerprint !== requestFingerprint ||
-    !Number.isFinite(Date.parse(accepted.confirmedAt))
-  ) {
-    throw new DomainCommandError('VALIDATION_ERROR', 'Explicit confirmation must reference the accepted preview fingerprint.', {
+  const receipt = accepted && current.previewReceipts.find(({ id }) => id === accepted.previewReceiptId)
+  if (!accepted || !receipt ||
+    receipt.requestFingerprint !== requestFingerprint ||
+    receipt.expectedWorkspaceRevision !== envelope.expectedWorkspaceRevision ||
+    receipt.commandType !== envelope.command.type ||
+    Date.parse(receipt.expiresAt) <= Date.parse(now) ||
+    !Number.isFinite(Date.parse(accepted.confirmedAt))) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Explicit confirmation must reference an unconsumed preview receipt.', {
       commandType: envelope.command.type,
-      expectedPreviewFingerprint: requestFingerprint,
+      previewReceiptId: accepted?.previewReceiptId ?? null,
     })
   }
 }
@@ -571,6 +601,17 @@ function pruneReceipts(receipts: readonly CommandReceipt[], now: string, limit: 
     .slice(-limit)
     .map(({ receipt }) => receipt)
   return structuredClone(active)
+}
+
+function prunePreviewReceipts(
+  receipts: readonly WorkspaceStateV3['previewReceipts'][number][],
+  now: string,
+  limit: number,
+): WorkspaceStateV3['previewReceipts'] {
+  return structuredClone(receipts
+    .filter((receipt) => Date.parse(receipt.expiresAt) > Date.parse(now))
+    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id))
+    .slice(-limit))
 }
 
 function domainError(error: unknown): DomainError {

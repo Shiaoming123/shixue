@@ -54,3 +54,18 @@
 
 ## Review Fix Concerns
 - `npm run typecheck` remains unavailable in this isolated worktree because `node_modules` is absent and `vue-tsc` is not on PATH.
+
+## Second Review Fix
+- Replaced caller-supplied preview fingerprints with a service-generated random, persisted, single-use `previewReceiptId`. A future/series update preview stores the receipt with the canonical request fingerprint, expected workspace revision, command type, and a 15-minute expiry. Execute requires the matching receipt plus a valid explicit confirmation timestamp, then consumes the receipt in the same draft that applies the command and writes its normal command receipt.
+- Preserved occurrence-scope updates as directly reversible commands with no receipt requirement.
+- Whole-series updates now retain existing pending `after_completion` occurrence schedules and overrides. They only cancel those pending rows that violate a newly shortened series end; completed and skipped history remains untouched.
+- Added a save-conflict fake store test which observes the fully formed `task.create` recurrence draft, then proves no task, series, occurrence, or command receipt reached persisted state after the forced conflict.
+
+## Second Review Fix Tests
+- `node --test --experimental-strip-types tests/recurrence-commands.test.ts tests/capability-service.test.ts tests/recurrence-materialize.test.ts`
+
+## Second Review Fix Output
+- 52 tests passed, 0 failed.
+
+## Second Review Fix Concerns
+- `npm run typecheck` was not run in this isolated worktree: dependencies are absent and `vue-tsc` is unavailable on PATH.
