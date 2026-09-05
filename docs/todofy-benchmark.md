@@ -7,11 +7,22 @@
 
 ## 1. 当前项目基线
 
-拾学沿用 MeowStarter 的 Vue 3 + TypeScript + Vite + Tauri 2 技术栈。桌面端以 SQLite 保存一个经过版本化校验的 `StudyState` 快照，Web 端以 IndexedDB 保存同一数据模型；模块能力同时受前端配置、运行时 capability、Cargo feature 与 Tauri permission 约束。
+拾学沿用 MeowStarter 的 Vue 3 + TypeScript + Vite + Tauri 2 技术栈。桌面端以 SQLite 保存一个经过版本化校验的 `WorkspaceStateV3` 快照，Web 端以 IndexedDB 保存同一数据模型；模块能力同时受前端配置、运行时 capability、Cargo feature 与 Tauri permission 约束。
 
 UI 沿用 `study` 主题和既有 token，并把色板收敛为雾灰玻璃、深墨与叶绿强调色；桌面采用导航、列表、详情三栏，移动端采用单栏与底部导航。此次没有引入新组件库或第二套设计语言。
 
-任务主模型是 `StudyTask`，不是脚手架遗留的 `Todo`：任务拥有收件箱、计划、进行中、阻塞、完成、取消状态，并通过连续 `TaskEvent`、专注 `StudySession` 和 `CompletionRecord` 形成可追溯学习证据链。
+任务主模型是 `Task`，不是脚手架遗留的 `Todo`：`mode: general` 承载通用个人规划，`mode: learning` 作为可选专业模式继续通过连续 `TaskEvent`、专注 `StudySession` 和 `CompletionRecord` 形成可追溯学习证据链。
+
+### 本分支已落地的基础合同
+
+| 基础能力 | 当前状态 | 边界 |
+| --- | --- | --- |
+| WorkspaceStateV3 与导入导出 | 已实现 | 新导出为 `meow-study/workspace-export` v3；旧 `study-export` v1/v2 先完整迁移、校验，再替换 |
+| 能力协议 | 已实现 | 协议版本保持 v1；命令预演、幂等、revision 校验和单次 CAS 保存由统一服务负责 |
+| 线上写入路径 | 已实现 | 当前 UI、键盘、通知兼容路径经能力服务写入；不允许绕过服务直接写持久化快照 |
+| 主题控件基础 | 已实现，本轮仅做编译验证 | 已有 overlay、popover、listbox、checkbox、switch、dialog、toast 与日期时间控件；本轮不把未运行的交互/视觉检查写成已验证 |
+
+`WorkspaceStateV3` 为后续能力预留集合不等于对应业务已经交付。重复规则、离线自然语言快速新增、多提醒、日历视图与 Agent 行为仍是计划项；`source: agent` 只是能力信封的调用来源标记，不代表已经存在自动规划或执行 Agent。
 
 ## 2. 实际源码审计范围
 
@@ -34,7 +45,7 @@ TickTick 的公开产品形态以其[功能页](https://ticktick.com/features)�
 | 能力 | Todofy 实现事实 | 拾学取舍 | 当前落地 |
 | --- | --- | --- | --- |
 | 新增 | 快速输入支持日期、优先级、重复和标签 | 直接借鉴低摩擦输入；高级字段留在编辑步骤 | 视图感知快速新增；今天视图自动带入今天；`N` 与 `Ctrl+Alt+A` 可聚焦输入 |
-| 查询 | SQLite 全量读取，前端派生视图 | 按现有快照 Store 重写 | SQLite/IndexedDB 共用版本化 `StudyState` |
+| 查询 | SQLite 全量读取，前端派生视图 | 按现有快照 Store 重写 | SQLite/IndexedDB 共用版本化 `WorkspaceStateV3`，现有学习界面由兼容投影读取 |
 | 编辑 | 标题/笔记失焦保存，其他字段立即保存 | 重写为显式表单事务，避免多个字段部分成功 | 标题、笔记、清单、计划/截止日期、精确提醒、优先级、时长、完成标准一次校验保存 |
 | 删除 | SQLite tombstone 软删除 | 直接借鉴 tombstone 思路，但必须保留证据链并结束活动 session | 单项/批量二次确认；任务隐藏，事件、session、completion evidence 保留 |
 | 状态 | active/done 二态 | 与拾学证据闭环冲突，分成即时勾选与学习收尾 | 普通勾选立即完成/重开；专注完成仍可记录成果、证据、下一步与复习 |
@@ -96,4 +107,4 @@ Web 烟测会真实走过重置、快速新增、刷新持久化、编辑日期/
 
 ## 6. 下一阶段详细方案
 
-2026-09-04 的产品访谈已确认“时间规划优先”的六 PR 路线。总规格见[拾学通用待办与时间规划基础规格](./superpowers/specs/2026-09-04-shixue-time-planning-foundation.md)，其中包含 v2→v3 数据迁移、重复发生项、多提醒、日历、离线快速新增、统一控件和未来“小拾”能力协议边界。根目录 `DESIGN.md` 与 `VISUAL_QA.md` 分别约束视觉实现和验收；在代表性方案得到确认前，业务实现不得自行冻结新视觉。
+2026-09-04 的产品访谈已确认“时间规划优先”的六 PR 路线。第一阶段基础已在当前分支落地：v2→v3 数据迁移、能力协议与现有写入切换、统一控件基础。其余重复发生项、离线自然语言快速新增、多提醒/托盘业务、日历与 Agent 行为仍是计划，不因 v3 类型或命令来源占位而视为已交付。总规格见[拾学通用待办与时间规划基础规格](./superpowers/specs/2026-09-04-shixue-time-planning-foundation.md)。根目录 `DESIGN.md` 与 `VISUAL_QA.md` 分别约束视觉实现和验收；在代表性方案得到确认前，业务实现不得自行冻结新视觉。

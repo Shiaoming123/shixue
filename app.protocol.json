@@ -1,10 +1,12 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "product": {
     "name": "meow-study",
-    "goal": "Help one person capture, plan, execute, prove, review, and trace every learning task locally.",
+    "goal": "Help one person capture, plan, execute, and review general personal tasks locally, with an optional learning specialization for evidence and review workflows.",
+    "scope": "general-personal-planning",
+    "learningSpecialization": "optional",
     "nonGoals": [
-      "Do not make cloud sync, AI generation, social features, or provider credentials part of the core learning loop.",
+      "Do not make cloud sync, AI generation, social features, or provider credentials part of the core planning loop.",
       "Do not claim signed delivery, hosted updates, store submission, deployed Web hosting, or real-device validation without separate evidence."
     ]
   },
@@ -28,9 +30,15 @@
     "defaultMode": "local-first",
     "ports": [
       {
-        "id": "study",
+        "id": "workspace",
+        "format": "meow-study/workspace-export",
+        "version": 3
+      }
+    ],
+    "legacyInputs": [
+      {
         "format": "meow-study/study-export",
-        "version": 2
+        "versions": [1, 2]
       }
     ],
     "sync": {
@@ -38,6 +46,30 @@
       "provider": "none"
     },
     "exclusions": ["secrets", "sync state"]
+  },
+  "capabilities": {
+    "protocolVersion": 1,
+    "directStorageWrites": false,
+    "futureAgent": {
+      "status": "planned",
+      "access": "capability-service-only"
+    }
+  },
+  "implementation": {
+    "shippedFoundation": [
+      "workspace-state-v3",
+      "legacy-study-v1-v2-migration",
+      "capability-protocol-v1",
+      "live-write-capability-routing",
+      "themed-control-foundation"
+    ],
+    "planned": [
+      "recurrence",
+      "offline-natural-language",
+      "multi-reminder",
+      "calendar",
+      "agent-behavior"
+    ]
   },
   "delivery": {
     "desktopPackage": "unverified",
@@ -51,7 +83,7 @@
     "conditional": ["rust:verify", "smoke:web-persistence", "smoke:windows-package", "mobile:doctor", "check:android-artifact"]
   },
   "evolution": {
-    "additive": "Add fields only in a schema version that the checker explicitly understands.",
+    "additive": "Add fields only in an application schema version that the checker explicitly understands; capability protocol versions evolve independently.",
     "breaking": "Document a migration when removing or renaming a module, data format, or compatibility promise."
   }
 }
