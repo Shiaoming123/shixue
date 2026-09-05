@@ -1,4 +1,4 @@
-import type { StudySession, Task, TaskEvent, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { ReminderRule, StudySession, Task, TaskEvent, WorkspaceStateV3 } from '../workspace/types.ts'
 import {
   DomainCommandError,
   type CapabilityCommandContext,
@@ -70,7 +70,10 @@ function createTask(
     deletedAt: null,
   }
   state.tasks.push(task)
-  const event = appendEvent(state, task, 'captured', null, 'inbox', context)
+  if (command.reminderAt !== undefined) {
+    setLegacyReminder(state, task.id, command.reminderAt, context, command.reminderRuleId)
+  }
+  const event = appendEvent(state, task, 'captured', null, 'inbox', context, undefined, undefined, command.eventId)
   const affected = taskRef(task)
   return {
     affected: [affected],
@@ -88,7 +91,7 @@ function updateTask(
 ): CommandApplication {
   const task = requireTask(state, command.taskId, command.expectedRevision)
   const before = structuredClone(task)
-  const fields = applyPatch(state, task, command.patch)
+  const fields = applyPatch(state, task, command.patch, context, command.reminderRuleId)
   task.revision += 1
   task.updatedAt = context.now
   const affected = taskRef(task)
@@ -113,7 +116,7 @@ function deleteTask(
   task.deletedAt = context.now
   task.revision += 1
   task.updatedAt = context.now
-  const event = appendEvent(state, task, 'deleted', task.status, task.status, context, command.reason)
+  const event = appendEvent(state, task, 'deleted', task.status, task.status, context, command.reason, undefined, command.eventId)
   const affected = taskRef(task)
   return {
     affected: [affected],
@@ -147,7 +150,7 @@ function completeTask(
   task.updatedAt = context.now
 
   const record = task.mode === 'learning' ? {
-    id: context.id('completion'), taskId: task.id,
+    id: command.recordId ?? context.id('completion'), taskId: task.id,
     topicId: task.listId === 'list:system:learning' ? null : task.listId,
     sessionIds: sessions.current.map(({ id }) => id), taskTitleSnapshot: task.title,
     learned: command.learned!, evidence: command.evidence!, blocker: command.blocker ?? '',
@@ -157,7 +160,7 @@ function completeTask(
     updatedAt: context.now, deletedAt: null,
   } : null
   if (record) state.completionRecords.push(record)
-  const event = appendEvent(state, task, 'completed', fromStatus, 'completed', context, undefined, record?.id)
+  const event = appendEvent(state, task, 'completed', fromStatus, 'completed', context, undefined, record?.id, command.eventId)
   const affected = taskRef(task)
   return {
     affected: [affected],
@@ -184,7 +187,7 @@ function reopenTask(
   if (task.learning) task.learning.blockedReason = null
   task.revision += 1
   task.updatedAt = context.now
-  const event = appendEvent(state, task, 'reopened', fromStatus, task.status, context)
+  const event = appendEvent(state, task, 'reopened', fromStatus, task.status, context, undefined, undefined, command.eventId)
   const affected = taskRef(task)
   return {
     affected: [affected],
@@ -213,7 +216,7 @@ function rescheduleTask(
   if (task.learning) task.learning.blockedReason = null
   task.revision += 1
   task.updatedAt = context.now
-  const event = appendEvent(state, task, 'rescheduled', fromStatus, 'planned', context, command.reason)
+  const event = appendEvent(state, task, 'rescheduled', fromStatus, 'planned', context, command.reason, undefined, command.eventId)
   const affected = taskRef(task)
   return {
     affected: [affected],
@@ -243,7 +246,7 @@ function batchReschedule(
     if (task.learning) task.learning.blockedReason = null
     task.revision += 1
     task.updatedAt = context.now
-    return appendEvent(state, task, 'rescheduled', fromStatus, 'planned', context, command.reason)
+    return appendEvent(state, task, 'rescheduled', fromStatus, 'planned', context, command.reason, undefined, command.eventIds?.[task.id])
   })
   return batchApplication(tasks, before, sessions.before, events, ['status', 'schedule'])
 }
@@ -264,7 +267,7 @@ function batchCancel(
     if (task.learning) task.learning.blockedReason = null
     task.revision += 1
     task.updatedAt = context.now
-    return appendEvent(state, task, 'cancelled', fromStatus, 'cancelled', context, command.reason)
+    return appendEvent(state, task, 'cancelled', fromStatus, 'cancelled', context, command.reason, undefined, command.eventIds?.[task.id])
   })
   return batchApplication(tasks, before, sessions.before, events, ['status'])
 }
@@ -282,7 +285,7 @@ function batchDelete(
     task.deletedAt = context.now
     task.revision += 1
     task.updatedAt = context.now
-    return appendEvent(state, task, 'deleted', task.status, task.status, context, command.reason)
+    return appendEvent(state, task, 'deleted', task.status, task.status, context, command.reason, undefined, command.eventIds?.[task.id])
   })
   return batchApplication(tasks, before, sessions.before, events, ['deletedAt'], 'delete')
 }
@@ -301,7 +304,13 @@ function batchApplication(
   }
 }
 
-function applyPatch(state: WorkspaceStateV3, task: Task, patch: TaskUpdatePatch): string[] {
+function applyPatch(
+  state: WorkspaceStateV3,
+  task: Task,
+  patch: TaskUpdatePatch,
+  context: CapabilityCommandContext,
+  reminderRuleId?: string,
+): string[] {
   if (patch.title !== undefined) requireText(patch.title, 'Task title')
   const listId = patch.listId ?? task.listId
   const sectionId = patch.sectionId === undefined ? task.sectionId : patch.sectionId
@@ -331,7 +340,40 @@ function applyPatch(state: WorkspaceStateV3, task: Task, patch: TaskUpdatePatch)
   if (patch.checklist !== undefined) task.checklist = structuredClone(patch.checklist)
   if (patch.acceptanceCriteria !== undefined) task.learning!.acceptanceCriteria = [...patch.acceptanceCriteria]
   if (patch.blockedReason !== undefined) task.learning!.blockedReason = patch.blockedReason
+  if (patch.reminderAt !== undefined) setLegacyReminder(state, task.id, patch.reminderAt, context, reminderRuleId)
   return fields
+}
+
+function setLegacyReminder(
+  state: WorkspaceStateV3,
+  taskId: string,
+  reminderAt: string | null,
+  context: CapabilityCommandContext,
+  reminderRuleId?: string,
+): void {
+  const matches = state.reminderRules.filter((rule) =>
+    rule.taskId === taskId && rule.occurrenceId === null && rule.trigger.kind === 'absolute')
+  if (reminderAt === null) {
+    const ids = new Set(matches.map(({ id }) => id))
+    state.reminderRules = state.reminderRules.filter(({ id }) => !ids.has(id))
+    return
+  }
+  const existing = matches[0]
+  if (existing) {
+    existing.trigger = { kind: 'absolute', at: reminderAt }
+    existing.enabled = true
+    existing.revision += 1
+    return
+  }
+  const rule: ReminderRule = {
+    id: reminderRuleId ?? context.id('reminder'),
+    taskId,
+    occurrenceId: null,
+    trigger: { kind: 'absolute', at: reminderAt },
+    enabled: true,
+    revision: 1,
+  }
+  state.reminderRules.push(rule)
 }
 
 function requireTask(state: WorkspaceStateV3, taskId: string, expectedRevision?: number): Task {
@@ -413,9 +455,10 @@ function appendEvent(
   state: WorkspaceStateV3, task: Task, type: TaskEvent['type'],
   fromStatus: TaskEvent['fromStatus'], toStatus: TaskEvent['toStatus'],
   context: CapabilityCommandContext, reason?: string, completionRecordId?: string,
+  explicitId?: string,
 ): TaskEvent {
   const event: TaskEvent = {
-    id: context.id('event'), sequence: state.taskEvents.length + 1, taskId: task.id, type,
+    id: explicitId ?? context.id('event'), sequence: state.taskEvents.length + 1, taskId: task.id, type,
     occurredAt: context.now, fromStatus, toStatus, reason: reason?.trim() || null,
     completionRecordId: completionRecordId ?? null,
   }

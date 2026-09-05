@@ -35,8 +35,8 @@ import {
   resumeStudySession,
   saveStudyScratchpad,
   saveStudyListGroup,
-  saveStudyState,
   saveStudyTopic,
+  resetStudyState,
   startStudyTask,
   switchStudyTask,
   setTaskChecklistItem,
@@ -53,6 +53,7 @@ import {
   type TaskEvent,
 } from './lib/study'
 import { createSeedStudyState } from './storage/study/types'
+import { getWorkspaceStore } from './storage/workspace/registry'
 
 const page = ref<StudyPage>('today')
 const state = ref<StudyState>(createSeedStudyState())
@@ -280,7 +281,7 @@ async function syncStudyCloud() {
       enabled: true,
       config: cloudConfig,
       deviceId: localDeviceId(),
-      store: { load: loadStudyState, save: saveStudyState },
+      store: getWorkspaceStore(),
       adapter: await cloudAdapter(),
     })
     const result = await controller.syncOnce()
@@ -616,7 +617,7 @@ async function setReminders(enabled: boolean) {
 }
 async function resetDemo() {
   try {
-    await saveStudyState(createSeedStudyState())
+    await resetStudyState()
     await refreshState()
     settingsOpen.value = false
     selectedTaskId.value = ''

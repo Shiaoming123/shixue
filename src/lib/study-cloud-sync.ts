@@ -1,10 +1,11 @@
 import { createAllowlistSyncPolicy } from '../sync/policy.ts'
 import type { SyncMutation } from '../sync/types.ts'
-import {
-  parseStudyState,
-  type StudyState,
-  type StudyStore,
-} from '../storage/study/types.ts'
+import { CAPABILITY_PROTOCOL_VERSION } from '../domain/capabilities/types.ts'
+import { createTaskCapabilityService } from '../domain/capabilities/service.ts'
+import { parseWorkspaceStateOrMigrate } from '../domain/workspace/migrate.ts'
+import type { WorkspaceStateV3 } from '../domain/workspace/types.ts'
+import { createWorkspaceExport, parseWorkspaceExport } from '../storage/workspace/data-port.ts'
+import type { WorkspaceStore } from '../storage/workspace/types.ts'
 
 export const STUDY_CLOUD_COLLECTION = 'study_state' as const
 export const STUDY_CLOUD_RECORD_ID = 'current' as const
@@ -73,13 +74,13 @@ export interface StudyCloudSyncControllerOptions {
   enabled: boolean
   config?: StudyCloudProviderConfig
   deviceId: string
-  store: StudyStore
+  store: WorkspaceStore
   adapter: StudyCloudAdapter
 }
 
 interface ParsedStudyCloudSnapshot {
   mutation: SyncMutation
-  state: StudyState
+  state: WorkspaceStateV3
   updatedAt: string
   digest: string
 }
@@ -96,11 +97,12 @@ export function compareStudyCloudSnapshots(
 }
 
 export async function createStudyCloudSnapshot(
-  state: StudyState,
+  state: WorkspaceStateV3,
   deviceId: string,
 ): Promise<SyncMutation> {
   if (!deviceId.trim()) throw new Error('Study cloud snapshot requires a deviceId.')
-  const parsed = parseStudyState(state)
+  const workspace = createWorkspaceExport(state, state.updatedAt)
+  const parsed = workspace.state
   assertIsoTimestamp(parsed.updatedAt)
   const digest = await sha256(canonicalJson(parsed))
   const revision = `${parsed.updatedAt}|${digest}`
@@ -109,7 +111,7 @@ export async function createStudyCloudSnapshot(
     collection: STUDY_CLOUD_COLLECTION,
     recordId: STUDY_CLOUD_RECORD_ID,
     kind: 'upsert',
-    payload: { state: parsed, digest },
+    payload: { workspace, digest },
     revision,
     deviceId,
     occurredAt: parsed.updatedAt,
@@ -150,7 +152,7 @@ export function createStudyCloudSyncController(
         return finish({ state: 'skipped', reason: 'signed-out', localPreserved: true })
       }
 
-      let localState: StudyState
+      let localState: WorkspaceStateV3
       let local: ParsedStudyCloudSnapshot
       try {
         localState = await options.store.load()
@@ -223,7 +225,18 @@ export function createStudyCloudSyncController(
       }
 
       try {
-        await options.store.save(remote.state, localState.updatedAt)
+        const service = createTaskCapabilityService(
+          options.store,
+          () => new Date().toISOString(),
+          (kind) => `${kind}:${crypto.randomUUID()}`,
+        )
+        await service.execute({
+          protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+          idempotencyKey: `cloud:${remote.mutation.revision}`,
+          source: 'human-ui',
+          expectedWorkspaceRevision: localState.revision,
+          command: { type: 'workspace.import', state: remote.state },
+        })
       } catch {
         return finish({ state: 'failed', reason: 'local-conflict', localPreserved: true })
       }
@@ -247,10 +260,22 @@ async function parseCloudSnapshot(value: SyncMutation): Promise<ParsedStudyCloud
   ) {
     throw new Error('Invalid Study cloud snapshot envelope.')
   }
-  const state = parseStudyState(value.payload.state)
+  const exported = value.payload.workspace === undefined
+    ? null
+    : parseWorkspaceExport(value.payload.workspace)
+  const legacyState = exported === null ? value.payload.state : undefined
+  if (exported === null && legacyState === undefined) {
+    throw new Error('Invalid Study cloud snapshot payload.')
+  }
+  const state = exported?.state ?? parseWorkspaceStateOrMigrate(legacyState, value.occurredAt)
   assertIsoTimestamp(state.updatedAt)
-  const digest = await sha256(canonicalJson(state))
-  const revision = `${state.updatedAt}|${digest}`
+  const digestSource = exported === null ? legacyState : state
+  const digest = await sha256(canonicalJson(digestSource))
+  const revisionUpdatedAt = exported === null && isRecord(legacyState) && typeof legacyState.updatedAt === 'string'
+    ? legacyState.updatedAt
+    : state.updatedAt
+  assertIsoTimestamp(revisionUpdatedAt)
+  const revision = `${revisionUpdatedAt}|${digest}`
   if (
     value.payload.digest !== digest ||
     value.revision !== revision ||

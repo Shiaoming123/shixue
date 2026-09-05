@@ -55,6 +55,17 @@ export const SAVE_STUDY_STATE_WITH_VERSION_GUARD_SQL = `INSERT INTO study_state
     updated_at = excluded.updated_at
   WHERE study_state.version != 3`
 
+export const SAVE_WORKSPACE_STATE_WITH_CAS_SQL = `INSERT INTO study_state
+  (id, version, payload, updated_at)
+  SELECT 1, $1, $2, $3
+  WHERE (NOT EXISTS (SELECT 1 FROM study_state WHERE id = 1) AND $4 = $5)
+     OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND version = 3 AND updated_at = $4)
+  ON CONFLICT(id) DO UPDATE SET
+    version = excluded.version,
+    payload = excluded.payload,
+    updated_at = excluded.updated_at
+  WHERE study_state.version = 3 AND study_state.updated_at = $4`
+
 export const BACKUP_LEGACY_WORKSPACE_STATE_SQL = `INSERT INTO study_state_backups
   (backup_key, version, payload, created_at)
   SELECT $1, version, payload, $4 FROM study_state
@@ -269,7 +280,7 @@ export function createTauriSqliteWorkspaceStore(
         )
         return
       }
-      const saved = await database.execute(SAVE_STUDY_STATE_WITH_CAS_SQL, [
+      const saved = await database.execute(SAVE_WORKSPACE_STATE_WITH_CAS_SQL, [
         validated.version,
         JSON.stringify(validated),
         validated.updatedAt,

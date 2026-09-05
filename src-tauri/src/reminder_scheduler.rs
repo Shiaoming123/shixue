@@ -10,6 +10,8 @@ use tauri_plugin_notification::NotificationExt;
 struct StudySnapshot {
     #[serde(default)]
     tasks: Vec<ReminderTask>,
+    #[serde(default, rename = "reminderRules")]
+    reminder_rules: Vec<ReminderRule>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -21,6 +23,28 @@ struct ReminderTask {
     reminder_at: Option<String>,
     #[serde(rename = "deletedAt")]
     deleted_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ReminderRule {
+    #[serde(rename = "taskId")]
+    task_id: String,
+    #[serde(rename = "occurrenceId")]
+    occurrence_id: Option<String>,
+    trigger: ReminderTrigger,
+    enabled: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ReminderTrigger {
+    kind: String,
+    at: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DueReminder {
+    task: ReminderTask,
+    reminder_at: String,
 }
 
 pub fn start(app: &tauri::AppHandle) {
@@ -57,8 +81,9 @@ async fn deliver_due(app: &tauri::AppHandle) -> Result<(), String> {
     let snapshot: StudySnapshot =
         serde_json::from_str(&payload).map_err(|error| error.to_string())?;
 
-    for task in due_tasks(snapshot.tasks, Utc::now()) {
-        let reminder_at = task.reminder_at.as_deref().unwrap_or_default();
+    for reminder in due_reminders(snapshot, Utc::now()) {
+        let task = reminder.task;
+        let reminder_at = reminder.reminder_at;
         let delivered =
             sqlx::query("SELECT reminder_at FROM study_reminder_deliveries WHERE task_id = ?")
                 .bind(&task.id)
@@ -66,7 +91,7 @@ async fn deliver_due(app: &tauri::AppHandle) -> Result<(), String> {
                 .await
                 .map_err(|error| error.to_string())?
                 .and_then(|row| row.try_get::<String, _>(0).ok());
-        if delivered.as_deref() == Some(reminder_at) {
+        if delivered.as_deref() == Some(reminder_at.as_str()) {
             continue;
         }
 
@@ -81,7 +106,7 @@ async fn deliver_due(app: &tauri::AppHandle) -> Result<(), String> {
              ON CONFLICT(task_id) DO UPDATE SET reminder_at = excluded.reminder_at, delivered_at = excluded.delivered_at",
         )
         .bind(&task.id)
-        .bind(reminder_at)
+        .bind(&reminder_at)
         .bind(Utc::now().to_rfc3339())
         .execute(&pool)
         .await
@@ -98,24 +123,35 @@ async fn open_database(path: &Path) -> Result<SqlitePool, String> {
         .map_err(|error| error.to_string())
 }
 
-fn due_tasks(tasks: Vec<ReminderTask>, now: DateTime<Utc>) -> Vec<ReminderTask> {
-    let mut due = tasks
+fn due_reminders(snapshot: StudySnapshot, now: DateTime<Utc>) -> Vec<DueReminder> {
+    let mut due = snapshot
+        .tasks
         .into_iter()
-        .filter(|task| {
-            task.deleted_at.is_none()
-                && task.status != "completed"
-                && task.status != "cancelled"
-                && task.reminder_at.as_deref().is_some_and(|value| {
-                    DateTime::parse_from_rfc3339(value)
-                        .map(|instant| instant.with_timezone(&Utc) <= now)
-                        .unwrap_or(false)
+        .filter_map(|task| {
+            if task.deleted_at.is_some() || task.status == "completed" || task.status == "cancelled" {
+                return None;
+            }
+            let reminder_at = snapshot
+                .reminder_rules
+                .iter()
+                .find(|rule| {
+                    rule.task_id == task.id
+                        && rule.enabled
+                        && rule.occurrence_id.is_none()
+                        && rule.trigger.kind == "absolute"
                 })
+                .and_then(|rule| rule.trigger.at.clone())
+                .or_else(|| task.reminder_at.clone())?;
+            DateTime::parse_from_rfc3339(&reminder_at)
+                .ok()
+                .filter(|instant| instant.with_timezone(&Utc) <= now)
+                .map(|_| DueReminder { task, reminder_at })
         })
         .collect::<Vec<_>>();
     due.sort_by(|left, right| {
         left.reminder_at
             .cmp(&right.reminder_at)
-            .then(left.id.cmp(&right.id))
+            .then(left.task.id.cmp(&right.task.id))
     });
     due
 }
@@ -136,9 +172,9 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         assert_eq!(
-            due_tasks(tasks, now)
+            due_reminders(StudySnapshot { tasks, reminder_rules: vec![] }, now)
                 .into_iter()
-                .map(|task| task.id)
+                .map(|reminder| reminder.task.id)
                 .collect::<Vec<_>>(),
             vec!["due"]
         );

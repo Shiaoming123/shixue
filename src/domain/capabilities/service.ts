@@ -2,6 +2,7 @@ import { parseWorkspaceState } from '../workspace/parse.ts'
 import type { CommandReceipt, JsonValue, Task, TaskEvent, WorkspaceStateV3 } from '../workspace/types.ts'
 import type { WorkspaceStore } from '../../storage/workspace/types.ts'
 import { getCommandDescriptor, getPreviewConfirmation } from './catalog.ts'
+import { applyLiveCompatibilityCommand } from './live-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
 import {
   CAPABILITY_PROTOCOL_VERSION,
@@ -19,6 +20,7 @@ import {
   type CommandResult,
   type DomainError,
   type EntityRef,
+  type LiveCompatibilityCommand,
   type QueryResult,
   type TaskCapabilityCommand,
   type TaskCapabilityService,
@@ -185,12 +187,12 @@ function applyCapabilityCommand(
   command: CapabilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
-  if (command.type.startsWith('task.')) {
-    return applyTaskCommand(state, command as TaskCapabilityCommand, context)
-  }
+  if (isCoreTaskCommand(command)) return applyTaskCommand(state, command, context)
+  if (isLiveCompatibilityCommand(command)) return applyLiveCompatibilityCommand(state, command, context)
   if (command.type === 'workspace.import') return applyWorkspaceImport(state, command)
   if (command.type === 'undo.apply') return applyUndo(state, command, context)
-  throw new DomainCommandError('COMMAND_NOT_FOUND', `Command is not implemented: ${command.type}.`)
+  const commandType = (command as { type: string }).type
+  throw new DomainCommandError('COMMAND_NOT_FOUND', `Command is not implemented: ${commandType}.`)
 }
 
 function applyWorkspaceImport(state: WorkspaceStateV3, command: WorkspaceImportCommand): CommandApplication {
@@ -330,16 +332,67 @@ function previewAffected(
   state: { revision: number; tasks: { id: string; revision: number }[] },
   command: CommandEnvelope['command'],
 ): EntityRef[] {
-  if (command.type === 'workspace.import') return [{ type: 'workspace', id: 'workspace', revision: state.revision }]
+  if (command.type === 'workspace.import' || command.type === 'workspace.reset') {
+    return [{ type: 'workspace', id: 'workspace', revision: state.revision }]
+  }
   if (command.type === 'undo.apply') return command.token.compensation.type === 'task.remove_created'
     ? command.token.compensation.taskIds.map((id) => ({ type: 'task', id }))
     : command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task', id, revision }))
   if (command.type === 'task.create') return [{ type: 'task', id: command.taskId ?? 'pending' }]
-  const taskIds = 'taskIds' in command ? command.taskIds : [command.taskId]
+  if (command.type === 'list.upsert') return [{ type: 'list', id: command.list.id }]
+  if (command.type === 'list_group.upsert') return [{ type: 'list_group', id: command.group.id }]
+  if (command.type === 'list_group.archive') return [{ type: 'list_group', id: command.groupId }]
+  if (
+    command.type === 'session.pause' ||
+    command.type === 'session.resume' ||
+    command.type === 'session.scratchpad.update'
+  ) return [{ type: 'session', id: command.sessionId }]
+  if (command.type === 'completion.review') return [{ type: 'completion_record', id: command.recordId }]
+  if (command.type === 'completion.create_next_action') {
+    return [{ type: 'task', id: command.taskId ?? 'pending' }]
+  }
+  const taskIds = command.type === 'task.reorder' ||
+    command.type === 'task.batch_reschedule' ||
+    command.type === 'task.batch_cancel' ||
+    command.type === 'task.batch_delete'
+    ? command.taskIds
+    : 'taskId' in command ? [command.taskId] : []
   return taskIds.map((id) => {
     const revision = state.tasks.find((task) => task.id === id)?.revision
     return revision === undefined ? { type: 'task', id } : { type: 'task', id, revision }
   })
+}
+
+function isCoreTaskCommand(command: CapabilityCommand): command is TaskCapabilityCommand {
+  return command.type === 'task.create' ||
+    command.type === 'task.update' ||
+    command.type === 'task.delete' ||
+    command.type === 'task.complete' ||
+    command.type === 'task.reopen' ||
+    command.type === 'task.reschedule' ||
+    command.type === 'task.batch_reschedule' ||
+    command.type === 'task.batch_cancel' ||
+    command.type === 'task.batch_delete'
+}
+
+function isLiveCompatibilityCommand(command: CapabilityCommand): command is LiveCompatibilityCommand {
+  return command.type === 'list.upsert' ||
+    command.type === 'list_group.upsert' ||
+    command.type === 'list_group.archive' ||
+    command.type === 'task.plan' ||
+    command.type === 'task.transition' ||
+    command.type === 'task.start' ||
+    command.type === 'task.switch' ||
+    command.type === 'session.pause' ||
+    command.type === 'session.resume' ||
+    command.type === 'session.scratchpad.update' ||
+    command.type === 'task.checklist.add' ||
+    command.type === 'task.checklist.set' ||
+    command.type === 'task.reorder' ||
+    command.type === 'task.toggle_completion' ||
+    command.type === 'completion.review' ||
+    command.type === 'completion.create_next_action' ||
+    command.type === 'workspace.reset'
 }
 
 function publicPreviewImpact(

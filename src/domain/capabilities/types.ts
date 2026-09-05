@@ -1,10 +1,12 @@
 import type {
   CompletionRecord,
   JsonValue,
+  ListGroup,
   StudySession,
   Task,
   TaskChecklistItem,
   TaskEvent,
+  TaskList,
   TaskPriority,
   TaskStatus,
   WorkspaceStateV3,
@@ -18,7 +20,14 @@ export type CommandRisk = 'low' | 'medium' | 'high'
 export type CommandScope = 'single' | 'batch' | 'series' | 'workspace' | 'external'
 export type Reversibility = 'reversible' | 'compensating' | 'irreversible'
 export type PreviewConfirmation = 'none' | 'review' | 'explicit'
-export type EntityType = 'workspace' | 'task' | 'completion_record'
+export type EntityType =
+  | 'workspace'
+  | 'list_group'
+  | 'list'
+  | 'task'
+  | 'session'
+  | 'checklist_item'
+  | 'completion_record'
 export type ChangeOperation = 'create' | 'update' | 'delete' | 'replace' | 'restore'
 
 export interface EntityRef {
@@ -45,9 +54,13 @@ export type DomainErrorCode =
   | 'TASK_ALREADY_EXISTS'
   | 'TASK_ALREADY_DELETED'
   | 'TASK_INVALID_TRANSITION'
+  | 'LIST_GROUP_NOT_FOUND'
   | 'LIST_NOT_FOUND'
   | 'SECTION_NOT_FOUND'
   | 'TAG_NOT_FOUND'
+  | 'SESSION_NOT_FOUND'
+  | 'CHECKLIST_ITEM_NOT_FOUND'
+  | 'COMPLETION_RECORD_NOT_FOUND'
   | 'VALIDATION_ERROR'
   | 'UNDO_TOKEN_NOT_FOUND'
   | 'UNDO_ALREADY_APPLIED'
@@ -79,6 +92,8 @@ export class DomainCommandError extends Error implements DomainError {
 export interface TaskCreateCommand {
   type: 'task.create'
   taskId?: string
+  eventId?: string
+  reminderRuleId?: string
   listId: string
   mode?: 'general' | 'learning'
   sectionId?: string | null
@@ -93,6 +108,7 @@ export interface TaskCreateCommand {
   priority?: TaskPriority
   checklist?: TaskChecklistItem[]
   acceptanceCriteria?: string[]
+  reminderAt?: string | null
 }
 
 export interface TaskUpdatePatch {
@@ -110,6 +126,7 @@ export interface TaskUpdatePatch {
   checklist?: TaskChecklistItem[]
   acceptanceCriteria?: string[]
   blockedReason?: string | null
+  reminderAt?: string | null
 }
 
 export interface TaskUpdateCommand {
@@ -117,6 +134,7 @@ export interface TaskUpdateCommand {
   taskId: string
   expectedRevision?: number
   patch: TaskUpdatePatch
+  reminderRuleId?: string
 }
 
 export interface TaskDeleteCommand {
@@ -124,6 +142,7 @@ export interface TaskDeleteCommand {
   taskId: string
   expectedRevision?: number
   reason?: string
+  eventId?: string
 }
 
 export interface TaskCompleteCommand {
@@ -136,12 +155,15 @@ export interface TaskCompleteCommand {
   blocker?: string
   nextAction?: string
   mastery?: CompletionRecord['mastery']
+  eventId?: string
+  recordId?: string
 }
 
 export interface TaskReopenCommand {
   type: 'task.reopen'
   taskId: string
   expectedRevision?: number
+  eventId?: string
 }
 
 export interface TaskRescheduleCommand {
@@ -151,10 +173,12 @@ export interface TaskRescheduleCommand {
   startAt?: string | null
   startOn?: string | null
   reason?: string
+  eventId?: string
 }
 
 export interface TaskBatchCommandTargetRevisions {
   expectedRevisions?: Record<string, number>
+  eventIds?: Record<string, string>
 }
 
 export interface TaskBatchRescheduleCommand extends TaskBatchCommandTargetRevisions {
@@ -180,6 +204,127 @@ export interface TaskBatchDeleteCommand extends TaskBatchCommandTargetRevisions 
 export interface WorkspaceImportCommand {
   type: 'workspace.import'
   state: unknown
+}
+
+export interface ListUpsertCommand {
+  type: 'list.upsert'
+  list: TaskList
+}
+
+export interface ListGroupUpsertCommand {
+  type: 'list_group.upsert'
+  group: ListGroup
+}
+
+export interface ListGroupArchiveCommand {
+  type: 'list_group.archive'
+  groupId: string
+}
+
+export interface TaskPlanCommand {
+  type: 'task.plan'
+  taskId: string
+  expectedRevision?: number
+  patch: TaskUpdatePatch
+  eventId?: string
+  reminderRuleId?: string
+}
+
+export interface TaskTransitionCommand {
+  type: 'task.transition'
+  taskId: string
+  expectedRevision?: number
+  toStatus: 'planned' | 'blocked' | 'cancelled'
+  reason?: string
+  eventId?: string
+}
+
+export interface TaskStartCommand {
+  type: 'task.start'
+  taskId: string
+  expectedRevision?: number
+  sessionId?: string
+  eventId?: string
+}
+
+export interface TaskSwitchCommand {
+  type: 'task.switch'
+  taskId: string
+  expectedRevision?: number
+  sessionId?: string
+  pausedEventId?: string
+  eventId?: string
+  reason?: string
+}
+
+export interface SessionPauseCommand {
+  type: 'session.pause'
+  sessionId: string
+  expectedTaskRevision?: number
+  eventId?: string
+}
+
+export interface SessionResumeCommand {
+  type: 'session.resume'
+  sessionId: string
+  expectedTaskRevision?: number
+  eventId?: string
+}
+
+export interface SessionScratchpadUpdateCommand {
+  type: 'session.scratchpad.update'
+  sessionId: string
+  expectedTaskRevision?: number
+  scratchpad: string
+}
+
+export interface TaskChecklistAddCommand {
+  type: 'task.checklist.add'
+  taskId: string
+  expectedRevision?: number
+  itemId?: string
+  text: string
+}
+
+export interface TaskChecklistSetCommand {
+  type: 'task.checklist.set'
+  taskId: string
+  expectedRevision?: number
+  itemId: string
+  checked: boolean
+}
+
+export interface TaskReorderCommand {
+  type: 'task.reorder'
+  taskIds: string[]
+}
+
+export interface TaskToggleCompletionCommand {
+  type: 'task.toggle_completion'
+  taskId: string
+  expectedRevision?: number
+  eventId?: string
+}
+
+export interface CompletionReviewCommand {
+  type: 'completion.review'
+  recordId: string
+  result: Exclude<CompletionRecord['lastReviewResult'], null>
+  reviewedOn: string
+  expectedTaskRevision?: number
+}
+
+export interface CompletionCreateNextActionCommand {
+  type: 'completion.create_next_action'
+  recordId: string
+  expectedTaskRevision?: number
+  taskId?: string
+  eventId?: string
+  startOn?: string | null
+}
+
+export interface WorkspaceResetCommand {
+  type: 'workspace.reset'
 }
 
 export type UndoCompensation =
@@ -215,7 +360,30 @@ export type TaskCapabilityCommand =
   | TaskBatchCancelCommand
   | TaskBatchDeleteCommand
 
-export type CapabilityCommand = TaskCapabilityCommand | WorkspaceImportCommand | UndoApplyCommand
+export type LiveCompatibilityCommand =
+  | ListUpsertCommand
+  | ListGroupUpsertCommand
+  | ListGroupArchiveCommand
+  | TaskPlanCommand
+  | TaskTransitionCommand
+  | TaskStartCommand
+  | TaskSwitchCommand
+  | SessionPauseCommand
+  | SessionResumeCommand
+  | SessionScratchpadUpdateCommand
+  | TaskChecklistAddCommand
+  | TaskChecklistSetCommand
+  | TaskReorderCommand
+  | TaskToggleCompletionCommand
+  | CompletionReviewCommand
+  | CompletionCreateNextActionCommand
+  | WorkspaceResetCommand
+
+export type CapabilityCommand =
+  | TaskCapabilityCommand
+  | LiveCompatibilityCommand
+  | WorkspaceImportCommand
+  | UndoApplyCommand
 
 export interface CommandEnvelope<C extends CapabilityCommand = CapabilityCommand> {
   protocolVersion: typeof CAPABILITY_PROTOCOL_VERSION
@@ -273,7 +441,16 @@ export type QueryResult<Q extends CapabilityQuery> =
             : never
 
 export type CapabilityClock = () => string
-export type CapabilityIdGenerator = (kind: 'task' | 'event' | 'receipt' | 'undo' | 'completion') => string
+export type CapabilityIdGenerator = (kind:
+  | 'task'
+  | 'event'
+  | 'receipt'
+  | 'undo'
+  | 'completion'
+  | 'session'
+  | 'checklist'
+  | 'reminder'
+) => string
 
 export interface CommandApplication {
   affected: EntityRef[]

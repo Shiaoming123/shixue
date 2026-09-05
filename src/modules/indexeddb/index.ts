@@ -1,7 +1,7 @@
 import { createIndexedDbTodoStore } from '../../storage/todos/indexeddb'
 import { registerTodoStore } from '../../storage/todos/registry'
-import { createIndexedDbStudyStore } from '../../storage/study/indexeddb'
-import { registerStudyStore } from '../../storage/study/registry'
+import { createIndexedDbWorkspaceStore } from '../../storage/study/indexeddb'
+import { registerWorkspaceStore } from '../../storage/workspace/registry'
 import type { Module } from '../types'
 
 /** 浏览器本地持久化适配器。 */
@@ -13,7 +13,7 @@ const indexedDb: Module = {
   requiredCapabilities: ['web-storage'],
   setup() {
     registerTodoStore(createIndexedDbTodoStore())
-    registerStudyStore(createIndexedDbStudyStore())
+    registerWorkspaceStore(createIndexedDbWorkspaceStore())
   },
 }
 
