@@ -4,6 +4,7 @@ import { Bell, CalendarDays, Flag, ListTree, X } from '@lucide/vue'
 import type { StudyTaskPriority, StudyTopic } from '../../storage/study/types'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import Listbox from '../ui/Listbox.vue'
+import RecurrenceEditor, { type RecurrenceRule } from './RecurrenceEditor.vue'
 
 export interface TaskEditValue {
   title: string
@@ -28,6 +29,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   save: [value: TaskEditValue]
+  recurrenceSave: [rule: RecurrenceRule]
 }>()
 
 const title = ref('')
@@ -39,6 +41,7 @@ const reminderAt = ref('')
 const priority = ref<StudyTaskPriority>('none')
 const estimateMinutes = ref<number | null>(null)
 const criteria = ref('')
+const recurrenceRule = ref<RecurrenceRule | null>(null)
 const topicOptions = computed(() => [
   { value: '', label: '收件箱' },
   ...props.topics.map((topic) => ({ value: topic.id, label: topic.title })),
@@ -99,6 +102,7 @@ function toLocalDateTime(value: string) {
       </div>
       <label><span><Bell :size="15" />提醒</span><DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" placeholder="不设置提醒" /></label>
       <label><span><Flag :size="15" />优先级</span><Listbox :model-value="priority" :options="priorityOptions" label="优先级" @update:model-value="priority = $event as StudyTaskPriority" /></label>
+      <label><span>重复</span><RecurrenceEditor :model-value="recurrenceRule" @save="recurrenceRule = $event; emit('recurrenceSave', $event)" /></label>
       <label><span>预计分钟</span><input v-model.number="estimateMinutes" type="number" min="1" max="1440" placeholder="分钟" /></label>
       <label><span>完成标准</span><textarea v-model="criteria" aria-label="完成标准" placeholder="每行一项" /></label>
       <footer><button type="button" class="cancel" @click="emit('close')">取消</button><button class="save" type="submit" :disabled="!title.trim()">保存</button></footer>
