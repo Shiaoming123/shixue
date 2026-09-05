@@ -1,22 +1,40 @@
 <script setup lang="ts">
+import { computed, ref, useId, watch } from 'vue'
+import { normalizeQuickAddTime } from '../../domain/quick-add/time'
+
 const props = withDefaults(defineProps<{
   modelValue: string
+  valid?: boolean
   label: string
   placeholder?: string
   disabled?: boolean
-}>(), { placeholder: '09:00', disabled: false })
+}>(), { valid: true, placeholder: '09:00', disabled: false })
 
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string]; 'update:valid': [valid: boolean] }>()
 const quickTimes = ['08:00', '09:00', '12:00', '14:00', '18:00', '20:00']
+const draft = ref(props.modelValue)
+const errorId = `time-picker-error-${useId()}`
+const validationMessage = computed(() => normalizeQuickAddTime(draft.value) === null ? '请输入 00:00 到 23:59 之间的时间。' : '')
 
-function update(value: string) {
-  if (!value) { emit('update:modelValue', ''); return }
-  const match = /^(\d{1,2}):?(\d{0,2})$/u.exec(value.trim())
-  if (!match) return
-  const hours = Number(match[1])
-  const minutes = Number(match[2] || 0)
-  if (hours > 23 || minutes > 59) return
-  emit('update:modelValue', `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`)
+watch(() => props.modelValue, (value) => { draft.value = value })
+
+function updateValidity(value: string) {
+  draft.value = value
+  emit('update:valid', normalizeQuickAddTime(value) !== null)
+}
+
+function commit() {
+  const normalized = normalizeQuickAddTime(draft.value)
+  if (normalized === null) { emit('update:valid', false); return }
+  draft.value = normalized
+  emit('update:modelValue', normalized)
+  emit('update:valid', true)
+}
+
+function choose(value: string) {
+  draft.value = value
+  emit('update:modelValue', value)
+  emit('update:valid', true)
 }
 </script>
 
@@ -25,21 +43,25 @@ function update(value: string) {
     <label>
       <span>{{ label }}</span>
       <input
-        :value="modelValue"
+        :value="draft"
         type="text"
         inputmode="numeric"
         maxlength="5"
         :placeholder="placeholder"
         :disabled="disabled"
-        @change="update(($event.target as HTMLInputElement).value)"
-        @keydown.enter.prevent="update(($event.target as HTMLInputElement).value)"
+        :aria-invalid="Boolean(validationMessage)"
+        :aria-describedby="validationMessage ? errorId : undefined"
+        @input="updateValidity(($event.target as HTMLInputElement).value)"
+        @change="commit"
+        @keydown.enter.prevent="commit"
       />
     </label>
     <div class="time-options" aria-label="常用时间">
-      <button v-for="value in quickTimes" :key="value" type="button" :class="{ selected: modelValue === value }" :disabled="disabled" @click="update(value)">{{ value }}</button>
-      <button type="button" class="clear" :disabled="disabled || !modelValue" @click="update('')">仅日期</button>
+      <button v-for="value in quickTimes" :key="value" type="button" :class="{ selected: draft === value }" :disabled="disabled" @click="choose(value)">{{ value }}</button>
+      <button type="button" class="clear" :disabled="disabled || !draft" @click="choose('')">仅日期</button>
     </div>
-    <p>使用这台设备的本地时间</p>
+    <p v-if="validationMessage" :id="errorId" class="error" aria-live="polite">{{ validationMessage }}</p>
+    <p v-else class="note">使用这台设备的本地时间</p>
   </section>
 </template>
 
@@ -53,6 +75,8 @@ function update(value: string) {
 .time-options button { min-height: max(34px, var(--control-hit)); border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font: inherit; font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 .time-options button:hover, .time-options button.selected { border-color: color-mix(in srgb, var(--accent) 46%, var(--border)); background: var(--press-fill); color: var(--accent); }
 .time-options .clear { grid-column: span 2; color: var(--muted); }
-.time-picker p { margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--text-xs); text-align: right; }
+.time-picker p { margin: var(--space-1) 0 0; font-size: var(--text-xs); text-align: right; }
+.time-picker .note { color: var(--muted); }
+.time-picker .error { color: var(--danger); }
 @media (max-width: 819px) { .time-options button { min-height: 44px; } }
 </style>

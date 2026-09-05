@@ -33,6 +33,7 @@ const editedCandidates = ref<Record<string, QuickAddCandidate>>({})
 const activeCandidateId = ref('')
 const editDate = ref('')
 const editTime = ref('')
+const editTimeValid = ref(true)
 const editValue = ref('')
 const error = ref('')
 const submitting = ref(false)
@@ -161,6 +162,7 @@ async function setEditorOpen(candidate: QuickAddCandidate, open: boolean) {
   }
   activeCandidateId.value = candidate.id
   editValue.value = candidate.value
+  editTimeValid.value = true
   if (candidate.kind === 'schedule' || candidate.kind === 'deadline') {
     if (candidate.value.length === 10) {
       editDate.value = candidate.value
@@ -178,7 +180,7 @@ async function setEditorOpen(candidate: QuickAddCandidate, open: boolean) {
 function applyEdit(candidate: QuickAddCandidate, close: (reason: 'select') => void) {
   let value = editValue.value
   if (candidate.kind === 'schedule' || candidate.kind === 'deadline') {
-    if (!editDate.value) return
+    if (!editDate.value || !editTimeValid.value) return
     value = editTime.value
       ? zonedDateTimeToInstant(editDate.value, editTime.value, timezone).toISOString()
       : editDate.value
@@ -270,16 +272,23 @@ defineExpose({ focus })
           />
         </template>
         <template #default="{ close }">
-        <section :id="`quick-add-editor-${candidate.id}`" class="candidate-editor" :aria-label="`编辑${candidateLabel(candidate)}`">
+        <section
+          :id="`quick-add-editor-${candidate.id}`"
+          class="candidate-editor"
+          role="dialog"
+          aria-modal="false"
+          :aria-labelledby="`quick-add-editor-title-${candidate.id}`"
+        >
+          <h2 :id="`quick-add-editor-title-${candidate.id}`" class="visually-hidden">编辑{{ candidateLabel(candidate) }}</h2>
           <template v-if="candidate.kind === 'schedule' || candidate.kind === 'deadline'">
             <DatePicker v-model="editDate" :label="candidate.kind === 'schedule' ? '计划日期' : '截止日期'" />
-            <TimePicker v-model="editTime" label="本地时间，可选" placeholder="仅日期" />
+            <TimePicker v-model="editTime" v-model:valid="editTimeValid" label="本地时间，可选" placeholder="仅日期" />
           </template>
           <Listbox v-else v-model="editValue" :options="optionsFor(candidate.kind)" :label="`选择${candidateLabel(candidate)}`" />
           <p v-if="candidate.status === 'ambiguous'" class="ambiguous-note">这项有多种解释，请确认后再创建。</p>
           <footer>
             <button type="button" class="cancel" @click="close('select')">取消</button>
-            <button type="button" class="apply" :disabled="(candidate.kind === 'schedule' || candidate.kind === 'deadline') ? !editDate : !editValue" @click="applyEdit(candidate, close)">应用</button>
+            <button type="button" class="apply" :disabled="(candidate.kind === 'schedule' || candidate.kind === 'deadline') ? (!editDate || !editTimeValid) : !editValue" @click="applyEdit(candidate, close)">应用</button>
           </footer>
         </section>
         </template>
@@ -303,6 +312,7 @@ defineExpose({ focus })
 .quick-add-message { margin: calc(-1 * var(--space-1)) var(--space-3) var(--space-3); color: var(--warning); font-size: var(--text-xs); }
 .quick-add-message.error { color: var(--danger); }
 .candidate-editor { width: min(360px, calc(100vw - 16px)); display: grid; gap: var(--space-2); padding: var(--space-3); color: var(--text); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .candidate-editor footer { display: flex; justify-content: flex-end; gap: var(--space-2); padding-top: var(--space-1); }
 .candidate-editor footer button { min-height: max(36px, var(--control-hit)); padding: 0 var(--space-3); border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font: inherit; font-size: var(--text-sm); }
 .candidate-editor footer .apply { border-color: transparent; background: var(--accent); color: var(--accent-text); }

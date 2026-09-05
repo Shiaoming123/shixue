@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { buildQuickAddCommand } from '../src/domain/quick-add/command.ts'
+import { normalizeQuickAddTime } from '../src/domain/quick-add/time.ts'
 import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
 import { CAPABILITY_PROTOCOL_VERSION } from '../src/domain/capabilities/types.ts'
 import type { QuickAddCandidate, QuickAddCandidateKind } from '../src/domain/quick-add/types.ts'
@@ -22,6 +23,39 @@ test('quick add uses editable chips and themed date and time pickers', () => {
   const chip = studySource('QuickAddChip.vue')
   assert.match(chip, /aria-label/)
   assert.match(chip, /@media \(max-width: 819px\)[\s\S]*min-height: 44px/)
+})
+
+test('invalid typed time remains visible and blocks candidate resolution', () => {
+  assert.equal(normalizeQuickAddTime('9:05'), '09:05')
+  assert.equal(normalizeQuickAddTime(''), '')
+  assert.equal(normalizeQuickAddTime('99:99'), null)
+  assert.equal(normalizeQuickAddTime('later'), null)
+
+  const timePicker = uiSource('TimePicker.vue')
+  assert.match(timePicker, /update:valid/)
+  assert.match(timePicker, /aria-invalid/)
+  assert.match(timePicker, /aria-live="polite"/)
+  const composer = studySource('QuickAddComposer.vue')
+  assert.match(composer, /v-model:valid="editTimeValid"/)
+  assert.match(composer, /!editTimeValid/)
+})
+
+test('candidate popover exposes a named non-modal dialog', () => {
+  const composer = studySource('QuickAddComposer.vue')
+  assert.match(composer, /role="dialog"/)
+  assert.match(composer, /aria-modal="false"/)
+  assert.match(composer, /:aria-labelledby="`quick-add-editor-title-\$\{candidate\.id\}`"/)
+  assert.match(composer, /:id="`quick-add-editor-title-\$\{candidate\.id\}`"/)
+})
+
+test('calendar exposes row-owned grid cells, one tab stop, and month and year navigation', () => {
+  const datePicker = uiSource('DatePicker.vue')
+  assert.match(datePicker, /role="row"/)
+  assert.match(datePicker, /v-for="\(week, weekIndex\) in weeks"/)
+  assert.match(datePicker, /:tabindex="day\.key === focusedDateKey \? 0 : -1"/)
+  assert.match(datePicker, /aria-label="上一年"/)
+  assert.match(datePicker, /aria-label="下一年"/)
+  assert.match(datePicker, /event\.shiftKey \? 12 : 1/)
 })
 
 test('composer edits parsed candidates and submits one versioned capability envelope', () => {
