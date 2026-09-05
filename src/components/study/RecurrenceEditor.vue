@@ -43,6 +43,7 @@ watch(() => props.modelValue, (rule) => {
   cadenceKind.value = rule.cadence.kind
   interval.value = String(rule.cadence.interval)
   if (rule.cadence.kind === 'weekly') weekdays.value = [...rule.cadence.weekdays]
+  preset.value = presetFor(rule)
 }, { immediate: true })
 
 const rule = computed<RecurrenceRule>(() => {
@@ -64,6 +65,14 @@ function customCadence(): RecurrenceCadence {
   if (cadenceKind.value === 'weekly') return { kind: 'weekly', interval: safeInterval, weekdays: weekdays.value.length ? weekdays.value : [1] }
   if (cadenceKind.value === 'monthly') return { kind: 'monthly', interval: safeInterval, dayOfMonth: 1 }
   return { kind: 'yearly', interval: safeInterval, month: 1, dayOfMonth: 1 }
+}
+function presetFor(rule: RecurrenceRule): Preset {
+  if (rule.cadence.kind === 'daily' && rule.cadence.interval === 1) return 'daily'
+  if (rule.cadence.kind === 'weekly' && rule.cadence.interval === 1 && [1, 2, 3, 4, 5].every((day) => rule.cadence.weekdays.includes(day)) && rule.cadence.weekdays.length === 5) return 'weekdays'
+  if (rule.cadence.kind === 'weekly' && rule.cadence.interval === 1) return 'weekly'
+  if (rule.cadence.kind === 'monthly' && rule.cadence.interval === 1) return 'monthly'
+  if (rule.cadence.kind === 'yearly' && rule.cadence.interval === 1) return 'yearly'
+  return 'custom'
 }
 function toggleWeekday(day: number) { weekdays.value = weekdays.value.includes(day) ? weekdays.value.filter((item) => item !== day) : [...weekdays.value, day].sort() }
 </script>

@@ -24,6 +24,7 @@ const props = defineProps<{
   open: boolean
   task?: EditableStudyTask
   topics: StudyTopic[]
+  recurrenceRule?: RecurrenceRule | null
 }>()
 
 const emit = defineEmits<{
@@ -53,7 +54,7 @@ const priorityOptions = [
   { value: 'high', label: '高' },
 ]
 
-watch(() => [props.open, props.task] as const, ([open, task]) => {
+watch(() => [props.open, props.task, props.recurrenceRule] as const, ([open, task, rule]) => {
   if (!open || !task) return
   title.value = task.title
   notes.value = task.notes
@@ -64,6 +65,7 @@ watch(() => [props.open, props.task] as const, ([open, task]) => {
   priority.value = task.priority
   estimateMinutes.value = task.estimateMinutes
   criteria.value = task.acceptanceCriteria.join('\n')
+  recurrenceRule.value = rule ?? null
 }, { immediate: true })
 
 function save() {

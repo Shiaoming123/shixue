@@ -15,11 +15,12 @@ export interface TaskViewItem {
   status: TaskViewStatus; plannedOn: string | null; dueOn: string | null; reminderAt: string | null
   priority: StudyTaskPriority; plannedLabel: string; dueLabel: string; reminderLabel: string
   estimateMinutes: number | null; acceptanceCriteria: string[]
-  checklist: Array<{ id: string; text: string; checked: boolean }>; blockedReason: string; occurrence?: TaskOccurrence
+  checklist: Array<{ id: string; text: string; checked: boolean }>; blockedReason: string
 }
+export interface OccurrenceViewItem { id: string; title: string; scheduledLabel: string; occurrence: TaskOccurrence }
 
 const props = defineProps<{
-  tasks: TaskViewItem[]; topics: Array<{ id: string; title: string }>; title: string; subtitle: string
+  tasks: TaskViewItem[]; occurrences: OccurrenceViewItem[]; topics: Array<{ id: string; title: string }>; title: string; subtitle: string
   selectedId?: string; smartView: StudyTaskSmartView; search: string; topicFilter: string
   priorityFilter: StudyTaskPriority | 'all'; sort: StudyTaskQuerySort
 }>()
@@ -130,8 +131,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
     <div v-if="tasks.length" class="task-sections">
       <section v-for="section in sections" :key="section.key" class="task-section">
         <h2 v-if="section.label" :class="{ overdue: section.key === 'overdue' }">{{ section.label }} <span>{{ section.tasks.length }}</span></h2>
-        <OccurrenceRow v-for="task in section.tasks.filter((item) => item.occurrence)" :key="task.id" :occurrence="task.occurrence!" :title="task.title" :scheduled-label="task.plannedLabel" @complete="emit('occurrenceComplete', $event)" @skip="emit('occurrenceSkip', $event)" @reschedule="emit('occurrenceReschedule', $event)" />
-        <article v-for="task in section.tasks.filter((item) => !item.occurrence)" :key="task.id" class="task-row" :class="{ selected: selectedId === task.id, completed: task.status === 'completed' }">
+        <OccurrenceRow v-for="item in section.key === sections[0]?.key ? occurrences : []" :key="item.id" :occurrence="item.occurrence" :title="item.title" :scheduled-label="item.scheduledLabel" @complete="emit('occurrenceComplete', $event)" @skip="emit('occurrenceSkip', $event)" @reschedule="emit('occurrenceReschedule', $event)" />
+        <article v-for="task in section.tasks" :key="task.id" class="task-row" :class="{ selected: selectedId === task.id, completed: task.status === 'completed' }">
           <Checkbox v-if="batchMode" class="select-button" shape="round" :model-value="selectedIds.includes(task.id)" :accessible-label="`选择 ${task.title}`" @update:model-value="toggleSelection(task.id)" />
           <button v-else class="complete-button" type="button" :aria-label="task.status === 'completed' ? `重新打开 ${task.title}` : `完成 ${task.title}`" @click="emit('toggleComplete', task.id)"><span :class="[task.priority, { checked: task.status === 'completed' }]"><Check :size="14" /></span></button>
           <button class="task-main" type="button" @click="emit('open', task.id)"><span class="task-copy"><strong>{{ task.title }}</strong><small class="tabular-numbers"><span v-if="task.plannedLabel"><CalendarDays :size="13" />{{ task.plannedLabel }}</span><span v-if="task.reminderLabel"><Bell :size="13" />{{ task.reminderLabel }}</span><span><Inbox :size="13" />{{ task.topic }}</span></small></span><Flag v-if="task.priority !== 'none'" class="priority" :class="task.priority" :size="17" fill="currentColor" /><ChevronRight :size="17" class="chevron" /></button>
