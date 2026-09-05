@@ -128,7 +128,8 @@ fn due_reminders(snapshot: StudySnapshot, now: DateTime<Utc>) -> Vec<DueReminder
         .tasks
         .into_iter()
         .filter_map(|task| {
-            if task.deleted_at.is_some() || task.status == "completed" || task.status == "cancelled" {
+            if task.deleted_at.is_some() || task.status == "completed" || task.status == "cancelled"
+            {
                 return None;
             }
             let reminder_at = snapshot
@@ -172,10 +173,16 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         assert_eq!(
-            due_reminders(StudySnapshot { tasks, reminder_rules: vec![] }, now)
-                .into_iter()
-                .map(|reminder| reminder.task.id)
-                .collect::<Vec<_>>(),
+            due_reminders(
+                StudySnapshot {
+                    tasks,
+                    reminder_rules: vec![]
+                },
+                now
+            )
+            .into_iter()
+            .map(|reminder| reminder.task.id)
+            .collect::<Vec<_>>(),
             vec!["due"]
         );
     }
