@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, MoreHorizontal, Pencil, Search, Trash2, X } from '@lucide/vue'
 import type { StudyTaskPriority } from '../../storage/study/types'
 import type { StudyTaskQuerySort, StudyTaskSmartView } from '../../lib/study-task-query'
-import { activateQuickAddCapture, isQuickAddEditableTarget } from '../../lib/quick-add-shortcut-state'
+import { isQuickAddEditableTarget } from '../../lib/quick-add-shortcut-state'
 import type { TaskOccurrence } from '../../domain/workspace/types'
 import type { EntityRef } from '../../domain/capabilities/types'
 import Checkbox from '../ui/Checkbox.vue'
@@ -109,11 +109,12 @@ function handleShortcut(event: KeyboardEvent) {
   if (event.key.toLowerCase() === 'e' && props.selectedId) emit('edit', props.selectedId)
   if (event.key.toLowerCase() === 'c' && props.selectedId) emit('toggleComplete', props.selectedId)
 }
-function activateQuickAdd() {
-  activateQuickAddCapture({
-    closeDeleteConfirmation: () => { confirmDeleteIds.value = [] },
-    focusComposer: () => { quickAddComposer.value?.focus() },
-  })
+async function activateQuickAdd() {
+  confirmDeleteIds.value = []
+  // Dialog restores its trigger on a nested tick after the close reaches it.
+  await nextTick()
+  await nextTick()
+  quickAddComposer.value?.focus()
 }
 onMounted(() => window.addEventListener('keydown', handleShortcut))
 onUnmounted(() => window.removeEventListener('keydown', handleShortcut))

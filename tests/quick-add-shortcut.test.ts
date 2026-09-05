@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
-  activateQuickAddCapture,
   isQuickAddEditableTarget,
   type EditableTargetLike,
 } from '../src/lib/quick-add-shortcut-state.ts'
@@ -70,25 +69,6 @@ test('global quick add closes blocking layers, navigates to Inbox, and focuses t
   assert.match(app, /<TasksView\b[\s\S]*ref="tasksView"/)
   assert.match(app, /function handleQuickAdd\(\)[\s\S]*settingsOpen\.value = false[\s\S]*taskEditorOpen\.value = false[\s\S]*selectSmartView\('inbox'\)[\s\S]*tasksView\.value\?\.activateQuickAdd\(\)/)
   assert.doesNotMatch(app, /handleQuickAdd[\s\S]{0,700}querySelector/)
-})
-
-test('global capture clears a child delete confirmation before focusing the composer', () => {
-  const actions: string[] = []
-  const state = { confirmDeleteIds: ['task:1'], focused: false }
-
-  activateQuickAddCapture({
-    closeDeleteConfirmation: () => {
-      actions.push('close-delete-confirmation')
-      state.confirmDeleteIds = []
-    },
-    focusComposer: () => {
-      actions.push('focus-composer')
-      state.focused = true
-    },
-  })
-
-  assert.deepEqual(state, { confirmDeleteIds: [], focused: true })
-  assert.deepEqual(actions, ['close-delete-confirmation', 'focus-composer'])
 })
 
 function editableTarget(options: {
