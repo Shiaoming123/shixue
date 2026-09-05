@@ -31,7 +31,7 @@ function createRecurrence(
   command: Extract<RecurrenceCapabilityCommand, { type: 'recurrence.create' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
-  assertIso(command.anchorAt, 'Recurrence anchorAt')
+  const anchor = recurrenceSchedule(command.anchorAt ?? null, command.anchorOn ?? null, 'Recurrence anchor')
   assertCadence(command.cadence)
   if (!command.timezone.trim()) throw validation('Recurrence timezone is required.')
   const task = requireTask(state, command.taskId, command.expectedTaskRevision)
@@ -53,20 +53,23 @@ function createRecurrence(
     revision: 1,
     cadence: structuredClone(command.cadence),
     basis: command.basis,
-    anchorAt: command.anchorAt,
+    anchorAt: anchor.at,
+    anchorOn: anchor.on,
     end: structuredClone(command.end),
     timezone: command.timezone,
-    createdThrough: command.anchorAt,
+    createdThrough: anchor.on ?? anchor.at,
     createdCount: 1,
   }
   const occurrence: TaskOccurrence = {
     id: occurrenceId,
     seriesId,
     ordinal: 1,
-    scheduledAt: command.anchorAt,
+    scheduledAt: anchor.at,
+    scheduledOn: anchor.on,
     status: 'pending',
     override: command.estimateMinutes === undefined ? null : {
       scheduledAt: null,
+      scheduledOn: null,
       estimateMinutes: command.estimateMinutes,
     },
     completedAt: null,
@@ -212,22 +215,23 @@ function splitFutureSeries(
     throw validation(`Recurrence successor already exists: ${successorId}.`, { seriesId: successorId })
   }
   const originalEnd = structuredClone(series.end)
-  const closedOn = addCalendarDays(localDate(occurrence.scheduledAt, series.timezone), -1)
+  const closedOn = addCalendarDays(scheduleDate(occurrence.scheduledAt, occurrence.scheduledOn, series.timezone), -1)
   series.end = { kind: 'on', date: closedOn }
   series.revision += 1
 
+  const successorAnchor = patchSchedule(patch, occurrence)
   const successor: RecurrenceSeries = {
     ...structuredClone(series),
     id: successorId,
     taskId: task.id,
     revision: 1,
-    anchorAt: patch.scheduledAt ?? patch.anchorAt ?? occurrence.scheduledAt,
+    anchorAt: successorAnchor.at,
+    anchorOn: successorAnchor.on,
     end: patch.end ?? successorEnd(originalEnd, occurrence.ordinal),
-    createdThrough: patch.scheduledAt ?? patch.anchorAt ?? occurrence.scheduledAt,
+    createdThrough: successorAnchor.on ?? successorAnchor.at,
     createdCount: 1,
   }
   applySeriesPatch(successor, patch)
-  if (patch.scheduledAt !== undefined && patch.scheduledAt !== null) successor.anchorAt = patch.scheduledAt
   state.recurrenceSeries.push(successor)
   task.recurrenceSeriesId = successor.id
   task.revision += 1
@@ -245,8 +249,9 @@ function splitFutureSeries(
     seriesId: successor.id,
     ordinal: 1,
     scheduledAt: successor.anchorAt,
+    scheduledOn: successor.anchorOn,
     status: 'pending',
-    override: patch.estimateMinutes === undefined ? null : { scheduledAt: null, estimateMinutes: patch.estimateMinutes },
+    override: patch.estimateMinutes === undefined ? null : { scheduledAt: null, scheduledOn: null, estimateMinutes: patch.estimateMinutes },
     completedAt: null,
     revision: successor.revision,
   }
@@ -267,7 +272,7 @@ function recomputePendingOccurrences(
   const changed: TaskOccurrence[] = []
   for (const occurrence of state.occurrences.filter((item) => item.seriesId === series.id && item.status === 'pending')) {
     if (priorBasis === 'after_completion') {
-      if (isPastSeriesEnd(series, occurrence.scheduledAt, occurrence.ordinal)) {
+      if (isPastSeriesEnd(series, occurrence.scheduledAt, occurrence.scheduledOn, occurrence.ordinal)) {
         occurrence.status = 'cancelled'
         occurrence.override = null
         occurrence.completedAt = null
@@ -276,8 +281,8 @@ function recomputePendingOccurrences(
       }
       continue
     }
-    const scheduledAt = occurrenceInstant(series, occurrence.ordinal)
-    if (!scheduledAt || isPastSeriesEnd(series, scheduledAt, occurrence.ordinal)) {
+    const schedule = occurrenceSchedule(series, occurrence.ordinal)
+    if (!schedule || isPastSeriesEnd(series, schedule.at, schedule.on, occurrence.ordinal)) {
       occurrence.status = 'cancelled'
       occurrence.override = null
       occurrence.completedAt = null
@@ -285,8 +290,9 @@ function recomputePendingOccurrences(
       changed.push(occurrence)
       continue
     }
-    if (occurrence.scheduledAt !== scheduledAt || occurrence.override !== null || occurrence.revision !== series.revision) {
-      occurrence.scheduledAt = scheduledAt
+    if (occurrence.scheduledAt !== schedule.at || occurrence.scheduledOn !== schedule.on || occurrence.override !== null || occurrence.revision !== series.revision) {
+      occurrence.scheduledAt = schedule.at
+      occurrence.scheduledOn = schedule.on
       occurrence.override = null
       occurrence.completedAt = null
       occurrence.revision += 1
@@ -304,22 +310,24 @@ function createAfterCompletionSuccessor(
 ): TaskOccurrence | null {
   const nextOrdinal = completed.ordinal + 1
   if (series.end.kind === 'after' && nextOrdinal > series.end.count) return null
-  const scheduledAt = nextAfterCompletion(series, completedAt)
-  if (!scheduledAt) return null
-  if (series.end.kind === 'on' && localDate(scheduledAt, series.timezone) > series.end.date) return null
+  const scheduled = nextAfterCompletion(series, completedAt)
+  if (!scheduled) return null
+  const schedule = scheduleValue(scheduled)
+  if (series.end.kind === 'on' && scheduleDate(schedule.at, schedule.on, series.timezone) > series.end.date) return null
   const id = occurrenceIdFor(series.id, nextOrdinal)
   if (state.occurrences.some((occurrence) => occurrence.id === id)) return null
   const occurrence: TaskOccurrence = {
     id,
     seriesId: series.id,
     ordinal: nextOrdinal,
-    scheduledAt,
+    scheduledAt: schedule.at,
+    scheduledOn: schedule.on,
     status: 'pending',
     override: null,
     completedAt: null,
     revision: series.revision,
   }
-  series.createdThrough = scheduledAt
+  series.createdThrough = scheduled
   series.createdCount = Math.max(series.createdCount, nextOrdinal)
   state.occurrences.push(occurrence)
   return occurrence
@@ -331,9 +339,14 @@ function applySeriesPatch(series: RecurrenceSeries, patch: RecurrenceUpdatePatch
     series.cadence = structuredClone(patch.cadence)
   }
   if (patch.basis !== undefined) series.basis = patch.basis
-  if (patch.anchorAt !== undefined) {
-    assertIso(patch.anchorAt, 'Recurrence anchorAt')
-    series.anchorAt = patch.anchorAt
+  if (patch.anchorAt !== undefined || patch.anchorOn !== undefined) {
+    const anchor = recurrenceSchedule(
+      patch.anchorAt !== undefined ? patch.anchorAt : patch.anchorOn ? null : series.anchorAt,
+      patch.anchorOn !== undefined ? patch.anchorOn : patch.anchorAt ? null : series.anchorOn,
+      'Recurrence anchor',
+    )
+    series.anchorAt = anchor.at
+    series.anchorOn = anchor.on
   }
   if (patch.end !== undefined) series.end = structuredClone(patch.end)
   if (patch.timezone !== undefined) {
@@ -343,11 +356,21 @@ function applySeriesPatch(series: RecurrenceSeries, patch: RecurrenceUpdatePatch
 }
 
 function applyOccurrencePatch(occurrence: TaskOccurrence, patch: RecurrenceUpdatePatch): void {
-  if (patch.scheduledAt !== undefined && patch.scheduledAt !== null) assertIso(patch.scheduledAt, 'Occurrence scheduledAt')
-  const scheduledAt = patch.scheduledAt === undefined ? occurrence.override?.scheduledAt ?? null : patch.scheduledAt
+  const currentAt = occurrence.override?.scheduledAt ?? null
+  const currentOn = occurrence.override?.scheduledOn ?? null
+  const schedule = patch.scheduledAt !== undefined || patch.scheduledOn !== undefined
+    ? optionalSchedule(
+      patch.scheduledAt !== undefined ? patch.scheduledAt : patch.scheduledOn ? null : currentAt,
+      patch.scheduledOn !== undefined ? patch.scheduledOn : patch.scheduledAt ? null : currentOn,
+      'Occurrence override schedule',
+    )
+    : { at: currentAt, on: currentOn }
   const estimateMinutes = patch.estimateMinutes === undefined ? occurrence.override?.estimateMinutes ?? null : patch.estimateMinutes
-  occurrence.override = scheduledAt === null && estimateMinutes === null ? null : { scheduledAt, estimateMinutes }
-  if (scheduledAt !== null) occurrence.scheduledAt = scheduledAt
+  occurrence.override = schedule.at === null && schedule.on === null && estimateMinutes === null ? null : { scheduledAt: schedule.at, scheduledOn: schedule.on, estimateMinutes }
+  if (schedule.at !== null || schedule.on !== null) {
+    occurrence.scheduledAt = schedule.at
+    occurrence.scheduledOn = schedule.on
+  }
   occurrence.revision += 1
 }
 
@@ -457,10 +480,14 @@ function addCalendarDays(date: string, days: number): string {
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
 }
 
-function occurrenceInstant(series: RecurrenceSeries, ordinal: number): string | null {
-  const anchor = localDateTime(series.anchorAt, series.timezone)
+function occurrenceSchedule(series: RecurrenceSeries, ordinal: number): { at: string | null; on: string | null } | null {
+  const timed = series.anchorAt !== null
+  const anchor = timed ? localDateTime(series.anchorAt!, series.timezone) : { date: series.anchorOn!, time: '' }
   const date = occurrenceDate(series, anchor.date, ordinal)
-  return date ? zonedDateTimeToInstant(date, anchor.time, series.timezone).toISOString() : null
+  if (!date) return null
+  return timed
+    ? { at: zonedDateTimeToInstant(date, anchor.time, series.timezone).toISOString(), on: null }
+    : { at: null, on: date }
 }
 
 function occurrenceDate(series: RecurrenceSeries, anchorDate: string, ordinal: number): string | null {
@@ -483,10 +510,48 @@ function weeklyDate(anchorDate: string, interval: number, weekdays: readonly num
   return null
 }
 
-function isPastSeriesEnd(series: RecurrenceSeries, scheduledAt: string, ordinal: number): boolean {
+function isPastSeriesEnd(series: RecurrenceSeries, scheduledAt: string | null, scheduledOn: string | null, ordinal: number): boolean {
   if (series.end.kind === 'never') return false
   if (series.end.kind === 'after') return ordinal > series.end.count
-  return localDate(scheduledAt, series.timezone) > series.end.date
+  return scheduleDate(scheduledAt, scheduledOn, series.timezone) > series.end.date
+}
+
+function recurrenceSchedule(at: string | null, on: string | null, label: string): { at: string | null; on: string | null } {
+  if ((at === null) === (on === null)) throw validation(`${label} fields are mutually exclusive and require exactly one value.`)
+  if (at !== null) assertIso(at, `${label}At`)
+  if (on !== null && !/^\d{4}-\d{2}-\d{2}$/.test(on)) throw validation(`${label}On must use YYYY-MM-DD.`)
+  return { at, on }
+}
+
+function optionalSchedule(at: string | null, on: string | null, label: string): { at: string | null; on: string | null } {
+  if (at === null && on === null) return { at, on }
+  return recurrenceSchedule(at, on, label)
+}
+
+function scheduleValue(value: string): { at: string | null; on: string | null } {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? { at: null, on: value } : { at: value, on: null }
+}
+
+function scheduleDate(at: string | null, on: string | null, timezone: string): string {
+  return on ?? localDate(at!, timezone)
+}
+
+function patchSchedule(patch: RecurrenceUpdatePatch, occurrence: TaskOccurrence): { at: string | null; on: string | null } {
+  if (patch.scheduledAt !== undefined || patch.scheduledOn !== undefined) {
+    return recurrenceSchedule(
+      patch.scheduledAt !== undefined ? patch.scheduledAt : patch.scheduledOn ? null : occurrence.scheduledAt,
+      patch.scheduledOn !== undefined ? patch.scheduledOn : patch.scheduledAt ? null : occurrence.scheduledOn,
+      'Occurrence schedule',
+    )
+  }
+  if (patch.anchorAt !== undefined || patch.anchorOn !== undefined) {
+    return recurrenceSchedule(
+      patch.anchorAt !== undefined ? patch.anchorAt : patch.anchorOn ? null : occurrence.scheduledAt,
+      patch.anchorOn !== undefined ? patch.anchorOn : patch.anchorAt ? null : occurrence.scheduledOn,
+      'Recurrence anchor',
+    )
+  }
+  return recurrenceSchedule(occurrence.scheduledAt, occurrence.scheduledOn, 'Occurrence schedule')
 }
 
 function localDateTime(iso: string, timezone: string): { date: string; time: string } {

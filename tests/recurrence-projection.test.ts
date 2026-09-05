@@ -79,6 +79,17 @@ test('occurrence UI exposes occurrence intent actions and separate schedule/dead
   }
 })
 
+test('the live Today route uses occurrence projection and opens occurrence detail actions', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const tasks = readFileSync(new URL('../src/components/study/TasksView.vue', import.meta.url), 'utf8')
+
+  assert.match(app, /projectTaskItems\(recurrenceWorkspace\.value, \{ from: today\.value, to: today\.value \}\)/)
+  assert.match(app, /@occurrence-open="openOccurrence"/)
+  assert.match(app, /:occurrence-id="selectedOccurrence\?\.id"/)
+  assert.match(app, /@occurrence-complete="executeOccurrence\(\$event, 'recurrence\.complete'\)"/)
+  assert.match(tasks, /@open="emit\('occurrenceOpen', \$event\)"/)
+})
+
 function fixture(input: {
   task?: Task
   tasks?: Task[]
@@ -97,7 +108,7 @@ function fixture(input: {
     recurrenceSeries: input.recurrenceSeries ?? [{
       id: 'series:1', taskId: selectedTask.id, revision: 1,
       cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule',
-      anchorAt: '2026-09-05T09:00:00+08:00', end: { kind: 'never' }, timezone: 'Asia/Shanghai',
+      anchorAt: '2026-09-05T09:00:00+08:00', anchorOn: null, end: { kind: 'never' }, timezone: 'Asia/Shanghai',
       createdThrough: '2026-09-05T09:00:00+08:00', createdCount: 1,
     }],
     occurrences: input.occurrences ?? [],
@@ -126,7 +137,7 @@ function task(overrides: Partial<Task> = {}): Task {
 
 function occurrence(overrides: Partial<TaskOccurrence> = {}): TaskOccurrence {
   return {
-    id: 'occ:1', seriesId: 'series:1', ordinal: 1, scheduledAt: '2026-09-05T09:00:00+08:00',
+    id: 'occ:1', seriesId: 'series:1', ordinal: 1, scheduledAt: '2026-09-05T09:00:00+08:00', scheduledOn: null,
     status: 'pending', override: null, completedAt: null, revision: 1, ...overrides,
   }
 }

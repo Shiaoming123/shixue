@@ -200,7 +200,7 @@ function projectOccurrence(
 ): TaskProjection | null {
   if (occurrence.status === 'cancelled') return null
   const scheduledAt = occurrence.override?.scheduledAt ?? occurrence.scheduledAt
-  const occurrenceOn = datePart(scheduledAt)
+  const occurrenceOn = occurrence.override?.scheduledOn ?? occurrence.scheduledOn ?? datePart(scheduledAt)
   const taskPlannedOn = task.schedule.startOn ?? datePart(task.schedule.startAt)
   const dueAt = task.deadline.dueAt
   const dueOn = task.deadline.dueOn ?? datePart(dueAt)

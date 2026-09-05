@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { ArrowRight, Bell, CalendarDays, Check, Clock3, Flag, Inbox, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, X } from '@lucide/vue'
 import type { TaskViewItem } from './TasksView.vue'
+import type { TaskOccurrence } from '../../domain/workspace/types'
 
 export interface TaskEventViewItem {
   id: string
@@ -16,6 +17,7 @@ const props = defineProps<{
   events: TaskEventViewItem[]
   dueLabel?: string
   occurrenceId?: string | null
+  occurrenceStatus?: TaskOccurrence['status']
   occurrenceScheduleLabel?: string
   deadlineLabel?: string
   mobile?: boolean
@@ -71,7 +73,7 @@ function addChecklistItem() {
 
     <div class="drawer-scroll">
       <section class="task-heading">
-        <button class="heading-check" :aria-label="occurrenceId ? '完成本次' : task.status === 'completed' ? '重新打开任务' : '完成任务'" @click="occurrenceId ? emit('occurrenceComplete', occurrenceId) : emit('toggleComplete', task.id)"><span :class="{ checked: task.status === 'completed' }"><Check :size="15" /></span></button>
+        <button class="heading-check" :disabled="Boolean(occurrenceId && occurrenceStatus !== 'pending')" :aria-label="occurrenceId ? '完成本次' : task.status === 'completed' ? '重新打开任务' : '完成任务'" @click="occurrenceId ? emit('occurrenceComplete', occurrenceId) : emit('toggleComplete', task.id)"><span :class="{ checked: occurrenceId ? occurrenceStatus === 'completed' : task.status === 'completed' }"><Check :size="15" /></span></button>
         <div><h1>{{ task.title }}</h1><p class="topic"><Inbox :size="14" />{{ task.topic }}</p></div>
         <p v-if="task.notes" class="notes">{{ task.notes }}</p>
       </section>
@@ -118,7 +120,7 @@ function addChecklistItem() {
     </div>
 
     <footer class="drawer-actions">
-      <div v-if="occurrenceId" class="secondary-actions">
+      <div v-if="occurrenceId && occurrenceStatus === 'pending'" class="secondary-actions">
         <button @click="emit('occurrenceReschedule', occurrenceId)">本次改期</button>
         <button class="danger" @click="emit('occurrenceSkip', occurrenceId)">跳过本次</button>
       </div>
@@ -127,7 +129,7 @@ function addChecklistItem() {
         <button v-if="task.status !== 'blocked'" @click="emit('block', task.id)">标记受阻</button>
         <button class="danger" @click="emit('cancel', task.id)">取消</button>
       </div>
-      <button class="primary" @click="occurrenceId ? emit('occurrenceComplete', occurrenceId) : emit('primary', task.id)">
+      <button v-if="!occurrenceId || occurrenceStatus === 'pending'" class="primary" @click="occurrenceId ? emit('occurrenceComplete', occurrenceId) : emit('primary', task.id)">
         <RotateCcw v-if="task.status === 'completed' || task.status === 'cancelled'" :size="18" />
         <MoreHorizontal v-else-if="task.status === 'blocked'" :size="18" />
         <span>{{ occurrenceId ? '完成本次' : primaryLabel }}</span><ArrowRight :size="20" />

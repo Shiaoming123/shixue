@@ -248,9 +248,32 @@ test('occurrence update stores an override without mutating the recurrence serie
   const snapshot = await service.query({ type: 'workspace.snapshot' })
   const occurrence = snapshot.occurrences.find(({ id }) => id === 'occurrence:series-daily:1')
 
-  assert.deepEqual(occurrence?.override, { scheduledAt: '2026-09-05T10:30:00.000Z', estimateMinutes: 45 })
+  assert.deepEqual(occurrence?.override, { scheduledAt: '2026-09-05T10:30:00.000Z', scheduledOn: null, estimateMinutes: 45 })
   assert.equal(occurrence?.scheduledAt, '2026-09-05T10:30:00.000Z')
   assert.equal(snapshot.recurrenceSeries.find(({ id }) => id === 'series-daily')?.revision, 1)
+})
+
+test('date-only recurrence commands preserve date-only schedules without midnight timestamps', async () => {
+  const service = fixture()
+  await executeNext(service, 'date-task-create', {
+    type: 'task.create', taskId: 'date-task', listId: 'list:system:learning', title: 'All-day review',
+  })
+  await executeNext(service, 'date-recurrence-create', {
+    type: 'recurrence.create', taskId: 'date-task', expectedTaskRevision: 1,
+    seriesId: 'series-date', cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule',
+    anchorOn: '2026-09-05', end: { kind: 'never' }, timezone: 'Asia/Shanghai',
+  })
+  await executeNext(service, 'date-occurrence-update', {
+    type: 'recurrence.update', occurrenceId: 'occurrence:series-date:1', expectedOccurrenceRevision: 1,
+    scope: 'occurrence', patch: { scheduledOn: '2026-09-06' },
+  })
+
+  const snapshot = await service.query({ type: 'workspace.snapshot' })
+  const series = snapshot.recurrenceSeries.find(({ id }) => id === 'series-date')
+  const occurrence = snapshot.occurrences.find(({ id }) => id === 'occurrence:series-date:1')
+  assert.deepEqual([series?.anchorAt, series?.anchorOn], [null, '2026-09-05'])
+  assert.deepEqual([occurrence?.scheduledAt, occurrence?.scheduledOn], [null, '2026-09-06'])
+  assert.doesNotMatch(JSON.stringify(occurrence), /T00:00:00/)
 })
 
 test('future update closes the old series and creates a deterministic successor without rewriting history', async () => {

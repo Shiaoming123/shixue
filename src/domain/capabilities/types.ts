@@ -122,7 +122,8 @@ export interface TaskCreateCommand {
     occurrenceId?: string
     cadence: RecurrenceCadence
     basis: RecurrenceSeries['basis']
-    anchorAt: string
+    anchorAt?: string | null
+    anchorOn?: string | null
     end: RecurrenceSeries['end']
     timezone: string
     estimateMinutes?: number | null
@@ -227,7 +228,8 @@ export interface RecurrenceCreateCommand {
   occurrenceId?: string
   cadence: RecurrenceCadence
   basis: RecurrenceSeries['basis']
-  anchorAt: string
+  anchorAt?: string | null
+  anchorOn?: string | null
   end: RecurrenceSeries['end']
   timezone: string
   estimateMinutes?: number | null
@@ -236,10 +238,12 @@ export interface RecurrenceCreateCommand {
 export interface RecurrenceUpdatePatch {
   cadence?: RecurrenceCadence
   basis?: RecurrenceSeries['basis']
-  anchorAt?: string
+  anchorAt?: string | null
+  anchorOn?: string | null
   end?: RecurrenceSeries['end']
   timezone?: string
   scheduledAt?: string | null
+  scheduledOn?: string | null
   estimateMinutes?: number | null
 }
 

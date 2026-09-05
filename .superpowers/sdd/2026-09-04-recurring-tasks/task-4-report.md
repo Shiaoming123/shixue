@@ -1,7 +1,7 @@
 # Task 4 Report
 
 ## Status
-- DONE WITH CONCERN
+- DONE
 
 ## Files Changed
 - `src/lib/study-task-query.ts`
@@ -51,7 +51,21 @@
 - Visual screenshot/state-matrix run: NOT_RUN because Task 4 reused the locked visual mode and the latest boundary limited verification to focused tests/typecheck/build.
 - Push/PR creation: NOT_RUN; this task requested a focused local commit only.
 
-## Concerns
-- The currently mounted Today route uses `TasksView`; the brief explicitly assigns Task 4 changes to the older `TodayView`, which is not mounted by `App.vue`. This commit completes the specified component contract and reuses Task 3's capability intent names, but does not widen scope into navigation/App restructuring.
-- The workspace model still represents occurrences only with timestamp `scheduledAt`; the plan's earlier date-only/timed recurrence contract was not implemented by Task 1. Task 4 preserves that existing contract rather than changing schema/protocol scope.
+## Hard-boundary follow-up
+- Added the mutually exclusive recurrence schedule pairs `anchorAt` / `anchorOn` and `scheduledAt` / `scheduledOn`; date-only values remain calendar dates and are never serialized as synthetic midnight timestamps.
+- Kept legacy timestamp exports lossless while normalizing omitted date-only fields to `null`. The parser rejects series, occurrences, or overrides that contain both schedule representations.
+- Fixed-schedule and after-completion calculations now resolve date-only values against the series' explicit IANA timezone, including across different host timezones.
+- Materialization, capability commands, updates/splits, workspace parsing, serialization, and task projection use the same resolved timed/date-only schedule contract.
+- Wired the mounted `App.vue` Today route to `projectTaskItems`; recurring rows retain occurrence identity, remain visible when there are no ordinary task rows, and open occurrence-aware detail actions.
+- Updated `app.protocol.json`, its checker, and only the related protocol/spec/boundary documentation. No iOS delivery claim was changed.
+- RED: `node --test --experimental-strip-types tests/recurrence-schedule-contract.test.ts`
+  - 0 passed, 4 failed before the schema and scheduling implementation existed.
+- Focused final: `node --test --experimental-strip-types tests/recurrence-schedule-contract.test.ts tests/recurrence-projection.test.ts tests/recurrence-calculate.test.ts tests/recurrence-materialize.test.ts tests/recurrence-commands.test.ts tests/workspace-state-v3.test.ts tests/app-protocol.test.ts`
+  - 48 passed, 0 failed, 0 skipped.
+- `npm run check:protocol`: exit 0.
+- `npm run typecheck`: exit 0.
+- `npm run build`: exit 0; Vite transformed 2063 modules.
+- `git diff --check`: exit 0; only line-ending conversion warnings.
+
+## Remaining concerns
 - Pre-existing untracked `.superpowers/sdd/2026-09-04-recurring-tasks/{progress,task-1-brief,task-2-brief,task-3-brief,task-4-brief}.md` files were left untouched and excluded from the commit.

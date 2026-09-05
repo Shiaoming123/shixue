@@ -20,7 +20,9 @@ export function materializeOccurrenceWindow(
   const existing = state.occurrences.filter((occurrence) => occurrence.seriesId === seriesId)
   if (series.basis === 'after_completion') return materializeAfterCompletion(state, series, existing, now)
 
-  const anchor = parseZonedDateTime(series.anchorAt, series.timezone)
+  const timed = series.anchorAt !== null
+  const anchor = timed ? parseZonedDateTime(series.anchorAt!, series.timezone) : { date: series.anchorOn!, time: '' }
+  const thresholdDate = parseZonedDateTime(now, series.timezone).date
   const horizonDate = addCalendarDays(parseZonedDateTime(now, series.timezone).date, OCCURRENCE_HORIZON_DAYS)
   const existingById = new Map(existing.map((occurrence) => [occurrence.id, occurrence]))
   const pending = existing.filter((occurrence) => occurrence.status === 'pending')
@@ -32,8 +34,9 @@ export function materializeOccurrenceWindow(
     const date = occurrenceDate(series, anchor.date, ordinal)
     if (!date || date > horizonDate) break
     if (series.end.kind === 'on' && date > series.end.date) break
-    const scheduledAt = zonedDateTimeToInstant(date, anchor.time, series.timezone).toISOString()
-    if (new Date(scheduledAt).getTime() <= threshold.getTime()) {
+    const scheduledAt = timed ? zonedDateTimeToInstant(date, anchor.time, series.timezone).toISOString() : null
+    const scheduledOn = timed ? null : date
+    if (timed ? new Date(scheduledAt!).getTime() <= threshold.getTime() : date <= thresholdDate) {
       ordinal += 1
       continue
     }
@@ -50,6 +53,7 @@ export function materializeOccurrenceWindow(
       seriesId,
       ordinal,
       scheduledAt,
+      scheduledOn,
       status: 'pending',
       override: null,
       completedAt: null,
@@ -81,25 +85,30 @@ function materializeAfterCompletion(
   const pendingCount = existing.filter((occurrence) => occurrence.status === 'pending').length
   if (pendingCount >= MAX_PENDING_OCCURRENCES) return { state, created: [], pendingCount }
   const latest = [...existing].sort((left, right) => right.ordinal - left.ordinal)[0]
-  let scheduledAt: string | null
+  let schedule: { scheduledAt: string | null; scheduledOn: string | null }
   let ordinal: number
   if (!latest) {
-    scheduledAt = series.anchorAt
+    schedule = { scheduledAt: series.anchorAt, scheduledOn: series.anchorOn }
     ordinal = 1
   } else if (latest.status === 'completed' && latest.completedAt) {
-    scheduledAt = nextAfterCompletion(series, latest.completedAt)
+    const next = nextAfterCompletion(series, latest.completedAt)
+    schedule = /^\d{4}-\d{2}-\d{2}$/.test(next ?? '')
+      ? { scheduledAt: null, scheduledOn: next }
+      : { scheduledAt: next, scheduledOn: null }
     ordinal = latest.ordinal + 1
   } else {
     return { state, created: [], pendingCount: existing.filter((occurrence) => occurrence.status === 'pending').length }
   }
-  if (!scheduledAt || (series.end.kind === 'after' && ordinal > series.end.count)) {
+  const scheduled = schedule.scheduledOn ?? schedule.scheduledAt
+  if (!scheduled || (series.end.kind === 'after' && ordinal > series.end.count)) {
     return { state, created: [], pendingCount }
   }
-  if (series.end.kind === 'on' && parseZonedDateTime(scheduledAt, series.timezone).date > series.end.date) {
+  const scheduledDate = schedule.scheduledOn ?? parseZonedDateTime(schedule.scheduledAt!, series.timezone).date
+  if (series.end.kind === 'on' && scheduledDate > series.end.date) {
     return { state, created: [], pendingCount }
   }
   const occurrence: TaskOccurrence = {
-    id: occurrenceId(series.id, ordinal), seriesId: series.id, ordinal, scheduledAt,
+    id: occurrenceId(series.id, ordinal), seriesId: series.id, ordinal, ...schedule,
     status: 'pending', override: null, completedAt: null, revision: series.revision,
   }
   const nextState: WorkspaceStateV3 = {

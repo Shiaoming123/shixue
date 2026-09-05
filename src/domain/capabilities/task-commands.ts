@@ -118,20 +118,23 @@ function createInitialRecurrence(
     revision: 1,
     cadence: structuredClone(recurrence.cadence),
     basis: recurrence.basis,
-    anchorAt: recurrence.anchorAt,
+    anchorAt: recurrence.anchorAt ?? null,
+    anchorOn: recurrence.anchorOn ?? null,
     end: structuredClone(recurrence.end),
     timezone: recurrence.timezone,
-    createdThrough: recurrence.anchorAt,
+    createdThrough: recurrence.anchorOn ?? recurrence.anchorAt ?? null,
     createdCount: 1,
   }
   const occurrence: TaskOccurrence = {
     id: occurrenceId,
     seriesId,
     ordinal: 1,
-    scheduledAt: recurrence.anchorAt,
+    scheduledAt: recurrence.anchorAt ?? null,
+    scheduledOn: recurrence.anchorOn ?? null,
     status: 'pending',
     override: recurrence.estimateMinutes === undefined ? null : {
       scheduledAt: null,
+      scheduledOn: null,
       estimateMinutes: recurrence.estimateMinutes,
     },
     completedAt: null,
@@ -488,9 +491,7 @@ function assertDeadline(dueAt: string | null, dueOn: string | null): void {
 }
 
 function assertRecurrenceConfig(recurrence: NonNullable<Extract<TaskCapabilityCommand, { type: 'task.create' }>['recurrence']>): void {
-  if (!Number.isFinite(Date.parse(recurrence.anchorAt))) {
-    throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence anchorAt must be an ISO datetime.')
-  }
+  assertRecurrenceSchedule(recurrence.anchorAt ?? null, recurrence.anchorOn ?? null)
   if (!recurrence.timezone.trim()) throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence timezone is required.')
   if (!Number.isInteger(recurrence.cadence.interval) || recurrence.cadence.interval <= 0) {
     throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence interval must be positive.')
@@ -500,6 +501,18 @@ function assertRecurrenceConfig(recurrence: NonNullable<Extract<TaskCapabilityCo
     (recurrence.cadence.weekdays.length === 0 || new Set(recurrence.cadence.weekdays).size !== recurrence.cadence.weekdays.length)
   ) {
     throw new DomainCommandError('VALIDATION_ERROR', 'Weekly recurrence weekdays must be unique and non-empty.')
+  }
+}
+
+function assertRecurrenceSchedule(anchorAt: string | null, anchorOn: string | null): void {
+  if ((anchorAt === null) === (anchorOn === null)) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence anchorAt and anchorOn are mutually exclusive and require exactly one value.')
+  }
+  if (anchorAt !== null && !Number.isFinite(Date.parse(anchorAt))) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence anchorAt must be an ISO datetime.')
+  }
+  if (anchorOn !== null && !/^\d{4}-\d{2}-\d{2}$/.test(anchorOn)) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence anchorOn must use YYYY-MM-DD.')
   }
 }
 

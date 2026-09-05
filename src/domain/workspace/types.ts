@@ -107,7 +107,8 @@ export interface RecurrenceSeries {
   revision: number
   cadence: RecurrenceCadence
   basis: 'fixed_schedule' | 'after_completion'
-  anchorAt: string
+  anchorAt: string | null
+  anchorOn: string | null
   end: { kind: 'never' } | { kind: 'on'; date: string } | { kind: 'after'; count: number }
   timezone: string
   createdThrough: string | null
@@ -116,6 +117,7 @@ export interface RecurrenceSeries {
 
 export interface OccurrenceOverride {
   scheduledAt: string | null
+  scheduledOn: string | null
   estimateMinutes: number | null
 }
 
@@ -123,7 +125,8 @@ export interface TaskOccurrence {
   id: string
   seriesId: string
   ordinal: number
-  scheduledAt: string
+  scheduledAt: string | null
+  scheduledOn: string | null
   status: 'pending' | 'completed' | 'skipped' | 'cancelled'
   override: OccurrenceOverride | null
   completedAt: string | null

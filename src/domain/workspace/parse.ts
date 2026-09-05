@@ -196,16 +196,20 @@ function parseChecklist(raw: unknown): Task['checklist'] {
 function parseSeries(raw: unknown, index: number): RecurrenceSeries {
   const value = requireRecord(raw, `Recurrence series ${index}`)
   const basis = parseEnum(value.basis, ['fixed_schedule', 'after_completion'], 'Recurrence series basis')
+  const anchorAt = value.anchorAt === undefined ? null : parseNullableIsoDateTime(value.anchorAt, 'Recurrence series anchorAt')
+  const anchorOn = value.anchorOn === undefined ? null : parseNullableDateOnly(value.anchorOn, 'Recurrence series anchorOn')
+  assertExclusiveSchedule(anchorAt, anchorOn, 'Recurrence series anchor')
   return {
     id: requireText(value.id, 'Recurrence series id'),
     taskId: requireText(value.taskId, 'Recurrence series taskId'),
     revision: requirePositiveInteger(value.revision, 'Recurrence series revision'),
     cadence: parseCadence(value.cadence),
     basis,
-    anchorAt: requireIsoDateTime(value.anchorAt, 'Recurrence series anchorAt'),
+    anchorAt,
+    anchorOn,
     end: parseSeriesEnd(value.end),
     timezone: requireText(value.timezone, 'Recurrence series timezone'),
-    createdThrough: parseNullableIsoDateTime(value.createdThrough, 'Recurrence series createdThrough'),
+    createdThrough: parseNullableScheduleValue(value.createdThrough, 'Recurrence series createdThrough'),
     createdCount: requireNonNegativeInteger(value.createdCount, 'Recurrence series createdCount'),
   }
 }
@@ -245,11 +249,15 @@ function parseSeriesEnd(raw: unknown): RecurrenceSeries['end'] {
 
 function parseOccurrence(raw: unknown, index: number): TaskOccurrence {
   const value = requireRecord(raw, `Task occurrence ${index}`)
+  const scheduledAt = value.scheduledAt === undefined ? null : parseNullableIsoDateTime(value.scheduledAt, 'Task occurrence scheduledAt')
+  const scheduledOn = value.scheduledOn === undefined ? null : parseNullableDateOnly(value.scheduledOn, 'Task occurrence scheduledOn')
+  assertExclusiveSchedule(scheduledAt, scheduledOn, 'Task occurrence schedule')
   return {
     id: requireText(value.id, 'Task occurrence id'),
     seriesId: requireText(value.seriesId, 'Task occurrence seriesId'),
     ordinal: requirePositiveInteger(value.ordinal, 'Task occurrence ordinal'),
-    scheduledAt: requireIsoDateTime(value.scheduledAt, 'Task occurrence scheduledAt'),
+    scheduledAt,
+    scheduledOn,
     status: parseEnum(value.status, ['pending', 'completed', 'skipped', 'cancelled'], 'Task occurrence status'),
     override: parseOccurrenceOverride(value.override),
     completedAt: parseNullableIsoDateTime(value.completedAt, 'Task occurrence completedAt'),
@@ -260,8 +268,12 @@ function parseOccurrence(raw: unknown, index: number): TaskOccurrence {
 function parseOccurrenceOverride(raw: unknown): OccurrenceOverride | null {
   if (raw === null) return null
   const value = requireRecord(raw, 'Occurrence override')
+  const scheduledAt = value.scheduledAt === undefined ? null : parseNullableIsoDateTime(value.scheduledAt, 'Occurrence override scheduledAt')
+  const scheduledOn = value.scheduledOn === undefined ? null : parseNullableDateOnly(value.scheduledOn, 'Occurrence override scheduledOn')
+  if (scheduledAt !== null && scheduledOn !== null) throw new Error('Occurrence override schedule fields are mutually exclusive.')
   return {
-    scheduledAt: parseNullableIsoDateTime(value.scheduledAt, 'Occurrence override scheduledAt'),
+    scheduledAt,
+    scheduledOn,
     estimateMinutes: parseNullablePositiveInteger(value.estimateMinutes, 'Occurrence override estimateMinutes'),
   }
 }
@@ -502,6 +514,10 @@ function parseTextArray(value: unknown, label: string): string[] { return parseA
 function parseNullableTaskStatus(value: unknown): Task['status'] | null { return value === null ? null : parseEnum(value, TASK_STATUSES, 'Task event status') }
 function parseNullableDateOnly(value: unknown, label: string): string | null { return value === null ? null : requireDateOnly(value, label) }
 function parseNullableIsoDateTime(value: unknown, label: string): string | null { return value === null ? null : requireIsoDateTime(value, label) }
+function parseNullableScheduleValue(value: unknown, label: string): string | null {
+  if (value === null) return null
+  return typeof value === 'string' && DATE_ONLY.test(value) ? requireDateOnly(value, label) : requireIsoDateTime(value, label)
+}
 function parseNullableText(value: unknown, label: string): string | null { return value === null ? null : requireText(value, label) }
 function parseNullablePositiveInteger(value: unknown, label: string): number | null { return value === null ? null : requirePositiveInteger(value, label) }
 function parseNullableRangeInteger(value: unknown, min: number, max: number, label: string): number | null { return value === null ? null : requireRangeInteger(value, min, max, label) }
@@ -512,6 +528,9 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
 function requireText(value: unknown, label: string, allowEmpty = false): string { if (typeof value !== 'string' || (!allowEmpty && value.trim().length === 0) || value.length > MAX_TEXT_LENGTH) throw new Error(`${label} must be a valid string.`); return value }
 function requireDateOnly(value: unknown, label: string): string { const date = requireText(value, label); if (!isDateOnly(date)) throw new Error(`${label} must use YYYY-MM-DD.`); return date }
 function requireIsoDateTime(value: unknown, label: string): string { const timestamp = requireText(value, label); if (!ISO_DATETIME.test(timestamp) || !isDateOnly(timestamp.slice(0, 10)) || !Number.isFinite(Date.parse(timestamp))) throw new Error(`${label} must use an ISO datetime with timezone.`); return timestamp }
+function assertExclusiveSchedule(at: string | null, on: string | null, label: string): void {
+  if ((at === null) === (on === null)) throw new Error(`${label} fields are mutually exclusive and require exactly one value.`)
+}
 function requirePositiveInteger(value: unknown, label: string): number { if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) throw new Error(`${label} must be a positive integer.`); return value }
 function requireNonNegativeInteger(value: unknown, label: string): number { if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) throw new Error(`${label} must be a non-negative integer.`); return value }
 function requireRangeInteger(value: unknown, min: number, max: number, label: string): number { if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be between ${min} and ${max}.`); return value }

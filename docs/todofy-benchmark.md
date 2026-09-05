@@ -21,7 +21,7 @@ UI 沿用 `study` 主题和既有 token，并把色板收敛为雾灰玻璃、�
 | 能力协议 | 已实现 | 协议版本保持 v1；命令预演、幂等、revision 校验和单次 CAS 保存由统一服务负责 |
 | 线上写入路径 | 已实现 | 当前 UI、键盘、通知兼容路径经能力服务写入；不允许绕过服务直接写持久化快照 |
 | 主题控件基础 | 已实现，本轮仅做编译验证 | 已有 overlay、popover、listbox、checkbox、switch、dialog、toast 与日期时间控件；本轮不把未运行的交互/视觉检查写成已验证 |
-| 重复发生项投影 | 已实现 | `projectTaskItems` 以 `task:<id>` / `occurrence:<id>` 生成稳定行；Today 合并计划、截止、逾期与重复来源，一次发生项只显示一次并保留全部原因 |
+| 重复发生项投影 | 已实现 | `projectTaskItems` 以 `task:<id>` / `occurrence:<id>` 生成稳定行；Today 合并计划、截止、逾期与重复来源，一次发生项只显示一次并保留全部原因；全天发生项保留 `scheduledOn`，不伪造成午夜时间戳 |
 
 `WorkspaceStateV3` 为后续能力预留集合不等于对应业务已经交付。重复规则与发生项已在当前 PR2 分支实现并通过 focused tests；离线自然语言快速新增、多提醒、日历视图与 Agent 行为仍是计划项。`source: agent` 只是能力信封的调用来源标记，不代表已经存在自动规划或执行 Agent。
 

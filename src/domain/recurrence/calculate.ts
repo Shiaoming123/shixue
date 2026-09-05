@@ -9,17 +9,24 @@ export function nextAfterCompletion(series: RecurrenceSeries, completedAt: strin
 }
 
 function nextOccurrence(series: RecurrenceSeries, thresholdIso: string, strictAfter: boolean): string | null {
-  const threshold = new Date(thresholdIso)
-  if (Number.isNaN(threshold.getTime())) throw new Error(`Invalid datetime: ${thresholdIso}`)
-  const anchor = parseZonedDateTime(series.anchorAt, series.timezone)
+  const dateOnly = series.anchorOn != null
+  const threshold = dateOnly ? null : new Date(thresholdIso)
+  if (!dateOnly && Number.isNaN(threshold!.getTime())) throw new Error(`Invalid datetime: ${thresholdIso}`)
+  const thresholdDate = /^\d{4}-\d{2}-\d{2}$/.test(thresholdIso)
+    ? thresholdIso
+    : parseZonedDateTime(thresholdIso, series.timezone).date
+  const timedAnchor = dateOnly ? null : parseZonedDateTime(series.anchorAt!, series.timezone)
+  const anchor: { date: string; time: string | null } = dateOnly
+    ? { date: series.anchorOn!, time: null }
+    : timedAnchor!
   const limit = series.end.kind === 'after' ? series.end.count : MAX_SEARCH_STEPS
 
   if (series.cadence.kind === 'daily') {
     for (let occurrence = 1; occurrence <= limit; occurrence += 1) {
       const date = addCalendarDays(anchor.date, (occurrence - 1) * series.cadence.interval)
       if (series.end.kind === 'on' && date > series.end.date) break
-      const instant = zonedDateTimeToInstant(date, anchor.time, series.timezone)
-      if (strictAfter ? instant > threshold : instant.getTime() >= threshold.getTime()) return instant.toISOString()
+      const candidate = resolveCandidate(date, anchor.time, series.timezone)
+      if (candidateMatches(candidate, date, threshold, thresholdDate, strictAfter)) return candidate
     }
     return null
   }
@@ -34,8 +41,8 @@ function nextOccurrence(series: RecurrenceSeries, thresholdIso: string, strictAf
       if (!series.cadence.weekdays.includes(weekdayOf(date))) continue
       matched += 1
       if (matched > limit) break
-      const instant = zonedDateTimeToInstant(date, anchor.time, series.timezone)
-      if (strictAfter ? instant > threshold : instant.getTime() >= threshold.getTime()) return instant.toISOString()
+      const candidate = resolveCandidate(date, anchor.time, series.timezone)
+      if (candidateMatches(candidate, date, threshold, thresholdDate, strictAfter)) return candidate
     }
     return null
   }
@@ -46,10 +53,26 @@ function nextOccurrence(series: RecurrenceSeries, thresholdIso: string, strictAf
         ? addCalendarMonths(anchor.date, (occurrence - 1) * series.cadence.interval, series.cadence.dayOfMonth)
         : addCalendarYears(anchor.date, (occurrence - 1) * series.cadence.interval, series.cadence.month, series.cadence.dayOfMonth)
     if (series.end.kind === 'on' && date > series.end.date) break
-    const instant = zonedDateTimeToInstant(date, anchor.time, series.timezone)
-    if (strictAfter ? instant > threshold : instant.getTime() >= threshold.getTime()) return instant.toISOString()
+    const candidate = resolveCandidate(date, anchor.time, series.timezone)
+    if (candidateMatches(candidate, date, threshold, thresholdDate, strictAfter)) return candidate
   }
   return null
+}
+
+function resolveCandidate(date: string, time: string | null, timezone: string): string {
+  return time === null ? date : zonedDateTimeToInstant(date, time, timezone).toISOString()
+}
+
+function candidateMatches(
+  candidate: string,
+  candidateDate: string,
+  threshold: Date | null,
+  thresholdDate: string,
+  strictAfter: boolean,
+): boolean {
+  if (threshold === null) return strictAfter ? candidateDate > thresholdDate : candidateDate >= thresholdDate
+  const instant = new Date(candidate)
+  return strictAfter ? instant > threshold : instant.getTime() >= threshold.getTime()
 }
 
 function addCalendarDays(date: string, days: number): string {

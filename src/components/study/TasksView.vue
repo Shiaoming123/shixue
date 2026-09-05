@@ -17,7 +17,7 @@ export interface TaskViewItem {
   estimateMinutes: number | null; acceptanceCriteria: string[]
   checklist: Array<{ id: string; text: string; checked: boolean }>; blockedReason: string
 }
-export interface OccurrenceViewItem { id: string; title: string; scheduledLabel: string; occurrence: TaskOccurrence }
+export interface OccurrenceViewItem { id: string; title: string; scheduledLabel: string; deadlineLabel: string; reasons: string[]; occurrence: TaskOccurrence }
 
 const props = defineProps<{
   tasks: TaskViewItem[]; occurrences: OccurrenceViewItem[]; topics: Array<{ id: string; title: string }>; title: string; subtitle: string
@@ -31,6 +31,7 @@ const emit = defineEmits<{
   searchChange: [value: string]; topicFilterChange: [value: string]
   priorityFilterChange: [value: StudyTaskPriority | 'all']; sortChange: [value: StudyTaskQuerySort]
   occurrenceComplete: [id: string]; occurrenceSkip: [id: string]; occurrenceReschedule: [id: string]
+  occurrenceOpen: [id: string]
 }>()
 
 const draft = ref('')
@@ -128,10 +129,10 @@ onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
       <Listbox :model-value="sortModel" :options="sortOptions" label="排序" variant="compact" @update:model-value="sortModel = $event as StudyTaskQuerySort" />
     </div>
     <div v-if="batchMode" class="batch-bar"><span>{{ selectedIds.length }}</span><div><button type="button" :disabled="!selectedIds.length" title="完成" aria-label="批量完成" @click="finishBatch('complete')"><CheckCircle2 :size="17" /></button><button type="button" :disabled="!selectedIds.length" title="移到今天" aria-label="移到今天" @click="finishBatch('today')"><CalendarDays :size="17" /></button><button type="button" class="danger" :disabled="!selectedIds.length" title="删除" aria-label="批量删除" @click="confirmDeleteIds = [...selectedIds]"><Trash2 :size="17" /></button></div></div>
-    <div v-if="tasks.length" class="task-sections">
+    <div v-if="tasks.length || occurrences.length" class="task-sections">
+      <OccurrenceRow v-for="item in occurrences" :key="item.id" :occurrence="item.occurrence" :title="item.title" :scheduled-label="item.scheduledLabel" :deadline-label="item.deadlineLabel" :reasons="item.reasons" @open="emit('occurrenceOpen', $event)" @complete="emit('occurrenceComplete', $event)" @skip="emit('occurrenceSkip', $event)" @reschedule="emit('occurrenceReschedule', $event)" />
       <section v-for="section in sections" :key="section.key" class="task-section">
         <h2 v-if="section.label" :class="{ overdue: section.key === 'overdue' }">{{ section.label }} <span>{{ section.tasks.length }}</span></h2>
-        <OccurrenceRow v-for="item in section.key === sections[0]?.key ? occurrences : []" :key="item.id" :occurrence="item.occurrence" :title="item.title" :scheduled-label="item.scheduledLabel" @complete="emit('occurrenceComplete', $event)" @skip="emit('occurrenceSkip', $event)" @reschedule="emit('occurrenceReschedule', $event)" />
         <article v-for="task in section.tasks" :key="task.id" class="task-row" :class="{ selected: selectedId === task.id, completed: task.status === 'completed' }">
           <Checkbox v-if="batchMode" class="select-button" shape="round" :model-value="selectedIds.includes(task.id)" :accessible-label="`选择 ${task.title}`" @update:model-value="toggleSelection(task.id)" />
           <button v-else class="complete-button" type="button" :aria-label="task.status === 'completed' ? `重新打开 ${task.title}` : `完成 ${task.title}`" @click="emit('toggleComplete', task.id)"><span :class="[task.priority, { checked: task.status === 'completed' }]"><Check :size="14" /></span></button>

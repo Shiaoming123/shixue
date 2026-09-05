@@ -18,7 +18,7 @@ import TopicsView, { type TopicViewItem } from './components/study/TopicsView.vu
 import Listbox from './components/ui/Listbox.vue'
 import OverlayHost from './components/ui/OverlayHost.vue'
 import ToastRegion from './components/ui/ToastRegion.vue'
-import { queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView } from './lib/study-task-query'
+import { projectTaskItems, queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView, type TaskProjectionReason } from './lib/study-task-query'
 import { selectStudyReminders, selectTaskReminderTriggers } from './lib/study-reminders'
 import { detectRuntimeInfo, hasRuntimeCapability } from './lib/platform'
 import {
@@ -79,6 +79,7 @@ const selectedGroupId = ref('')
 const groupTitle = ref('')
 const selectedTopicId = ref(state.value.topics[0]?.id ?? '')
 const selectedTaskId = ref('')
+const selectedOccurrenceId = ref('')
 const activeSmartView = ref<StudyTaskSmartView>('today')
 const taskSearch = ref('')
 const taskTopicFilter = ref('all')
@@ -130,6 +131,7 @@ const dateLabel = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long
 const activeSession = computed(() => state.value.sessions.find((session) => !session.deletedAt && (session.state === 'running' || session.state === 'paused')))
 const activeTask = computed(() => state.value.tasks.find((task) => task.id === activeSession.value?.taskId && !task.deletedAt))
 const selectedTask = computed(() => state.value.tasks.find((task) => task.id === selectedTaskId.value && !task.deletedAt))
+const selectedOccurrence = computed(() => recurrenceWorkspace.value?.occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId.value) ?? null)
 const selectedRecurrence = computed(() => recurrenceWorkspace.value?.recurrenceSeries.find((series) => series.taskId === selectedTask.value?.id) ?? null)
 const selectedRecurrenceRule = computed<RecurrenceRule | null>(() => selectedRecurrence.value ? ({ cadence: selectedRecurrence.value.cadence, basis: selectedRecurrence.value.basis, end: selectedRecurrence.value.end }) : null)
 const selectedTaskView = computed(() => selectedTask.value ? toTaskView(selectedTask.value) : undefined)
@@ -146,34 +148,51 @@ const timeLabel = computed(() => `${String(Math.floor(elapsedSeconds.value / 60)
 
 const topicMap = computed(() => new Map(state.value.topics.map((topic) => [topic.id, topic])))
 const liveTasks = computed(() => state.value.tasks.filter((task) => !task.deletedAt))
-const taskViews = computed<TaskViewItem[]>(() => queryStudyTasks(liveTasks.value, state.value.topics, {
+const filteredTaskViews = computed<TaskViewItem[]>(() => queryStudyTasks(liveTasks.value, state.value.topics, {
   search: taskSearch.value,
   sort: taskSort.value,
   topicId: taskTopicFilter.value === 'all' ? undefined : taskTopicFilter.value === 'unassigned' ? null : taskTopicFilter.value,
-  smartView: activeSmartView.value,
+  smartView: activeSmartView.value === 'today' ? 'all' : activeSmartView.value,
   today: today.value,
 }).filter((task) => taskPriorityFilter.value === 'all' || task.priority === taskPriorityFilter.value).map(toTaskView))
+const todayProjections = computed(() => recurrenceWorkspace.value ? projectTaskItems(recurrenceWorkspace.value, { from: today.value, to: today.value }) : [])
+const taskViews = computed<TaskViewItem[]>(() => {
+  if (activeSmartView.value !== 'today' || !recurrenceWorkspace.value) return filteredTaskViews.value
+  const eligible = new Map(filteredTaskViews.value.map((task) => [task.id, task]))
+  return todayProjections.value.filter((projection) => projection.occurrenceId === null).map((projection) => eligible.get(projection.taskId)).filter((task): task is TaskViewItem => task !== undefined)
+})
 const occurrenceViews = computed<OccurrenceViewItem[]>(() => {
   const workspace = recurrenceWorkspace.value
   if (!workspace) return []
   const tasks = new Map(liveTasks.value.map((task) => [task.id, task]))
-  const visibleTaskIds = new Set(taskViews.value.map((task) => task.id))
+  const visibleTaskIds = new Set(filteredTaskViews.value.map((task) => task.id))
+  if (activeSmartView.value === 'today') {
+    return todayProjections.value.filter((projection) => projection.occurrence?.status === 'pending' && visibleTaskIds.has(projection.taskId)).map((projection) => ({
+      id: projection.key,
+      title: tasks.get(projection.taskId)?.title ?? projection.task.title,
+      scheduledLabel: formatPlanDate(projection.scheduledOn ?? projection.scheduledAt),
+      deadlineLabel: projection.dueOn || projection.dueAt ? formatPlanDate(projection.dueOn ?? projection.dueAt) : '',
+      reasons: projection.reasons.map(projectionReasonLabel),
+      occurrence: projection.occurrence!,
+    }))
+  }
   return workspace.occurrences.filter((occurrence) => occurrence.status === 'pending').map((occurrence) => {
     const series = workspace.recurrenceSeries.find((item) => item.id === occurrence.seriesId)
     const task = series ? tasks.get(series.taskId) : undefined
-    return task && visibleTaskIds.has(task.id) ? { id: occurrence.id, title: task.title, scheduledLabel: formatPlanDate(occurrence.override?.scheduledAt ?? occurrence.scheduledAt), occurrence } : null
+    const scheduled = occurrence.override?.scheduledOn ?? occurrence.override?.scheduledAt ?? occurrence.scheduledOn ?? occurrence.scheduledAt
+    return task && visibleTaskIds.has(task.id) ? { id: `occurrence:${occurrence.id}`, title: task.title, scheduledLabel: formatPlanDate(scheduled), deadlineLabel: task.dueOn ? formatPlanDate(task.dueOn) : '', reasons: ['重复'], occurrence } : null
   }).filter((item): item is OccurrenceViewItem => item !== null)
 })
 
 const smartViewCounts = computed<StudySmartViewCounts>(() => ({
   inbox: selectStudyTaskSmartView(liveTasks.value, 'inbox', today.value).length,
-  today: selectStudyTaskSmartView(liveTasks.value, 'today', today.value).length,
+  today: recurrenceWorkspace.value ? todayProjections.value.filter((projection) => projection.occurrence?.status !== 'completed' && projection.occurrence?.status !== 'skipped').length : selectStudyTaskSmartView(liveTasks.value, 'today', today.value).length,
   next7: selectStudyTaskSmartView(liveTasks.value, 'next7', today.value).length,
   all: selectStudyTaskSmartView(liveTasks.value, 'all', today.value).length,
   completed: selectStudyTaskSmartView(liveTasks.value, 'completed', today.value).length,
 }))
 const smartViewTitle = computed(() => ({ inbox: '收件箱', today: '今天', next7: '最近 7 天', all: '全部任务', completed: '已完成' })[activeSmartView.value])
-const smartViewSubtitle = computed(() => `${taskViews.value.length} 项 · ${dateLabel.value}`)
+const smartViewSubtitle = computed(() => `${taskViews.value.length + occurrenceViews.value.length} 项 · ${dateLabel.value}`)
 const activeListGroups = computed(() => (state.value.listGroups ?? []).filter(({ archivedAt }) => !archivedAt).sort((left, right) => left.position - right.position))
 const topicGroupOptions = computed(() => [
   { value: '', label: '无分组' },
@@ -342,7 +361,7 @@ function localDeviceId() {
 }
 
 function navigate(next: StudyPage) {
-  page.value = next; showFocus.value = false; reviewRevealed.value = false
+  page.value = next; showFocus.value = false; reviewRevealed.value = false; selectedOccurrenceId.value = ''
   if (next === 'today') activeSmartView.value = 'today'
   if (next === 'tasks' && activeSmartView.value === 'today') activeSmartView.value = 'inbox'
   if ((next === 'tasks' || next === 'today') && !compact.value && !selectedTaskId.value) selectedTaskId.value = taskViews.value[0]?.id ?? ''
@@ -353,12 +372,22 @@ function selectSmartView(view: StudySmartView) {
   activeSmartView.value = view
   page.value = view === 'today' ? 'today' : 'tasks'
   showFocus.value = false
+  selectedOccurrenceId.value = ''
   selectedTaskId.value = compact.value ? '' : taskViews.value[0]?.id ?? ''
 }
-function selectList(id: string) { taskTopicFilter.value = id; activeSmartView.value = 'all'; page.value = 'tasks'; showFocus.value = false; selectedTaskId.value = compact.value ? '' : taskViews.value[0]?.id ?? '' }
+function selectList(id: string) { taskTopicFilter.value = id; activeSmartView.value = 'all'; page.value = 'tasks'; showFocus.value = false; selectedOccurrenceId.value = ''; selectedTaskId.value = compact.value ? '' : taskViews.value[0]?.id ?? '' }
 function openTopicEditor(topic?: StudyTopic) { topicEditorOpen.value = true; selectedTopicId.value = topic?.id ?? ''; topicTitle.value = topic?.title ?? ''; topicGoal.value = topic?.goal ?? ''; topicMinutes.value = topic?.weeklyTargetMinutes ?? 120; topicGroupId.value = topic?.groupId ?? '' }
 function openGroupEditor(group?: StudyListGroup) { groupEditorOpen.value = true; selectedGroupId.value = group?.id ?? ''; groupTitle.value = group?.title ?? '' }
-function openTask(taskId: string) { selectedTaskId.value = taskId; if (page.value !== 'tasks' && page.value !== 'today') page.value = 'tasks'; showFocus.value = false }
+function openTask(taskId: string) { selectedOccurrenceId.value = ''; selectedTaskId.value = taskId; if (page.value !== 'tasks' && page.value !== 'today') page.value = 'tasks'; showFocus.value = false }
+function openOccurrence(occurrenceId: string) {
+  const workspace = recurrenceWorkspace.value
+  const occurrence = workspace?.occurrences.find((item) => item.id === occurrenceId)
+  const series = occurrence ? workspace?.recurrenceSeries.find((item) => item.id === occurrence.seriesId) : undefined
+  if (!occurrence || !series) return
+  selectedOccurrenceId.value = occurrence.id
+  selectedTaskId.value = series.taskId
+  showFocus.value = false
+}
 function alignTaskSelection() {
   if (compact.value) { selectedTaskId.value = ''; return }
   if (!taskViews.value.some((task) => task.id === selectedTaskId.value)) selectedTaskId.value = taskViews.value[0]?.id ?? ''
@@ -722,6 +751,7 @@ async function resetDemo() {
 function setAppearance(mode: 'light' | 'dark') { appearanceDark.value = mode === 'dark'; localStorage.setItem('meow-study-appearance', mode); applyTheme('study', appearanceDark.value) }
 
 function topicTitleFor(topicId: string | null) { return topicId ? topicMap.value.get(topicId)?.title ?? '未知主题' : '未归类' }
+function projectionReasonLabel(reason: TaskProjectionReason) { return ({ overdue: '已过期', planned: '已计划', due: '今日截止', repeating: '重复' } as const)[reason] }
 function taskStatus(task: StudyTask): TaskViewStatus { return task.status === 'planned' && !task.plannedOn ? 'backlog' : task.status }
 function toTaskView(task: StudyTask): TaskViewItem { return { id: task.id, title: task.title, notes: task.notes, topic: topicTitleFor(task.topicId), topicId: task.topicId, status: taskStatus(task), plannedOn: task.plannedOn, dueOn: task.dueOn, reminderAt: task.reminderAt, priority: task.priority, plannedLabel: task.plannedOn ? formatPlanDate(task.plannedOn) : '', dueLabel: task.dueOn ? formatPlanDate(task.dueOn) : '', reminderLabel: formatReminder(task.reminderAt), estimateMinutes: task.estimateMinutes, acceptanceCriteria: task.acceptanceCriteria, checklist: task.checklist.map((item) => ({ id: item.id, text: item.text, checked: item.checked })), blockedReason: task.blockedReason ?? '' } }
 function toEventView(event: TaskEvent): TaskEventViewItem {
@@ -757,8 +787,8 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
         <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" @back="showFocus = false" @toggle="toggleFocus" @finish="completionOpen = true" @update:scratchpad="updateScratchpad" />
         <div v-else-if="page === 'tasks' || page === 'today'" class="tasks-layout">
-          <div class="tasks-scroll"><TasksView :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @capture="captureTask" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="notify('请选择本次实例后修改时间。')" /></div>
-          <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :mobile="compact" @close="selectedTaskId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" />
+          <div class="tasks-scroll"><TasksView :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @capture="captureTask" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="notify('请选择本次实例后修改时间。')" /></div>
+          <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="notify('本次改期入口已定位；请选择新的日期或时间。')" />
         </div>
         <TopicsView v-else-if="page === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
         <ReviewView v-else-if="page === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
