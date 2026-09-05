@@ -2,11 +2,14 @@ import type {
   CompletionRecord,
   JsonValue,
   ListGroup,
+  RecurrenceCadence,
+  RecurrenceSeries,
   ReminderRule,
   StudySession,
   Task,
   TaskChecklistItem,
   TaskEvent,
+  TaskOccurrence,
   TaskList,
   TaskPriority,
   TaskStatus,
@@ -26,6 +29,8 @@ export type EntityType =
   | 'list_group'
   | 'list'
   | 'task'
+  | 'recurrence_series'
+  | 'occurrence'
   | 'session'
   | 'checklist_item'
   | 'completion_record'
@@ -202,6 +207,50 @@ export interface TaskBatchDeleteCommand extends TaskBatchCommandTargetRevisions 
   reason?: string
 }
 
+export interface RecurrenceCreateCommand {
+  type: 'recurrence.create'
+  taskId: string
+  expectedTaskRevision?: number
+  seriesId?: string
+  occurrenceId?: string
+  cadence: RecurrenceCadence
+  basis: RecurrenceSeries['basis']
+  anchorAt: string
+  end: RecurrenceSeries['end']
+  timezone: string
+  estimateMinutes?: number | null
+}
+
+export interface RecurrenceUpdatePatch {
+  cadence?: RecurrenceCadence
+  basis?: RecurrenceSeries['basis']
+  anchorAt?: string
+  end?: RecurrenceSeries['end']
+  timezone?: string
+  scheduledAt?: string | null
+  estimateMinutes?: number | null
+}
+
+export interface RecurrenceUpdateCommand {
+  type: 'recurrence.update'
+  occurrenceId: string
+  expectedOccurrenceRevision?: number
+  scope: 'occurrence' | 'future' | 'series'
+  patch: RecurrenceUpdatePatch
+}
+
+export interface RecurrenceCompleteCommand {
+  type: 'recurrence.complete'
+  occurrenceId: string
+  expectedOccurrenceRevision?: number
+}
+
+export interface RecurrenceSkipCommand {
+  type: 'recurrence.skip'
+  occurrenceId: string
+  expectedOccurrenceRevision?: number
+}
+
 export interface WorkspaceImportCommand {
   type: 'workspace.import'
   state: unknown
@@ -337,6 +386,14 @@ export type UndoCompensation =
       completionRecordIds: string[]
       reminderRules?: ReminderRule[]
     }
+  | {
+      type: 'recurrence.restore'
+      tasks: Task[]
+      recurrenceSeries: RecurrenceSeries[]
+      occurrenceSnapshots: TaskOccurrence[]
+      createdSeriesIds: string[]
+      createdOccurrenceIds: string[]
+    }
 
 export interface UndoToken {
   protocolVersion: typeof CAPABILITY_PROTOCOL_VERSION
@@ -362,6 +419,12 @@ export type TaskCapabilityCommand =
   | TaskBatchCancelCommand
   | TaskBatchDeleteCommand
 
+export type RecurrenceCapabilityCommand =
+  | RecurrenceCreateCommand
+  | RecurrenceUpdateCommand
+  | RecurrenceCompleteCommand
+  | RecurrenceSkipCommand
+
 export type LiveCompatibilityCommand =
   | ListUpsertCommand
   | ListGroupUpsertCommand
@@ -383,6 +446,7 @@ export type LiveCompatibilityCommand =
 
 export type CapabilityCommand =
   | TaskCapabilityCommand
+  | RecurrenceCapabilityCommand
   | LiveCompatibilityCommand
   | WorkspaceImportCommand
   | UndoApplyCommand
@@ -452,6 +516,8 @@ export type CapabilityIdGenerator = (kind:
   | 'session'
   | 'checklist'
   | 'reminder'
+  | 'recurrence_series'
+  | 'occurrence'
 ) => string
 
 export interface CommandApplication {

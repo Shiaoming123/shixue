@@ -407,7 +407,7 @@ function assertReferences(state: WorkspaceStateV3): void {
   }
   for (const entry of state.recurrenceSeries) {
     const task = tasks.get(entry.taskId); if (!task) throw new Error(`Recurrence series ${entry.id} has unknown taskId.`)
-    if (task.recurrenceSeriesId !== entry.id) throw new Error(`Recurrence series ${entry.id} is not linked by its task.`)
+    if (task.recurrenceSeriesId !== entry.id && entry.end.kind === 'never') throw new Error(`Recurrence series ${entry.id} is not linked by its task.`)
   }
   for (const task of state.tasks) if (task.recurrenceSeriesId) { const entry = series.get(task.recurrenceSeriesId); if (!entry) throw new Error(`Task ${task.id} has unknown recurrenceSeriesId.`); if (entry.taskId !== task.id) throw new Error(`Task ${task.id} recurrence series belongs to another task.`) }
   for (const occurrence of state.occurrences) if (!series.has(occurrence.seriesId)) throw new Error(`Task occurrence ${occurrence.id} has unknown seriesId.`)

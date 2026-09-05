@@ -3,6 +3,7 @@ import type { CommandReceipt, JsonValue, Task, TaskEvent, WorkspaceStateV3 } fro
 import type { WorkspaceStore } from '../../storage/workspace/types.ts'
 import { getCommandDescriptor, getPreviewConfirmation } from './catalog.ts'
 import { applyLiveCompatibilityCommand } from './live-commands.ts'
+import { applyRecurrenceCommand } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
 import {
   CAPABILITY_PROTOCOL_VERSION,
@@ -21,6 +22,7 @@ import {
   type DomainError,
   type EntityRef,
   type LiveCompatibilityCommand,
+  type RecurrenceCapabilityCommand,
   type QueryResult,
   type TaskCapabilityCommand,
   type TaskCapabilityService,
@@ -188,6 +190,7 @@ function applyCapabilityCommand(
   context: CapabilityCommandContext,
 ): CommandApplication {
   if (isCoreTaskCommand(command)) return applyTaskCommand(state, command, context)
+  if (isRecurrenceCommand(command)) return applyRecurrenceCommand(state, command, context)
   if (isLiveCompatibilityCommand(command)) return applyLiveCompatibilityCommand(state, command, context)
   if (command.type === 'workspace.import') return applyWorkspaceImport(state, command)
   if (command.type === 'undo.apply') return applyUndo(state, command, context)
@@ -244,7 +247,7 @@ function applyUndo(
   }
 
   const events: TaskEvent[] = []
-  const restored: Task[] = []
+  const restored: EntityRef[] = []
   if (token.compensation.type === 'task.remove_created') {
     const tasks = token.compensation.taskIds.map((taskId) => {
       const task = state.tasks.find(({ id }) => id === taskId)
@@ -257,9 +260,9 @@ function applyUndo(
       task.updatedAt = context.now
       task.revision += 1
       events.push(appendUndoEvent(state, task, 'deleted', task.status, context, original.id))
-      restored.push(task)
+      restored.push(taskRef(task))
     }
-  } else {
+  } else if (token.compensation.type === 'task.restore') {
     const targets = token.compensation.tasks.map((prior) => {
       const index = state.tasks.findIndex(({ id }) => id === prior.id)
       if (index < 0) throw new DomainCommandError('TASK_NOT_FOUND', `Task not found for undo: ${prior.id}.`, { taskId: prior.id })
@@ -290,7 +293,7 @@ function applyUndo(
           original.id,
         ))
       }
-      restored.push(restoredTask)
+      restored.push(taskRef(restoredTask))
     }
     for (const prior of token.compensation.sessions) {
       const index = state.studySessions.findIndex(({ id }) => id === prior.id)
@@ -310,15 +313,44 @@ function applyUndo(
       record.deletedAt = context.now
       record.updatedAt = context.now
     }
+  } else if (token.compensation.type === 'recurrence.restore') {
+    const taskIds = new Set(token.compensation.tasks.map(({ id }) => id))
+    const seriesIds = new Set([
+      ...token.compensation.recurrenceSeries.map(({ id }) => id),
+      ...token.compensation.createdSeriesIds,
+    ])
+    const occurrenceIds = new Set([
+      ...token.compensation.occurrenceSnapshots.map(({ id }) => id),
+      ...token.compensation.createdOccurrenceIds,
+    ])
+    const restoredTasks = token.compensation.tasks.map((task) => ({
+      ...structuredClone(task),
+      updatedAt: context.now,
+      revision: task.revision + 1,
+    }))
+    state.tasks = state.tasks.filter((task) => !taskIds.has(task.id))
+    state.tasks.push(...restoredTasks)
+    state.recurrenceSeries = state.recurrenceSeries.filter((series) => !seriesIds.has(series.id))
+    state.recurrenceSeries.push(...token.compensation.recurrenceSeries.map((series) => structuredClone(series)))
+    state.occurrences = state.occurrences.filter((occurrence) => !occurrenceIds.has(occurrence.id))
+    state.occurrences.push(...token.compensation.occurrenceSnapshots.map((occurrence) => structuredClone(occurrence)))
+    restored.push(
+      ...restoredTasks.map(taskRef),
+      ...token.compensation.recurrenceSeries.map(({ id, revision }) => ({ type: 'recurrence_series' as const, id, revision })),
+      ...token.compensation.occurrenceSnapshots.map(({ id, revision }) => ({ type: 'occurrence' as const, id, revision })),
+    )
   }
 
-  const affected = restored.map(taskRef)
   return {
-    affected,
-    changes: affected.map((entity) => ({ entity, operation: 'restore', fields: ['task'] })),
+    affected: restored,
+    changes: restored.map((entity) => ({ entity, operation: 'restore', fields: ['state'] })),
     events,
     compensation: null,
-    data: { undoTokenId: token.id, restoredTaskIds: restored.map(({ id }) => id) },
+    data: {
+      undoTokenId: token.id,
+      restoredTaskIds: restored.filter(({ type }) => type === 'task').map(({ id }) => id),
+      restoredIds: restored.map(({ id }) => id),
+    },
   }
 }
 
@@ -346,7 +378,19 @@ function previewAffected(
   }
   if (command.type === 'undo.apply') return command.token.compensation.type === 'task.remove_created'
     ? command.token.compensation.taskIds.map((id) => ({ type: 'task', id }))
-    : command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task', id, revision }))
+    : command.token.compensation.type === 'task.restore'
+      ? command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task', id, revision }))
+      : [
+          ...command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task' as const, id, revision })),
+          ...command.token.compensation.recurrenceSeries.map(({ id, revision }) => ({ type: 'recurrence_series' as const, id, revision })),
+          ...command.token.compensation.occurrenceSnapshots.map(({ id, revision }) => ({ type: 'occurrence' as const, id, revision })),
+        ]
+  if (command.type === 'recurrence.create') return [{ type: 'task', id: command.taskId }]
+  if (
+    command.type === 'recurrence.update' ||
+    command.type === 'recurrence.complete' ||
+    command.type === 'recurrence.skip'
+  ) return [{ type: 'occurrence', id: command.occurrenceId }]
   if (command.type === 'task.create') return [{ type: 'task', id: command.taskId ?? 'pending' }]
   if (command.type === 'list.upsert') return [{ type: 'list', id: command.list.id }]
   if (command.type === 'list_group.upsert') return [{ type: 'list_group', id: command.group.id }]
@@ -382,6 +426,13 @@ function isCoreTaskCommand(command: CapabilityCommand): command is TaskCapabilit
     command.type === 'task.batch_reschedule' ||
     command.type === 'task.batch_cancel' ||
     command.type === 'task.batch_delete'
+}
+
+function isRecurrenceCommand(command: CapabilityCommand): command is RecurrenceCapabilityCommand {
+  return command.type === 'recurrence.create' ||
+    command.type === 'recurrence.update' ||
+    command.type === 'recurrence.complete' ||
+    command.type === 'recurrence.skip'
 }
 
 function isLiveCompatibilityCommand(command: CapabilityCommand): command is LiveCompatibilityCommand {
