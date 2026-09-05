@@ -27,7 +27,8 @@ The protocol deliberately summarizes rather than replaces implementation facts:
 `npm run check:protocol` reads the JSON and cross-checks the product name,
 module policy, Workspace export format/version, legacy Study input format,
 capability protocol version, default local-first/sync boundary, acceptance
-commands, maturity labels, and current delivery evidence. Data-port and
+commands, maturity labels, current delivery evidence, and the recorded iOS
+native evidence boundary. Data-port and
 capability facts are compared with constants exported by the implementation;
 they are not inferred by comparing duplicated JSON fields. The checker does not
 alter configuration, load modules, contact a network endpoint, or read secrets.
@@ -47,9 +48,13 @@ alter configuration, load modules, contact a network endpoint, or read secrets.
 
 The current protocol intentionally says nothing stronger about signing, hosted
 updates, deployed Web hosting, real-device execution, or store submission.
-Native mobile delivery remains `unverified`. Runtime maturity is a separate
-statement: desktop is the primary stable runtime path; Web and mobile are Beta
-adaptations with documented capability degradation.
+Native mobile delivery remains `unverified`: `local-debug` requires both a
+debug build and a successful emulator run. Runtime maturity is a separate
+statement. The current iOS record is `compile-ready` (native build passed),
+with simulator launch recorded as `fail` and device execution as `not-run`;
+that record does not imply a usable simulator session, SQLite persistence, or
+UI verification. Desktop is the primary stable runtime path; Web and mobile
+are Beta adaptations with documented capability degradation.
 
 ## Workspace data evolution
 
@@ -67,7 +72,9 @@ and is not read, mirrored, or migrated into the Workspace task model.
 
 ## Capability and implementation status
 
-Application schema version 2 declares capability protocol version 1. These are
+Application schema version 3 declares capability protocol version 1. Schema v3
+adds the separately checked `nativeEvidence.ios` record so a compile result
+cannot be confused with local delivery evidence. These are
 independent version lines: changing the product declaration does not change the
 command envelope. Current human UI, keyboard, and notification integrations
 must use the versioned capability service, which validates and applies a command
@@ -109,7 +116,7 @@ remain opt-in local evidence; see [web.md](./web.md) and
 
 ## Compatibility
 
-Application schema version `2` declares the general-planning, Workspace v3, and
+Application schema version `3` declares the general-planning, Workspace v3, and
 capability boundaries above. Additive fields require a checker change that
 explicitly understands the application schema version. Renaming or removing a
 module, data format, or compatibility promise is breaking: keep the old

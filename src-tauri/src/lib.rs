@@ -17,6 +17,23 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+/// Reports the compile target to the WebView so module routing does not rely
+/// on a browser user agent (notably iPadOS desktop-mode user agents).
+#[tauri::command]
+fn runtime_platform() -> &'static str {
+    if cfg!(target_os = "android") {
+        "android"
+    } else if cfg!(target_os = "ios") {
+        "ios"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -55,7 +72,7 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_notification::init());
     }
 
-    #[cfg(feature = "autostart")]
+    #[cfg(all(desktop, feature = "autostart"))]
     {
         builder = builder.plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -67,6 +84,7 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
             agent::set_api_key,
             agent::has_api_key,
             agent::delete_api_key,
@@ -84,6 +102,7 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
             agent::set_api_key,
             agent::has_api_key,
             agent::delete_api_key,
@@ -96,6 +115,7 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
             study_cloud::study_cloud_sign_in,
             study_cloud::study_cloud_session_status,
             study_cloud::study_cloud_sign_out,
@@ -106,7 +126,7 @@ pub fn run() {
 
     #[cfg(all(not(feature = "agent"), not(feature = "sync")))]
     {
-        builder = builder.invoke_handler(tauri::generate_handler![greet]);
+        builder = builder.invoke_handler(tauri::generate_handler![greet, runtime_platform]);
     }
 
     #[cfg(desktop)]

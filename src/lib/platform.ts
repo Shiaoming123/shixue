@@ -51,6 +51,8 @@ export function isDesktopTauri(): boolean {
 
 export type RuntimePlatform = 'web' | 'desktop' | 'mobile'
 
+export type NativePlatform = 'android' | 'ios' | 'linux' | 'macos' | 'windows'
+
 export type RuntimeCapability =
   | 'web-storage'
   | 'native-sql'
@@ -67,6 +69,27 @@ export interface RuntimeInfo {
   capabilities: readonly RuntimeCapability[]
 }
 
+const MOBILE_RUNTIME_INFO: RuntimeInfo = {
+  platform: 'mobile',
+  capabilities: ['native-sql', 'native-notification'],
+}
+
+const DESKTOP_RUNTIME_INFO: RuntimeInfo = {
+  platform: 'desktop',
+  capabilities: [
+    'native-sql',
+    'system-tray',
+    'native-updater',
+    'global-shortcut',
+    'native-notification',
+  ],
+}
+
+const WEB_RUNTIME_INFO: RuntimeInfo = {
+  platform: 'web',
+  capabilities: ['web-storage'],
+}
+
 export function hasRuntimeCapability(
   runtime: RuntimeInfo,
   capability: RuntimeCapability,
@@ -74,30 +97,56 @@ export function hasRuntimeCapability(
   return runtime.capabilities.includes(capability)
 }
 
+/**
+ * Maps the native target selected by Rust to the capabilities compiled and
+ * authorized by the default mobile/desktop build. Presentation UA data never
+ * grants a Tauri capability.
+ */
+export function runtimeInfoForNativePlatform(platform: string): RuntimeInfo {
+  if (platform === 'android' || platform === 'ios') return MOBILE_RUNTIME_INFO
+  if (platform === 'linux' || platform === 'macos' || platform === 'windows') {
+    return DESKTOP_RUNTIME_INFO
+  }
+  return WEB_RUNTIME_INFO
+}
+
+type LoadNativePlatform = () => Promise<string>
+
+async function loadNativePlatform(): Promise<string> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<string>('runtime_platform')
+}
+
+/**
+ * Reads the platform from the Tauri host for startup routing. The UA fallback
+ * remains only for Web previews and old hosts that do not expose this command.
+ */
+export async function detectNativePlatform(
+  load: LoadNativePlatform = loadNativePlatform,
+): Promise<NativePlatform | undefined> {
+  if (!isTauri()) return undefined
+
+  try {
+    const platform = await load()
+    if (
+      platform === 'android'
+      || platform === 'ios'
+      || platform === 'linux'
+      || platform === 'macos'
+      || platform === 'windows'
+    ) return platform
+  } catch {
+    // A safe presentation fallback is handled by detectRuntimeInfo().
+  }
+
+  return undefined
+}
+
 /** 当前运行时可用能力的单一事实来源。 */
 export function detectRuntimeInfo(): RuntimeInfo {
-  if (!isTauri()) {
-    return { platform: 'web', capabilities: ['web-storage'] }
-  }
+  if (!isTauri()) return WEB_RUNTIME_INFO
 
-  if (isMobile()) {
-    return {
-      platform: 'mobile',
-      capabilities: ['native-sql', 'native-clipboard', 'native-notification'],
-    }
-  }
+  if (isMobile()) return MOBILE_RUNTIME_INFO
 
-  return {
-    platform: 'desktop',
-    capabilities: [
-      'native-sql',
-      'system-tray',
-      'native-updater',
-      'global-shortcut',
-      'native-clipboard',
-      'native-notification',
-      'autostart',
-      'secure-keychain-proxy',
-    ],
-  }
+  return DESKTOP_RUNTIME_INFO
 }

@@ -10,7 +10,7 @@
 - Vue 界面已有窄屏布局、安全区和移动端导航基础；这些只证明前端适配，不证明 iOS 工程可编译或可运行。
 - Rust 入口已有 `tauri::mobile_entry_point`，托盘、单实例、更新器、全局快捷键和提醒调度器按桌面目标隔离。
 - 通知插件可在移动端装配，但当前前端轮询不能保证应用挂起或终止后的投递；原生后台提醒仍未实现。
-- Android 已有调试构建证据；iOS 尚未执行 `tauri ios init`，没有 Xcode、模拟器、真机、签名或商店证据。
+- Android 已有调试构建证据；iOS 已在 macOS/Xcode 26.6 上执行 `tauri ios init` 并完成 Apple Silicon Simulator 无签名 Debug 原生编译。最新模拟器启动在 Wry WebView 初始化、前端与 SQLite 运行前以 `SIGTRAP` 失败，因此没有模拟器成功、真机、签名或商店证据。
 
 iOS 可以在 PR1 合并后开始，不必等待 PR2–PR6 全部完成。开始条件是以最新 `origin/main` 为基线，不从未合并的功能分支复制生成工程。
 
@@ -83,6 +83,26 @@ npm run tauri -- ios build --debug --target aarch64-sim
 上述命令面向 Apple Silicon 模拟器；Intel 模拟器使用 `--target x86_64`。若官方 CLI 仍触发签名或无法稳定复现，必须完成无签名的 iOS Simulator `xcodebuild`，并把准确的 workspace、scheme 和 destination 命令固化到脚本后再合并。不能用 Web/Vite 构建代替 iOS 原生编译。
 
 完成定义：干净 checkout 能重复完成前端构建和 iOS Simulator 原生编译。模拟器启动与持久化结果单独标注；未执行时写 `NOT_RUN`，不影响“编译就绪”，但不得声称“模拟器验证完成”。
+
+### I1 实际证据快照（2026-09-05）
+
+| 检查 | 状态 | 实际证据 |
+| --- | --- | --- |
+| macOS 工具链 | PASS | Xcode 26.6 (17F113)、CocoaPods 1.17.0、Rust iOS 三个 targets、`npm run mobile:doctor` ready |
+| 工程生成 | PASS | `npm run tauri -- ios init`；生成且忽略 `src-tauri/gen/apple/`，scheme `meow-study_iOS`，minimum iOS 14.0 |
+| 前端门槛 | PASS | `npm run typecheck`、`npm run build` |
+| 原生 Simulator 编译 | PASS | `CARGO_TARGET_DIR=/Users/wuling/Library/Caches/shixue-ios-foundation/cargo-target npm run tauri -- ios build --debug --target aarch64-sim --no-sign --ci` 产出 `build/arm64-sim/拾学.app` |
+| iPhone 17 Pro / iOS Simulator 26.5 启动 | FAIL | `simctl install` 与 `simctl launch` 成功返回 pid，但进程以 `SIGTRAP` 退出；crash 栈在 Wry 0.55.1 `platform_webview_version` 的 `NSBundle::bundleWithIdentifier`，发生在 WebView 与前端启动前 |
+| WorkspaceStateV3 SQLite 写入与重启读取 | NOT_RUN | 应用未到达前端/SQLite 写入路径；仅发现沙盒数据库文件不构成迁移或持久化验收 |
+| safe area、viewport-fit、系统字体、44pt 触控、Blob 下载/HTML 文件输入 | NOT_RUN | 源码含相应设计和 viewport 声明，但尚无 WKWebView 运行证据 |
+| 真机、TestFlight、App Store | NOT_RUN | 未请求或使用签名材料、Apple Developer 身份或发布权限 |
+
+本工作区位于 exFAT 卷时，Tauri/Cargo 读取 capability 前会受到 AppleDouble
+sidecar 干扰。每次原生构建先运行 `npm run clean:appledouble`，并把
+`CARGO_TARGET_DIR` 指向本机 APFS 缓存目录；这两步是可重复编译所需的环境
+准备，不是运行成功的证据。
+
+该故障在应用业务代码、`runtime_platform` command、SQLite 以及 capability service 执行之前发生。I1 不通过复制 Swift/Rust 状态机或绕过 capability service 规避它；恢复运行后，首个验收仍是 V3 任务写入、彻底终止、重启读取，再继续视觉与文件输入验证。
 
 ### I2：共享功能持续接入
 

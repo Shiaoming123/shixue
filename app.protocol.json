@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "product": {
     "name": "meow-study",
     "goal": "Help one person capture, plan, execute, and review general personal tasks locally, with an optional learning specialization for evidence and review workflows.",
@@ -77,6 +77,14 @@
     "updater": "template-only",
     "webDeployment": "unverified",
     "mobileNative": "unverified"
+  },
+  "nativeEvidence": {
+    "ios": {
+      "maturity": "compile-ready",
+      "nativeBuild": "pass",
+      "simulatorRun": "fail",
+      "deviceRun": "not-run"
+    }
   },
   "acceptance": {
     "required": ["test", "check:protocol", "check:csp", "typecheck", "build", "build:web", "check:modules", "check:docs"],
