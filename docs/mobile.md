@@ -254,4 +254,4 @@ Tauri 移动端用独立的 capability 文件（`src-tauri/capabilities/` 下，
 1. **框架层面**：Tauri 2 原生支持移动端，脚手架只需补「初始化 + 降级 + 响应式」三步。
 2. **代码层面（M1-M2）**：已经完成，并由构建产物检查持续验证窄屏布局与底部安全区。
 3. **工程层面**：Android M3 与无签名 debug 打包已有本地证据；iOS 和所有商店交付仍需对应环境、账号与证书。
-4. **下一步**：Android 先在真机安装/启动并配置签名；iOS 在 macOS 上单独建立同等证据链。详见 [delivery-path.md](./delivery-path.md)。
+4. **下一步**：Android 先在真机安装/启动并配置签名；iOS 在 macOS 上单独建立同等证据链。iOS 与 PR2–PR6 的并行顺序、工程边界和验收模板见 [iOS 开发规划与执行指引](./ios-development.md)，交付成熟度见 [delivery-path.md](./delivery-path.md)。

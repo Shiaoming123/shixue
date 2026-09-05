@@ -7,11 +7,22 @@
 
 ## 1. 当前项目基线
 
-拾学沿用 MeowStarter 的 Vue 3 + TypeScript + Vite + Tauri 2 技术栈。桌面端以 SQLite 保存一个经过版本化校验的 `StudyState` 快照，Web 端以 IndexedDB 保存同一数据模型；模块能力同时受前端配置、运行时 capability、Cargo feature 与 Tauri permission 约束。
+拾学沿用 MeowStarter 的 Vue 3 + TypeScript + Vite + Tauri 2 技术栈。桌面端以 SQLite 保存一个经过版本化校验的 `WorkspaceStateV3` 快照，Web 端以 IndexedDB 保存同一数据模型；模块能力同时受前端配置、运行时 capability、Cargo feature 与 Tauri permission 约束。
 
 UI 沿用 `study` 主题和既有 token，并把色板收敛为雾灰玻璃、深墨与叶绿强调色；桌面采用导航、列表、详情三栏，移动端采用单栏与底部导航。此次没有引入新组件库或第二套设计语言。
 
-任务主模型是 `StudyTask`，不是脚手架遗留的 `Todo`：任务拥有收件箱、计划、进行中、阻塞、完成、取消状态，并通过连续 `TaskEvent`、专注 `StudySession` 和 `CompletionRecord` 形成可追溯学习证据链。
+任务主模型是 `Task`，不是脚手架遗留的 `Todo`：`mode: general` 承载通用个人规划，`mode: learning` 作为可选专业模式继续通过连续 `TaskEvent`、专注 `StudySession` 和 `CompletionRecord` 形成可追溯学习证据链。
+
+### 本分支已落地的基础合同
+
+| 基础能力 | 当前状态 | 边界 |
+| --- | --- | --- |
+| WorkspaceStateV3 与导入导出 | 已实现 | 新导出为 `meow-study/workspace-export` v3；旧 `study-export` v1/v2 先完整迁移、校验，再替换 |
+| 能力协议 | 已实现 | 协议版本保持 v1；命令预演、幂等、revision 校验和单次 CAS 保存由统一服务负责 |
+| 线上写入路径 | 已实现 | 当前 UI、键盘、通知兼容路径经能力服务写入；不允许绕过服务直接写持久化快照 |
+| 主题控件基础 | 已实现，本轮仅做编译验证 | 已有 overlay、popover、listbox、checkbox、switch、dialog、toast 与日期时间控件；本轮不把未运行的交互/视觉检查写成已验证 |
+
+`WorkspaceStateV3` 为后续能力预留集合不等于对应业务已经交付。重复规则、离线自然语言快速新增、多提醒、日历视图与 Agent 行为仍是计划项；`source: agent` 只是能力信封的调用来源标记，不代表已经存在自动规划或执行 Agent。
 
 ## 2. 实际源码审计范围
 
@@ -27,14 +38,14 @@ UI 沿用 `study` 主题和既有 token，并把色板收敛为雾灰玻璃、�
 
 Todofy 仓库声明的许可不允许直接复制，因此这里只借鉴交互与架构事实，所有拾学代码均按自己的领域模型独立实现。
 
-TickTick 的公开产品形态以其[功能页](https://ticktick.com/features)、[Windows 页面](https://ticktick.com/windows)、[更新记录](https://ticktick.com/public/changelog/en.html)与[帮助中心](https://help.ticktick.com/)为准。本轮借鉴三栏桌面信息架构、移动端单栏推进、智能清单、清单管理、日期与多级优先级的产品模式；没有把日历多视图、协作、习惯、倒数日或 AI 扩进核心待办范围。未登录付费账号，因此付费边界与登录后拖动手感不作为已验证事实。
+TickTick 的公开产品形态以其[功能页](https://ticktick.com/features)、[Windows 页面](https://ticktick.com/windows)、[更新记录](https://ticktick.com/public/changelog/en.html)与[帮助中心](https://help.ticktick.com/)为准。v0.2.3 已借鉴三栏桌面信息架构、移动端单栏推进、智能清单、清单管理、日期与多级优先级；2026-09-04 确认的下一阶段再引入日历多视图、重复规则、离线自然语言和多提醒。协作、习惯、倒数日与 AI 执行仍不在本阶段。未登录付费账号，因此付费边界与登录后拖动手感不作为已验证事实。
 
 ## 3. 功能对比与取舍
 
 | 能力 | Todofy 实现事实 | 拾学取舍 | 当前落地 |
 | --- | --- | --- | --- |
 | 新增 | 快速输入支持日期、优先级、重复和标签 | 直接借鉴低摩擦输入；高级字段留在编辑步骤 | 视图感知快速新增；今天视图自动带入今天；`N` 与 `Ctrl+Alt+A` 可聚焦输入 |
-| 查询 | SQLite 全量读取，前端派生视图 | 按现有快照 Store 重写 | SQLite/IndexedDB 共用版本化 `StudyState` |
+| 查询 | SQLite 全量读取，前端派生视图 | 按现有快照 Store 重写 | SQLite/IndexedDB 共用版本化 `WorkspaceStateV3`，现有学习界面由兼容投影读取 |
 | 编辑 | 标题/笔记失焦保存，其他字段立即保存 | 重写为显式表单事务，避免多个字段部分成功 | 标题、笔记、清单、计划/截止日期、精确提醒、优先级、时长、完成标准一次校验保存 |
 | 删除 | SQLite tombstone 软删除 | 直接借鉴 tombstone 思路，但必须保留证据链并结束活动 session | 单项/批量二次确认；任务隐藏，事件、session、completion evidence 保留 |
 | 状态 | active/done 二态 | 与拾学证据闭环冲突，分成即时勾选与学习收尾 | 普通勾选立即完成/重开；专注完成仍可记录成果、证据、下一步与复习 |
@@ -57,10 +68,10 @@ TickTick 的公开产品形态以其[功能页](https://ticktick.com/features)�
 ### 不直接照搬的 Todofy 模块
 
 - `pinboard`：优先级已经进入任务模型、筛选与排序，不再增加一套相互竞争的置顶事实源。
-- 重复任务：Todofy 完成后推进同一任务日期；拾学完成会冻结一条证据记录，并通过 `nextAction` 生成下一任务、通过 `nextReviewOn` 安排复习。直接循环原任务会模糊每轮证据归属。
+- 重复任务：Todofy 完成后推进同一任务日期；下一阶段改为 `RecurrenceSeries + TaskOccurrence`，完成/跳过只改变当前发生项，并继续保留学习证据归属。
 - Pomodoro 与 Journal：拾学已有可暂停/恢复的 `StudySession`、scratchpad 和 completion records；重复引入同类模型会造成两套计时和笔记事实源。
-- 自然语言日期解析：对中文日期、时区与跨端一致性的验收成本高，本轮保留明确日期控件，避免误计划。
-- 指针拖拽：Todofy 为规避 WebView 原生 DnD 问题自行实现 Pointer Events。拾学本轮保留可访问的显式排序与键盘导航，跨清单拖拽留到独立位置字段落地后再做，避免改变全局数组顺序。
+- 自然语言日期解析：下一阶段以完全离线、确定性的中英文解析器实现；识别结果先显示为可编辑 chip，默认不删除标题原文，避免误计划。
+- 指针拖拽：Todofy 为规避 WebView 原生 DnD 问题自行实现 Pointer Events。拾学的日历拖动同样采用 Pointer Events，但释放前只更新预览，释放后统一调用能力命令，并提供完整键盘替代。
 
 ## 4. 模块拆分与验收点
 
@@ -93,3 +104,7 @@ npm run smoke:web-persistence
 ```
 
 Web 烟测会真实走过重置、快速新增、刷新持久化、编辑日期/优先级/笔记、搜索、即时完成、已完成视图、桌面三栏与移动深色截图，并把 console/page error 作为失败处理。
+
+## 6. 下一阶段详细方案
+
+2026-09-04 的产品访谈已确认“时间规划优先”的六 PR 路线。第一阶段基础已在当前分支落地：v2→v3 数据迁移、能力协议与现有写入切换、统一控件基础。其余重复发生项、离线自然语言快速新增、多提醒/托盘业务、日历与 Agent 行为仍是计划，不因 v3 类型或命令来源占位而视为已交付。总规格见[拾学通用待办与时间规划基础规格](./superpowers/specs/2026-09-04-shixue-time-planning-foundation.md)。根目录 `DESIGN.md` 与 `VISUAL_QA.md` 分别约束视觉实现和验收；在代表性方案得到确认前，业务实现不得自行冻结新视觉。

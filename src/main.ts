@@ -1,6 +1,8 @@
 import { createApp } from "vue";
 import App from "./App.vue";
 import { mountModules } from "./modules/loader";
+import "@fontsource-variable/manrope/wght.css";
+import "@fontsource-variable/noto-sans-sc/wght.css";
 import "./assets/themes/global.css";
 
 // 模块化装配：按 modules.config 的开关加载各能力模块。

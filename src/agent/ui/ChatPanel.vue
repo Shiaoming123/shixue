@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { Bot, Send, Square, User, Wrench } from '@lucide/vue'
+import Dialog from '../../components/ui/Dialog.vue'
 import type { AgentConfig } from '../config'
 import type { AgentRuntime } from '../runtime/types'
 import { HookBus } from '../hooks/bus'
@@ -18,6 +19,10 @@ const bubbles = ref<Bubble[]>([])
 const draft = ref('')
 const busy = ref(false)
 const error = ref<string | null>(null)
+const approvalOpen = ref(false)
+const approvalName = ref('')
+const approvalArgs = ref('')
+let resolveApproval: ((approved: boolean) => void) | null = null
 
 let runtime: AgentRuntime | null = null
 const sessionId = globalThis.crypto?.randomUUID?.() ?? `agent-${Date.now()}`
@@ -28,6 +33,23 @@ async function ensureRuntime(): Promise<AgentRuntime> {
   if (!r) throw new Error('Agent 未启用：请在 agent.config.ts 中设置 enabled: true')
   runtime = r
   return r
+}
+
+function requestApproval(name: string, args: unknown) {
+  settleApproval(false)
+  approvalName.value = name
+  approvalArgs.value = JSON.stringify(args, null, 2) ?? String(args)
+  approvalOpen.value = true
+  return new Promise<boolean>((resolve) => {
+    resolveApproval = resolve
+  })
+}
+
+function settleApproval(approved: boolean) {
+  const resolve = resolveApproval
+  resolveApproval = null
+  approvalOpen.value = false
+  resolve?.(approved)
 }
 
 async function send() {
@@ -45,8 +67,7 @@ async function send() {
     const r = await ensureRuntime()
     const hooks = new HookBus()
     hooks.register({
-      onApprovalRequired: ({ name, args }) =>
-        window.confirm(`Agent 请求执行工具 ${name}：\n\n${JSON.stringify(args, null, 2)}`),
+      onApprovalRequired: ({ name, args }) => requestApproval(name, args),
     })
 
     for await (const event of r.stream({ prompt: text, sessionId }, hooks)) {
@@ -66,9 +87,12 @@ async function send() {
 }
 
 async function stop() {
+  settleApproval(false)
   await runtime?.abort('user stopped')
   busy.value = false
 }
+
+onUnmounted(() => settleApproval(false))
 </script>
 
 <template>
@@ -110,6 +134,15 @@ async function stop() {
         <Send :size="14" />
       </button>
     </form>
+
+    <Dialog :open="approvalOpen" title="允许 Agent 执行工具？" role="alertdialog" size="sm" :show-close="false" @close="settleApproval(false)">
+      <p class="approval-tool">{{ approvalName }}</p>
+      <pre>{{ approvalArgs }}</pre>
+      <template #footer>
+        <button type="button" class="approval-cancel" autofocus @click="settleApproval(false)">取消</button>
+        <button type="button" class="approval-allow" @click="settleApproval(true)">允许</button>
+      </template>
+    </Dialog>
   </section>
 </template>
 
@@ -256,5 +289,43 @@ async function stop() {
 .chat-input .stop {
   background: var(--danger);
   color: #fff;
+}
+
+.approval-tool {
+  margin: 0;
+  color: var(--text);
+  font-weight: var(--font-medium);
+}
+
+pre {
+  max-height: 220px;
+  margin: var(--space-3) 0 0;
+  overflow: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--control-fill);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.approval-cancel,
+.approval-allow {
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--control-fill);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.approval-allow {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-text);
 }
 </style>

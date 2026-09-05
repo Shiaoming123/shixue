@@ -1,8 +1,8 @@
 import type { Module } from '../types'
 import { createTauriSqliteTodoStore } from '../../storage/todos/tauri-sqlite'
 import { registerTodoStore } from '../../storage/todos/registry'
-import { createTauriSqliteStudyStore } from '../../storage/study/tauri-sqlite'
-import { registerStudyStore } from '../../storage/study/registry'
+import { createTauriSqliteWorkspaceStore } from '../../storage/study/tauri-sqlite'
+import { registerWorkspaceStore } from '../../storage/workspace/registry'
 
 /**
  * sqlite 模块 —— 数据层。
@@ -17,7 +17,7 @@ const sqlite: Module = {
   requiredCapabilities: ['native-sql'],
   setup() {
     registerTodoStore(createTauriSqliteTodoStore())
-    registerStudyStore(createTauriSqliteStudyStore())
+    registerWorkspaceStore(createTauriSqliteWorkspaceStore())
   },
 }
 

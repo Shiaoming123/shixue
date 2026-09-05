@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import test from 'node:test'
 import * as cloud from '../src/lib/study-cloud-sync.ts'
-import { createInMemoryStudyStore } from '../src/storage/study/in-memory.ts'
+import { parseWorkspaceStateOrMigrate } from '../src/domain/workspace/migrate.ts'
+import { parseWorkspaceState } from '../src/domain/workspace/parse.ts'
+import type { WorkspaceStateV3 } from '../src/domain/workspace/types.ts'
+import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import {
   createSeedStudyState,
   parseStudyState,
@@ -14,12 +18,41 @@ const config = {
   publishableKey: 'sb_publishable_test',
 }
 
-function stateAt(updatedAt: string, notes: string): StudyState {
+function legacyStateAt(updatedAt: string, notes: string): StudyState {
   const state = createSeedStudyState(updatedAt)
   state.updatedAt = updatedAt
   state.tasks[0].notes = notes
   state.tasks[0].updatedAt = updatedAt
   return parseStudyState(state)
+}
+
+function stateAt(updatedAt: string, notes: string): WorkspaceStateV3 {
+  const state = parseWorkspaceStateOrMigrate(legacyStateAt(updatedAt, notes), updatedAt)
+  return parseWorkspaceState(state)
+}
+
+function legacySnapshot(state: StudyState, deviceId: string) {
+  const digest = createHash('sha256').update(canonicalJson(state)).digest('hex')
+  const revision = `${state.updatedAt}|${digest}`
+  return {
+    operationId: `study_state:${revision}`,
+    collection: 'study_state' as const,
+    recordId: 'current',
+    kind: 'upsert' as const,
+    payload: { state, digest },
+    revision,
+    deviceId,
+    occurredAt: state.updatedAt,
+  }
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  return `{${Object.keys(value as Record<string, unknown>)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`)
+    .join(',')}}`
 }
 
 function requiredFunction(name: string): (...args: any[]) => any {
@@ -75,7 +108,7 @@ test('signed-out cloud sync checks only local session status and never performs 
     enabled: true,
     config,
     deviceId: 'device-a',
-    store: createInMemoryStudyStore(stateAt('2026-09-04T10:00:00.000Z', 'local')),
+    store: createInMemoryWorkspaceStore(stateAt('2026-09-04T10:00:00.000Z', 'local')),
     adapter: {
       async sessionStatus() { calls.push('session'); return { state: 'signed-out' } },
       async pull() { calls.push('pull'); return null },
@@ -117,7 +150,7 @@ test('newer local snapshot is uploaded with the observed remote revision', async
     enabled: true,
     config,
     deviceId: 'device-a',
-    store: createInMemoryStudyStore(local),
+    store: createInMemoryWorkspaceStore(local),
     adapter: {
       async sessionStatus() { return { state: 'signed-in', userId: 'user-1' } },
       async pull() { return remote },
@@ -133,15 +166,27 @@ test('newer local snapshot is uploaded with the observed remote revision', async
   assert.equal(result.action, 'uploaded')
   assert.equal(pushed.length, 1)
   assert.equal(pushed[0].expectedRevision, remote.revision)
-  assert.equal(pushed[0].snapshot.payload.state.updatedAt, local.updatedAt)
+  assert.equal(pushed[0].snapshot.payload.workspace.version, 3)
+  assert.equal(pushed[0].snapshot.payload.workspace.state.updatedAt, local.updatedAt)
 })
 
-test('newer remote snapshot replaces local state through StudyStore CAS', async () => {
+test('newer remote snapshot crosses workspace.import and strips foreign receipt authority', async () => {
   const createController = requiredFunction('createStudyCloudSyncController')
   const createSnapshot = requiredFunction('createStudyCloudSnapshot')
   const local = stateAt('2026-09-04T10:00:01.000Z', 'local older')
   const remoteState = stateAt('2026-09-04T10:00:02.000Z', 'remote newer')
-  const store = createInMemoryStudyStore(local)
+  remoteState.commandReceipts = [{
+    id: 'foreign-receipt',
+    idempotencyKey: 'foreign-command',
+    requestFingerprint: 'foreign-fingerprint',
+    commandType: 'task.create',
+    source: 'agent',
+    workspaceRevision: remoteState.revision,
+    result: {},
+    createdAt: '2026-09-04T09:00:00.000Z',
+    expiresAt: '2026-10-04T09:00:00.000Z',
+  }]
+  const store = createInMemoryWorkspaceStore(local)
   const remote = await createSnapshot(remoteState, 'device-b')
   let pushes = 0
   const controller = createController({
@@ -162,8 +207,37 @@ test('newer remote snapshot replaces local state through StudyStore CAS', async 
     revision: remote.revision,
     localPreserved: false,
   })
-  assert.equal((await store.load()).tasks[0].notes, 'remote newer')
+  const saved = await store.load()
+  assert.equal(saved.tasks[0].notes, 'remote newer')
+  assert.equal(saved.commandReceipts.some(({ id }) => id === 'foreign-receipt'), false)
+  assert.deepEqual(saved.commandReceipts.map(({ commandType }) => commandType), ['workspace.import'])
   assert.equal(pushes, 0)
+})
+
+test('newer legacy v2 remote snapshot migrates before workspace import', async () => {
+  const createController = requiredFunction('createStudyCloudSyncController')
+  const local = stateAt('2026-09-04T10:00:01.000Z', 'local older')
+  const remote = legacySnapshot(
+    legacyStateAt('2026-09-04T10:00:02.000Z', 'legacy remote newer'),
+    'device-b',
+  )
+  const store = createInMemoryWorkspaceStore(local)
+  const controller = createController({
+    enabled: true,
+    config,
+    deviceId: 'device-a',
+    store,
+    adapter: {
+      async sessionStatus() { return { state: 'signed-in', userId: 'user-1' } },
+      async pull() { return remote },
+      async push() { return { applied: true } },
+    },
+  })
+
+  assert.equal((await controller.syncOnce()).state, 'success')
+  const saved = await store.load()
+  assert.equal(saved.version, 3)
+  assert.equal(saved.tasks[0].notes, 'legacy remote newer')
 })
 
 test('remote CAS rejection is an explicit conflict and never reports success', async () => {
@@ -174,7 +248,7 @@ test('remote CAS rejection is an explicit conflict and never reports success', a
     stateAt('2026-09-04T10:00:01.000Z', 'remote older'),
     'device-b',
   )
-  const store = createInMemoryStudyStore(local)
+  const store = createInMemoryWorkspaceStore(local)
   const controller = createController({
     enabled: true,
     config,
@@ -207,7 +281,7 @@ test('remote read and local CAS failures keep the current local snapshot', async
     enabled: true,
     config,
     deviceId: 'device-a',
-    store: createInMemoryStudyStore(local),
+    store: createInMemoryWorkspaceStore(local),
     adapter: {
       async sessionStatus() { return { state: 'signed-in' } },
       async pull() { throw new Error('private-token-must-not-surface') },

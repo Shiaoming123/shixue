@@ -7,6 +7,11 @@ import {
   STUDY_EXPORT_FORMAT,
   STUDY_EXPORT_VERSION,
 } from '../src/storage/study/data-port.ts'
+import {
+  WORKSPACE_EXPORT_FORMAT,
+  WORKSPACE_EXPORT_VERSION,
+} from '../src/storage/workspace/data-port.ts'
+import { CAPABILITY_PROTOCOL_VERSION } from '../src/domain/capabilities/types.ts'
 
 const EXPECTED_MATURITY = { desktop: 'stable', web: 'beta', mobile: 'beta' }
 const EXPECTED_DELIVERY = {
@@ -16,6 +21,33 @@ const EXPECTED_DELIVERY = {
   webDeployment: 'unverified',
   mobileNative: 'unverified',
 }
+const EXPECTED_SHIPPED_FOUNDATION = [
+  'workspace-state-v3',
+  'legacy-study-v1-v2-migration',
+  'capability-protocol-v1',
+  'live-write-capability-routing',
+  'themed-control-foundation',
+]
+const EXPECTED_PLANNED_FEATURES = [
+  'recurrence',
+  'offline-natural-language',
+  'multi-reminder',
+  'calendar',
+  'agent-behavior',
+]
+
+const IMPLEMENTATION_FACTS = {
+  workspacePort: {
+    id: 'workspace',
+    format: WORKSPACE_EXPORT_FORMAT,
+    version: WORKSPACE_EXPORT_VERSION,
+  },
+  legacyStudyInput: {
+    format: STUDY_EXPORT_FORMAT,
+    versions: [1, STUDY_EXPORT_VERSION],
+  },
+  capabilityProtocolVersion: CAPABILITY_PROTOCOL_VERSION,
+}
 
 export function validateApplicationProtocol({
   protocol,
@@ -23,19 +55,21 @@ export function validateApplicationProtocol({
   config,
   contracts,
   moduleIds: expectedModuleIds,
-  dataPort,
+  implementationFacts = IMPLEMENTATION_FACTS,
 }) {
   const errors = []
   if (!isRecord(protocol)) return { errors: ['Protocol must be a JSON object.'] }
 
-  if (protocol.schemaVersion !== 1) {
-    errors.push('schemaVersion must be 1.')
+  if (protocol.schemaVersion !== 2) {
+    errors.push('schemaVersion must be 2.')
   }
 
   validateProduct(protocol.product, packageJson, errors)
   validateTargets(protocol.targets, errors)
   validateModulePolicy(protocol.modulePolicy, config, contracts, expectedModuleIds, errors)
-  validateDataBoundary(protocol.data, dataPort, errors)
+  validateDataBoundary(protocol.data, implementationFacts, errors)
+  validateCapabilities(protocol.capabilities, implementationFacts, errors)
+  validateImplementationStatus(protocol.implementation, errors)
   validateDelivery(protocol.delivery, errors)
   validateAcceptance(protocol.acceptance, packageJson, errors)
   validateEvolution(protocol.evolution, errors)
@@ -52,6 +86,12 @@ function validateProduct(product, packageJson, errors) {
     errors.push('product.name must match package.json name.')
   }
   if (!isNonEmptyString(product.goal)) errors.push('product.goal must be a non-empty string.')
+  if (product.scope !== 'general-personal-planning') {
+    errors.push('product.scope must declare general-personal-planning.')
+  }
+  if (product.learningSpecialization !== 'optional') {
+    errors.push('product.learningSpecialization must remain optional.')
+  }
   if (!isNonEmptyStringArray(product.nonGoals)) {
     errors.push('product.nonGoals must contain at least one non-empty string.')
   }
@@ -95,20 +135,54 @@ function validateModulePolicy(policy, config, contracts, expectedModuleIds, erro
   }
 }
 
-function validateDataBoundary(data, dataPort, errors) {
+function validateDataBoundary(data, implementationFacts, errors) {
   if (!isRecord(data)) {
     errors.push('data must be an object.')
     return
   }
   if (data.defaultMode !== 'local-first') errors.push('data.defaultMode must be local-first.')
-  if (!Array.isArray(data.ports) || data.ports.length !== 1 || !isRecord(data.ports[0]) || data.ports[0].id !== dataPort.id || data.ports[0].format !== dataPort.format || data.ports[0].version !== dataPort.version) {
-    errors.push(`data.ports[${dataPort.id}] must match the Study data-port format and version.`)
+  const workspacePort = implementationFacts.workspacePort
+  if (!Array.isArray(data.ports) || data.ports.length !== 1 || !sameRecord(data.ports[0], workspacePort)) {
+    errors.push(`data.ports[${workspacePort.id}] must match the exported Workspace data-port format and version.`)
+  }
+  const legacyInput = implementationFacts.legacyStudyInput
+  if (!Array.isArray(data.legacyInputs) || data.legacyInputs.length !== 1 || !isRecord(data.legacyInputs[0]) || data.legacyInputs[0].format !== legacyInput.format || !sameNumbers(data.legacyInputs[0].versions, legacyInput.versions)) {
+    errors.push('data.legacyInputs must match the exported Study format and supported v1/v2 migration inputs.')
   }
   if (!isRecord(data.sync) || data.sync.enabled !== false || data.sync.provider !== 'none') {
     errors.push('data.sync must keep provider none and enabled false by default.')
   }
   if (!isStringArray(data.exclusions) || !data.exclusions.includes('secrets') || !data.exclusions.includes('sync state')) {
     errors.push('data.exclusions must include secrets and sync state.')
+  }
+}
+
+function validateCapabilities(capabilities, implementationFacts, errors) {
+  if (!isRecord(capabilities)) {
+    errors.push('capabilities must be an object.')
+    return
+  }
+  if (capabilities.protocolVersion !== implementationFacts.capabilityProtocolVersion) {
+    errors.push('capabilities.protocolVersion must match the exported capability protocol version.')
+  }
+  if (capabilities.directStorageWrites !== false) {
+    errors.push('capabilities.directStorageWrites must be false.')
+  }
+  if (!isRecord(capabilities.futureAgent) || capabilities.futureAgent.status !== 'planned' || capabilities.futureAgent.access !== 'capability-service-only') {
+    errors.push('capabilities.futureAgent must remain planned and capability-service-only.')
+  }
+}
+
+function validateImplementationStatus(implementation, errors) {
+  if (!isRecord(implementation)) {
+    errors.push('implementation must be an object.')
+    return
+  }
+  if (!sameStrings(implementation.shippedFoundation, EXPECTED_SHIPPED_FOUNDATION)) {
+    errors.push('implementation.shippedFoundation must match the currently implemented Task 1-4 foundation.')
+  }
+  if (!sameStrings(implementation.planned, EXPECTED_PLANNED_FEATURES)) {
+    errors.push('implementation.planned must retain recurrence, NLP, multi-reminder, calendar, and Agent behaviour as planned.')
   }
 }
 
@@ -158,6 +232,10 @@ function sameStrings(actual, expected) {
   return Array.isArray(actual) && actual.length === expected.length && actual.every((value) => expected.includes(value))
 }
 
+function sameNumbers(actual, expected) {
+  return Array.isArray(actual) && actual.length === expected.length && actual.every((value) => expected.includes(value))
+}
+
 function sameRecord(actual, expected) {
   return isRecord(actual) && JSON.stringify(actual) === JSON.stringify(expected)
 }
@@ -172,7 +250,6 @@ function main() {
     config: defaultModuleConfig,
     contracts: moduleContracts,
     moduleIds,
-    dataPort: { id: 'study', format: STUDY_EXPORT_FORMAT, version: STUDY_EXPORT_VERSION },
   })
 
   for (const error of result.errors) console.error(`ERROR ${error}`)

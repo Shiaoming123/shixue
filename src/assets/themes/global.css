@@ -10,16 +10,23 @@
  */
 
 :root {
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    'SF Pro Display',
-    'SF Pro Text',
-    system-ui,
+  --font-sans:
+    'Manrope Variable',
+    'Noto Sans SC Variable',
+    'Segoe UI Variable',
     'Segoe UI',
     'PingFang SC',
-    'Microsoft YaHei',
+    'Microsoft YaHei UI',
     sans-serif;
+  --font-display:
+    'Manrope Variable',
+    'Noto Sans SC Variable',
+    'Segoe UI Variable',
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei UI',
+    sans-serif;
+  font-family: var(--font-sans);
   color-scheme: light dark;
   font-size: 16px;
   font-synthesis: none;
@@ -121,6 +128,12 @@ body {
   min-height: 100dvh;
 }
 
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
+
 button,
 input,
 textarea,
@@ -178,6 +191,12 @@ select {
 
 ::selection {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+time,
+.tabular-numbers,
+[data-tabular-numbers='true'] {
+  font-variant-numeric: tabular-nums;
 }
 
 /* 尊重系统「减少动效」偏好 */

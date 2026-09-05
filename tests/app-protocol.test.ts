@@ -4,6 +4,7 @@ import { validateApplicationProtocol } from '../scripts/check-app-protocol.mjs'
 import { moduleContracts, moduleIds } from '../src/modules/contract.ts'
 import { defaultModuleConfig } from '../src/modules/config.ts'
 import { STUDY_EXPORT_FORMAT, STUDY_EXPORT_VERSION } from '../src/storage/study/data-port.ts'
+import { WORKSPACE_EXPORT_FORMAT, WORKSPACE_EXPORT_VERSION } from '../src/storage/workspace/data-port.ts'
 
 const packageJson = {
   name: 'meow-study',
@@ -25,10 +26,12 @@ const packageJson = {
 
 function validProtocol() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     product: {
       name: 'meow-study',
       goal: 'Build a local-first cross-platform application.',
+      scope: 'general-personal-planning',
+      learningSpecialization: 'optional',
       nonGoals: ['No hosted sync by default.'],
     },
     targets: {
@@ -45,9 +48,25 @@ function validProtocol() {
     },
     data: {
       defaultMode: 'local-first',
-      ports: [{ id: 'study', format: STUDY_EXPORT_FORMAT, version: STUDY_EXPORT_VERSION }],
+      ports: [{ id: 'workspace', format: WORKSPACE_EXPORT_FORMAT, version: WORKSPACE_EXPORT_VERSION }],
+      legacyInputs: [{ format: STUDY_EXPORT_FORMAT, versions: [1, STUDY_EXPORT_VERSION] }],
       sync: { enabled: false, provider: 'none' },
       exclusions: ['secrets', 'sync state'],
+    },
+    capabilities: {
+      protocolVersion: 1,
+      directStorageWrites: false,
+      futureAgent: { status: 'planned', access: 'capability-service-only' },
+    },
+    implementation: {
+      shippedFoundation: [
+        'workspace-state-v3',
+        'legacy-study-v1-v2-migration',
+        'capability-protocol-v1',
+        'live-write-capability-routing',
+        'themed-control-foundation',
+      ],
+      planned: ['recurrence', 'offline-natural-language', 'multi-reminder', 'calendar', 'agent-behavior'],
     },
     delivery: {
       desktopPackage: 'unverified',
@@ -74,7 +93,6 @@ function validate(protocol: ReturnType<typeof validProtocol>) {
     config: defaultModuleConfig,
     contracts: moduleContracts,
     moduleIds,
-    dataPort: { id: 'study', format: STUDY_EXPORT_FORMAT, version: STUDY_EXPORT_VERSION },
   })
 }
 
@@ -92,9 +110,9 @@ test('rejects missing module policy coverage before runtime loading can drift', 
 
 test('rejects a data-port version that would misstate the import boundary', () => {
   const protocol = validProtocol()
-  protocol.data.ports[0].version = 3
+  protocol.data.ports[0].version = 2
 
-  assert.match(validate(protocol).errors.join('\n'), /data\.ports\[study\] must match the Study data-port format and version/)
+  assert.match(validate(protocol).errors.join('\n'), /data\.ports\[workspace\] must match the exported Workspace data-port format and version/)
 })
 
 test('rejects a declared acceptance command that is not executable', () => {

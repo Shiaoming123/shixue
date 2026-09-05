@@ -13,6 +13,9 @@ import TaskDetailDrawer, { type TaskEventViewItem } from './components/study/Tas
 import TaskEditSheet, { type TaskEditValue } from './components/study/TaskEditSheet.vue'
 import TasksView, { type TaskViewItem, type TaskViewStatus } from './components/study/TasksView.vue'
 import TopicsView, { type TopicViewItem } from './components/study/TopicsView.vue'
+import Listbox from './components/ui/Listbox.vue'
+import OverlayHost from './components/ui/OverlayHost.vue'
+import ToastRegion from './components/ui/ToastRegion.vue'
 import { queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView } from './lib/study-task-query'
 import { selectStudyReminders, selectTaskReminderTriggers } from './lib/study-reminders'
 import { detectRuntimeInfo, hasRuntimeCapability } from './lib/platform'
@@ -35,8 +38,8 @@ import {
   resumeStudySession,
   saveStudyScratchpad,
   saveStudyListGroup,
-  saveStudyState,
   saveStudyTopic,
+  resetStudyState,
   startStudyTask,
   switchStudyTask,
   setTaskChecklistItem,
@@ -53,6 +56,7 @@ import {
   type TaskEvent,
 } from './lib/study'
 import { createSeedStudyState } from './storage/study/types'
+import { getWorkspaceStore } from './storage/workspace/registry'
 
 const page = ref<StudyPage>('today')
 const state = ref<StudyState>(createSeedStudyState())
@@ -86,6 +90,7 @@ const compact = ref(false)
 const clock = ref(Date.now())
 const toast = ref('')
 const toastAction = ref<{ label: string; run: () => Promise<void> } | null>(null)
+const toastVersion = ref(0)
 const storageError = ref('')
 const remindersEnabled = ref(false)
 const runtime = detectRuntimeInfo()
@@ -104,7 +109,6 @@ let reminderTimer: ReturnType<typeof setInterval> | undefined
 let cloudTimer: ReturnType<typeof setInterval> | undefined
 let cloudDebounceTimer: ReturnType<typeof setTimeout> | undefined
 let scratchSaveTimer: ReturnType<typeof setTimeout> | undefined
-let toastTimer: ReturnType<typeof setTimeout> | undefined
 let compactMedia: MediaQueryList | undefined
 
 const today = computed(() => new Date().toLocaleDateString('sv-SE'))
@@ -144,6 +148,10 @@ const smartViewCounts = computed<StudySmartViewCounts>(() => ({
 const smartViewTitle = computed(() => ({ inbox: '收件箱', today: '今天', next7: '最近 7 天', all: '全部任务', completed: '已完成' })[activeSmartView.value])
 const smartViewSubtitle = computed(() => `${taskViews.value.length} 项 · ${dateLabel.value}`)
 const activeListGroups = computed(() => (state.value.listGroups ?? []).filter(({ archivedAt }) => !archivedAt).sort((left, right) => left.position - right.position))
+const topicGroupOptions = computed(() => [
+  { value: '', label: '无分组' },
+  ...activeListGroups.value.map((group) => ({ value: group.id, label: group.title })),
+])
 const listNavItems = computed(() => state.value.topics.filter((topic) => !topic.archivedAt).map((topic) => ({ id: topic.id, groupId: topic.groupId ?? null, title: topic.title, count: liveTasks.value.filter((task) => task.topicId === topic.id && task.status !== 'completed' && task.status !== 'cancelled').length })))
 
 const startOfWeek = computed(() => {
@@ -203,7 +211,6 @@ onUnmounted(() => {
   if (cloudTimer) clearInterval(cloudTimer)
   if (cloudDebounceTimer) clearTimeout(cloudDebounceTimer)
   if (scratchSaveTimer) clearTimeout(scratchSaveTimer)
-  if (toastTimer) clearTimeout(toastTimer)
   compactMedia?.removeEventListener('change', onCompactChange)
   window.removeEventListener('shixue:quick-capture', handleQuickCapture)
   window.removeEventListener('shixue:module-error', handleModuleError)
@@ -280,7 +287,7 @@ async function syncStudyCloud() {
       enabled: true,
       config: cloudConfig,
       deviceId: localDeviceId(),
-      store: { load: loadStudyState, save: saveStudyState },
+      store: getWorkspaceStore(),
       adapter: await cloudAdapter(),
     })
     const result = await controller.syncOnce()
@@ -616,7 +623,7 @@ async function setReminders(enabled: boolean) {
 }
 async function resetDemo() {
   try {
-    await saveStudyState(createSeedStudyState())
+    await resetStudyState()
     await refreshState()
     settingsOpen.value = false
     selectedTaskId.value = ''
@@ -645,12 +652,12 @@ function formatShortDate(value: string | null | undefined) { if (!value) return 
 function formatAge(value: string) { const diff = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 86_400_000)); return diff === 0 ? '今天' : `${diff} 天前` }
 function formatEventTime(value: string) { const date = new Date(value); return `${date.getMonth() + 1} 月 ${date.getDate()} 日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` }
 function formatReminder(value: string | null) { if (!value) return ''; const date = new Date(value); const day = date.toLocaleDateString('sv-SE') === today.value ? '今天' : `${date.getMonth() + 1}/${date.getDate()}`; return `${day} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` }
-function notify(message: string, action?: { label: string; run: () => Promise<void> }) { toast.value = message; toastAction.value = action ?? null; if (toastTimer) clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = ''; toastAction.value = null }, action ? 6000 : 3200) }
+function notify(message: string, action?: { label: string; run: () => Promise<void> }) { toast.value = message; toastAction.value = action ?? null; toastVersion.value += 1 }
+function dismissToast() { toast.value = ''; toastAction.value = null }
 async function runToastAction() {
   const action = toastAction.value
   if (!action) return
-  toast.value = ''; toastAction.value = null
-  if (toastTimer) clearTimeout(toastTimer)
+  dismissToast()
   try { await action.run(); notify('已撤销。') } catch (error) { reportStorageError(error) }
 }
 function reportStorageError(error: unknown) { storageError.value = error instanceof Error ? error.message : String(error); notify('这次更改还没写入本地，内容仍保留在页面中。') }
@@ -658,6 +665,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 
 <template>
   <div class="shell">
+    <OverlayHost />
     <AppSidebar v-if="!showFocus" :active="page" :active-smart-view="activeSmartView" :counts="smartViewCounts" :groups="activeListGroups" :lists="listNavItems" :active-list-id="taskTopicFilter === 'all' || taskTopicFilter === 'unassigned' ? undefined : taskTopicFilter" @navigate="navigate" @smart-view="selectSmartView" @select-list="selectList" @create-list="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @settings="settingsOpen = true" />
     <div class="workspace">
       <header v-if="!showFocus" class="mobile-header"><div><img src="/shixue-mark.svg" alt="" /><strong>拾学</strong></div><button title="设置" @click="settingsOpen = true"><Settings :size="22" /></button></header>
@@ -679,21 +687,20 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
     <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" @close="taskEditorOpen = false" @save="saveTaskEdit" />
     <SettingsSheet :open="settingsOpen" :dark="appearanceDark" :reminders-available="remindersAvailable" :reminders-enabled="remindersEnabled" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @close="settingsOpen = false" @export="exportData" @import="importData" @reset-demo="resetDemo" @set-appearance="setAppearance" @set-reminders="setReminders" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
 
-    <div v-if="topicEditorOpen" class="editor-backdrop" @click.self="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" required placeholder="清单名称" /></label><label><span>分组</span><select v-model="topicGroupId"><option value="">无分组</option><option v-for="group in activeListGroups" :key="group.id" :value="group.id">{{ group.title }}</option></select></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></div>
+    <div v-if="topicEditorOpen" class="editor-backdrop" @click.self="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" required placeholder="清单名称" /></label><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></div>
     <div v-if="groupEditorOpen" class="editor-backdrop" @click.self="groupEditorOpen = false"><form class="editor-sheet compact-editor" @submit.prevent="saveGroup"><h2>{{ selectedGroupId ? '编辑分组' : '新建分组' }}</h2><label><span>名称</span><input v-model="groupTitle" required placeholder="分组名称" /></label><footer><button v-if="selectedGroupId" type="button" class="cancel danger" @click="archiveGroup">归档</button><span class="footer-spacer"></span><button type="button" class="cancel" @click="groupEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></div>
-    <div v-if="toast" class="toast" :class="{ 'detail-toast': compact && Boolean(selectedTaskId) }" role="status"><span>{{ toast }}</span><button v-if="toastAction" @click="runToastAction">{{ toastAction.label }}</button></div>
+    <ToastRegion :key="toastVersion" :message="toast" :action-label="toastAction?.label" :duration="toastAction ? 6000 : 3200" :raised="compact && Boolean(selectedTaskId)" @action="runToastAction" @dismiss="dismissToast" />
     <div v-if="storageError" class="error-banner" role="alert"><span>上一次更改未保存。拾学不会用演示数据覆盖现有记录。</span><button @click="storageError = ''">知道了</button></div>
   </div>
 </template>
 
 <style scoped>
 .shell { width: 100vw; height: 100vh; height: 100dvh; display: flex; overflow: hidden; background: var(--bg); }.workspace { min-width: 0; flex: 1; height: 100%; overflow: hidden; } main { width: 100%; height: 100%; overflow-y: auto; overscroll-behavior-y: contain; scroll-behavior: smooth; scrollbar-gutter: stable; }.tasks-main { overflow: hidden; }.today-layout { min-height: 100%; display: flex; justify-content: center; }.today-layout > :first-child { flex: 1 1 auto; }.tasks-layout { height: 100%; display: flex; }.tasks-scroll { min-width: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }.focus-main { background: radial-gradient(circle at 50% -25%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 42%), var(--bg); }.mobile-header { display: none; }.loading { min-height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
-.editor-backdrop { position: fixed; z-index: var(--z-modal); inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--text) 22%, transparent); backdrop-filter: saturate(120%) blur(12px); }.editor-sheet { width: min(100%, 470px); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 28px; border: 1px solid var(--hairline); border-radius: var(--radius-2xl); background: var(--material-regular); box-shadow: var(--shadow-lg); animation: editor-in var(--motion-slow) var(--ease-spring); }.editor-sheet.compact-editor { width: min(100%, 420px); }.editor-sheet > p { margin: 0 0 5px; color: var(--accent); font-size: 11px; font-weight: 600; }.editor-sheet h2 { margin: 0 0 22px; font-size: 23px; font-weight: 650; letter-spacing: -.025em; }.editor-sheet label { display: block; margin-top: 16px; }.editor-sheet label > span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }.editor-sheet input, .editor-sheet textarea, .editor-sheet select { width: 100%; min-height: 46px; padding: 11px 13px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font-size: 13px; transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); }.editor-sheet input:focus, .editor-sheet textarea:focus, .editor-sheet select:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }.editor-sheet textarea { min-height: 88px; resize: vertical; }.duration-input { display: flex; align-items: center; gap: 9px; }.duration-input input { width: 110px; }.duration-input span { color: var(--muted); font-size: 12px; }.editor-sheet footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); }.editor-sheet footer button { min-height: 46px; padding: 0 18px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 600; }.footer-spacer { flex: 1; }.cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); }.save { border: 0; background: var(--accent); color: var(--accent-text); box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent); }
-.toast { position: fixed; z-index: var(--z-toast); left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 13px; margin: 0; padding: 8px 9px 8px 16px; border: 1px solid color-mix(in srgb, white 11%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--text) 88%, transparent); color: var(--bg); font-size: 12px; box-shadow: var(--shadow-lg); backdrop-filter: saturate(140%) blur(18px); animation: toast-in var(--motion-base) var(--ease-spring); }.toast button { min-height: 30px; padding: 0 11px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--bg) 16%, transparent); color: var(--bg); font-size: 12px; font-weight: 650; }.error-banner { position: fixed; z-index: var(--z-toast); left: 232px; right: 16px; top: 14px; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 10px 8px 14px; border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border)); border-radius: var(--radius-lg); background: var(--material-regular); color: var(--danger); font-size: 11px; box-shadow: var(--shadow-md); backdrop-filter: saturate(130%) blur(18px); }.error-banner button { min-height: 30px; border: 0; background: transparent; color: var(--danger); font-weight: 600; }
+.editor-backdrop { position: fixed; z-index: var(--z-modal); inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--text) 22%, transparent); backdrop-filter: saturate(120%) blur(12px); }.editor-sheet { width: min(100%, 470px); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 28px; border: 1px solid var(--hairline); border-radius: var(--radius-2xl); background: var(--material-regular); box-shadow: var(--shadow-lg); animation: editor-in var(--motion-slow) var(--ease-spring); }.editor-sheet.compact-editor { width: min(100%, 420px); }.editor-sheet > p { margin: 0 0 5px; color: var(--accent); font-size: 11px; font-weight: 600; }.editor-sheet h2 { margin: 0 0 22px; font-size: 23px; font-weight: 650; letter-spacing: -.025em; }.editor-sheet label { display: block; margin-top: 16px; }.editor-sheet label > span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }.editor-sheet input, .editor-sheet textarea { width: 100%; min-height: 46px; padding: 11px 13px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font-size: 13px; transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); }.editor-sheet input:focus, .editor-sheet textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }.editor-sheet textarea { min-height: 88px; resize: vertical; }.duration-input { display: flex; align-items: center; gap: 9px; }.duration-input input { width: 110px; }.duration-input span { color: var(--muted); font-size: 12px; }.editor-sheet footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); }.editor-sheet footer button { min-height: 46px; padding: 0 18px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 600; }.footer-spacer { flex: 1; }.cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); }.save { border: 0; background: var(--accent); color: var(--accent-text); box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent); }
+.error-banner { position: fixed; z-index: var(--z-toast); left: 232px; right: 16px; top: 14px; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 10px 8px 14px; border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border)); border-radius: var(--radius-lg); background: var(--material-regular); color: var(--danger); font-size: 11px; box-shadow: var(--shadow-md); backdrop-filter: saturate(130%) blur(18px); }.error-banner button { min-height: 30px; border: 0; background: transparent; color: var(--danger); font-weight: 600; }
 @keyframes editor-in { from { transform: translateY(18px) scale(.985); opacity: 0; } }
-@keyframes toast-in { from { transform: translate(-50%, 10px) scale(.97); opacity: 0; } }
 @media (max-width: 799px) {
-  .shell { flex-direction: column; }.workspace { width: 100%; }.mobile-header { height: calc(64px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px; border-bottom: 1px solid var(--hairline); background: var(--material-thin); backdrop-filter: saturate(170%) blur(24px); -webkit-backdrop-filter: saturate(170%) blur(24px); }.mobile-header > div { display: flex; align-items: center; gap: 8px; }.mobile-header img { width: 34px; height: 34px; }.mobile-header strong { font-size: 18px; font-weight: 650; letter-spacing: .04em; }.mobile-header button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.mobile-header button:active { background: var(--control-fill); } main { height: calc(100% - 64px - env(safe-area-inset-top, 0px)); scrollbar-gutter: auto; } main.focus-main { height: 100%; }.tasks-layout { display: block; }.editor-backdrop { align-items: flex-end; padding: 0; }.editor-sheet { position: relative; max-height: 94dvh; border-width: 1px 0 0; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; padding: 32px 20px calc(22px + env(safe-area-inset-bottom, 0px)); animation-name: sheet-up; }.editor-sheet::before { content: ''; position: absolute; top: 9px; left: 50%; width: 36px; height: 5px; transform: translateX(-50%); border-radius: 999px; background: color-mix(in srgb, var(--muted) 32%, transparent); }.toast { bottom: calc(92px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 32px); white-space: nowrap; }.toast.detail-toast { bottom: calc(148px + env(safe-area-inset-bottom, 0px)); }.error-banner { left: 12px; right: 12px; top: calc(70px + env(safe-area-inset-top, 0px)); }
+  .shell { flex-direction: column; }.workspace { width: 100%; }.mobile-header { height: calc(64px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px; border-bottom: 1px solid var(--hairline); background: var(--material-thin); backdrop-filter: saturate(170%) blur(24px); -webkit-backdrop-filter: saturate(170%) blur(24px); }.mobile-header > div { display: flex; align-items: center; gap: 8px; }.mobile-header img { width: 34px; height: 34px; }.mobile-header strong { font-size: 18px; font-weight: 650; letter-spacing: .04em; }.mobile-header button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.mobile-header button:active { background: var(--control-fill); } main { height: calc(100% - 64px - env(safe-area-inset-top, 0px)); scrollbar-gutter: auto; } main.focus-main { height: 100%; }.tasks-layout { display: block; }.editor-backdrop { align-items: flex-end; padding: 0; }.editor-sheet { position: relative; max-height: 94dvh; border-width: 1px 0 0; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; padding: 32px 20px calc(22px + env(safe-area-inset-bottom, 0px)); animation-name: sheet-up; }.editor-sheet::before { content: ''; position: absolute; top: 9px; left: 50%; width: 36px; height: 5px; transform: translateX(-50%); border-radius: 999px; background: color-mix(in srgb, var(--muted) 32%, transparent); }.error-banner { left: 12px; right: 12px; top: calc(70px + env(safe-area-inset-top, 0px)); }
 }
 @keyframes sheet-up { from { transform: translateY(36px); opacity: .75; } }
 </style>

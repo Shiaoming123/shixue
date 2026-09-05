@@ -27,9 +27,9 @@ import {
   toggleStudyTaskCompletion,
   updateStudyTask,
 } from '../src/lib/study.ts'
-import { createInMemoryStudyStore } from '../src/storage/study/in-memory.ts'
+import { createInMemoryStudyStore, createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { createIndexedDbStudyStore, V1_STUDY_STATE_BACKUP_KEY } from '../src/storage/study/indexeddb.ts'
-import { registerStudyStore } from '../src/storage/study/registry.ts'
+import { registerWorkspaceStore } from '../src/storage/workspace/registry.ts'
 import {
   BACKUP_V1_STUDY_STATE_SQL,
   createTauriSqliteStudyStore,
@@ -78,7 +78,7 @@ function legacyState(): StudyStateV1 {
 }
 
 async function useEmptyStore() {
-  registerStudyStore(createInMemoryStudyStore(emptyState()))
+  registerWorkspaceStore(createInMemoryWorkspaceStore(emptyState()))
 }
 
 test('task commands complete the inbox-to-evidence learning loop atomically', async () => {
@@ -289,7 +289,7 @@ test('soft-delete preserves history and evidence while safely finishing an activ
   assert.equal(state.completionRecords[0].evidence, 'Restart test passed.')
   assert.deepEqual(state.taskEvents.map(({ type }) => type), ['captured', 'planned', 'completed', 'reopened', 'started', 'deleted'])
   assert.deepEqual(state.taskEvents.map(({ sequence }) => sequence), [1, 2, 3, 4, 5, 6])
-  await assert.rejects(deleteStudyTask('task-1'), /not found/i)
+  await assert.rejects(deleteStudyTask('task-1'), /TASK_ALREADY_DELETED/)
 })
 
 test('bulk cancellation validates every target before committing any change', async () => {

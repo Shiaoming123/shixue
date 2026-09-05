@@ -19,15 +19,18 @@ The protocol deliberately summarizes rather than replaces implementation facts:
 | Enabled modules | `src/modules/config.ts` | Declare the matching product policy |
 | Dependencies, platforms, capabilities, native requirements | `src/modules/contract.ts` | Point readers to the compatibility boundary |
 | Runtime selection | `src/modules/loader.ts` and `src/lib/platform.ts` | State target and fallback expectations |
-| Study import/export | `src/storage/study/data-port.ts` | State the public format/version, migration boundary, and exclusions |
+| Workspace import/export | `src/storage/workspace/data-port.ts` | State the current public format/version and legacy Study migration inputs |
+| Capability commands | `src/domain/capabilities/types.ts` | State the independent command protocol version and direct-write boundary |
 | Sync | `src/sync/` and `docs/sync.md` | State whether a provider is enabled by default |
 | Release configuration | `scripts/release-check.mjs` and `docs/release-kit.md` | State evidence, never infer delivery proof |
 
 `npm run check:protocol` reads the JSON and cross-checks the product name,
-module policy, Todo data-port version, default local-first/sync boundary,
-acceptance commands, maturity labels, and current delivery evidence. It does
-not alter configuration, load modules, contact a network endpoint, or read
-secrets.
+module policy, Workspace export format/version, legacy Study input format,
+capability protocol version, default local-first/sync boundary, acceptance
+commands, maturity labels, and current delivery evidence. Data-port and
+capability facts are compared with constants exported by the implementation;
+they are not inferred by comparing duplicated JSON fields. The checker does not
+alter configuration, load modules, contact a network endpoint, or read secrets.
 
 ## Evidence vocabulary
 
@@ -44,26 +47,48 @@ secrets.
 
 The current protocol intentionally says nothing stronger about signing, hosted
 updates, deployed Web hosting, real-device execution, or store submission.
-Android has `local-debug` evidence only. Runtime maturity is a separate
+Native mobile delivery remains `unverified`. Runtime maturity is a separate
 statement: desktop is the primary stable runtime path; Web and mobile are Beta
 adaptations with documented capability degradation.
 
-## Study data evolution
+## Workspace data evolution
 
-`meow-study/study-export` version 2 makes learning tasks the single source of
-truth and stores task events and completion records alongside focus sessions.
-The importer accepts both version 1 and version 2 payloads. Version 1 topics and
-steps are validated and migrated in memory before any current state is
-replaced; new exports always use version 2. Web IndexedDB and desktop SQLite
-preserve a pre-migration snapshot before replacing valid version 1 state.
+New exports use `meow-study/workspace-export` version 3. `WorkspaceStateV3`
+supports general personal tasks and keeps learning-specific evidence as an
+optional specialization on the same task model. The importer continues to
+accept `meow-study/study-export` version 1 and version 2 payloads. Legacy input
+is validated, migrated in memory, validated again as a complete v3 workspace,
+and only then replaces current state. Web IndexedDB and desktop SQLite preserve
+a pre-migration snapshot through their documented fail-closed replacement
+paths.
 
 The legacy generic Todo store remains a compatibility boundary for the starter
-and is not read, mirrored, or migrated into the Study task model.
+and is not read, mirrored, or migrated into the Workspace task model.
+
+## Capability and implementation status
+
+Application schema version 2 declares capability protocol version 1. These are
+independent version lines: changing the product declaration does not change the
+command envelope. Current human UI, keyboard, and notification integrations
+must use the versioned capability service, which validates and applies a command
+before one compare-and-swap save. Direct workspace storage writes are not an
+application capability.
+
+The shipped foundation comprises WorkspaceStateV3 parsing, Study v1/v2
+migration and v3 export, capability protocol v1 with transactional command
+execution, routing of current live writes through that service, and the shared
+themed-control foundation. This statement does not claim that every future v3
+collection has business behaviour: recurrence, offline natural-language quick
+add, multiple reminders, calendar views, and Agent behaviour remain planned.
+The command envelope reserves `source: agent`, but there is no shipped Agent
+planner or autonomous execution policy. A future Agent must use the same
+query/preview/execute boundary and cannot bypass validation or write storage
+directly.
 
 ## Changing an application safely
 
 1. Change the implementation source of truth first: module contract/config,
-   data-port, or release boundary.
+   data-port, capability protocol, or release boundary.
 2. Update `app.protocol.json` in the same change, including product goal,
    non-goal, platform fallback, or data/privacy boundary when applicable.
 3. Add a focused behavioural test before implementation changes. Keep protocol
@@ -84,9 +109,11 @@ remain opt-in local evidence; see [web.md](./web.md) and
 
 ## Compatibility
 
-Schema version `1` is intentionally small. Additive fields require a checker
-change that explicitly understands the new schema version. Renaming or
-removing a module, data format, or compatibility promise is breaking: keep the
-old consumer boundary working where feasible or document a migration before
-raising the schema version. A protocol update alone never enables a module,
-Cargo feature, Tauri permission, sync provider, or release channel.
+Application schema version `2` declares the general-planning, Workspace v3, and
+capability boundaries above. Additive fields require a checker change that
+explicitly understands the application schema version. Renaming or removing a
+module, data format, or compatibility promise is breaking: keep the old
+consumer boundary working where feasible or document a migration before
+raising the schema version. Capability protocol v1 is versioned independently.
+A protocol update alone never enables a module, Cargo feature, Tauri permission,
+sync provider, feature implementation, or release channel.

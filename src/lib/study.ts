@@ -1,21 +1,21 @@
-import { createStudyExport, parseStudyExport } from '../storage/study/data-port.ts'
-import { getStudyStore } from '../storage/study/registry.ts'
+import { createTaskCapabilityService } from '../domain/capabilities/service.ts'
 import {
-  applyReviewResult,
-  nextReviewDate,
-  parseStudyState,
-  type CompletionRecord,
-  type ReviewResult,
-  type StudyListGroup,
-  type StudySession,
-  type StudyState,
-  type StudyTask,
-  type StudyTaskPriority,
-  type StudyTaskStatus,
-  type StudyTopic,
-  type TaskChecklistItem,
-  type TaskEvent,
-  type TaskEventType,
+  CAPABILITY_PROTOCOL_VERSION,
+  type CapabilityCommand,
+} from '../domain/capabilities/types.ts'
+import { SYSTEM_LEARNING_LIST_ID } from '../domain/workspace/migrate.ts'
+import type { Task, WorkspaceStateV3 } from '../domain/workspace/types.ts'
+import { createWorkspaceExport, parseWorkspaceExport } from '../storage/workspace/data-port.ts'
+import { getWorkspaceStore } from '../storage/workspace/registry.ts'
+import type {
+  CompletionRecord,
+  ReviewResult,
+  StudyListGroup,
+  StudySession,
+  StudyState,
+  StudyTask,
+  StudyTopic,
+  TaskChecklistItem,
 } from '../storage/study/types.ts'
 
 export type {
@@ -78,68 +78,55 @@ export type StudyTaskCreationInput = Pick<StudyTask, 'title'> &
     | 'acceptanceCriteria'
   >>
 
-export function loadStudyState(): Promise<StudyState> {
-  return getStudyStore().load()
-}
-
-export async function saveStudyState(
-  state: StudyState,
-  expectedUpdatedAt?: string,
-): Promise<void> {
-  await getStudyStore().save(parseStudyState(state), expectedUpdatedAt)
+export async function loadStudyState(): Promise<StudyState> {
+  return projectWorkspaceState(await getWorkspaceStore().load())
 }
 
 export async function saveStudyTopic(topic: StudyTopic): Promise<void> {
-  const current = await loadStudyState()
-  const index = current.topics.findIndex(({ id }) => id === topic.id)
-  if (index >= 0) current.topics[index] = structuredClone(topic)
-  else current.topics.push(structuredClone(topic))
-  await persist(current, topic.updatedAt)
+  const workspace = await getWorkspaceStore().load()
+  const current = workspace.lists.find(({ id }) => id === topic.id)
+  await executeCommand({
+    type: 'list.upsert',
+    list: {
+      id: topic.id,
+      groupId: topic.groupId ?? null,
+      title: topic.title,
+      position: current?.position ?? workspace.lists.length,
+      goal: topic.goal,
+      successCriteria: [...topic.successCriteria],
+      weeklyTargetMinutes: topic.weeklyTargetMinutes,
+      createdAt: topic.createdAt,
+      updatedAt: topic.updatedAt,
+      archivedAt: topic.archivedAt,
+    },
+  }, topic.updatedAt)
 }
 
 export async function saveStudyListGroup(group: StudyListGroup): Promise<void> {
-  const current = await loadStudyState()
-  const groups = current.listGroups ?? (current.listGroups = [])
-  const index = groups.findIndex(({ id }) => id === group.id)
-  if (index >= 0) groups[index] = structuredClone(group)
-  else groups.push(structuredClone(group))
-  await persist(current, group.updatedAt)
+  await executeCommand({ type: 'list_group.upsert', group: structuredClone(group) }, group.updatedAt)
 }
 
 export async function archiveStudyListGroup(
   groupId: string,
   archivedAt = new Date().toISOString(),
 ): Promise<void> {
-  const current = await loadStudyState()
-  const group = (current.listGroups ?? []).find(({ id, archivedAt: archived }) => id === groupId && !archived)
-  if (!group) throw new Error(`Study list group not found: ${groupId}.`)
-  group.archivedAt = archivedAt
-  group.updatedAt = archivedAt
-  current.topics.forEach((topic) => {
-    if (topic.groupId === groupId) {
-      topic.groupId = null
-      topic.updatedAt = archivedAt
-    }
-  })
-  await persist(current, archivedAt)
+  await executeCommand({ type: 'list_group.archive', groupId }, archivedAt)
 }
 
 export async function saveStudySession(
   session: StudySession,
   expectedRevision?: number,
 ): Promise<void> {
-  const state = await loadStudyState()
-  const index = state.sessions.findIndex(({ id }) => id === session.id)
-  if (index < 0) throw new Error(`Study session not found: ${session.id}.`)
-  const current = state.sessions[index]
+  const current = requireSession(await loadStudyState(), session.id)
   if (!sameSessionLifecycle(current, session)) {
     throw new Error('saveStudySession cannot change Study session lifecycle fields.')
   }
-  const task = requireTask(state, current.taskId, expectedRevision)
-  current.scratchpad = session.scratchpad
-  current.updatedAt = session.updatedAt
-  advanceTask(task, session.updatedAt)
-  await persist(state, session.updatedAt)
+  await executeCommand({
+    type: 'session.scratchpad.update',
+    sessionId: session.id,
+    scratchpad: session.scratchpad,
+    expectedTaskRevision: expectedRevision,
+  }, session.updatedAt)
 }
 
 export async function saveStudyScratchpad(
@@ -147,36 +134,40 @@ export async function saveStudyScratchpad(
   scratchpad: string,
   options: StudyWriteOptions = {},
 ): Promise<StudySession> {
-  const state = await loadStudyState()
-  const session = requireSession(state, sessionId)
-  const task = requireTask(state, session.taskId, options.expectedRevision)
   const now = commandTime(options.now)
-  session.scratchpad = scratchpad
-  session.updatedAt = now
-  advanceTask(task, now)
-  await persist(state, now)
-  return structuredClone(session)
+  await executeCommand({
+    type: 'session.scratchpad.update',
+    sessionId,
+    scratchpad,
+    expectedTaskRevision: options.expectedRevision,
+  }, now)
+  return requireSession(await loadStudyState(), sessionId)
 }
 
 export async function captureStudyTask(
   input: StudyTaskCreationInput,
   options: TaskCommandOptions & { taskId?: string } = {},
 ): Promise<StudyTask> {
-  const state = await loadStudyState()
   const now = commandTime(options.now)
-  const task: StudyTask = {
-    id: makeId('task', options.taskId), revision: 1, topicId: input.topicId ?? null,
-    title: input.title, notes: input.notes ?? '', status: 'inbox',
-    plannedOn: input.plannedOn ?? null, dueOn: input.dueOn ?? null,
-    reminderAt: input.reminderAt ?? null, priority: input.priority ?? 'none',
+  assertStudyDateOrder(input.plannedOn ?? null, input.dueOn ?? null)
+  const taskId = makeId('task', options.taskId)
+  await executeCommand({
+    type: 'task.create',
+    taskId,
+    eventId: makeId('event', options.eventId),
+    reminderRuleId: input.reminderAt ? makeId('reminder') : undefined,
+    listId: listIdForTopic(input.topicId ?? null),
+    mode: 'learning',
+    title: input.title,
+    notes: input.notes ?? '',
+    startOn: input.plannedOn ?? null,
+    dueOn: input.dueOn ?? null,
+    reminderAt: input.reminderAt ?? null,
+    priority: input.priority ?? 'none',
     estimateMinutes: input.estimateMinutes ?? null,
-    acceptanceCriteria: input.acceptanceCriteria ?? [], checklist: [], blockedReason: null,
-    createdAt: now, updatedAt: now, deletedAt: null,
-  }
-  state.tasks.push(task)
-  appendEvent(state, task, 'captured', null, 'inbox', options.eventId, now)
-  await persist(state, now)
-  return structuredClone(task)
+    acceptanceCriteria: input.acceptanceCriteria ?? [],
+  }, now)
+  return requireTask(await loadStudyState(), taskId, undefined, true)
 }
 
 export async function updateStudyTask(
@@ -184,61 +175,63 @@ export async function updateStudyTask(
   input: StudyTaskMetadataUpdate,
   options: StudyWriteOptions = {},
 ): Promise<StudyTask> {
-  const state = await loadStudyState()
-  const task = requireTask(state, taskId, options.expectedRevision)
+  const current = requireTask(await loadStudyState(), taskId)
+  assertStudyDateOrder(input.plannedOn ?? current.plannedOn, input.dueOn ?? current.dueOn)
   const now = commandTime(options.now)
-  Object.assign(task, withoutUndefined(input))
-  advanceTask(task, now)
-  await persist(state, now)
-  return structuredClone(task)
+  await executeCommand({
+    type: 'task.update',
+    taskId,
+    expectedRevision: options.expectedRevision,
+    patch: taskPatch(input),
+    reminderRuleId: typeof input.reminderAt === 'string' ? makeId('reminder') : undefined,
+  }, now)
+  return requireTask(await loadStudyState(), taskId)
 }
 
 export async function deleteStudyTask(
   taskId: string,
   options: TaskCommandOptions = {},
 ): Promise<StudyTask> {
-  const state = await loadStudyState()
-  const task = requireTask(state, taskId, options.expectedRevision)
   const now = commandTime(options.now)
-  softDeleteTask(state, task, now, options.eventId)
-  await persist(state, now)
-  return structuredClone(task)
+  await executeCommand({
+    type: 'task.delete', taskId, expectedRevision: options.expectedRevision,
+    eventId: makeId('event', options.eventId),
+  }, now)
+  return requireTask(await loadStudyState(), taskId, undefined, true)
 }
 
 export async function bulkDeleteStudyTasks(
   targets: readonly BulkTaskTarget[],
   options: BulkTaskCommandOptions = {},
 ): Promise<StudyTask[]> {
-  const state = await loadStudyState()
-  const tasks = requireBulkTasks(state, targets)
+  assertUniqueTargets(targets, 'Bulk Study task command cannot contain duplicate ids.')
   const now = commandTime(options.now)
-  tasks.forEach((task, index) => softDeleteTask(state, task, now, targets[index].eventId, options.reason))
-  await persist(state, now)
-  return structuredClone(tasks)
+  await executeCommand({
+    type: 'task.batch_delete',
+    taskIds: targets.map(({ taskId }) => taskId),
+    expectedRevisions: targetRevisions(targets),
+    eventIds: targetEventIds(targets),
+    reason: options.reason,
+  }, now)
+  const state = await loadStudyState()
+  return targets.map(({ taskId }) => requireTask(state, taskId, undefined, true))
 }
 
 export async function bulkCancelStudyTasks(
   targets: readonly BulkTaskTarget[],
   options: BulkTaskCommandOptions = {},
 ): Promise<StudyTask[]> {
-  const state = await loadStudyState()
-  const tasks = requireBulkTasks(state, targets)
-  for (const task of tasks) {
-    if (task.status === 'completed' || task.status === 'cancelled') {
-      throw new Error(`Study task cannot transition from ${task.status} to cancelled.`)
-    }
-  }
+  assertUniqueTargets(targets, 'Bulk Study task command cannot contain duplicate ids.')
   const now = commandTime(options.now)
-  tasks.forEach((task, index) => {
-    const fromStatus = task.status
-    finishActiveTaskSession(state, task.id, now)
-    task.status = 'cancelled'
-    task.blockedReason = null
-    advanceTask(task, now)
-    appendEvent(state, task, 'cancelled', fromStatus, 'cancelled', targets[index].eventId, now, options.reason)
-  })
-  await persist(state, now)
-  return structuredClone(tasks)
+  await executeCommand({
+    type: 'task.batch_cancel',
+    taskIds: targets.map(({ taskId }) => taskId),
+    expectedRevisions: targetRevisions(targets),
+    eventIds: targetEventIds(targets),
+    reason: options.reason,
+  }, now)
+  const state = await loadStudyState()
+  return targets.map(({ taskId }) => requireTask(state, taskId))
 }
 
 export async function bulkRescheduleStudyTasks(
@@ -246,58 +239,37 @@ export async function bulkRescheduleStudyTasks(
   plannedOn: string | null,
   options: BulkTaskCommandOptions = {},
 ): Promise<StudyTask[]> {
-  const state = await loadStudyState()
-  const tasks = requireBulkTasks(state, targets)
-  for (const task of tasks) {
-    if (task.status === 'completed' || task.status === 'cancelled') {
-      throw new Error('A completed or cancelled Study task cannot be rescheduled.')
-    }
-  }
+  assertUniqueTargets(targets, 'Bulk Study task command cannot contain duplicate ids.')
   const now = commandTime(options.now)
-  tasks.forEach((task, index) => {
-    const fromStatus = task.status
-    finishActiveTaskSession(state, task.id, now)
-    task.status = 'planned'
-    task.plannedOn = plannedOn
-    task.blockedReason = null
-    advanceTask(task, now)
-    appendEvent(state, task, 'rescheduled', fromStatus, 'planned', targets[index].eventId, now, options.reason)
-  })
-  await persist(state, now)
-  return structuredClone(tasks)
+  await executeCommand({
+    type: 'task.batch_reschedule',
+    taskIds: targets.map(({ taskId }) => taskId),
+    expectedRevisions: targetRevisions(targets),
+    eventIds: targetEventIds(targets),
+    startOn: plannedOn,
+    reason: options.reason,
+  }, now)
+  const state = await loadStudyState()
+  return targets.map(({ taskId }) => requireTask(state, taskId))
 }
 
 export async function planStudyTask(
   taskId: string,
-  input: {
-    topicId?: string | null
-    title?: string
-    notes?: string
-    plannedOn?: string | null
-    dueOn?: string | null
-    reminderAt?: string | null
-    priority?: StudyTaskPriority
-    estimateMinutes?: number | null
-    acceptanceCriteria?: string[]
-  },
+  input: StudyTaskMetadataUpdate,
   options: TaskCommandOptions = {},
 ): Promise<StudyTask> {
-  const state = await loadStudyState()
-  const task = requireTask(state, taskId, options.expectedRevision)
-  if (task.status === 'in_progress') throw new Error('Pause or finish the active task before replanning it.')
-  const before = task.status
-  const wasPlanned = task.status === 'planned'
-  Object.assign(task, withoutUndefined(input))
-  task.status = 'planned'
-  task.blockedReason = null
-  advanceTask(task, commandTime(options.now))
-  const type: TaskEventType =
-    before === 'completed' || before === 'cancelled'
-      ? 'reopened'
-      : wasPlanned ? 'rescheduled' : 'planned'
-  appendEvent(state, task, type, before, 'planned', options.eventId, task.updatedAt)
-  await persist(state, task.updatedAt)
-  return structuredClone(task)
+  const current = requireTask(await loadStudyState(), taskId)
+  assertStudyDateOrder(input.plannedOn ?? current.plannedOn, input.dueOn ?? current.dueOn)
+  const now = commandTime(options.now)
+  await executeCommand({
+    type: 'task.plan',
+    taskId,
+    expectedRevision: options.expectedRevision,
+    patch: taskPatch(input),
+    eventId: makeId('event', options.eventId),
+    reminderRuleId: typeof input.reminderAt === 'string' ? makeId('reminder') : undefined,
+  }, now)
+  return requireTask(await loadStudyState(), taskId)
 }
 
 export async function transitionStudyTask(
@@ -305,63 +277,26 @@ export async function transitionStudyTask(
   toStatus: 'planned' | 'blocked' | 'cancelled',
   options: TaskCommandOptions & { reason?: string } = {},
 ): Promise<StudyTask> {
-  const state = await loadStudyState()
-  const task = requireTask(state, taskId, options.expectedRevision)
-  const fromStatus = task.status
-  if (toStatus === 'blocked' && !options.reason?.trim()) throw new Error('Blocking a Study task requires a reason.')
-  if (fromStatus === toStatus) throw new Error(`Study task is already ${toStatus}.`)
-  const allowed: Record<StudyTaskStatus, readonly StudyTaskStatus[]> = {
-    inbox: ['planned', 'cancelled'],
-    planned: ['blocked', 'cancelled'],
-    in_progress: ['blocked', 'cancelled'],
-    blocked: ['planned', 'cancelled'],
-    completed: ['planned'],
-    cancelled: ['planned'],
-  }
-  if (!allowed[fromStatus].includes(toStatus)) {
-    throw new Error(`Study task cannot transition from ${fromStatus} to ${toStatus}.`)
-  }
   const now = commandTime(options.now)
-  if (fromStatus === 'in_progress') {
-    const active = state.sessions.find(({ taskId: id, state, deletedAt }) =>
-      id === taskId && !deletedAt && (state === 'running' || state === 'paused'))
-    if (active) finishSession(active, now)
-  }
-  task.status = toStatus
-  task.blockedReason = toStatus === 'blocked' ? options.reason!.trim() : null
-  advanceTask(task, now)
-  const type: TaskEventType = toStatus === 'blocked'
-    ? 'blocked'
-    : toStatus === 'cancelled'
-      ? 'cancelled'
-      : fromStatus === 'completed' || fromStatus === 'cancelled' ? 'reopened' : 'planned'
-  appendEvent(state, task, type, fromStatus, toStatus, options.eventId, now, options.reason)
-  await persist(state, now)
-  return structuredClone(task)
+  await executeCommand({
+    type: 'task.transition', taskId, toStatus, reason: options.reason,
+    expectedRevision: options.expectedRevision, eventId: makeId('event', options.eventId),
+  }, now)
+  return requireTask(await loadStudyState(), taskId)
 }
 
 export async function startStudyTask(
   taskId: string,
   options: TaskCommandOptions & { sessionId?: string } = {},
 ): Promise<{ task: StudyTask; session: StudySession }> {
-  const state = await loadStudyState()
-  const task = requireTask(state, taskId, options.expectedRevision)
-  if (task.status !== 'planned' && task.status !== 'blocked') throw new Error('Only a planned or blocked Study task can be started.')
-  assertNoActiveSession(state)
   const now = commandTime(options.now)
-  const fromStatus = task.status
-  task.status = 'in_progress'
-  task.blockedReason = null
-  advanceTask(task, now)
-  const session: StudySession = {
-    id: makeId('session', options.sessionId), taskId, state: 'running',
-    startedAt: now, activeSince: now, elapsedSeconds: 0, scratchpad: '',
-    createdAt: now, updatedAt: now, deletedAt: null,
-  }
-  state.sessions.push(session)
-  appendEvent(state, task, 'started', fromStatus, 'in_progress', options.eventId, now)
-  await persist(state, now)
-  return { task: structuredClone(task), session: structuredClone(session) }
+  const sessionId = makeId('session', options.sessionId)
+  await executeCommand({
+    type: 'task.start', taskId, sessionId,
+    expectedRevision: options.expectedRevision, eventId: makeId('event', options.eventId),
+  }, now)
+  const state = await loadStudyState()
+  return { task: requireTask(state, taskId), session: requireSession(state, sessionId) }
 }
 
 export async function rescheduleStudyTask(
@@ -369,23 +304,16 @@ export async function rescheduleStudyTask(
   plannedOn: string | null,
   options: TaskCommandOptions & { reason?: string } = {},
 ): Promise<StudyTask> {
-  const state = await loadStudyState()
-  const task = requireTask(state, taskId, options.expectedRevision)
+  const task = requireTask(await loadStudyState(), taskId, options.expectedRevision)
   if (task.status === 'inbox' || task.status === 'completed' || task.status === 'cancelled') {
     throw new Error('Only a planned, in-progress, or blocked Study task can be rescheduled.')
   }
   const now = commandTime(options.now)
-  const session = state.sessions.find(({ taskId: id, state, deletedAt }) =>
-    id === taskId && !deletedAt && (state === 'running' || state === 'paused'))
-  if (session) finishSession(session, now)
-  const fromStatus = task.status
-  task.status = 'planned'
-  task.plannedOn = plannedOn
-  task.blockedReason = null
-  advanceTask(task, now)
-  appendEvent(state, task, 'rescheduled', fromStatus, 'planned', options.eventId, now, options.reason)
-  await persist(state, now)
-  return structuredClone(task)
+  await executeCommand({
+    type: 'task.reschedule', taskId, startOn: plannedOn, reason: options.reason,
+    expectedRevision: options.expectedRevision, eventId: makeId('event', options.eventId),
+  }, now)
+  return requireTask(await loadStudyState(), taskId)
 }
 
 export async function switchStudyTask(
@@ -396,74 +324,40 @@ export async function switchStudyTask(
     reason?: string
   } = {},
 ): Promise<{ task: StudyTask; session: StudySession }> {
-  const state = await loadStudyState()
-  const target = requireTask(state, taskId, options.expectedRevision)
-  if (target.status !== 'planned' && target.status !== 'blocked') {
-    throw new Error('Only a planned or blocked Study task can be switched to.')
-  }
   const now = commandTime(options.now)
-  const active = state.sessions.find(({ state, deletedAt }) =>
-    !deletedAt && (state === 'running' || state === 'paused'))
-  if (active) {
-    if (active.taskId === taskId) throw new Error('The target Study task is already active.')
-    const previous = requireTask(state, active.taskId)
-    finishSession(active, now)
-    previous.status = 'planned'
-    previous.blockedReason = null
-    advanceTask(previous, now)
-    appendEvent(state, previous, 'paused', 'in_progress', 'planned', options.pausedEventId, now, options.reason ?? 'Switched to another Study task.')
-  }
-  const fromStatus = target.status
-  target.status = 'in_progress'
-  target.blockedReason = null
-  advanceTask(target, now)
-  const session: StudySession = {
-    id: makeId('session', options.sessionId), taskId, state: 'running',
-    startedAt: now, activeSince: now, elapsedSeconds: 0, scratchpad: '',
-    createdAt: now, updatedAt: now, deletedAt: null,
-  }
-  state.sessions.push(session)
-  appendEvent(state, target, 'started', fromStatus, 'in_progress', options.eventId, now, options.reason)
-  await persist(state, now)
-  return { task: structuredClone(target), session: structuredClone(session) }
+  const sessionId = makeId('session', options.sessionId)
+  await executeCommand({
+    type: 'task.switch', taskId, sessionId, reason: options.reason,
+    expectedRevision: options.expectedRevision,
+    pausedEventId: makeId('event', options.pausedEventId),
+    eventId: makeId('event', options.eventId),
+  }, now)
+  const state = await loadStudyState()
+  return { task: requireTask(state, taskId), session: requireSession(state, sessionId) }
 }
 
 export async function pauseStudySession(
   sessionId: string,
   options: TaskCommandOptions = {},
 ): Promise<StudySession> {
-  const state = await loadStudyState()
-  const session = requireSession(state, sessionId)
-  if (session.state !== 'running' || !session.activeSince) throw new Error('Only a running Study session can be paused.')
-  const task = requireTask(state, session.taskId, options.expectedRevision)
   const now = commandTime(options.now)
-  session.elapsedSeconds += elapsedSeconds(session.activeSince, now)
-  session.state = 'paused'
-  session.activeSince = null
-  session.updatedAt = now
-  advanceTask(task, now)
-  appendEvent(state, task, 'paused', 'in_progress', 'in_progress', options.eventId, now)
-  await persist(state, now)
-  return structuredClone(session)
+  await executeCommand({
+    type: 'session.pause', sessionId, expectedTaskRevision: options.expectedRevision,
+    eventId: makeId('event', options.eventId),
+  }, now)
+  return requireSession(await loadStudyState(), sessionId)
 }
 
 export async function resumeStudySession(
   sessionId: string,
   options: TaskCommandOptions = {},
 ): Promise<StudySession> {
-  const state = await loadStudyState()
-  const session = requireSession(state, sessionId)
-  if (session.state !== 'paused') throw new Error('Only a paused Study session can be resumed.')
-  assertNoActiveSession(state, sessionId)
-  const task = requireTask(state, session.taskId, options.expectedRevision)
   const now = commandTime(options.now)
-  session.state = 'running'
-  session.activeSince = now
-  session.updatedAt = now
-  advanceTask(task, now)
-  appendEvent(state, task, 'resumed', 'in_progress', 'in_progress', options.eventId, now)
-  await persist(state, now)
-  return structuredClone(session)
+  await executeCommand({
+    type: 'session.resume', sessionId, expectedTaskRevision: options.expectedRevision,
+    eventId: makeId('event', options.eventId),
+  }, now)
+  return requireSession(await loadStudyState(), sessionId)
 }
 
 export async function addTaskChecklistItem(
@@ -471,16 +365,15 @@ export async function addTaskChecklistItem(
   text: string,
   options: TaskCommandOptions & { itemId?: string } = {},
 ): Promise<TaskChecklistItem> {
-  const state = await loadStudyState()
-  const task = requireTask(state, taskId, options.expectedRevision)
-  const item: TaskChecklistItem = {
-    id: makeId('check', options.itemId), text, checked: false,
-    checkedAt: null, position: task.checklist.length,
-  }
-  task.checklist.push(item)
   const now = commandTime(options.now)
-  advanceTask(task, now)
-  await persist(state, now)
+  const itemId = makeId('check', options.itemId)
+  await executeCommand({
+    type: 'task.checklist.add', taskId, text, itemId,
+    expectedRevision: options.expectedRevision,
+  }, now)
+  const task = requireTask(await loadStudyState(), taskId)
+  const item = task.checklist.find(({ id }) => id === itemId)
+  if (!item) throw new Error(`Study checklist item not found: ${itemId}.`)
   return structuredClone(item)
 }
 
@@ -491,14 +384,10 @@ export async function setTaskChecklistItem(
   now = new Date().toISOString(),
   expectedRevision?: number,
 ): Promise<TaskChecklistItem> {
-  const state = await loadStudyState()
-  const task = requireTask(state, taskId, expectedRevision)
+  await executeCommand({ type: 'task.checklist.set', taskId, itemId, checked, expectedRevision }, commandTime(now))
+  const task = requireTask(await loadStudyState(), taskId)
   const item = task.checklist.find(({ id }) => id === itemId)
   if (!item) throw new Error(`Study checklist item not found: ${itemId}.`)
-  item.checked = checked
-  item.checkedAt = checked ? commandTime(now) : null
-  advanceTask(task, commandTime(now))
-  await persist(state, task.updatedAt)
   return structuredClone(item)
 }
 
@@ -506,20 +395,9 @@ export async function reorderStudyTasks(
   taskIds: string[],
   options: Pick<TaskCommandOptions, 'now'> = {},
 ): Promise<StudyTask[]> {
-  if (new Set(taskIds).size !== taskIds.length) {
-    throw new Error('Study task order cannot contain duplicate ids.')
-  }
+  await executeCommand({ type: 'task.reorder', taskIds: [...taskIds] }, commandTime(options.now))
   const state = await loadStudyState()
-  const ordered = taskIds.map((id) => requireTask(state, id))
-  const orderedIds = new Set(taskIds)
-  let orderedIndex = 0
-  state.tasks = state.tasks.map((task) =>
-    orderedIds.has(task.id) ? ordered[orderedIndex++] : task,
-  )
-  const now = commandTime(options.now)
-  for (const task of ordered) advanceTask(task, now)
-  await persist(state, now)
-  return structuredClone(ordered)
+  return taskIds.map((id) => requireTask(state, id))
 }
 
 export async function completeStudyTask(
@@ -534,64 +412,41 @@ export async function completeStudyTask(
   },
   options: TaskCommandOptions & { recordId?: string } = {},
 ): Promise<{ task: StudyTask; record: CompletionRecord }> {
-  const state = await loadStudyState()
-  const task = requireTask(state, input.taskId, options.expectedRevision)
+  const task = requireTask(await loadStudyState(), input.taskId, options.expectedRevision)
   if (task.status !== 'planned' && task.status !== 'in_progress') {
     throw new Error('Only a planned or in-progress Study task can be completed.')
   }
   const now = commandTime(options.now)
-  const sessions = input.sessionId ? [requireSession(state, input.sessionId)] : []
-  for (const session of sessions) {
-    if (session.taskId !== task.id) throw new Error('Completion session belongs to another Study task.')
-    if (session.state === 'running' && session.activeSince) session.elapsedSeconds += elapsedSeconds(session.activeSince, now)
-    session.state = 'finished'
-    session.activeSince = null
-    session.updatedAt = now
-  }
-  const fromStatus = task.status
-  task.status = 'completed'
-  task.blockedReason = null
-  advanceTask(task, now)
-  const record: CompletionRecord = {
-    id: makeId('completion', options.recordId), taskId: task.id, topicId: task.topicId,
-    sessionIds: sessions.map(({ id }) => id), taskTitleSnapshot: task.title,
-    learned: input.learned, evidence: input.evidence, blocker: input.blocker ?? '',
-    nextAction: input.nextAction, mastery: input.mastery ?? null, completedAt: now,
-    reviewStage: 0, nextReviewOn: nextReviewDate(now.slice(0, 10), 0),
-    lastReviewResult: null, lastReviewedAt: null, createdAt: now, updatedAt: now,
-    deletedAt: null,
-  }
-  state.completionRecords.push(record)
-  appendEvent(state, task, 'completed', fromStatus, 'completed', options.eventId, now, undefined, record.id)
-  await persist(state, now)
-  return { task: structuredClone(task), record: structuredClone(record) }
+  const recordId = makeId('completion', options.recordId)
+  await executeCommand({
+    type: 'task.complete',
+    taskId: input.taskId,
+    sessionId: input.sessionId,
+    learned: input.learned,
+    evidence: input.evidence,
+    blocker: input.blocker,
+    nextAction: input.nextAction,
+    mastery: input.mastery,
+    expectedRevision: options.expectedRevision,
+    eventId: makeId('event', options.eventId),
+    recordId,
+  }, now)
+  const state = await loadStudyState()
+  const record = state.completionRecords.find(({ id }) => id === recordId)
+  if (!record) throw new Error(`Completion record not found: ${recordId}.`)
+  return { task: requireTask(state, input.taskId), record: structuredClone(record) }
 }
 
 export async function toggleStudyTaskCompletion(
   taskId: string,
   options: TaskCommandOptions = {},
 ): Promise<StudyTask> {
-  const state = await loadStudyState()
-  const task = requireTask(state, taskId, options.expectedRevision)
-  if (task.status === 'cancelled') {
-    throw new Error('A cancelled Study task cannot be completion-toggled.')
-  }
   const now = commandTime(options.now)
-  const fromStatus = task.status
-  if (fromStatus === 'completed') {
-    task.status = task.plannedOn ? 'planned' : 'inbox'
-    task.blockedReason = null
-    advanceTask(task, now)
-    appendEvent(state, task, 'reopened', fromStatus, task.status, options.eventId, now)
-  } else {
-    finishActiveTaskSession(state, task.id, now)
-    task.status = 'completed'
-    task.blockedReason = null
-    advanceTask(task, now)
-    appendEvent(state, task, 'completed', fromStatus, 'completed', options.eventId, now)
-  }
-  await persist(state, now)
-  return structuredClone(task)
+  await executeCommand({
+    type: 'task.toggle_completion', taskId, expectedRevision: options.expectedRevision,
+    eventId: makeId('event', options.eventId),
+  }, now)
+  return requireTask(await loadStudyState(), taskId)
 }
 
 export async function reviewCompletionRecord(
@@ -600,158 +455,152 @@ export async function reviewCompletionRecord(
   reviewedOn: string,
   options: TaskCommandOptions = {},
 ): Promise<CompletionRecord> {
-  const state = await loadStudyState()
-  const index = state.completionRecords.findIndex(({ id }) => id === recordId)
-  if (index < 0) throw new Error(`Completion record not found: ${recordId}.`)
-  const task = requireTask(state, state.completionRecords[index].taskId, options.expectedRevision)
-  const now = commandTime(options.now)
-  state.completionRecords[index] = applyReviewResult(state.completionRecords[index], result, reviewedOn, now)
-  advanceTask(task, now)
-  await persist(state, now)
-  return structuredClone(state.completionRecords[index])
+  await executeCommand({
+    type: 'completion.review', recordId, result, reviewedOn,
+    expectedTaskRevision: options.expectedRevision,
+  }, commandTime(options.now))
+  const record = (await loadStudyState()).completionRecords.find(({ id }) => id === recordId)
+  if (!record) throw new Error(`Completion record not found: ${recordId}.`)
+  return structuredClone(record)
 }
 
 export async function createTaskFromNextAction(
   recordId: string,
   options: TaskCommandOptions & { taskId?: string; plannedOn?: string | null } = {},
 ): Promise<StudyTask> {
-  const state = await loadStudyState()
-  const record = state.completionRecords.find(({ id }) => id === recordId)
-  if (!record || record.deletedAt) throw new Error(`Completion record not found: ${recordId}.`)
-  requireTask(state, record.taskId, options.expectedRevision)
-  const now = commandTime(options.now)
-  const planned = options.plannedOn !== undefined
-  const task: StudyTask = {
-    id: makeId('task', options.taskId), revision: 1, topicId: record.topicId,
-    title: record.nextAction, notes: '', status: planned ? 'planned' : 'inbox',
-    plannedOn: options.plannedOn ?? null, dueOn: null, estimateMinutes: null,
-    reminderAt: null, priority: 'none',
-    acceptanceCriteria: [], checklist: [], blockedReason: null,
-    createdAt: now, updatedAt: now, deletedAt: null,
-  }
-  state.tasks.push(task)
-  appendEvent(state, task, planned ? 'planned' : 'captured', null, task.status, options.eventId, now, `Created from completion ${recordId}.`)
-  await persist(state, now)
-  return structuredClone(task)
+  const taskId = makeId('task', options.taskId)
+  await executeCommand({
+    type: 'completion.create_next_action', recordId, taskId,
+    startOn: options.plannedOn,
+    expectedTaskRevision: options.expectedRevision,
+    eventId: makeId('event', options.eventId),
+  }, commandTime(options.now))
+  return requireTask(await loadStudyState(), taskId)
 }
 
 export async function exportStudyState(exportedAt?: string): Promise<string> {
-  return JSON.stringify(createStudyExport(await loadStudyState(), exportedAt))
+  return JSON.stringify(createWorkspaceExport(await getWorkspaceStore().load(), exportedAt))
 }
 
 export async function importStudyState(content: string): Promise<StudyState> {
-  const imported = parseStudyExport(content).state
-  await saveStudyState(imported)
-  return structuredClone(imported)
+  const imported = parseWorkspaceExport(content)
+  await executeCommand({ type: 'workspace.import', state: imported.state }, imported.exportedAt)
+  return loadStudyState()
 }
 
-async function persist(state: StudyState, now: string): Promise<void> {
-  const expectedUpdatedAt = state.updatedAt
-  state.updatedAt = nextSnapshotUpdatedAt(expectedUpdatedAt, now)
-  await saveStudyState(state, expectedUpdatedAt)
+export async function resetStudyState(now = new Date().toISOString()): Promise<StudyState> {
+  await executeCommand({ type: 'workspace.reset' }, commandTime(now))
+  return loadStudyState()
 }
 
-function nextSnapshotUpdatedAt(current: string, proposed: string): string {
-  if (proposed !== current) return proposed
-  const milliseconds = Date.parse(current)
-  if (!Number.isFinite(milliseconds)) {
-    throw new Error('Study snapshot updatedAt must be a valid timestamp.')
+export function projectWorkspaceState(workspace: WorkspaceStateV3): StudyState {
+  const reminders = new Map<string, string>()
+  for (const rule of workspace.reminderRules) {
+    if (rule.enabled && rule.occurrenceId === null && rule.trigger.kind === 'absolute' && !reminders.has(rule.taskId)) {
+      reminders.set(rule.taskId, rule.trigger.at)
+    }
   }
-  return new Date(milliseconds + 1).toISOString()
+  return {
+    version: 2,
+    listGroups: structuredClone(workspace.listGroups),
+    topics: workspace.lists
+      .filter(({ id }) => id !== SYSTEM_LEARNING_LIST_ID)
+      .map((list) => ({
+        id: list.id,
+        groupId: list.groupId,
+        title: list.title,
+        goal: list.goal,
+        successCriteria: [...list.successCriteria],
+        weeklyTargetMinutes: list.weeklyTargetMinutes ?? 1,
+        createdAt: list.createdAt,
+        updatedAt: list.updatedAt,
+        archivedAt: list.archivedAt,
+      })),
+    tasks: workspace.tasks.map((task) => projectTask(task, reminders.get(task.id) ?? null)),
+    sessions: structuredClone(workspace.studySessions),
+    taskEvents: structuredClone(workspace.taskEvents),
+    completionRecords: structuredClone(workspace.completionRecords),
+    updatedAt: workspace.updatedAt,
+  }
 }
 
-function advanceTask(task: StudyTask, now: string): void {
-  task.revision += 1
-  task.updatedAt = now
+async function executeCommand(command: CapabilityCommand, now: string): Promise<void> {
+  const store = getWorkspaceStore()
+  const current = await store.load()
+  const service = createTaskCapabilityService(store, () => now, (kind) => `${kind}:${crypto.randomUUID()}`)
+  await service.execute({
+    protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+    idempotencyKey: `study:${crypto.randomUUID()}`,
+    source: 'human-ui',
+    expectedWorkspaceRevision: current.revision,
+    command: withoutUndefinedFields(command),
+  })
 }
 
-function requireTask(state: StudyState, taskId: string, expectedRevision?: number): StudyTask {
-  const task = state.tasks.find(({ id, deletedAt }) => id === taskId && !deletedAt)
+function withoutUndefinedFields<T extends object>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, field]) => field !== undefined),
+  ) as T
+}
+
+function taskPatch(input: StudyTaskMetadataUpdate) {
+  const patch: Extract<CapabilityCommand, { type: 'task.update' }>['patch'] = {}
+  if (input.topicId !== undefined) patch.listId = listIdForTopic(input.topicId)
+  if (input.title !== undefined) patch.title = input.title
+  if (input.notes !== undefined) patch.notes = input.notes
+  if (input.plannedOn !== undefined) patch.startOn = input.plannedOn
+  if (input.dueOn !== undefined) patch.dueOn = input.dueOn
+  if (input.reminderAt !== undefined) patch.reminderAt = input.reminderAt
+  if (input.priority !== undefined) patch.priority = input.priority
+  if (input.estimateMinutes !== undefined) patch.estimateMinutes = input.estimateMinutes
+  if (input.acceptanceCriteria !== undefined) patch.acceptanceCriteria = [...input.acceptanceCriteria]
+  return patch
+}
+
+function projectTask(task: Task, reminderAt: string | null): StudyTask {
+  return {
+    id: task.id,
+    revision: task.revision,
+    topicId: task.listId === SYSTEM_LEARNING_LIST_ID ? null : task.listId,
+    title: task.title,
+    notes: task.notes,
+    status: task.status,
+    plannedOn: task.schedule.startOn ?? task.schedule.startAt?.slice(0, 10) ?? null,
+    dueOn: task.deadline.dueOn ?? task.deadline.dueAt?.slice(0, 10) ?? null,
+    reminderAt,
+    priority: task.priority,
+    estimateMinutes: task.schedule.estimateMinutes,
+    acceptanceCriteria: [...(task.learning?.acceptanceCriteria ?? [])],
+    checklist: structuredClone(task.checklist),
+    blockedReason: task.learning?.blockedReason ?? null,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    deletedAt: task.deletedAt,
+  }
+}
+
+function listIdForTopic(topicId: string | null): string {
+  return topicId ?? SYSTEM_LEARNING_LIST_ID
+}
+
+function requireTask(
+  state: StudyState,
+  taskId: string,
+  expectedRevision?: number,
+  includeDeleted = false,
+): StudyTask {
+  const task = state.tasks.find(({ id, deletedAt }) => id === taskId && (includeDeleted || deletedAt === null))
   if (!task) throw new Error(`Study task not found: ${taskId}.`)
   if (expectedRevision !== undefined && task.revision !== expectedRevision) {
     throw new Error(`Study task revision conflict: expected ${expectedRevision}, found ${task.revision}.`)
   }
-  return task
-}
-
-function requireBulkTasks(state: StudyState, targets: readonly BulkTaskTarget[]): StudyTask[] {
-  const ids = targets.map(({ taskId }) => taskId)
-  if (new Set(ids).size !== ids.length) {
-    throw new Error('Bulk Study task command cannot contain duplicate ids.')
-  }
-  return targets.map(({ taskId, expectedRevision }) =>
-    requireTask(state, taskId, expectedRevision))
-}
-
-function finishActiveTaskSession(state: StudyState, taskId: string, now: string): void {
-  const active = state.sessions.find(({ taskId: id, state, deletedAt }) =>
-    id === taskId && !deletedAt && (state === 'running' || state === 'paused'))
-  if (active) finishSession(active, now)
-}
-
-function softDeleteTask(
-  state: StudyState,
-  task: StudyTask,
-  now: string,
-  eventId?: string,
-  reason?: string,
-): void {
-  finishActiveTaskSession(state, task.id, now)
-  task.deletedAt = now
-  advanceTask(task, now)
-  appendEvent(state, task, 'deleted', task.status, task.status, eventId, now, reason)
+  return structuredClone(task)
 }
 
 function requireSession(state: StudyState, sessionId: string): StudySession {
-  const session = state.sessions.find(({ id, deletedAt }) => id === sessionId && !deletedAt)
+  const session = state.sessions.find(({ id, deletedAt }) => id === sessionId && deletedAt === null)
   if (!session) throw new Error(`Study session not found: ${sessionId}.`)
-  return session
-}
-
-function assertNoActiveSession(state: StudyState, exceptId?: string): void {
-  const active = state.sessions.find(({ id, state, deletedAt }) =>
-    id !== exceptId && !deletedAt && (state === 'running' || state === 'paused'))
-  if (active) throw new Error('Another Study session is already active.')
-}
-
-function appendEvent(
-  state: StudyState,
-  task: StudyTask,
-  type: TaskEventType,
-  fromStatus: StudyTaskStatus | null,
-  toStatus: StudyTaskStatus | null,
-  explicitId: string | undefined,
-  occurredAt: string,
-  reason?: string,
-  completionRecordId?: string,
-): void {
-  const event: TaskEvent = {
-    id: makeId('event', explicitId),
-    sequence: state.taskEvents.reduce((max, item) => Math.max(max, item.sequence), 0) + 1,
-    taskId: task.id, type, occurredAt, fromStatus, toStatus,
-    reason: reason?.trim() || null, completionRecordId: completionRecordId ?? null,
-  }
-  state.taskEvents.push(event)
-}
-
-function commandTime(value = new Date().toISOString()): string {
-  if (!value) throw new Error('Study command requires a timestamp.')
-  return value
-}
-
-function elapsedSeconds(from: string, to: string): number {
-  const milliseconds = Date.parse(to) - Date.parse(from)
-  if (!Number.isFinite(milliseconds) || milliseconds < 0) throw new Error('Study session elapsed time cannot be negative.')
-  return Math.floor(milliseconds / 1000)
-}
-
-function finishSession(session: StudySession, now: string): void {
-  if (session.state === 'running' && session.activeSince) {
-    session.elapsedSeconds += elapsedSeconds(session.activeSince, now)
-  }
-  session.state = 'finished'
-  session.activeSince = null
-  session.updatedAt = now
+  return structuredClone(session)
 }
 
 function sameSessionLifecycle(current: StudySession, candidate: StudySession): boolean {
@@ -765,10 +614,29 @@ function sameSessionLifecycle(current: StudySession, candidate: StudySession): b
     current.deletedAt === candidate.deletedAt
 }
 
-function makeId(prefix: string, explicit?: string): string {
-  return explicit ?? `${prefix}:${crypto.randomUUID()}`
+function assertStudyDateOrder(plannedOn: string | null, dueOn: string | null): void {
+  if (plannedOn && dueOn && dueOn < plannedOn) throw new Error('Study task dueOn cannot precede plannedOn.')
 }
 
-function withoutUndefined<T extends object>(value: T): Partial<T> {
-  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>
+function assertUniqueTargets(targets: readonly BulkTaskTarget[], message: string): void {
+  if (new Set(targets.map(({ taskId }) => taskId)).size !== targets.length) throw new Error(message)
+}
+
+function targetRevisions(targets: readonly BulkTaskTarget[]): Record<string, number> | undefined {
+  const entries = targets.flatMap(({ taskId, expectedRevision }) =>
+    expectedRevision === undefined ? [] : [[taskId, expectedRevision] as const])
+  return entries.length ? Object.fromEntries(entries) : undefined
+}
+
+function targetEventIds(targets: readonly BulkTaskTarget[]): Record<string, string> {
+  return Object.fromEntries(targets.map(({ taskId, eventId }) => [taskId, makeId('event', eventId)]))
+}
+
+function commandTime(value = new Date().toISOString()): string {
+  if (!value) throw new Error('Study command requires a timestamp.')
+  return value
+}
+
+function makeId(prefix: string, explicit?: string): string {
+  return explicit ?? `${prefix}:${crypto.randomUUID()}`
 }

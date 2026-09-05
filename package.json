@@ -46,6 +46,8 @@
     "remove:mcp": "npm uninstall @ai-sdk/mcp"
   },
   "dependencies": {
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@fontsource-variable/noto-sans-sc": "^5.3.0",
     "@lucide/vue": "^1.38.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-autostart": "^2.5.1",

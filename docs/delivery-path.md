@@ -9,7 +9,7 @@
 | 默认 Web | Beta | `npm run build:web`、本地浏览器 IndexedDB smoke | 已部署站点、账号服务 |
 | 默认桌面 | Stable baseline | `npm run verify`、`npm run rust:verify`、Windows 无签名安装 smoke | 签名、公证、在线更新 |
 | Android | Beta | SDK/NDK/JDK/ADB doctor、模拟器 `tauri android dev`、本地 universal debug APK/AAB、干净 GitHub runner 的 x86_64 debug APK workflow | 真机、签名、Google Play、更新通道 |
-| iOS | Deferred | 仅代码降级与文档 | Xcode 构建、模拟器、TestFlight、App Store |
+| iOS | Deferred | 代码降级与可执行开发规划 | Xcode 构建、模拟器、真机、TestFlight、App Store |
 | 同步服务 | Preview foundation | 本地优先 outbox、IndexedDB 状态、allowlist、HTTPS/loopback HTTP transport 测试 | 账号、冲突产品规则、托管 API、多设备运行 |
 | 桌面更新 | Template only | 端点/公钥/CI 模板与严格 release gate | 自有端点、私钥签名、安装端更新 |
 
@@ -55,3 +55,5 @@ GitHub 上也提供手动触发的 `android-debug` workflow：它在干净环境
 | 云端同步 | 身份提供方、数据模型/RLS 或等价授权、数据区域/保留、审计和成本边界 |
 
 每次改变上述边界时，同时更新 `app.protocol.json`、相应实现文档和验证命令；协议中的交付状态只记录已有证据，不记录愿望。
+
+iOS 不必等待全部桌面功能 PR 完成后再启动：应在时间规划领域基础合并后建立独立原生基础 PR，再随共享路线逐步接入功能。详细顺序、平台边界和每个 PR 的证据模板见 [iOS 开发规划与执行指引](./ios-development.md)。

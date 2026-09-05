@@ -20,7 +20,11 @@ src/
         ├── Card.vue
         ├── Badge.vue
         ├── Progress.vue
-        └── EmptyState.vue
+        ├── EmptyState.vue
+        ├── Listbox.vue / Checkbox.vue / Switch.vue
+        ├── DateTimePicker.vue
+        ├── Popover.vue / Dialog.vue / ToastRegion.vue
+        └── OverlayHost.vue / use-overlay.ts
 ```
 
 设计系统分两层：
@@ -97,6 +101,15 @@ src/
 | `--font-medium` | 500 | 按钮、标题、强调 |
 
 > 正文和普通控件优先使用 400 / 500；标题可在 550–650 之间建立清晰层级，避免大面积使用 700。
+
+**字体**（离线随应用分发）：
+
+| Token | 字体栈 | 用途 |
+|---|---|---|
+| `--font-sans` | Manrope Variable → Noto Sans SC Variable → Segoe UI Variable → Segoe UI → PingFang SC → Microsoft YaHei UI → sans-serif | 正文、控件、中英文混排 |
+| `--font-display` | Manrope Variable → Noto Sans SC Variable → Segoe UI Variable → Segoe UI → PingFang SC → Microsoft YaHei UI → sans-serif | 页面标题、面板标题 |
+
+Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 Fontsource 包本地加载，不依赖在线字体服务；发行产物同时包含 `third-party-font-licenses.txt`。保留系统字体回退，确保字体资源异常时界面仍可读。
 
 **阴影**（三层叠加）：
 
@@ -224,6 +237,39 @@ src/
 ```
 
 名称支持 PascalCase、kebab-case、空格或下划线（自动转换）。默认注册表只包含模板实际使用的 5 个图标；需要其他 Lucide 图标时，在 `src/assets/icons/registry.ts` 增加静态 import 和映射。图标名未注册会在控制台 warn，不会抛错导致白屏。
+
+### 2.8 统一选择、日期与布尔控件
+
+```vue
+<Listbox v-model="sort" :options="sortOptions" label="排序" />
+<Checkbox v-model="selected" accessible-label="选择这项任务" />
+<Switch v-model="reminders" label="到期与复习提醒" description="只发送到期数量" />
+<DateTimePicker v-model="plannedOn" label="计划日期" />
+<DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" />
+```
+
+- `Listbox` 的 `options` 使用 `{ value, label, disabled? }`；它提供方向键、Home / End、Enter / Space、Escape 和外点关闭。
+- `Checkbox` 与 `Switch` 保留 `.ui-native-underlay` 原生语义层，页面上只显示主题化外观。
+- `DateTimePicker` 的日期值为本地 `YYYY-MM-DD`，日期时间值为本地 `YYYY-MM-DDTHH:mm`；日期、时间和日历数字均使用等宽数字。`datetime` 模式明确按当前设备本地时间解释。
+
+### 2.9 浮层与提示
+
+应用根部只挂载一次 `<OverlayHost />`。`Popover`、`Dialog` 与 `ToastRegion` 会传送到这个宿主；业务组件不要再创建新的 Portal 根节点。
+
+```vue
+<Popover v-model:open="open">
+  <template #trigger="{ triggerProps }"><button v-bind="triggerProps">打开</button></template>
+  <div>浮层内容</div>
+</Popover>
+
+<Dialog :open="confirming" title="确认操作？" role="alertdialog" @close="confirming = false">
+  <template #footer>…确认与取消按钮…</template>
+</Dialog>
+
+<ToastRegion :message="notice" action-label="撤销" @action="undo" @dismiss="notice = ''" />
+```
+
+`use-overlay.ts` 统一维护浮层顺序、Escape 和外点关闭。`Dialog` 负责焦点陷阱与关闭后的焦点返回；`ToastRegion` 在悬浮或键盘焦点进入时暂停超时。
 
 ---
 
