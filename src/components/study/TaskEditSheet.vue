@@ -12,7 +12,8 @@ export interface TaskEditValue {
   topicId: string | null
   plannedOn?: string | null
   plannedAt?: string | null
-  dueOn: string | null
+  dueOn?: string | null
+  dueAt?: string | null
   reminderAt: string | null
   priority: StudyTaskPriority
   estimateMinutes: number | null
@@ -28,6 +29,7 @@ const props = defineProps<{
   recurrenceRule?: RecurrenceRule | null
   learning?: boolean
   plannedAt?: string | null
+  dueAt?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -42,6 +44,7 @@ const topicId = ref('')
 const plannedOn = ref('')
 const plannedTimed = ref(false)
 const dueOn = ref('')
+const dueTimed = ref(false)
 const reminderAt = ref('')
 const priority = ref<StudyTaskPriority>('none')
 const estimateMinutes = ref<number | null>(null)
@@ -65,7 +68,8 @@ watch(() => [props.open, props.task, props.recurrenceRule] as const, ([open, tas
   topicId.value = task.topicId ?? ''
   plannedTimed.value = Boolean(props.plannedAt)
   plannedOn.value = props.plannedAt ? toLocalDateTime(props.plannedAt) : task.plannedOn ?? ''
-  dueOn.value = task.dueOn ?? ''
+  dueTimed.value = Boolean(props.dueAt)
+  dueOn.value = props.dueAt ? toLocalDateTime(props.dueAt) : task.dueOn ?? ''
   reminderAt.value = task.reminderAt ? toLocalDateTime(task.reminderAt) : ''
   priority.value = task.priority
   estimateMinutes.value = task.estimateMinutes
@@ -83,7 +87,9 @@ function save() {
     ...(plannedTimed.value
       ? { plannedAt: plannedOn.value ? new Date(plannedOn.value).toISOString() : null }
       : { plannedOn: plannedOn.value || null }),
-    dueOn: dueOn.value || null,
+    ...(dueTimed.value
+      ? { dueAt: dueOn.value ? new Date(dueOn.value).toISOString() : null }
+      : { dueOn: dueOn.value || null }),
     reminderAt: reminderAt.value ? new Date(reminderAt.value).toISOString() : null,
     priority: priority.value,
     estimateMinutes: estimateMinutes.value && estimateMinutes.value > 0 ? estimateMinutes.value : null,
@@ -107,7 +113,7 @@ function toLocalDateTime(value: string) {
       <label><span><ListTree :size="15" />清单</span><Listbox v-model="topicId" :options="topicOptions" label="清单" /></label>
       <div class="field-grid">
         <label><span><CalendarDays :size="15" />日期</span><DateTimePicker v-model="plannedOn" :mode="plannedTimed ? 'datetime' : 'date'" label="日期" placeholder="不设置计划日期" /></label>
-        <label><span>截止</span><DateTimePicker v-model="dueOn" label="截止日期" placeholder="不设置截止日期" /></label>
+        <label><span>截止</span><DateTimePicker v-model="dueOn" :mode="dueTimed ? 'datetime' : 'date'" label="截止日期" placeholder="不设置截止日期" /></label>
       </div>
       <label><span><Bell :size="15" />提醒</span><DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" placeholder="不设置提醒" /></label>
       <label><span><Flag :size="15" />优先级</span><Listbox :model-value="priority" :options="priorityOptions" label="优先级" @update:model-value="priority = $event as StudyTaskPriority" /></label>
@@ -126,6 +132,6 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 label { display: block; margin-top: 14px; } label > span { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: var(--muted); font-size: var(--text-xs); font-weight: 600; } input, textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font: inherit; font-size: var(--text-base); } textarea { min-height: 72px; resize: vertical; } input:focus, textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); } footer button { min-height: 44px; padding: 0 17px; border-radius: var(--radius-lg); font-size: 12px; font-weight: 650; } .cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); } .save { border: 0; background: var(--accent); color: var(--accent-text); } .save:disabled { opacity: .4; }
 @keyframes sheet-in { from { transform: translateY(16px) scale(.985); opacity: .7; } }
-@media (max-width: 599px) { .backdrop { align-items: flex-end; padding: 0; } .sheet { max-height: 94dvh; padding: 30px 20px calc(22px + env(safe-area-inset-bottom, 0px)); border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; } .field-grid { grid-template-columns: 1fr; gap: 0; } }
+@media (max-width: 819px) { .backdrop { align-items: flex-end; padding: 0; } .sheet { max-height: 94dvh; padding: 30px 20px calc(22px + env(safe-area-inset-bottom, 0px)); border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; } .field-grid { grid-template-columns: 1fr; gap: 0; } }
 @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
 </style>

@@ -388,7 +388,7 @@ header button {
   line-height: 1.65;
 }
 
-@media (max-width: 799px) {
+@media (max-width: 819px) {
   .backdrop {
     align-items: flex-end;
   }

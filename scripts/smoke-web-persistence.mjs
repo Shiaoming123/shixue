@@ -198,6 +198,44 @@ async function main() {
       if ((await editedPlannedValue.textContent()) !== '明天 14:00') {
         throw new Error(`Quick add timed schedule changed after editing: ${await editedPlannedValue.textContent()}`)
       }
+
+      const timedDeadlineTitle = '截止明天下午4点 提交报告'
+      const timedDeadlineLookup = '提交报告'
+      await page.getByRole('button', { name: /^收件箱/ }).click()
+      const timedDeadlineComposer = page.locator('.quick-add-composer')
+      const timedDeadlineInput = timedDeadlineComposer.getByRole('textbox', { name: '新建任务' })
+      await timedDeadlineInput.fill(timedDeadlineTitle)
+      await timedDeadlineComposer.getByRole('button', { name: /编辑截止.*16:00/ }).waitFor({ state: 'visible' })
+      await timedDeadlineComposer.getByRole('button', { name: '添加', exact: true }).click()
+      await timedDeadlineInput.waitFor({ state: 'visible' })
+      await page.waitForFunction(() => document.querySelector('.quick-add-composer input')?.value === '' || document.querySelector('.quick-add-message.error'))
+      if (await timedDeadlineInput.inputValue()) {
+        throw new Error(`Timed deadline quick add failed: ${await timedDeadlineComposer.locator('.quick-add-message').textContent()}`)
+      }
+      await page.reload({ waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('searchbox', { name: '搜索任务' }).fill(timedDeadlineLookup)
+      await page.locator('.task-row').filter({ hasText: timedDeadlineLookup }).locator('.task-main').click()
+      const timedDeadlineDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
+      const deadlineValue = timedDeadlineDetail.locator('.facts div').filter({ hasText: '截止日期' }).locator('dd')
+      if ((await deadlineValue.textContent()) !== '明天 16:00') {
+        throw new Error(`Quick add timed deadline was not preserved after reload: ${await deadlineValue.textContent()}`)
+      }
+      await timedDeadlineDetail.getByRole('button', { name: '编辑任务', exact: true }).click()
+      const timedDeadlineEdit = page.getByRole('dialog', { name: '编辑任务' })
+      await timedDeadlineEdit.getByLabel('任务备注').fill('精确截止编辑验证')
+      await timedDeadlineEdit.getByRole('button', { name: '保存', exact: true }).click()
+      await timedDeadlineEdit.waitFor({ state: 'hidden' })
+      await page.reload({ waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('searchbox', { name: '搜索任务' }).fill(timedDeadlineLookup)
+      await page.locator('.task-row').filter({ hasText: timedDeadlineLookup }).locator('.task-main').click()
+      const editedDeadlineDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
+      await editedDeadlineDetail.getByText('精确截止编辑验证', { exact: true }).waitFor({ state: 'visible' })
+      const editedDeadlineValue = editedDeadlineDetail.locator('.facts div').filter({ hasText: '截止日期' }).locator('dd')
+      if ((await editedDeadlineValue.textContent()) !== '明天 16:00') {
+        throw new Error(`Quick add timed deadline changed after editing: ${await editedDeadlineValue.textContent()}`)
+      }
       const marker = createStudyMarker()
       const editedMarker = `${marker}-edited`
       await page.getByRole('button', { name: /^收件箱/ }).click()
@@ -243,9 +281,12 @@ async function main() {
       await page.getByRole('complementary', { name: '任务详情', exact: true }).waitFor({ state: 'visible' })
       await page.evaluate(() => localStorage.setItem('meow-study-appearance', 'dark'))
       for (const viewport of [
-        { width: 700, height: 844, hasBottomNav: true },
-        { width: 810, height: 844, hasBottomNav: false },
-        { width: 390, height: 844, hasBottomNav: true },
+        { width: 700, height: 844, hasBottomNav: true, modalPicker: true },
+        { width: 810, height: 844, hasBottomNav: true, modalPicker: true },
+        { width: 819, height: 844, hasBottomNav: true, modalPicker: true },
+        { width: 820, height: 844, hasBottomNav: false, modalPicker: false },
+        { width: 320, height: 700, hasBottomNav: true, modalPicker: true },
+        { width: 390, height: 844, hasBottomNav: true, modalPicker: true },
       ]) {
         await page.setViewportSize(viewport)
         await page.reload({ waitUntil: 'networkidle' })
@@ -254,7 +295,12 @@ async function main() {
         if (viewport.hasBottomNav) {
           await mobileNav.getByRole('button', { name: '收件箱', exact: true }).click()
         } else {
-          await page.locator('.sidebar').getByRole('button', { name: /^收件箱/ }).click()
+          const sidebar = page.locator('.sidebar')
+          await sidebar.getByRole('button', { name: /^收件箱/ }).click()
+          const sidebarBox = await sidebar.boundingBox()
+          if (!sidebarBox || sidebarBox.width < 70 || sidebarBox.width > 74) {
+            throw new Error(`Medium layout does not use the 72px icon sidebar at ${viewport.width}px: ${JSON.stringify(sidebarBox)}`)
+          }
         }
         const compactQuickAdd = page.locator('.quick-add-composer')
         await compactQuickAdd.getByRole('textbox', { name: '新建任务' }).fill(quickAddTitle)
@@ -262,28 +308,41 @@ async function main() {
         await scheduleTrigger.click()
         const scheduleSheet = page.getByRole('dialog', { name: /编辑计划/ })
         await scheduleSheet.waitFor({ state: 'visible' })
-        if ((await scheduleSheet.getAttribute('aria-modal')) !== 'true') {
-          throw new Error(`Compact schedule editor is not modal at ${viewport.width}px.`)
+        if ((await scheduleSheet.getAttribute('aria-modal')) !== String(viewport.modalPicker)) {
+          throw new Error(`Schedule editor modality is wrong at ${viewport.width}px.`)
         }
-        if (!(await scheduleSheet.evaluate((element) => element.contains(document.activeElement)))) {
+        if (viewport.modalPicker && !(await scheduleSheet.evaluate((element) => element.contains(document.activeElement)))) {
           throw new Error(`Compact schedule editor did not receive focus at ${viewport.width}px.`)
         }
         const apply = scheduleSheet.getByRole('button', { name: '应用', exact: true })
-        const [applyBox, sheetBox] = await Promise.all([apply.boundingBox(), scheduleSheet.boundingBox()])
+        await apply.scrollIntoViewIfNeeded()
+        const applyBox = await apply.boundingBox()
         if (viewport.hasBottomNav) {
           const bottomNavBox = await mobileNav.boundingBox()
           if (!applyBox || !bottomNavBox || applyBox.y + applyBox.height > bottomNavBox.y) {
             throw new Error(`Compact picker actions overlap bottom navigation at ${viewport.width}px: apply=${JSON.stringify(applyBox)}, nav=${JSON.stringify(bottomNavBox)}`)
           }
-        } else {
-          const bottomGap = sheetBox ? viewport.height - sheetBox.y - sheetBox.height : Number.POSITIVE_INFINITY
-          if (bottomGap < 8 || bottomGap > 20) {
-            throw new Error(`Compact picker reserves hidden bottom navigation space at ${viewport.width}px: gap=${bottomGap}`)
+        }
+        if (!viewport.modalPicker) {
+          await apply.click()
+          await compactQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).waitFor({ state: 'visible' })
+          const mediumDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
+          if (!(await mediumDetail.isVisible())) await page.locator('.task-row').first().locator('.task-main').click()
+          await mediumDetail.waitFor({ state: 'visible' })
+          const [detailPosition, detailBox, tasksBox] = await Promise.all([
+            mediumDetail.evaluate((element) => getComputedStyle(element).position),
+            mediumDetail.boundingBox(),
+            page.locator('.tasks-scroll').boundingBox(),
+          ])
+          if (detailPosition !== 'fixed' || !detailBox || !tasksBox || detailBox.x >= tasksBox.x + tasksBox.width) {
+            throw new Error(`Medium detail is not an overlay drawer at ${viewport.width}px.`)
           }
+          await mediumDetail.getByRole('button', { name: '关闭任务详情', exact: true }).click()
+          continue
         }
         await apply.focus()
         await page.keyboard.press('Tab')
-        if (!(await scheduleSheet.evaluate((element) => element.contains(document.activeElement)))) {
+        if (viewport.modalPicker && !(await scheduleSheet.evaluate((element) => element.contains(document.activeElement)))) {
           throw new Error(`Compact schedule editor did not trap focus at ${viewport.width}px.`)
         }
         await page.keyboard.press('Escape')
@@ -296,7 +355,8 @@ async function main() {
         await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.startsWith('编辑计划'))
         await scheduleTrigger.click()
         await scheduleSheet.waitFor({ state: 'visible' })
-        if (viewport.width === 390) {
+        if (viewport.width === 320) await scheduleSheet.getByRole('button', { name: '应用', exact: true }).scrollIntoViewIfNeeded()
+        if (viewport.width === 390 || viewport.width === 320) {
           await scheduleSheet.evaluate((element) =>
             new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
           )
@@ -304,8 +364,18 @@ async function main() {
             throw new Error('Compact schedule editor did not settle before visual capture.')
           }
           await page.screenshot({
-            path: resolve(quickAddArtifactRoot, 'quick-add-mobile-picker-390x844.png'),
+            path: resolve(quickAddArtifactRoot, viewport.width === 390 ? 'quick-add-mobile-picker-390x844.png' : 'quick-add-mobile-min-picker-320x700.png'),
           })
+        }
+        if (viewport.width === 320) {
+          const geometry = await scheduleSheet.evaluate((element) => ({
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+          }))
+          if (geometry.scrollWidth > geometry.clientWidth) {
+            throw new Error(`Quick add candidate editor overflows at 320px: ${JSON.stringify(geometry)}`)
+          }
+          if (!(await apply.isVisible())) throw new Error('Quick add Apply action is not reachable at 320px.')
         }
         await scheduleSheet.getByRole('button', { name: '应用', exact: true }).click()
         await compactQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).waitFor({ state: 'visible' })

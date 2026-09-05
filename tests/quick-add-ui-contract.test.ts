@@ -49,6 +49,11 @@ test('candidate editor exposes a named adaptive dialog', () => {
   assert.match(composer, /:id="`quick-add-editor-title-\$\{candidate\.id\}`"/)
 })
 
+test('composer explains that multiple lists conflict while tags remain multi-select', () => {
+  const composer = studySource('QuickAddComposer.vue')
+  assert.match(composer, /检测到多个清单，请只保留一个清单；标签可以多选。/)
+})
+
 test('calendar exposes row-owned grid cells, one tab stop, and month and year navigation', () => {
   const datePicker = uiSource('DatePicker.vue')
   assert.match(datePicker, /role="row"/)
@@ -109,6 +114,27 @@ test('command mapping preserves date-only values and embeds recurrence in task.c
   assert.equal(command.recurrence?.anchorOn, '2026-09-06')
   assert.equal(command.recurrence?.anchorAt, undefined)
   assert.deepEqual(command.recurrence?.cadence, { kind: 'daily', interval: 1 })
+})
+
+test('timed recurrence derives cadence from the anchor day in its configured timezone', () => {
+  const expectations = [
+    ['weekly', { kind: 'weekly', interval: 1, weekdays: [0] }],
+    ['monthly', { kind: 'monthly', interval: 1, dayOfMonth: 6 }],
+    ['yearly', { kind: 'yearly', interval: 1, month: 9, dayOfMonth: 6 }],
+  ] as const
+
+  for (const [value, cadence] of expectations) {
+    const command = buildQuickAddCommand({
+      input: `${value} review`,
+      candidates: [
+        candidate('schedule', '2026-09-05T16:30:00.000Z', 'at 12:30am'),
+        candidate('recurrence', value, value, 'resolved', 12),
+      ],
+      destinationListId: 'list:system:learning',
+      timezone: 'Asia/Shanghai',
+    })
+    assert.deepEqual(command.recurrence?.cadence, cadence)
+  }
 })
 
 test('command mapping rejects ambiguous candidates and removing recurrence creates a plain command', () => {

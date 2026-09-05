@@ -65,6 +65,8 @@ const PRIORITY_PATTERN = /(?<![#@])(?:\bp([1-4])\b|优先级\s*([1-4]))/giu
 const RECURRENCE_PATTERN = /(?<![#@])(?:每天|工作日|每周|每月|每年|\b(?:daily|weekdays|weekly|monthly|yearly)\b)/giu
 const CHINESE_TIME_PATTERN = /^\s*((?:凌晨|早上|上午|中午|下午|晚上)?\s*(?:[01]?\d|2[0-3])(?::[0-5]\d|点(?:[0-5]?\d分?)?))/u
 const ENGLISH_TIME_PATTERN = /^\s+((?:at\s+)?(?:(?:1[0-2]|0?\d)(?::[0-5]\d)?\s*(?:am|pm)|(?:[01]?\d|2[0-3]):[0-5]\d))\b/iu
+const STANDALONE_CHINESE_TIME_PATTERN = /(?:(?:凌晨|早上|上午|中午|下午|晚上)?\s*(?:[01]?\d|2[0-3])(?::[0-5]\d|点(?:[0-5]?\d分?)?))/gu
+const STANDALONE_ENGLISH_TIME_PATTERN = /\b(?:(?:at\s+)?(?:(?:1[0-2]|0?\d)(?::[0-5]\d)?\s*(?:am|pm)|(?:[01]?\d|2[0-3]):[0-5]\d))\b/giu
 
 export function parseQuickAdd(input: string, context: QuickAddContext): QuickAddParse {
   assertIanaTimezone(context.timezone)
@@ -83,7 +85,7 @@ export function parseQuickAdd(input: string, context: QuickAddContext): QuickAdd
     candidates: [],
   }
 
-  return resolveTokens(state, [priorityRule, recurrenceRule, entityRule, dateTimeRule, deadlineRule])
+  return resolveTokens(state, [priorityRule, recurrenceRule, entityRule, dateTimeRule, deadlineRule, standaloneTimeRule])
 }
 
 function resolveTokens(state: ParserState, rules: readonly Rule[]): QuickAddParse {
@@ -135,6 +137,21 @@ function deadlineRule(state: ParserState): void {
     const deadlineStart = deadlinePrefixStart(state.input, dateSource.start)
     if (deadlineStart === null) continue
     addDateCandidate(state, 'deadline', dateSource, followingTime(state.input, dateSource.end), deadlineStart)
+  }
+}
+
+function standaloneTimeRule(state: ParserState): void {
+  const sources = [
+    ...findTokenRanges(state.input, STANDALONE_CHINESE_TIME_PATTERN),
+    ...findTokenRanges(state.input, STANDALONE_ENGLISH_TIME_PATTERN),
+  ].sort((left, right) => (right.end - right.start) - (left.end - left.start))
+  for (const source of sources) {
+    if (isOccupied(state, source) || insideEntityToken(state, source)) continue
+    const time = parseTime(source.text)
+    // A standalone time is anchored to the supplied context's local calendar day.
+    // It intentionally does not roll forward when that wall time has already passed.
+    const instant = zonedDateTimeToInstant(state.localNow.date, time, state.context.timezone)
+    addCandidate(state, 'schedule', formatZonedValue(instant, state.context.timezone), source)
   }
 }
 
@@ -226,15 +243,18 @@ function resolveDateToken(source: string, currentDate: string): ParsedDateToken 
   if (weekday === undefined) throw new Error(`Invalid quick-add date: ${source}`)
   const explicitNext = /^(?:下(?:周|星期)|next\s+)/u.test(token)
   const explicitThis = /^(?:本|这)(?:周|星期)|^this\s+/u.test(token)
+  if (explicitNext) {
+    const nextWeekStart = startOfNextWeek(currentDate)
+    return { date: addDays(nextWeekStart, weekday === 0 ? 6 : weekday - 1), status: 'resolved' }
+  }
   const currentWeekday = weekdayOf(currentDate)
   let days = (weekday - currentWeekday + 7) % 7
-  if (explicitNext) days += 7
   if (explicitThis) days = weekday - currentWeekday
   return { date: addDays(currentDate, days), status: 'resolved' }
 }
 
 function markSingularConflicts(candidates: QuickAddCandidate[]): void {
-  for (const kind of ['schedule', 'deadline', 'priority', 'recurrence'] as const) {
+  for (const kind of ['schedule', 'deadline', 'priority', 'recurrence', 'list'] as const) {
     const matches = candidates.filter((candidate) => candidate.kind === kind)
     if (matches.length > 1) {
       for (const candidate of matches) candidate.status = 'ambiguous'

@@ -1,5 +1,6 @@
 import type { TaskCreateCommand } from '../capabilities/types.ts'
 import type { RecurrenceCadence, TaskPriority } from '../workspace/types.ts'
+import { parseZonedDateTime } from '../recurrence/timezone.ts'
 import type { QuickAddCandidate } from './types.ts'
 
 export interface BuildQuickAddCommandInput {
@@ -96,7 +97,7 @@ function recurrenceFields(
 ): NonNullable<TaskCreateCommand['recurrence']> {
   if (!anchor) throw new Error('QUICK_ADD_RECURRENCE_ANCHOR_REQUIRED')
   if (!isDateOnly(anchor) && !isOffsetDateTime(anchor)) throw new Error(`INVALID_QUICK_ADD_DATE:${anchor}`)
-  const date = anchor.slice(0, 10)
+  const date = isDateOnly(anchor) ? anchor : parseZonedDateTime(anchor, timezone).date
   const fields = {
     ...(seriesId ? { seriesId } : {}),
     cadence: cadenceFor(recurrence, date),

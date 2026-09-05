@@ -54,7 +54,7 @@ function activate(item: MobileNavItem) {
   display: none;
 }
 
-@media (max-width: 799px) {
+@media (max-width: 819px) {
   .tabbar {
     position: fixed;
     z-index: var(--z-sticky);

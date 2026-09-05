@@ -55,6 +55,9 @@ const acceptedCandidates = computed(() => parsed.value.candidates
   .filter(({ id }) => !removedIds.value.includes(id))
   .map((candidate) => editedCandidates.value[candidate.id] ?? candidate))
 const hasAmbiguousCandidate = computed(() => acceptedCandidates.value.some((candidate) => candidate.status === 'ambiguous'))
+const ambiguityMessage = computed(() => acceptedCandidates.value.filter(({ kind }) => kind === 'list').length > 1
+  ? '检测到多个清单，请只保留一个清单；标签可以多选。'
+  : '请确认有歧义的识别结果，或移除对应 chip。')
 const canSubmit = computed(() => {
   if (!input.value.trim() || hasAmbiguousCandidate.value || submitting.value) return false
   try {
@@ -117,7 +120,7 @@ function buildCommand() {
 
 async function submit() {
   if (!canSubmit.value) {
-    if (hasAmbiguousCandidate.value) error.value = '请先确认标有提醒的识别结果。'
+    if (hasAmbiguousCandidate.value) error.value = ambiguityMessage.value
     return
   }
   submitting.value = true
@@ -305,7 +308,7 @@ defineExpose({ focus })
       </Popover>
     </div>
     <p v-if="hasAmbiguousCandidate || error" class="quick-add-message" :class="{ error: Boolean(error) }" aria-live="polite">
-      {{ error || '请确认有歧义的识别结果，或移除对应 chip。' }}
+      {{ error || ambiguityMessage }}
     </p>
   </form>
 </template>
@@ -321,7 +324,7 @@ defineExpose({ focus })
 .quick-add-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); padding: 0 var(--space-3) var(--space-3); }
 .quick-add-message { margin: calc(-1 * var(--space-1)) var(--space-3) var(--space-3); color: var(--warning); font-size: var(--text-xs); }
 .quick-add-message.error { color: var(--danger); }
-.candidate-editor { width: min(360px, calc(100vw - 16px)); display: grid; gap: var(--space-2); margin-inline: auto; padding: var(--space-3); color: var(--text); }
+.candidate-editor { width: min(360px, 100%); display: grid; gap: var(--space-2); margin-inline: auto; padding: var(--space-3); color: var(--text); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .candidate-editor footer { display: flex; justify-content: flex-end; gap: var(--space-2); padding-top: var(--space-1); }
 .candidate-editor footer button { min-height: max(36px, var(--control-hit)); padding: 0 var(--space-3); border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font: inherit; font-size: var(--text-sm); }

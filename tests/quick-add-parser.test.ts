@@ -135,6 +135,14 @@ test('places an explicit next-week weekday in the following calendar week', () =
   assert.equal(result.candidates[0]?.value, '2026-09-18T15:00:00+08:00')
 })
 
+test('keeps explicit next-week weekdays in the next calendar week across rollover', () => {
+  const tuesday = parseQuickAdd('下周一上午9点', context('2026-09-08T09:00:00+08:00'))
+  const sunday = parseQuickAdd('next Friday 3pm', context('2026-09-06T09:00:00+08:00'))
+
+  assert.equal(tuesday.candidates[0]?.value, '2026-09-14T09:00:00+08:00')
+  assert.equal(sunday.candidates[0]?.value, '2026-09-11T15:00:00+08:00')
+})
+
 test('marks duplicate exact entity titles as ambiguous instead of choosing an id', () => {
   const result = parseQuickAdd('@收件箱 #数学', context('2026-09-04T09:00:00+08:00', 'Asia/Shanghai', {
     lists: [{ id: 'list-a', title: '收件箱' }, { id: 'list-b', title: '收件箱' }],
@@ -150,6 +158,19 @@ test('marks duplicate exact entity titles as ambiguous instead of choosing an id
 test('keeps date-only schedules as calendar dates rather than midnight timestamps', () => {
   const result = parseQuickAdd('明天整理笔记', context('2026-09-04T23:30:00+08:00'))
   assert.deepEqual(result.candidates.map(({ kind, value }) => [kind, value]), [['schedule', '2026-09-05']])
+})
+
+test('resolves a standalone time on the supplied local date without rolling past times forward', () => {
+  const cases = [
+    ['下午3点 写报告', '2026-09-04T15:00:00+08:00'],
+    ['at 3pm write report', '2026-09-04T15:00:00+08:00'],
+    ['3:30pm review', '2026-09-04T15:30:00+08:00'],
+  ]
+
+  for (const [input, value] of cases) {
+    const result = parseQuickAdd(input!, context('2026-09-04T16:00:00+08:00'))
+    assert.deepEqual(result.candidates.map(({ kind, value: actual }) => [kind, actual]), [['schedule', value]])
+  }
 })
 
 test('parses independent deadline dates and times without also producing a schedule', () => {
@@ -205,6 +226,17 @@ test('marks conflicting priorities and recurrence rules ambiguous', () => {
     { kind: 'priority', value: 'medium', status: 'ambiguous' },
     { kind: 'recurrence', value: 'daily', status: 'ambiguous' },
     { kind: 'recurrence', value: 'monthly', status: 'ambiguous' },
+  ])
+})
+
+test('marks multiple exact lists ambiguous while retaining multiple resolved tags', () => {
+  const result = parseQuickAdd('@收件箱 @Work #数学 #study', context('2026-09-04T09:00:00+08:00'))
+
+  assert.deepEqual(result.candidates.map(({ kind, value, status }) => ({ kind, value, status })), [
+    { kind: 'list', value: 'list-inbox', status: 'ambiguous' },
+    { kind: 'list', value: 'list-work', status: 'ambiguous' },
+    { kind: 'tag', value: 'tag-math', status: 'resolved' },
+    { kind: 'tag', value: 'tag-study', status: 'resolved' },
   ])
 })
 

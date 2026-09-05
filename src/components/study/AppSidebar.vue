@@ -308,7 +308,14 @@ function smartLabel(view: StudySmartView, label: string) {
   border-top-color: color-mix(in srgb, var(--hairline) 76%, transparent);
 }
 
-@media (max-width: 799px) {
+@media (min-width: 820px) and (max-width: 1279px) {
+  .sidebar { width: 72px; min-width: 72px; padding-inline: 8px; }
+  .brand { justify-content: center; padding-inline: 0; }
+  .brand > span:last-child, .nav-section h2, .section-heading, .group-heading, .nav-label, .nav-count { display: none; }
+  .nav-item { justify-content: center; padding-inline: 0; }
+}
+
+@media (max-width: 819px) {
   .sidebar {
     display: none;
   }

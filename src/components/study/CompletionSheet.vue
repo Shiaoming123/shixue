@@ -275,13 +275,13 @@ footer > span {
   cursor: default;
 }
 
-@media (min-width: 800px) {
+@media (min-width: 820px) {
   .backdrop {
     align-items: center;
   }
 }
 
-@media (max-width: 799px) {
+@media (max-width: 819px) {
   .backdrop {
     padding: 0;
   }
