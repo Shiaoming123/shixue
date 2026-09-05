@@ -55,7 +55,7 @@ onUnmounted(clearTimer)
 </script>
 
 <template>
-  <Teleport to="#ui-overlay-host">
+  <Teleport defer to="#ui-overlay-host">
     <Transition name="toast">
       <div
         v-if="message"

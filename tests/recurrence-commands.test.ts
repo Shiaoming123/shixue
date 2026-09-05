@@ -134,6 +134,25 @@ test('task.create can atomically create task, series, and initial occurrence wit
   assert.equal(snapshot.commandReceipts.filter(({ idempotencyKey }) => idempotencyKey === 'create-with-recurrence').length, 1)
 })
 
+test('undoing an atomically created recurring task removes its whole recurrence graph', async () => {
+  const service = fixture()
+  const created = await executeNext(service, 'create-recurring-for-undo', {
+    type: 'task.create', taskId: 'undo-recurring-task', listId: 'list:system:learning', title: 'Undo recurring task',
+    recurrence: {
+      seriesId: 'undo-recurring-series', cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule',
+      anchorOn: '2026-09-06', end: { kind: 'never' }, timezone: 'UTC',
+    },
+  })
+
+  await executeNext(service, 'undo-recurring-create', { type: 'undo.apply', token: created.undoToken! })
+  const snapshot = await service.query({ type: 'workspace.snapshot' })
+
+  assert.equal(snapshot.tasks.find(({ id }) => id === 'undo-recurring-task')?.deletedAt, NOW)
+  assert.equal(snapshot.tasks.find(({ id }) => id === 'undo-recurring-task')?.recurrenceSeriesId, null)
+  assert.equal(snapshot.recurrenceSeries.some(({ id }) => id === 'undo-recurring-series'), false)
+  assert.equal(snapshot.occurrences.some(({ seriesId }) => seriesId === 'undo-recurring-series'), false)
+})
+
 test('recurrence commands reject invalid IANA timezones without persisting partial state', async () => {
   const service = fixture()
   await executeNext(service, 'timezone-task', { type: 'task.create', taskId: 'timezone-task', listId: 'list:system:learning', title: 'Timezone' })
@@ -286,6 +305,18 @@ test('occurrence update stores an override without mutating the recurrence serie
   assert.equal(snapshot.recurrenceSeries.find(({ id }) => id === 'series-daily')?.revision, 1)
 })
 
+test('occurrence updates reject series-only rule fields instead of silently ignoring them', async () => {
+  const service = await createRecurringTask()
+  const before = await service.query({ type: 'workspace.snapshot' })
+
+  await assert.rejects(executeNext(service, 'reject-occurrence-rule-change', {
+    type: 'recurrence.update', occurrenceId: 'occurrence:series-daily:1', expectedOccurrenceRevision: 1,
+    scope: 'occurrence', patch: { basis: 'after_completion', end: { kind: 'after', count: 3 } },
+  }), /Occurrence updates cannot change series fields/)
+
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+})
+
 test('date-only recurrence commands preserve date-only schedules without midnight timestamps', async () => {
   const service = fixture()
   await executeNext(service, 'date-task-create', {
@@ -436,6 +467,31 @@ test('future and whole-series updates reject execute without matching explicit p
     idempotencyKey: 'future-confirmed',
     explicitConfirmation: { previewReceiptId: preview.previewReceiptId!, confirmedAt: NOW },
   })
+})
+
+test('switching a fixed series to after-completion retains one pending occurrence and resumes from completion', async () => {
+  const service = fixture()
+  await executeNext(service, 'basis-task', { type: 'task.create', taskId: 'basis-task', listId: 'list:system:learning', title: 'Basis transition' })
+  await executeNext(service, 'basis-series', {
+    type: 'recurrence.create', taskId: 'basis-task', expectedTaskRevision: 1, seriesId: 'basis-series',
+    cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', anchorAt: '2026-09-06T09:00:00.000Z',
+    end: { kind: 'never' }, timezone: 'UTC',
+  })
+
+  await previewAndConfirm(service, 'basis-to-after-completion', {
+    type: 'recurrence.update', occurrenceId: 'occurrence:basis-series:1', expectedOccurrenceRevision: 1,
+    scope: 'series', patch: { basis: 'after_completion' },
+  })
+  let snapshot = await service.query({ type: 'workspace.snapshot' })
+  assert.equal(snapshot.occurrences.filter(({ seriesId, status }) => seriesId === 'basis-series' && status === 'pending').length, 1)
+  assert.equal(snapshot.occurrences.find(({ id }) => id === 'occurrence:basis-series:2')?.status, 'cancelled')
+
+  await executeNext(service, 'complete-after-basis-transition', {
+    type: 'recurrence.complete', occurrenceId: 'occurrence:basis-series:1', expectedOccurrenceRevision: 1,
+  })
+  snapshot = await service.query({ type: 'workspace.snapshot' })
+  assert.equal(snapshot.occurrences.find(({ id }) => id === 'occurrence:basis-series:2')?.status, 'pending')
+  assert.equal(snapshot.occurrences.find(({ id }) => id === 'occurrence:basis-series:2')?.scheduledAt, '2026-09-06T10:00:00.000Z')
 })
 
 test('whole-series update previews explicitly, then recomputes pending rows while preserving history', async () => {

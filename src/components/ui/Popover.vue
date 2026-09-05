@@ -109,7 +109,7 @@ defineExpose({ close: requestClose, updatePosition })
 
 <template>
   <slot name="trigger" :open="open" :toggle="toggle" :trigger-props="triggerProps" />
-  <Teleport to="#ui-overlay-host">
+  <Teleport defer to="#ui-overlay-host">
     <Transition name="popover">
       <div
         v-if="open"

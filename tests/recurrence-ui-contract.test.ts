@@ -21,8 +21,13 @@ test('recurrence editor keeps cadence and basis choices in themed controls', () 
 test('scope dialog presents all edit ranges and requires a preview before execute', () => {
   const dialog = source('RecurrenceScopeDialog.vue')
   for (const label of ['本次', '本次及以后', '整个系列']) assert.match(dialog, new RegExp(label))
+  assert.match(dialog, /仅改本次计划/)
+  assert.match(dialog, /editOccurrence/)
+  assert.match(dialog, /ref<RecurrenceRuleScope>\('future'\)/)
   assert.match(dialog, /preview\.accepted/)
   assert.match(dialog, /affected\.length/)
+  assert.match(dialog, /previewExamples/)
+  assert.match(dialog, /affectedOverflow/)
   assert.match(dialog, /selectedScope\.value = scope/)
 })
 
@@ -49,4 +54,13 @@ test('reachable UI creates a first series, follows the active split series, and 
   assert.match(app, /scope: 'occurrence'/)
   assert.match(app, /scheduledAt|scheduledOn/)
   assert.doesNotMatch(app, /@occurrence-reschedule="notify\(/)
+})
+
+test('single-occurrence rule scope opens the occurrence plan editor without previewing series fields', () => {
+  const app = appSource()
+  assert.match(app, /@edit-occurrence="editSingleOccurrence"/)
+  assert.match(app, /function editSingleOccurrence\(\)/)
+  assert.match(app, /openOccurrenceReschedule\(occurrence\.id\)/)
+  assert.match(app, /previewRecurrenceScope\(scope: RecurrenceRuleScope\)/)
+  assert.match(app, /executeRecurrenceScope\(scope: RecurrenceRuleScope\)/)
 })

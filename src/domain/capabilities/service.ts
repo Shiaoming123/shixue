@@ -281,6 +281,8 @@ function applyUndo(
   const events: TaskEvent[] = []
   const restored: EntityRef[] = []
   if (token.compensation.type === 'task.remove_created') {
+    const recurrenceSeriesIds = new Set(token.compensation.recurrenceSeriesIds ?? [])
+    const occurrenceIds = new Set(token.compensation.occurrenceIds ?? [])
     const tasks = token.compensation.taskIds.map((taskId) => {
       const task = state.tasks.find(({ id }) => id === taskId)
       if (!task) throw new DomainCommandError('TASK_NOT_FOUND', `Task not found for undo: ${taskId}.`, { taskId })
@@ -291,15 +293,16 @@ function applyUndo(
       task.deletedAt = context.now
       task.updatedAt = context.now
       task.revision += 1
+      if (task.recurrenceSeriesId !== null && recurrenceSeriesIds.has(task.recurrenceSeriesId)) {
+        task.recurrenceSeriesId = null
+      }
       events.push(appendUndoEvent(state, task, 'deleted', task.status, context, original.id))
       restored.push(taskRef(task))
     }
-    if (token.compensation.recurrenceSeriesIds) {
-      const seriesIds = new Set(token.compensation.recurrenceSeriesIds)
-      state.recurrenceSeries = state.recurrenceSeries.filter((series) => !seriesIds.has(series.id))
+    if (recurrenceSeriesIds.size > 0) {
+      state.recurrenceSeries = state.recurrenceSeries.filter((series) => !recurrenceSeriesIds.has(series.id))
     }
-    if (token.compensation.occurrenceIds) {
-      const occurrenceIds = new Set(token.compensation.occurrenceIds)
+    if (occurrenceIds.size > 0) {
       state.occurrences = state.occurrences.filter((occurrence) => !occurrenceIds.has(occurrence.id))
     }
   } else if (token.compensation.type === 'task.restore') {

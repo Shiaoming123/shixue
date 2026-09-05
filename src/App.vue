@@ -11,7 +11,7 @@ import SettingsSheet, { type CloudAccountStatus } from './components/study/Setti
 import TaskActionSheet, { type TaskActionMode, type TaskActionPayload } from './components/study/TaskActionSheet.vue'
 import TaskDetailDrawer, { type TaskEventViewItem } from './components/study/TaskDetailDrawer.vue'
 import TaskEditSheet, { type TaskEditValue } from './components/study/TaskEditSheet.vue'
-import RecurrenceScopeDialog, { type RecurrenceScope } from './components/study/RecurrenceScopeDialog.vue'
+import RecurrenceScopeDialog, { type RecurrenceRuleScope } from './components/study/RecurrenceScopeDialog.vue'
 import OccurrenceRescheduleSheet from './components/study/OccurrenceRescheduleSheet.vue'
 import { type RecurrenceRule } from './components/study/RecurrenceEditor.vue'
 import TasksView, { type OccurrenceViewItem, type TaskViewItem, type TaskViewStatus } from './components/study/TasksView.vue'
@@ -100,9 +100,9 @@ const occurrenceRescheduleOpen = ref(false)
 const occurrenceRescheduleId = ref('')
 const occurrenceRescheduleValue = ref('')
 const occurrenceRescheduleTimed = ref(false)
-const pendingRecurrenceRule = ref<RecurrenceRule | null>(null)
+let pendingRecurrenceRule: RecurrenceRule | null = null
 type RecurrenceUpdateEnvelope = CommandEnvelope<Extract<CapabilityCommand, { type: 'recurrence.update' }>>
-const recurrencePreviewEnvelope = ref<RecurrenceUpdateEnvelope | null>(null)
+let recurrencePreviewEnvelope: RecurrenceUpdateEnvelope | null = null
 let recurrencePreviewVersion = 0
 const reviewRevealed = ref(false)
 const reviewMode = ref<'review' | 'records'>('review')
@@ -491,7 +491,15 @@ async function saveTaskEdit(value: TaskEditValue) {
   } catch (error) { reportStorageError(error) }
 }
 
+function cloneRecurrenceRuleDto(rule: RecurrenceRule): RecurrenceRule {
+  const cadence = rule.cadence.kind === 'weekly'
+    ? { ...rule.cadence, weekdays: [...rule.cadence.weekdays] }
+    : { ...rule.cadence }
+  return { cadence, basis: rule.basis, end: { ...rule.end } }
+}
+
 async function requestRecurrenceEdit(rule: RecurrenceRule) {
+  const portableRule = cloneRecurrenceRuleDto(rule)
   if (!selectedRecurrence.value) {
     const workspace = recurrenceWorkspace.value
     const task = workspace?.tasks.find((item) => item.id === selectedTask.value?.id)
@@ -505,29 +513,48 @@ async function requestRecurrenceEdit(rule: RecurrenceRule) {
         expectedWorkspaceRevision: workspace.revision,
         command: {
           type: 'recurrence.create', taskId: task.id, expectedTaskRevision: task.revision,
-          cadence: rule.cadence, basis: rule.basis, anchorOn: selectedTask.value?.plannedOn ?? today.value,
-          end: rule.end, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          cadence: portableRule.cadence, basis: portableRule.basis, anchorOn: selectedTask.value?.plannedOn ?? today.value,
+          end: portableRule.end, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
         },
       })
       await refreshState(); taskEditorOpen.value = false; notify('已创建重复规则。')
     } catch (error) { reportStorageError(error) } finally { recurrenceExecuting.value = false }
     return
   }
-  pendingRecurrenceRule.value = rule
+  pendingRecurrenceRule = portableRule
   clearRecurrencePreview()
   recurrenceScopeOpen.value = true
 }
 
-async function previewRecurrenceScope(scope: RecurrenceScope) {
+function editableRecurrenceOccurrence() {
+  const workspace = recurrenceWorkspace.value
   const series = selectedRecurrence.value
-  const rule = pendingRecurrenceRule.value
+  if (!workspace || !series) return null
+  const selected = selectedOccurrence.value
+  if (selected?.seriesId === series.id && selected.status === 'pending') return selected
+  return workspace.occurrences.find((item) => item.seriesId === series.id && item.status === 'pending') ?? null
+}
+
+function editSingleOccurrence() {
+  const occurrence = editableRecurrenceOccurrence()
+  recurrenceScopeOpen.value = false
+  clearRecurrencePreview()
+  pendingRecurrenceRule = null
+  if (!occurrence) { reportStorageError(new Error('没有可编辑的重复实例。')); return }
+  taskEditorOpen.value = false
+  openOccurrenceReschedule(occurrence.id)
+}
+
+async function previewRecurrenceScope(scope: RecurrenceRuleScope) {
+  const series = selectedRecurrence.value
+  const rule = pendingRecurrenceRule
   const workspace = recurrenceWorkspace.value
   if (!series || !rule || !workspace) return
   clearRecurrencePreview()
   const version = recurrencePreviewVersion
   recurrencePreviewing.value = true
   try {
-    const occurrence = workspace.occurrences.find((item) => item.seriesId === series.id && item.status === 'pending') ?? workspace.occurrences.find((item) => item.seriesId === series.id)
+    const occurrence = editableRecurrenceOccurrence()
     if (!occurrence) throw new Error('没有可编辑的重复实例。')
     const envelope: RecurrenceUpdateEnvelope = {
       protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `recurrence:${crypto.randomUUID()}`, source: 'human-ui', expectedWorkspaceRevision: workspace.revision,
@@ -536,23 +563,23 @@ async function previewRecurrenceScope(scope: RecurrenceScope) {
     const preview = await capabilityService.preview(envelope)
     if (version !== recurrencePreviewVersion) return
     recurrencePreview.value = preview
-    recurrencePreviewEnvelope.value = envelope
+    recurrencePreviewEnvelope = envelope
   } catch (error) { reportStorageError(error) } finally { recurrencePreviewing.value = false }
 }
 
-async function executeRecurrenceScope(scope: RecurrenceScope) {
+async function executeRecurrenceScope(scope: RecurrenceRuleScope) {
   const preview = recurrencePreview.value
-  const envelope = recurrencePreviewEnvelope.value
+  const envelope = recurrencePreviewEnvelope
   if (!preview?.accepted || !envelope || envelope.command.scope !== scope) return
   recurrenceExecuting.value = true
   try {
     await capabilityService.execute({ ...envelope, explicitConfirmation: preview.confirmation === 'explicit' && preview.previewReceiptId ? { previewReceiptId: preview.previewReceiptId, confirmedAt: new Date().toISOString() } : undefined })
-    await refreshState(); recurrenceScopeOpen.value = false; clearRecurrencePreview(); pendingRecurrenceRule.value = null
+    await refreshState(); recurrenceScopeOpen.value = false; clearRecurrencePreview(); pendingRecurrenceRule = null
     notify('重复规则已更新。')
   } catch (error) { reportStorageError(error) } finally { recurrenceExecuting.value = false }
 }
 
-function clearRecurrencePreview() { recurrencePreviewVersion += 1; recurrencePreview.value = null; recurrencePreviewEnvelope.value = null }
+function clearRecurrencePreview() { recurrencePreviewVersion += 1; recurrencePreview.value = null; recurrencePreviewEnvelope = null }
 
 async function executeOccurrence(id: string, type: 'recurrence.complete' | 'recurrence.skip') {
   const workspace = recurrenceWorkspace.value
@@ -865,7 +892,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
     <CompletionSheet :open="completionOpen" :task-title="activeTask?.title ?? ''" :scratchpad="activeSession?.scratchpad ?? ''" @close="completionOpen = false" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
     <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" :recurrence-rule="selectedRecurrenceRule" @close="taskEditorOpen = false" @save="saveTaskEdit" @recurrence-save="requestRecurrenceEdit" />
-    <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />
+    <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @edit-occurrence="editSingleOccurrence" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />
     <OccurrenceRescheduleSheet :open="occurrenceRescheduleOpen" :title="selectedTask?.title ?? ''" :model-value="occurrenceRescheduleValue" :timed="occurrenceRescheduleTimed" @close="occurrenceRescheduleOpen = false" @submit="rescheduleOccurrence" />
     <SettingsSheet :open="settingsOpen" :dark="appearanceDark" :reminders-available="remindersAvailable" :reminders-enabled="remindersEnabled" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @close="settingsOpen = false" @export="exportData" @import="importData" @reset-demo="resetDemo" @set-appearance="setAppearance" @set-reminders="setReminders" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
 

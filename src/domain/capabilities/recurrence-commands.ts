@@ -114,6 +114,7 @@ function updateRecurrence(
   const task = requireTask(state, series.taskId)
   const before = recurrenceSnapshot(task, state, series.id)
   if (command.scope === 'occurrence') {
+    assertOccurrencePatch(command.patch)
     applyOccurrencePatch(occurrence, command.patch)
     const event = appendOccurrenceEvent(state, task, occurrence, 'rescheduled', context, 'Occurrence updated.')
     return recurrenceApplication({
@@ -294,17 +295,31 @@ function recomputePendingOccurrences(
   priorBasis: RecurrenceSeries['basis'],
 ): TaskOccurrence[] {
   const changed: TaskOccurrence[] = []
-  for (const occurrence of state.occurrences.filter((item) => item.seriesId === series.id && item.status === 'pending')) {
-    if (priorBasis === 'after_completion') {
+  const pending = state.occurrences
+    .filter((item) => item.seriesId === series.id && item.status === 'pending')
+    .sort((left, right) => left.ordinal - right.ordinal || left.id.localeCompare(right.id))
+  if (series.basis === 'after_completion') {
+    let retained = false
+    for (const occurrence of pending) {
       if (isPastSeriesEnd(series, occurrence.scheduledAt, occurrence.scheduledOn, occurrence.ordinal)) {
         occurrence.status = 'cancelled'
         occurrence.override = null
         occurrence.completedAt = null
         occurrence.revision += 1
         changed.push(occurrence)
+      } else if (priorBasis !== 'after_completion' && retained) {
+        occurrence.status = 'cancelled'
+        occurrence.override = null
+        occurrence.completedAt = null
+        occurrence.revision += 1
+        changed.push(occurrence)
+      } else {
+        retained = true
       }
-      continue
     }
+    return changed
+  }
+  for (const occurrence of pending) {
     const schedule = occurrenceSchedule(series, occurrence.ordinal)
     if (!schedule || isPastSeriesEnd(series, schedule.at, schedule.on, occurrence.ordinal)) {
       occurrence.status = 'cancelled'
@@ -339,7 +354,19 @@ function createAfterCompletionSuccessor(
   const schedule = scheduleValue(scheduled)
   if (series.end.kind === 'on' && scheduleDate(schedule.at, schedule.on, series.timezone) > series.end.date) return null
   const id = occurrenceIdFor(series.id, nextOrdinal)
-  if (state.occurrences.some((occurrence) => occurrence.id === id)) return null
+  const existing = state.occurrences.find((occurrence) => occurrence.id === id)
+  if (existing) {
+    if (existing.status !== 'cancelled') return null
+    existing.scheduledAt = schedule.at
+    existing.scheduledOn = schedule.on
+    existing.status = 'pending'
+    existing.override = null
+    existing.completedAt = null
+    existing.revision += 1
+    series.createdThrough = scheduled
+    series.createdCount = Math.max(series.createdCount, nextOrdinal)
+    return existing
+  }
   const occurrence: TaskOccurrence = {
     id,
     seriesId: series.id,
@@ -509,6 +536,16 @@ function assertCadence(cadence: RecurrenceSeries['cadence']): void {
     if (cadence.weekdays.length === 0 || new Set(cadence.weekdays).size !== cadence.weekdays.length) {
       throw validation('Weekly recurrence weekdays must be unique and non-empty.')
     }
+  }
+}
+
+function assertOccurrencePatch(patch: RecurrenceUpdatePatch): void {
+  const seriesFields = ['cadence', 'basis', 'anchorAt', 'anchorOn', 'end', 'timezone'] as const
+  const unsupported = seriesFields.filter((field) => patch[field] !== undefined)
+  if (unsupported.length > 0) {
+    throw validation(`Occurrence updates cannot change series fields: ${unsupported.join(', ')}.`, {
+      fields: unsupported.join(','),
+    })
   }
 }
 
