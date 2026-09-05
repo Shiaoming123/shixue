@@ -1,4 +1,6 @@
-import type { ReminderRule, StudySession, Task, TaskEvent, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { RecurrenceSeries, ReminderRule, StudySession, Task, TaskEvent, TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
+import { materializeOccurrenceWindow } from '../recurrence/materialize.ts'
+import { assertIanaTimezone } from '../recurrence/timezone.ts'
 import {
   DomainCommandError,
   type CapabilityCommandContext,
@@ -70,18 +72,86 @@ function createTask(
     deletedAt: null,
   }
   state.tasks.push(task)
+  const recurrence = command.recurrence === undefined
+    ? null
+    : createInitialRecurrence(state, task, command.recurrence, context)
   if (command.reminderAt !== undefined) {
     setLegacyReminder(state, task.id, command.reminderAt, context, command.reminderRuleId)
   }
   const event = appendEvent(state, task, 'captured', null, 'inbox', context, undefined, undefined, command.eventId)
-  const affected = taskRef(task)
+  const affected = [
+    taskRef(task),
+    ...(recurrence ? [
+      { type: 'recurrence_series' as const, id: recurrence.series.id, revision: recurrence.series.revision },
+      ...recurrence.occurrences.map((occurrence) => ({ type: 'occurrence' as const, id: occurrence.id, revision: occurrence.revision })),
+    ] : []),
+  ]
   return {
-    affected: [affected],
-    changes: [{ entity: affected, operation: 'create', fields: ['task'] }],
+    affected,
+    changes: affected.map((entity) => ({ entity, operation: 'create', fields: ['task', ...(recurrence ? ['recurrence'] : [])] })),
     events: [event],
-    compensation: { type: 'task.remove_created', taskIds: [task.id] },
-    data: json(task),
+    compensation: {
+      type: 'task.remove_created',
+      taskIds: [task.id],
+      ...(recurrence ? { recurrenceSeriesIds: [recurrence.series.id], occurrenceIds: recurrence.occurrences.map(({ id }) => id) } : {}),
+    },
+    data: json(recurrence ? { task, recurrenceSeries: recurrence.series, occurrence: recurrence.occurrence, occurrences: recurrence.occurrences } : task),
   }
+}
+
+function createInitialRecurrence(
+  state: WorkspaceStateV3,
+  task: Task,
+  recurrence: NonNullable<Extract<TaskCapabilityCommand, { type: 'task.create' }>['recurrence']>,
+  context: CapabilityCommandContext,
+): { series: RecurrenceSeries; occurrence: TaskOccurrence; occurrences: TaskOccurrence[] } {
+  assertRecurrenceConfig(recurrence)
+  const seriesId = recurrence.seriesId ?? context.id('recurrence_series')
+  if (state.recurrenceSeries.some(({ id }) => id === seriesId)) {
+    throw new DomainCommandError('VALIDATION_ERROR', `Recurrence series already exists: ${seriesId}.`, { seriesId })
+  }
+  const occurrenceId = recurrence.occurrenceId ?? `occurrence:${seriesId}:1`
+  if (state.occurrences.some(({ id }) => id === occurrenceId)) {
+    throw new DomainCommandError('VALIDATION_ERROR', `Occurrence already exists: ${occurrenceId}.`, { occurrenceId })
+  }
+  const series: RecurrenceSeries = {
+    id: seriesId,
+    taskId: task.id,
+    revision: 1,
+    cadence: structuredClone(recurrence.cadence),
+    basis: recurrence.basis,
+    anchorAt: recurrence.anchorAt ?? null,
+    anchorOn: recurrence.anchorOn ?? null,
+    end: structuredClone(recurrence.end),
+    timezone: recurrence.timezone,
+    createdThrough: recurrence.anchorOn ?? recurrence.anchorAt ?? null,
+    createdCount: 1,
+  }
+  const occurrence: TaskOccurrence = {
+    id: occurrenceId,
+    seriesId,
+    ordinal: 1,
+    scheduledAt: recurrence.anchorAt ?? null,
+    scheduledOn: recurrence.anchorOn ?? null,
+    status: 'pending',
+    override: recurrence.estimateMinutes === undefined ? null : {
+      scheduledAt: null,
+      scheduledOn: null,
+      estimateMinutes: recurrence.estimateMinutes,
+    },
+    completedAt: null,
+    revision: 1,
+  }
+  task.recurrenceSeriesId = series.id
+  state.recurrenceSeries.push(series)
+  state.occurrences.push(occurrence)
+  const created = materializeOccurrenceWindow(state, series.id, context.now).created
+  state.occurrences.push(...created)
+  const occurrences = [occurrence, ...created]
+  const last = occurrences[occurrences.length - 1]!
+  series.createdThrough = last.scheduledOn ?? last.scheduledAt
+  series.createdCount = last.ordinal
+  return { series, occurrence, occurrences }
 }
 
 function updateTask(
@@ -426,6 +496,33 @@ function assertSchedule(startAt: string | null, startOn: string | null): void {
 
 function assertDeadline(dueAt: string | null, dueOn: string | null): void {
   if (dueAt && dueOn) throw new DomainCommandError('VALIDATION_ERROR', 'Task deadline dueAt and dueOn are mutually exclusive.')
+}
+
+function assertRecurrenceConfig(recurrence: NonNullable<Extract<TaskCapabilityCommand, { type: 'task.create' }>['recurrence']>): void {
+  assertIanaTimezone(recurrence.timezone)
+  assertRecurrenceSchedule(recurrence.anchorAt ?? null, recurrence.anchorOn ?? null)
+  if (!recurrence.timezone.trim()) throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence timezone is required.')
+  if (!Number.isInteger(recurrence.cadence.interval) || recurrence.cadence.interval <= 0) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence interval must be positive.')
+  }
+  if (
+    recurrence.cadence.kind === 'weekly' &&
+    (recurrence.cadence.weekdays.length === 0 || new Set(recurrence.cadence.weekdays).size !== recurrence.cadence.weekdays.length)
+  ) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Weekly recurrence weekdays must be unique and non-empty.')
+  }
+}
+
+function assertRecurrenceSchedule(anchorAt: string | null, anchorOn: string | null): void {
+  if ((anchorAt === null) === (anchorOn === null)) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence anchorAt and anchorOn are mutually exclusive and require exactly one value.')
+  }
+  if (anchorAt !== null && !Number.isFinite(Date.parse(anchorAt))) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence anchorAt must be an ISO datetime.')
+  }
+  if (anchorOn !== null && !/^\d{4}-\d{2}-\d{2}$/.test(anchorOn)) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence anchorOn must use YYYY-MM-DD.')
+  }
 }
 
 function activeTaskSessions(

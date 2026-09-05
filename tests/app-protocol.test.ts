@@ -51,11 +51,15 @@ function validProtocol() {
       ports: [{ id: 'workspace', format: WORKSPACE_EXPORT_FORMAT, version: WORKSPACE_EXPORT_VERSION }],
       legacyInputs: [{ format: STUDY_EXPORT_FORMAT, versions: [1, STUDY_EXPORT_VERSION] }],
       sync: { enabled: false, provider: 'none' },
+      recurrenceSchedule: {
+        timed: 'scheduledAt', dateOnly: 'scheduledOn', mutuallyExclusive: true, dateOnlyMidnightEncoding: false,
+      },
       exclusions: ['secrets', 'sync state'],
     },
     capabilities: {
       protocolVersion: 1,
       directStorageWrites: false,
+      previewHandles: { persistence: 'none', scope: 'service-instance' },
       futureAgent: { status: 'planned', access: 'capability-service-only' },
     },
     implementation: {
@@ -65,8 +69,9 @@ function validProtocol() {
         'capability-protocol-v1',
         'live-write-capability-routing',
         'themed-control-foundation',
+        'recurrence-occurrence-v1',
       ],
-      planned: ['recurrence', 'offline-natural-language', 'multi-reminder', 'calendar', 'agent-behavior'],
+      planned: ['offline-natural-language', 'multi-reminder', 'calendar', 'agent-behavior'],
     },
     delivery: {
       desktopPackage: 'unverified',

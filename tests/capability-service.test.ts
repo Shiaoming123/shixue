@@ -259,6 +259,10 @@ test('catalog exposes fixed risk, scope, reversibility, and preview metadata for
     { type: 'task.batch_reschedule', risk: 'medium', scope: 'batch', reversibility: 'reversible', requiresPreview: true },
     { type: 'task.batch_cancel', risk: 'high', scope: 'batch', reversibility: 'reversible', requiresPreview: true },
     { type: 'task.batch_delete', risk: 'high', scope: 'batch', reversibility: 'compensating', requiresPreview: true },
+    { type: 'recurrence.create', risk: 'medium', scope: 'series', reversibility: 'reversible', requiresPreview: true },
+    { type: 'recurrence.update', risk: 'high', scope: 'series', reversibility: 'reversible', requiresPreview: true },
+    { type: 'recurrence.complete', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
+    { type: 'recurrence.skip', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'list.upsert', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'list_group.upsert', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'list_group.archive', risk: 'medium', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
@@ -300,7 +304,9 @@ test('previews on a clone with fixed impact and confirmation metadata without sa
     }],
     validationErrors: [],
     confirmation: 'none',
+    previewReceiptId: preview.previewReceiptId,
   })
+  assert.equal(preview.previewReceiptId, null)
   assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
 })
 
@@ -325,6 +331,7 @@ test('preview returns structured validation errors and review metadata for an in
     reversibility: 'reversible', requiresPreview: true,
   })
   assert.equal(preview.confirmation, 'review')
+  assert.equal(preview.previewReceiptId, null)
   assert.deepEqual(preview.affected, [{ type: 'task', id: 'missing' }])
   assert.deepEqual(preview.changes, [])
   assert.equal(preview.validationErrors[0]?.code, 'TASK_NOT_FOUND')

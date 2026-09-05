@@ -22,6 +22,7 @@ import type {
   WorkspaceStateV3,
 } from './types.ts'
 import { WORKSPACE_STATE_VERSION } from './types.ts'
+import { assertIanaTimezone } from '../recurrence/timezone.ts'
 
 const MAX_ITEMS = 100_000
 const MAX_TEXT_LENGTH = 100_000
@@ -35,6 +36,9 @@ export function parseWorkspaceState(value: unknown): WorkspaceStateV3 {
   const state = requireRecord(value, 'Workspace state')
   if (state.version !== WORKSPACE_STATE_VERSION) {
     throw new Error('Workspace state must use version 3.')
+  }
+  if (state.previewReceipts !== undefined) {
+    parseArray(state.previewReceipts, 'Workspace state legacy previewReceipts', parseLegacyPreviewReceipt)
   }
   const parsed: WorkspaceStateV3 = {
     version: WORKSPACE_STATE_VERSION,
@@ -192,16 +196,22 @@ function parseChecklist(raw: unknown): Task['checklist'] {
 function parseSeries(raw: unknown, index: number): RecurrenceSeries {
   const value = requireRecord(raw, `Recurrence series ${index}`)
   const basis = parseEnum(value.basis, ['fixed_schedule', 'after_completion'], 'Recurrence series basis')
+  const timezone = requireText(value.timezone, 'Recurrence series timezone')
+  assertIanaTimezone(timezone)
+  const anchorAt = value.anchorAt === undefined ? null : parseNullableIsoDateTime(value.anchorAt, 'Recurrence series anchorAt')
+  const anchorOn = value.anchorOn === undefined ? null : parseNullableDateOnly(value.anchorOn, 'Recurrence series anchorOn')
+  assertExclusiveSchedule(anchorAt, anchorOn, 'Recurrence series anchor')
   return {
     id: requireText(value.id, 'Recurrence series id'),
     taskId: requireText(value.taskId, 'Recurrence series taskId'),
     revision: requirePositiveInteger(value.revision, 'Recurrence series revision'),
     cadence: parseCadence(value.cadence),
     basis,
-    anchorAt: requireIsoDateTime(value.anchorAt, 'Recurrence series anchorAt'),
+    anchorAt,
+    anchorOn,
     end: parseSeriesEnd(value.end),
-    timezone: requireText(value.timezone, 'Recurrence series timezone'),
-    createdThrough: parseNullableIsoDateTime(value.createdThrough, 'Recurrence series createdThrough'),
+    timezone,
+    createdThrough: parseNullableScheduleValue(value.createdThrough, 'Recurrence series createdThrough'),
     createdCount: requireNonNegativeInteger(value.createdCount, 'Recurrence series createdCount'),
   }
 }
@@ -241,11 +251,15 @@ function parseSeriesEnd(raw: unknown): RecurrenceSeries['end'] {
 
 function parseOccurrence(raw: unknown, index: number): TaskOccurrence {
   const value = requireRecord(raw, `Task occurrence ${index}`)
+  const scheduledAt = value.scheduledAt === undefined ? null : parseNullableIsoDateTime(value.scheduledAt, 'Task occurrence scheduledAt')
+  const scheduledOn = value.scheduledOn === undefined ? null : parseNullableDateOnly(value.scheduledOn, 'Task occurrence scheduledOn')
+  assertExclusiveSchedule(scheduledAt, scheduledOn, 'Task occurrence schedule')
   return {
     id: requireText(value.id, 'Task occurrence id'),
     seriesId: requireText(value.seriesId, 'Task occurrence seriesId'),
     ordinal: requirePositiveInteger(value.ordinal, 'Task occurrence ordinal'),
-    scheduledAt: requireIsoDateTime(value.scheduledAt, 'Task occurrence scheduledAt'),
+    scheduledAt,
+    scheduledOn,
     status: parseEnum(value.status, ['pending', 'completed', 'skipped', 'cancelled'], 'Task occurrence status'),
     override: parseOccurrenceOverride(value.override),
     completedAt: parseNullableIsoDateTime(value.completedAt, 'Task occurrence completedAt'),
@@ -256,8 +270,12 @@ function parseOccurrence(raw: unknown, index: number): TaskOccurrence {
 function parseOccurrenceOverride(raw: unknown): OccurrenceOverride | null {
   if (raw === null) return null
   const value = requireRecord(raw, 'Occurrence override')
+  const scheduledAt = value.scheduledAt === undefined ? null : parseNullableIsoDateTime(value.scheduledAt, 'Occurrence override scheduledAt')
+  const scheduledOn = value.scheduledOn === undefined ? null : parseNullableDateOnly(value.scheduledOn, 'Occurrence override scheduledOn')
+  if (scheduledAt !== null && scheduledOn !== null) throw new Error('Occurrence override schedule fields are mutually exclusive.')
   return {
-    scheduledAt: parseNullableIsoDateTime(value.scheduledAt, 'Occurrence override scheduledAt'),
+    scheduledAt,
+    scheduledOn,
     estimateMinutes: parseNullablePositiveInteger(value.estimateMinutes, 'Occurrence override estimateMinutes'),
   }
 }
@@ -320,7 +338,9 @@ function parseTaskEvent(raw: unknown, index: number): TaskEvent {
   const value = requireRecord(raw, `Task event ${index}`)
   return {
     id: requireText(value.id, 'Task event id'), sequence: requirePositiveInteger(value.sequence, 'Task event sequence'),
-    taskId: requireText(value.taskId, 'Task event taskId'), type: parseEnum(value.type, EVENT_TYPES, 'Task event type'),
+    taskId: requireText(value.taskId, 'Task event taskId'),
+    ...(value.occurrenceId === undefined ? {} : { occurrenceId: parseNullableText(value.occurrenceId, 'Task event occurrenceId') }),
+    type: parseEnum(value.type, EVENT_TYPES, 'Task event type'),
     occurredAt: requireIsoDateTime(value.occurredAt, 'Task event occurredAt'),
     fromStatus: parseNullableTaskStatus(value.fromStatus), toStatus: parseNullableTaskStatus(value.toStatus),
     reason: parseNullableText(value.reason, 'Task event reason'),
@@ -373,6 +393,16 @@ function parseCommandReceipt(raw: unknown, index: number): CommandReceipt {
   }
 }
 
+function parseLegacyPreviewReceipt(raw: unknown, index: number): void {
+  const value = requireRecord(raw, `Preview receipt ${index}`)
+  requireText(value.id, 'Preview receipt id')
+  requireText(value.requestFingerprint, 'Preview receipt requestFingerprint')
+  requirePositiveInteger(value.expectedWorkspaceRevision, 'Preview receipt expectedWorkspaceRevision')
+  requireText(value.commandType, 'Preview receipt commandType')
+  requireIsoDateTime(value.createdAt, 'Preview receipt createdAt')
+  requireIsoDateTime(value.expiresAt, 'Preview receipt expiresAt')
+}
+
 function assertCollectionSizes(state: WorkspaceStateV3): void {
   for (const collection of Object.values(state)) {
     if (Array.isArray(collection) && collection.length > MAX_ITEMS) throw new Error('Workspace state contains too many records.')
@@ -407,7 +437,7 @@ function assertReferences(state: WorkspaceStateV3): void {
   }
   for (const entry of state.recurrenceSeries) {
     const task = tasks.get(entry.taskId); if (!task) throw new Error(`Recurrence series ${entry.id} has unknown taskId.`)
-    if (task.recurrenceSeriesId !== entry.id) throw new Error(`Recurrence series ${entry.id} is not linked by its task.`)
+    if (task.recurrenceSeriesId !== entry.id && entry.end.kind === 'never') throw new Error(`Recurrence series ${entry.id} is not linked by its task.`)
   }
   for (const task of state.tasks) if (task.recurrenceSeriesId) { const entry = series.get(task.recurrenceSeriesId); if (!entry) throw new Error(`Task ${task.id} has unknown recurrenceSeriesId.`); if (entry.taskId !== task.id) throw new Error(`Task ${task.id} recurrence series belongs to another task.`) }
   for (const occurrence of state.occurrences) if (!series.has(occurrence.seriesId)) throw new Error(`Task occurrence ${occurrence.id} has unknown seriesId.`)
@@ -431,7 +461,7 @@ function assertReferences(state: WorkspaceStateV3): void {
     if (!tasks.has(record.taskId)) throw new Error(`Completion record ${record.id} has unknown taskId.`)
     for (const sessionId of record.sessionIds) { const session = sessions.get(sessionId); if (!session) throw new Error(`Completion record ${record.id} has unknown sessionId.`); if (session.taskId !== record.taskId) throw new Error(`Completion record ${record.id} session belongs to another task.`) }
   }
-  assertEvents(state.taskEvents, tasks, records)
+  assertEvents(state.taskEvents, tasks, records, occurrences, series)
   assertStudyEventInvariants(state.taskEvents, state.tasks)
   const activeSessions = state.studySessions.filter(
     (session) => !session.deletedAt && (session.state === 'running' || session.state === 'paused'),
@@ -448,10 +478,17 @@ function assertReferences(state: WorkspaceStateV3): void {
   }
 }
 
-function assertEvents(events: readonly TaskEvent[], tasks: ReadonlyMap<string, Task>, records: ReadonlyMap<string, CompletionRecord>): void {
+function assertEvents(
+  events: readonly TaskEvent[],
+  tasks: ReadonlyMap<string, Task>,
+  records: ReadonlyMap<string, CompletionRecord>,
+  occurrences: ReadonlyMap<string, TaskOccurrence>,
+  series: ReadonlyMap<string, RecurrenceSeries>,
+): void {
   for (const [index, event] of events.entries()) {
     if (event.sequence !== index + 1) throw new Error('Task events must use a continuous sequence in ascending order.')
     if (!tasks.has(event.taskId)) throw new Error(`Task event ${event.id} has unknown taskId.`)
+    if (event.occurrenceId) assertOccurrenceTask(occurrences.get(event.occurrenceId), series, event.taskId, `Task event ${event.id}`)
     if (event.completionRecordId) { const record = records.get(event.completionRecordId); if (!record) throw new Error(`Task event ${event.id} has unknown completionRecordId.`); if (record.taskId !== event.taskId) throw new Error(`Task event ${event.id} completion belongs to another task.`) }
   }
 }
@@ -486,6 +523,10 @@ function parseTextArray(value: unknown, label: string): string[] { return parseA
 function parseNullableTaskStatus(value: unknown): Task['status'] | null { return value === null ? null : parseEnum(value, TASK_STATUSES, 'Task event status') }
 function parseNullableDateOnly(value: unknown, label: string): string | null { return value === null ? null : requireDateOnly(value, label) }
 function parseNullableIsoDateTime(value: unknown, label: string): string | null { return value === null ? null : requireIsoDateTime(value, label) }
+function parseNullableScheduleValue(value: unknown, label: string): string | null {
+  if (value === null) return null
+  return typeof value === 'string' && DATE_ONLY.test(value) ? requireDateOnly(value, label) : requireIsoDateTime(value, label)
+}
 function parseNullableText(value: unknown, label: string): string | null { return value === null ? null : requireText(value, label) }
 function parseNullablePositiveInteger(value: unknown, label: string): number | null { return value === null ? null : requirePositiveInteger(value, label) }
 function parseNullableRangeInteger(value: unknown, min: number, max: number, label: string): number | null { return value === null ? null : requireRangeInteger(value, min, max, label) }
@@ -496,6 +537,9 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
 function requireText(value: unknown, label: string, allowEmpty = false): string { if (typeof value !== 'string' || (!allowEmpty && value.trim().length === 0) || value.length > MAX_TEXT_LENGTH) throw new Error(`${label} must be a valid string.`); return value }
 function requireDateOnly(value: unknown, label: string): string { const date = requireText(value, label); if (!isDateOnly(date)) throw new Error(`${label} must use YYYY-MM-DD.`); return date }
 function requireIsoDateTime(value: unknown, label: string): string { const timestamp = requireText(value, label); if (!ISO_DATETIME.test(timestamp) || !isDateOnly(timestamp.slice(0, 10)) || !Number.isFinite(Date.parse(timestamp))) throw new Error(`${label} must use an ISO datetime with timezone.`); return timestamp }
+function assertExclusiveSchedule(at: string | null, on: string | null, label: string): void {
+  if ((at === null) === (on === null)) throw new Error(`${label} fields are mutually exclusive and require exactly one value.`)
+}
 function requirePositiveInteger(value: unknown, label: string): number { if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) throw new Error(`${label} must be a positive integer.`); return value }
 function requireNonNegativeInteger(value: unknown, label: string): number { if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) throw new Error(`${label} must be a non-negative integer.`); return value }
 function requireRangeInteger(value: unknown, min: number, max: number, label: string): number { if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be between ${min} and ${max}.`); return value }
