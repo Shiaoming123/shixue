@@ -25,7 +25,7 @@ const props = defineProps<{
   tasks: TaskViewItem[]; occurrences: OccurrenceViewItem[]; topics: Array<{ id: string; title: string }>; title: string; subtitle: string
   selectedId?: string; smartView: StudyTaskSmartView; search: string; topicFilter: string
   priorityFilter: StudyTaskPriority | 'all'; sort: StudyTaskQuerySort
-  quickAddDestinationListId: string; quickAddDefaultStartOn?: string; quickAddRemoveRecognizedText?: boolean
+  quickAddDestinationListId: string; quickAddDefaultStartOn?: string; quickAddDefaultEstimateMinutes?: number | null; quickAddRemoveRecognizedText?: boolean
 }>()
 const emit = defineEmits<{
   created: [entity: EntityRef]; open: [id: string]; toggleComplete: [id: string]; edit: [id: string]; delete: [id: string]
@@ -108,8 +108,10 @@ function handleShortcut(event: KeyboardEvent) {
   if (event.key.toLowerCase() === 'e' && props.selectedId) emit('edit', props.selectedId)
   if (event.key.toLowerCase() === 'c' && props.selectedId) emit('toggleComplete', props.selectedId)
 }
+function focusQuickAdd() { quickAddComposer.value?.focus() }
 onMounted(() => window.addEventListener('keydown', handleShortcut))
 onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
+defineExpose({ focusQuickAdd })
 </script>
 
 <template>
@@ -126,6 +128,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
       ref="quickAddComposer"
       :destination-list-id="quickAddDestinationListId"
       :default-start-on="quickAddDefaultStartOn"
+      :default-estimate-minutes="quickAddDefaultEstimateMinutes"
       :quick-add-remove-recognized-text="quickAddRemoveRecognizedText"
       @created="emit('created', $event)"
     />

@@ -1,7 +1,7 @@
 import type { Module } from '../types'
 
 const QUICK_CAPTURE_SHORTCUT = 'Ctrl+Alt+A'
-const QUICK_CAPTURE_EVENT = 'shixue:quick-capture'
+const QUICK_CAPTURE_EVENT = 'shixue:quick-add'
 
 interface ShortcutEvent {
   state: string
@@ -45,8 +45,10 @@ export function createShortcutModule(
   let bindings: ShortcutBindings | undefined
   let registered = false
   let registration: Promise<void> | undefined
+  let teardownPromise: Promise<void> | undefined
 
   async function setup(): Promise<void> {
+    if (teardownPromise) await teardownPromise
     if (registered) return
 
     registration ??= (async () => {
@@ -72,13 +74,21 @@ export function createShortcutModule(
   }
 
   async function teardown(): Promise<void> {
-    if (registration) await registration
-    if (!registered || !bindings) return
+    teardownPromise ??= (async () => {
+      if (registration) await registration
+      if (!registered || !bindings) return
 
-    await bindings.unregister(QUICK_CAPTURE_SHORTCUT)
-    registered = false
-    bindings = undefined
-    registration = undefined
+      await bindings.unregister(QUICK_CAPTURE_SHORTCUT)
+      registered = false
+      bindings = undefined
+      registration = undefined
+    })()
+
+    try {
+      await teardownPromise
+    } finally {
+      teardownPromise = undefined
+    }
   }
 
   return {

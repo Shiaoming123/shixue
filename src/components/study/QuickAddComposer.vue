@@ -17,9 +17,11 @@ import QuickAddChip from './QuickAddChip.vue'
 const props = withDefaults(defineProps<{
   destinationListId: string
   defaultStartOn?: string
+  defaultEstimateMinutes?: number | null
   quickAddRemoveRecognizedText?: boolean
 }>(), {
   defaultStartOn: undefined,
+  defaultEstimateMinutes: null,
   quickAddRemoveRecognizedText: false,
 })
 
@@ -103,6 +105,7 @@ function buildCommand() {
     defaultStartOn: props.defaultStartOn,
     fallbackRecurrenceAnchorOn: localToday(),
     timezone,
+    defaultEstimateMinutes: props.defaultEstimateMinutes,
     removeRecognizedText: props.quickAddRemoveRecognizedText,
   })
 }
@@ -124,6 +127,7 @@ async function submit() {
       defaultStartOn: props.defaultStartOn,
       fallbackRecurrenceAnchorOn: localToday(),
       timezone,
+      defaultEstimateMinutes: props.defaultEstimateMinutes,
       removeRecognizedText: props.quickAddRemoveRecognizedText,
       taskId,
       eventId: crypto.randomUUID(),

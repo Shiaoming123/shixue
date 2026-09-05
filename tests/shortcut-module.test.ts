@@ -38,7 +38,7 @@ test('desktop setup registers quick capture once and activation focuses the main
     'show',
     'unminimize',
     'focus',
-    'shixue:quick-capture',
+    'shixue:quick-add',
   ])
 })
 

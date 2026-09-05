@@ -21,6 +21,7 @@ import OverlayHost from './components/ui/OverlayHost.vue'
 import ToastRegion from './components/ui/ToastRegion.vue'
 import { projectTaskItems, queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView, type TaskProjectionReason } from './lib/study-task-query'
 import { selectStudyReminders, selectTaskReminderTriggers } from './lib/study-reminders'
+import { loadPlanningPreferences, savePlanningPreferences, type PlanningPreferences } from './lib/planning-preferences'
 import { detectRuntimeInfo, hasRuntimeCapability } from './lib/platform'
 import {
   addTaskChecklistItem,
@@ -113,6 +114,8 @@ const toastAction = ref<{ label: string; run: () => Promise<void> } | null>(null
 const toastVersion = ref(0)
 const storageError = ref('')
 const remindersEnabled = ref(false)
+const planningPreferences = ref(loadPlanningPreferences())
+const tasksView = ref<InstanceType<typeof TasksView> | null>(null)
 const runtime = detectRuntimeInfo()
 const capabilityService = createTaskCapabilityService(getWorkspaceStore(), () => new Date().toISOString(), (kind) => `${kind}:${crypto.randomUUID()}`)
 const remindersAvailable = hasRuntimeCapability(runtime, 'native-notification')
@@ -241,7 +244,7 @@ const weeklyBlocker = computed(() => weeklyRecords.value.find((record) => record
 const weeklyNext = computed(() => liveTasks.value.find((task) => task.status === 'in_progress' || task.status === 'planned')?.title || '从收件箱选择一个下一步')
 
 onMounted(async () => {
-  window.addEventListener('shixue:quick-capture', handleQuickCapture)
+  window.addEventListener('shixue:quick-add', handleQuickAdd)
   window.addEventListener('shixue:module-error', handleModuleError)
   appearanceDark.value = localStorage.getItem('meow-study-appearance') === 'dark'
   remindersEnabled.value = localStorage.getItem('meow-study-reminders') === 'enabled'
@@ -272,17 +275,23 @@ onUnmounted(() => {
   if (cloudDebounceTimer) clearTimeout(cloudDebounceTimer)
   if (scratchSaveTimer) clearTimeout(scratchSaveTimer)
   compactMedia?.removeEventListener('change', onCompactChange)
-  window.removeEventListener('shixue:quick-capture', handleQuickCapture)
+  window.removeEventListener('shixue:quick-add', handleQuickAdd)
   window.removeEventListener('shixue:module-error', handleModuleError)
 })
 
-function handleQuickCapture() {
+function handleQuickAdd() {
   settingsOpen.value = false
+  completionOpen.value = false
+  taskActionOpen.value = false
   taskEditorOpen.value = false
-  page.value = 'tasks'
-  activeSmartView.value = 'inbox'
-  showFocus.value = false
-  requestAnimationFrame(() => document.querySelector<HTMLInputElement>('input[aria-label="记录学习想法"]')?.focus())
+  recurrenceScopeOpen.value = false
+  occurrenceRescheduleOpen.value = false
+  topicEditorOpen.value = false
+  groupEditorOpen.value = false
+  selectSmartView('inbox')
+  selectedTaskId.value = ''
+  selectedOccurrenceId.value = ''
+  requestAnimationFrame(() => tasksView.value?.focusQuickAdd())
 }
 function handleModuleError() {
   storageError.value = '部分系统能力未能启动。任务数据与核心界面仍可使用。'
@@ -841,6 +850,13 @@ async function resetDemo() {
   } catch (error) { reportStorageError(error) }
 }
 function setAppearance(mode: 'light' | 'dark') { appearanceDark.value = mode === 'dark'; localStorage.setItem('meow-study-appearance', mode); applyTheme('study', appearanceDark.value) }
+function updatePlanningPreferences(patch: Partial<PlanningPreferences>) {
+  try {
+    planningPreferences.value = savePlanningPreferences(patch)
+  } catch {
+    notify('快速新增设置未能保存，请重试。')
+  }
+}
 
 function topicTitleFor(topicId: string | null) { return topicId ? topicMap.value.get(topicId)?.title ?? '未知主题' : '未归类' }
 function projectionReasonLabel(reason: TaskProjectionReason) { return ({ overdue: '已过期', planned: '已计划', due: '今日截止', repeating: '重复' } as const)[reason] }
@@ -879,7 +895,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
         <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" @back="showFocus = false" @toggle="toggleFocus" @finish="completionOpen = true" @update:scratchpad="updateScratchpad" />
         <div v-else-if="page === 'tasks' || page === 'today'" class="tasks-layout">
-          <div class="tasks-scroll"><TasksView :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-remove-recognized-text="false" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
+          <div class="tasks-scroll"><TasksView ref="tasksView" :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
           <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
         </div>
         <TopicsView v-else-if="page === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
@@ -893,7 +909,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
     <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" :recurrence-rule="selectedRecurrenceRule" @close="taskEditorOpen = false" @save="saveTaskEdit" @recurrence-save="requestRecurrenceEdit" />
     <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @edit-occurrence="editSingleOccurrence" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />
     <OccurrenceRescheduleSheet :open="occurrenceRescheduleOpen" :title="selectedTask?.title ?? ''" :model-value="occurrenceRescheduleValue" :timed="occurrenceRescheduleTimed" @close="occurrenceRescheduleOpen = false" @submit="rescheduleOccurrence" />
-    <SettingsSheet :open="settingsOpen" :dark="appearanceDark" :reminders-available="remindersAvailable" :reminders-enabled="remindersEnabled" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @close="settingsOpen = false" @export="exportData" @import="importData" @reset-demo="resetDemo" @set-appearance="setAppearance" @set-reminders="setReminders" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
+    <SettingsSheet :open="settingsOpen" :dark="appearanceDark" :reminders-available="remindersAvailable" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @close="settingsOpen = false" @export="exportData" @import="importData" @reset-demo="resetDemo" @set-appearance="setAppearance" @set-reminders="setReminders" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
 
     <div v-if="topicEditorOpen" class="editor-backdrop" @click.self="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" required placeholder="清单名称" /></label><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></div>
     <div v-if="groupEditorOpen" class="editor-backdrop" @click.self="groupEditorOpen = false"><form class="editor-sheet compact-editor" @submit.prevent="saveGroup"><h2>{{ selectedGroupId ? '编辑分组' : '新建分组' }}</h2><label><span>名称</span><input v-model="groupTitle" required placeholder="分组名称" /></label><footer><button v-if="selectedGroupId" type="button" class="cancel danger" @click="archiveGroup">归档</button><span class="footer-spacer"></span><button type="button" class="cancel" @click="groupEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></div>

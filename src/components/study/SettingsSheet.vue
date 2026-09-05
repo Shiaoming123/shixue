@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { Bell, Download, Moon, RotateCcw, Sun, Upload, X } from '@lucide/vue'
+import Listbox, { type ListboxOption } from '../ui/Listbox.vue'
 import Switch from '../ui/Switch.vue'
 
 export type CloudAccountStatus = 'signed-out' | 'signed-in' | 'syncing' | 'failed'
@@ -10,6 +11,8 @@ const props = defineProps<{
   dark: boolean
   remindersAvailable: boolean
   remindersEnabled: boolean
+  quickAddRemoveRecognizedText: boolean
+  defaultEstimateMinutes: number | null
   cloudAvailable: boolean
   cloudStatus: CloudAccountStatus
   cloudEmail?: string
@@ -22,6 +25,8 @@ const emit = defineEmits<{
   resetDemo: []
   setAppearance: [mode: 'light' | 'dark']
   setReminders: [enabled: boolean]
+  setQuickAddRemoveRecognizedText: [enabled: boolean]
+  setDefaultEstimateMinutes: [minutes: number | null]
   cloudSignIn: [email: string, password: string]
   cloudSignOut: []
   cloudSync: []
@@ -34,6 +39,15 @@ const importContent = ref('')
 const importError = ref('')
 const cloudEmailDraft = ref('')
 const cloudPassword = ref('')
+const estimateOptions: ListboxOption[] = [
+  { value: 'none', label: '不设置' },
+  { value: '15', label: '15 分钟' },
+  { value: '25', label: '25 分钟' },
+  { value: '30', label: '30 分钟' },
+  { value: '45', label: '45 分钟' },
+  { value: '60', label: '1 小时' },
+  { value: '90', label: '1.5 小时' },
+]
 watch(() => props.open, (open) => {
   if (!open) {
     confirmReset.value = false
@@ -84,6 +98,10 @@ function signIn() {
   emit('cloudSignIn', cloudEmailDraft.value.trim(), cloudPassword.value)
   cloudPassword.value = ''
 }
+
+function setDefaultEstimate(value: string) {
+  emit('setDefaultEstimateMinutes', value === 'none' ? null : Number(value))
+}
 </script>
 
 <template>
@@ -115,6 +133,27 @@ function signIn() {
         <div v-else class="reset-confirm" role="alert">
           <p><strong>覆盖本地记录？</strong><span>现有主题和学习证据会被演示内容替换。建议先导出。</span></p>
           <div><button @click="confirmReset = false">继续保留</button><button class="danger" @click="resetDemo">确认恢复</button></div>
+        </div>
+      </div>
+
+      <div class="group planning-settings">
+        <span>快速新增</span>
+        <Switch
+          :model-value="quickAddRemoveRecognizedText"
+          label="移除已识别文字"
+          description="提交时从标题中移除已确认的日期、优先级等文字"
+          @update:model-value="emit('setQuickAddRemoveRecognizedText', $event)"
+        />
+        <div class="planning-setting-row">
+          <span><strong>默认预计时长</strong><small>只在快速新增时应用</small></span>
+          <Listbox
+            class="estimate-listbox"
+            :model-value="defaultEstimateMinutes === null ? 'none' : String(defaultEstimateMinutes)"
+            :options="estimateOptions"
+            label="默认预计时长"
+            variant="compact"
+            @update:model-value="setDefaultEstimate"
+          />
         </div>
       </div>
 
@@ -205,6 +244,26 @@ header button {
   font-size: 11px;
   font-weight: 600;
 }
+
+.planning-setting-row {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.planning-setting-row > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.planning-setting-row strong { font-size: var(--text-base); font-weight: 600; }
+.planning-setting-row small { color: var(--muted); font-size: 10px; }
 
 .cloud-session { padding: 14px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--surface); }.cloud-session p { display: flex; flex-direction: column; gap: 4px; margin: 0; }.cloud-session strong { color: var(--accent); font-size: 13px; }.cloud-session small { color: var(--muted); font-size: 10px; }.cloud-session > div { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 13px; }.cloud-session button, .cloud-form > button { min-height: 40px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font-size: 11px; font-weight: 650; }.cloud-session button.danger { color: var(--danger); }.cloud-session button:disabled { opacity: .4; }
 .cloud-form { padding: 14px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--surface); }.cloud-form > p { margin: 0 0 12px; color: var(--muted); font-size: 10px; line-height: 1.55; }.cloud-form label { display: block; margin-top: 10px; }.cloud-form label span { display: block; margin-bottom: 5px; font-size: 10px; font-weight: 650; }.cloud-form input { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid var(--hairline); border-radius: var(--radius-md); outline: 0; background: var(--control-fill); color: var(--text); font-size: 12px; }.cloud-form input:focus { border-color: var(--accent); box-shadow: var(--focus-ring); }.cloud-form > button { width: 100%; margin-top: 12px; border: 0; background: var(--accent); color: var(--accent-text); }.cloud-form > button:disabled { opacity: .4; }.cloud-message { margin: 9px 2px 0; color: var(--muted); font-size: 10px; line-height: 1.5; }.cloud-message.error { color: var(--danger); }

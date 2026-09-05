@@ -9,6 +9,7 @@ export interface BuildQuickAddCommandInput {
   defaultStartOn?: string
   fallbackRecurrenceAnchorOn?: string
   timezone: string
+  defaultEstimateMinutes?: number | null
   removeRecognizedText?: boolean
   taskId?: string
   eventId?: string
@@ -46,6 +47,9 @@ export function buildQuickAddCommand(options: BuildQuickAddCommandInput): TaskCr
     title,
     ...(tagIds.length ? { tagIds } : {}),
     ...(priority ? { priority: parsePriority(priority) } : {}),
+    ...(options.defaultEstimateMinutes === null || options.defaultEstimateMinutes === undefined
+      ? {}
+      : { estimateMinutes: options.defaultEstimateMinutes }),
     ...dateFields(schedule, 'startAt', 'startOn'),
     ...dateFields(deadline, 'dueAt', 'dueOn'),
     ...(recurrence ? {
