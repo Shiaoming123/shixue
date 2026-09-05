@@ -220,6 +220,29 @@ test('task creation and planning persist todo metadata atomically', async () => 
   assert.equal(planned.priority, 'low')
 })
 
+test('planning validates a precise start against its deadline and preserves a legal instant', async () => {
+  const store = createInMemoryWorkspaceStore(emptyState())
+  registerWorkspaceStore(store)
+  await captureStudyTask({
+    title: 'Timed plan',
+    dueOn: '2026-09-06',
+  }, { taskId: 'timed-plan', eventId: 'capture-timed', now: '2026-09-04T08:00:00.000Z' })
+
+  await assert.rejects(
+    planStudyTask('timed-plan', {
+      plannedAt: '2026-09-07T06:00:00.000Z',
+    }, { eventId: 'late-timed', now: '2026-09-04T08:01:00.000Z' }),
+    /dueOn cannot precede plannedOn/,
+  )
+
+  await planStudyTask('timed-plan', {
+    plannedAt: '2026-09-06T06:00:00.000Z',
+  }, { eventId: 'legal-timed', now: '2026-09-04T08:02:00.000Z' })
+  const persisted = (await store.load()).tasks.find(({ id }) => id === 'timed-plan')
+  assert.equal(persisted?.schedule.startAt, '2026-09-06T06:00:00.000Z')
+  assert.equal(persisted?.schedule.startOn, null)
+})
+
 test('quick completion toggles without evidence and finishes the task session', async () => {
   await useEmptyStore()
   await captureStudyTask(

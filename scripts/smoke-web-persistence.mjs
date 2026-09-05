@@ -148,6 +148,9 @@ async function main() {
 
       await quickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).click()
       const scheduleEditor = page.getByRole('dialog', { name: /编辑计划/ })
+      if ((await scheduleEditor.getAttribute('aria-modal')) !== 'false') {
+        throw new Error('Desktop schedule editor must remain a non-modal popover.')
+      }
       const timeInput = scheduleEditor.getByRole('textbox', { name: '本地时间，可选' })
       await timeInput.fill('14:00')
       await timeInput.press('Tab')
@@ -238,32 +241,59 @@ async function main() {
 
       await page.locator('.task-row').filter({ hasText: editedMarker }).getByRole('button').nth(1).click()
       await page.getByRole('complementary', { name: '任务详情', exact: true }).waitFor({ state: 'visible' })
-      await page.setViewportSize({ width: 390, height: 844 })
       await page.evaluate(() => localStorage.setItem('meow-study-appearance', 'dark'))
-      await page.reload({ waitUntil: 'networkidle' })
-      await page.getByRole('navigation', { name: '移动端主导航' }).waitFor({ state: 'visible' })
-      await page
-        .getByRole('navigation', { name: '移动端主导航' })
-        .getByRole('button', { name: '收件箱', exact: true })
-        .click()
-      const mobileQuickAdd = page.locator('.quick-add-composer')
-      await mobileQuickAdd.getByRole('textbox', { name: '新建任务' }).fill(quickAddTitle)
-      await mobileQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).click()
-      const mobileScheduleEditor = page.getByRole('dialog', { name: /编辑计划/ })
-      const mobileApply = mobileScheduleEditor.getByRole('button', { name: '应用', exact: true })
-      await mobileApply.waitFor({ state: 'visible' })
-      const [applyBox, bottomNavBox] = await Promise.all([
-        mobileApply.boundingBox(),
-        page.getByRole('navigation', { name: '移动端主导航' }).boundingBox(),
-      ])
-      if (!applyBox || !bottomNavBox || applyBox.y + applyBox.height > bottomNavBox.y) {
-        throw new Error(`Mobile picker actions overlap bottom navigation: apply=${JSON.stringify(applyBox)}, nav=${JSON.stringify(bottomNavBox)}`)
+      for (const viewport of [{ width: 700, height: 844 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport)
+        await page.reload({ waitUntil: 'networkidle' })
+        const mobileNav = page.getByRole('navigation', { name: '移动端主导航' })
+        await mobileNav.waitFor({ state: 'visible' })
+        await mobileNav.getByRole('button', { name: '收件箱', exact: true }).click()
+        const compactQuickAdd = page.locator('.quick-add-composer')
+        await compactQuickAdd.getByRole('textbox', { name: '新建任务' }).fill(quickAddTitle)
+        const scheduleTrigger = compactQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ })
+        await scheduleTrigger.click()
+        const scheduleSheet = page.getByRole('dialog', { name: /编辑计划/ })
+        await scheduleSheet.waitFor({ state: 'visible' })
+        if ((await scheduleSheet.getAttribute('aria-modal')) !== 'true') {
+          throw new Error(`Compact schedule editor is not modal at ${viewport.width}px.`)
+        }
+        if (!(await scheduleSheet.evaluate((element) => element.contains(document.activeElement)))) {
+          throw new Error(`Compact schedule editor did not receive focus at ${viewport.width}px.`)
+        }
+        const apply = scheduleSheet.getByRole('button', { name: '应用', exact: true })
+        const [applyBox, bottomNavBox] = await Promise.all([apply.boundingBox(), mobileNav.boundingBox()])
+        if (!applyBox || !bottomNavBox || applyBox.y + applyBox.height > bottomNavBox.y) {
+          throw new Error(`Compact picker actions overlap bottom navigation at ${viewport.width}px: apply=${JSON.stringify(applyBox)}, nav=${JSON.stringify(bottomNavBox)}`)
+        }
+        await apply.focus()
+        await page.keyboard.press('Tab')
+        if (!(await scheduleSheet.evaluate((element) => element.contains(document.activeElement)))) {
+          throw new Error(`Compact schedule editor did not trap focus at ${viewport.width}px.`)
+        }
+        await page.keyboard.press('Escape')
+        await scheduleSheet.waitFor({ state: 'hidden' })
+        await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.startsWith('编辑计划'))
+        await scheduleTrigger.click()
+        await scheduleSheet.waitFor({ state: 'visible' })
+        await page.mouse.click(2, 2)
+        await scheduleSheet.waitFor({ state: 'hidden' })
+        await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.startsWith('编辑计划'))
+        await scheduleTrigger.click()
+        await scheduleSheet.waitFor({ state: 'visible' })
+        if (viewport.width === 390) {
+          await scheduleSheet.evaluate((element) =>
+            new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+          )
+          if ((await scheduleSheet.evaluate((element) => getComputedStyle(element).opacity)) !== '1') {
+            throw new Error('Compact schedule editor did not settle before visual capture.')
+          }
+          await page.screenshot({
+            path: resolve(quickAddArtifactRoot, 'quick-add-mobile-picker-390x844.png'),
+          })
+        }
+        await scheduleSheet.getByRole('button', { name: '应用', exact: true }).click()
+        await compactQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).waitFor({ state: 'visible' })
       }
-      await page.screenshot({
-        path: resolve(quickAddArtifactRoot, 'quick-add-mobile-picker-390x844.png'),
-      })
-      await mobileApply.click()
-      await mobileQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).waitFor({ state: 'visible' })
       await page
         .getByRole('navigation', { name: '移动端主导航' })
         .getByRole('button', { name: '主题', exact: true })

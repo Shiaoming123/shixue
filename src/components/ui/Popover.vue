@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, reactive, ref, useId, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, useId, watch } from 'vue'
 import { releaseOverlay, useOverlay, type OverlayCloseReason, type OverlayKind } from './use-overlay'
 
 const props = withDefaults(defineProps<{
@@ -25,10 +25,12 @@ const emit = defineEmits<{
 const id = `popover-${useId()}`
 const trigger = ref<HTMLElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
+const mobileSheetActive = ref(false)
 const position = reactive({ top: '0px', left: '0px', minWidth: '' })
+let compactMedia: MediaQueryList | undefined
 const registration = {
   id,
-  kind: props.kind,
+  kind: props.kind as OverlayKind,
   trigger: null as HTMLElement | null,
   close: (reason: OverlayCloseReason) => requestClose(reason),
 }
@@ -55,9 +57,14 @@ function toggle(event?: Event) {
 }
 
 function requestClose(reason: OverlayCloseReason) {
-  releaseOverlay(layerId, reason === 'escape' || reason === 'select')
+  const restoreAfterPointer = mobileSheetActive.value && reason === 'outside'
+  releaseOverlay(layerId, !restoreAfterPointer && (reason === 'escape' || reason === 'select'))
   emit('update:open', false)
   emit('close', reason)
+  if (restoreAfterPointer) {
+    const target = trigger.value
+    nextTick(() => requestAnimationFrame(() => target?.focus({ preventScroll: true })))
+  }
 }
 
 function updatePosition() {
@@ -91,7 +98,47 @@ function removePositionListeners() {
   window.removeEventListener('scroll', updatePosition, true)
 }
 
-watch(() => props.open, async (open) => {
+function syncMobileSheet() {
+  mobileSheetActive.value = Boolean(props.mobileSheet && compactMedia?.matches)
+  registration.kind = mobileSheetActive.value ? 'sheet' : props.kind
+}
+
+const focusableSelector = [
+  'button:not([disabled])',
+  '[href]',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function focusableElements() {
+  return panel.value
+    ? Array.from(panel.value.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hidden)
+    : []
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (!mobileSheetActive.value || event.key !== 'Tab') return
+  const focusable = focusableElements()
+  if (!focusable.length) {
+    event.preventDefault()
+    panel.value?.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  const active = document.activeElement
+  if (event.shiftKey && (active === first || !panel.value?.contains(active))) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (active === last || !panel.value?.contains(active))) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+watch(() => [props.open, mobileSheetActive.value] as const, async ([open, sheet]) => {
   removePositionListeners()
   if (!open) {
     releaseOverlay(layerId)
@@ -99,12 +146,23 @@ watch(() => props.open, async (open) => {
   }
   rememberTrigger()
   await nextTick()
-  updatePosition()
+  if (!sheet) updatePosition()
   bringToFront()
-  addPositionListeners()
+  if (sheet) (focusableElements()[0] ?? panel.value)?.focus({ preventScroll: true })
+  else addPositionListeners()
 }, { immediate: true })
 
-onUnmounted(removePositionListeners)
+onMounted(() => {
+  if (!props.mobileSheet) return
+  compactMedia = window.matchMedia('(max-width: 819px)')
+  syncMobileSheet()
+  compactMedia.addEventListener('change', syncMobileSheet)
+})
+
+onUnmounted(() => {
+  removePositionListeners()
+  compactMedia?.removeEventListener('change', syncMobileSheet)
+})
 
 defineExpose({ close: requestClose, updatePosition })
 </script>
@@ -113,22 +171,39 @@ defineExpose({ close: requestClose, updatePosition })
   <slot name="trigger" :open="open" :toggle="toggle" :trigger-props="triggerProps" />
   <Teleport defer to="#ui-overlay-host">
     <Transition name="popover">
-      <div
-        v-if="open"
-        :id="id"
-        ref="panel"
-        class="popover-panel"
-        :class="{ 'popover-panel--mobile-sheet': mobileSheet }"
-        :data-overlay-layer="layerId"
-        :style="position"
-      >
-        <slot :close="requestClose" />
+      <div v-if="open" class="popover-layer" :class="{ 'popover-layer--mobile-sheet': mobileSheetActive }">
+        <div
+          :id="id"
+          ref="panel"
+          class="popover-panel"
+          :class="{ 'popover-panel--mobile-sheet': mobileSheetActive }"
+          :data-overlay-layer="layerId"
+          :style="mobileSheetActive ? undefined : position"
+          :tabindex="mobileSheetActive ? -1 : undefined"
+          @keydown="onKeydown"
+        >
+          <slot :close="requestClose" :modal="mobileSheetActive" />
+        </div>
       </div>
     </Transition>
   </Teleport>
 </template>
 
 <style scoped>
+.popover-layer {
+  position: fixed;
+  z-index: calc(var(--z-modal) + 1);
+  inset: 0;
+  pointer-events: none;
+}
+
+.popover-layer--mobile-sheet {
+  background: color-mix(in srgb, var(--text) 24%, transparent);
+  backdrop-filter: blur(12px) saturate(118%);
+  -webkit-backdrop-filter: blur(12px) saturate(118%);
+  pointer-events: auto;
+}
+
 .popover-panel {
   position: fixed;
   z-index: calc(var(--z-modal) + 1);
@@ -144,18 +219,18 @@ defineExpose({ close: requestClose, updatePosition })
   pointer-events: auto;
 }
 
-.popover-enter-active,
-.popover-leave-active {
+.popover-enter-active .popover-panel,
+.popover-leave-active .popover-panel {
   transition: opacity var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
 }
 
-.popover-enter-from,
-.popover-leave-to {
+.popover-enter-from .popover-panel,
+.popover-leave-to .popover-panel {
   opacity: 0;
   transform: translateY(4px);
 }
 
-@media (max-width: 599px) {
+@media (max-width: 819px) {
   .popover-panel--mobile-sheet {
     top: auto !important;
     right: 12px;
@@ -170,6 +245,7 @@ defineExpose({ close: requestClose, updatePosition })
 }
 
 @media (prefers-reduced-transparency: reduce) {
+  .popover-layer--mobile-sheet { backdrop-filter: none; -webkit-backdrop-filter: none; }
   .popover-panel {
     background: var(--surface);
     backdrop-filter: none;

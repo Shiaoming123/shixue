@@ -176,10 +176,7 @@ export async function updateStudyTask(
   options: StudyWriteOptions = {},
 ): Promise<StudyTask> {
   const current = requireTask(await loadStudyState(), taskId)
-  const nextPlannedOn = input.plannedAt !== undefined
-    ? input.plannedAt?.slice(0, 10) ?? null
-    : input.plannedOn ?? current.plannedOn
-  assertStudyDateOrder(nextPlannedOn, input.dueOn ?? current.dueOn)
+  assertStudyDateOrder(effectivePlanDate(input, current.plannedOn), input.dueOn ?? current.dueOn)
   const now = commandTime(options.now)
   await executeCommand({
     type: 'task.update',
@@ -262,7 +259,7 @@ export async function planStudyTask(
   options: TaskCommandOptions = {},
 ): Promise<StudyTask> {
   const current = requireTask(await loadStudyState(), taskId)
-  assertStudyDateOrder(input.plannedOn ?? current.plannedOn, input.dueOn ?? current.dueOn)
+  assertStudyDateOrder(effectivePlanDate(input, current.plannedOn), input.dueOn ?? current.dueOn)
   const now = commandTime(options.now)
   await executeCommand({
     type: 'task.plan',
@@ -564,6 +561,11 @@ function taskPatch(input: StudyTaskMetadataUpdate) {
   if (input.estimateMinutes !== undefined) patch.estimateMinutes = input.estimateMinutes
   if (input.acceptanceCriteria !== undefined) patch.acceptanceCriteria = [...input.acceptanceCriteria]
   return patch
+}
+
+function effectivePlanDate(input: StudyTaskMetadataUpdate, currentPlannedOn: string | null): string | null {
+  if (input.plannedAt !== undefined) return input.plannedAt?.slice(0, 10) ?? null
+  return input.plannedOn ?? currentPlannedOn
 }
 
 function projectTask(task: Task, reminderAt: string | null): StudyTask {
