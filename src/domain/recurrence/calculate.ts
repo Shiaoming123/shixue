@@ -73,8 +73,9 @@ function afterCompletionDate(series: RecurrenceSeries, completedOn: string): str
     while (!series.cadence.weekdays.includes(weekdayOf(date))) date = addCalendarDays(date, 1)
     return date
   }
-  if (series.cadence.kind === 'monthly') return addCalendarMonths(completedOn, series.cadence.interval, series.cadence.dayOfMonth)
-  return addCalendarYears(completedOn, series.cadence.interval, series.cadence.month, series.cadence.dayOfMonth)
+  const completed = parseDateOnly(completedOn)
+  if (series.cadence.kind === 'monthly') return addCalendarMonths(completedOn, series.cadence.interval, completed.day)
+  return addCalendarYears(completedOn, series.cadence.interval, completed.month, completed.day)
 }
 
 function resolveCandidate(date: string, time: string | null, timezone: string): string {

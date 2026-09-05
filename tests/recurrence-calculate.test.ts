@@ -82,6 +82,30 @@ test('after-completion interval advances from the completion instant instead of 
   }), '2026-09-05T09:00:00-04:00'), '2026-09-08T13:00:00.000Z')
 })
 
+test('after-completion weekly cadence starts after the completed local date and selects the next configured weekday', () => {
+  assert.equal(nextAfterCompletion(series({
+    cadence: { kind: 'weekly', interval: 2, weekdays: [1] },
+    basis: 'after_completion',
+    anchorAt: '2026-09-04T09:00:00-04:00',
+  }), '2026-09-08T10:15:00-04:00'), '2026-09-28T14:15:00.000Z')
+})
+
+test('after-completion monthly cadence keeps the completed local day and clamps short months', () => {
+  assert.equal(nextAfterCompletion(series({
+    cadence: { kind: 'monthly', interval: 1, dayOfMonth: 5 },
+    basis: 'after_completion',
+    anchorAt: '2026-01-05T09:00:00-05:00',
+  }), '2026-01-30T10:45:00-05:00'), '2026-02-28T15:45:00.000Z')
+})
+
+test('after-completion yearly cadence keeps the completed local month and day with leap-day clamping', () => {
+  assert.equal(nextAfterCompletion(series({
+    cadence: { kind: 'yearly', interval: 1, month: 12, dayOfMonth: 31 },
+    basis: 'after_completion',
+    anchorAt: '2026-12-31T09:00:00-05:00',
+  }), '2028-02-29T10:45:00-05:00'), '2029-02-28T15:45:00.000Z')
+})
+
 test('DST gap uses the documented shift-forward policy', () => {
   assert.equal(nextFixedOccurrence(series({
     cadence: { kind: 'daily', interval: 1 },

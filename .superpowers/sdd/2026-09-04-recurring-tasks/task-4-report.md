@@ -94,3 +94,17 @@
 - Full `npm test`: NOT_RUN per the requested verification boundary.
 - Visual screenshot/state-matrix run: NOT_RUN; no new visual claim is made.
 - Push/PR creation: NOT_RUN; this work remains a focused local commit.
+
+## Scoped review follow-up
+- After-completion weekly cadence is defined as completion-local date plus `interval` weeks, followed by the first allowed `weekdays` on or after that date. Monthly and yearly cadence preserve the completion-local day/month rather than the series anchor fields, with short-month and leap-day clamping.
+- Today deadline fallback now checks for a visible pending occurrence projection. A completed occurrence in range no longer suppresses the future pending row that carries the independent parent deadline into Today.
+- RED: `node --test --experimental-strip-types tests/recurrence-calculate.test.ts tests/recurrence-projection.test.ts`
+  - 16 passed, 3 failed before the fixes: monthly completion basis, yearly completion basis, and completed-history Today fallback.
+- RED no-pending guard: `node --test --experimental-strip-types tests/recurrence-projection.test.ts`
+  - 7 passed, 1 failed before adding the parent-task deadline fallback.
+- Focused final: `node --test --experimental-strip-types tests/recurrence-calculate.test.ts tests/recurrence-projection.test.ts tests/recurrence-commands.test.ts`
+  - 35 passed, 0 failed, 0 skipped.
+- `npm run check:protocol`: exit 0.
+- `npm run typecheck`: exit 0.
+- `npm run build`: exit 0; Vite transformed 2068 modules.
+- Full `npm test`, visual verification, push, and PR creation remain NOT_RUN per the scoped review boundary.

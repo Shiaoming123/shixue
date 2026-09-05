@@ -78,6 +78,43 @@ test('Today retains the next occurrence when only its independent parent deadlin
   assert.deepEqual(row?.reasons, ['due'])
 })
 
+test('Today retains a pending deadline row when a completed occurrence is already projected', () => {
+  const parent = task({ deadline: { dueAt: null, dueOn: '2026-09-05' } })
+  const completed = occurrence({
+    id: 'occ:done',
+    scheduledAt: null,
+    scheduledOn: '2026-09-05',
+    status: 'completed',
+    completedAt: '2026-09-05T09:30:00+08:00',
+  })
+  const future = occurrence({ id: 'occ:future', ordinal: 2, scheduledAt: null, scheduledOn: '2026-09-08' })
+
+  const rows = projectTaskItems(fixture({ task: parent, occurrences: [completed, future] }), todayRange)
+  const pending = rows.find(({ occurrenceId }) => occurrenceId === future.id)
+
+  assert.equal(pending?.occurrence?.status, 'pending')
+  assert.equal(pending?.scheduledOn, '2026-09-08')
+  assert.deepEqual(pending?.reasons, ['due'])
+})
+
+test('Today falls back to the parent deadline row when no pending occurrence remains', () => {
+  const parent = task({ deadline: { dueAt: null, dueOn: '2026-09-05' } })
+  const completed = occurrence({
+    id: 'occ:done',
+    scheduledAt: null,
+    scheduledOn: '2026-09-05',
+    status: 'completed',
+    completedAt: '2026-09-05T09:30:00+08:00',
+  })
+
+  const rows = projectTaskItems(fixture({ task: parent, occurrences: [completed] }), todayRange)
+  const fallback = rows.find(({ key }) => key === `task:${parent.id}`)
+
+  assert.equal(fallback?.occurrenceId, null)
+  assert.equal(fallback?.dueOn, '2026-09-05')
+  assert.deepEqual(fallback?.reasons, ['due'])
+})
+
 test('occurrence UI exposes occurrence intent actions and separate schedule/deadline labels', () => {
   const today = readFileSync(new URL('../src/components/study/TodayView.vue', import.meta.url), 'utf8')
   const detail = readFileSync(new URL('../src/components/study/TaskDetailDrawer.vue', import.meta.url), 'utf8')

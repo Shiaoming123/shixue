@@ -66,12 +66,13 @@ export function projectTaskItems(
         const projection = projectOccurrence(task, occurrence, range)
         if (projection) taskProjections.push(projection)
       }
-      if (taskProjections.length === 0 && task.status !== 'completed') {
+      const hasVisiblePending = taskProjections.some(({ occurrence }) => occurrence?.status === 'pending')
+      if (!hasVisiblePending && task.status !== 'completed') {
         const deadlineOn = task.deadline.dueOn ?? datePart(task.deadline.dueAt)
         const deadlineRelevant = deadlineOn !== null && deadlineOn <= range.to
         const next = occurrences.filter(({ status }) => status === 'pending').sort((left, right) => resolvedOccurrenceOn(left).localeCompare(resolvedOccurrenceOn(right)))[0]
-        if (deadlineRelevant && next) {
-          const projection = projectOccurrence(task, next, range, true)
+        if (deadlineRelevant) {
+          const projection = next ? projectOccurrence(task, next, range, true) : projectSingleTask(task, range)
           if (projection) taskProjections.push(projection)
         }
       }
