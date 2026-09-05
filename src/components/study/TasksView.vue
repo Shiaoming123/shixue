@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, MoreHorizontal, Pencil, Search, Trash2, X } from '@lucide/vue'
 import type { StudyTaskPriority } from '../../storage/study/types'
 import type { StudyTaskQuerySort, StudyTaskSmartView } from '../../lib/study-task-query'
+import { activateQuickAddCapture, isQuickAddEditableTarget } from '../../lib/quick-add-shortcut-state'
 import type { TaskOccurrence } from '../../domain/workspace/types'
 import type { EntityRef } from '../../domain/capabilities/types'
 import Checkbox from '../ui/Checkbox.vue'
@@ -97,7 +98,7 @@ function finishBatch(action: 'complete' | 'today' | 'delete') {
   if (action === 'delete') emit('bulkDelete', ids)
   batchMode.value = false; clearSelection()
 }
-function isTyping(target: EventTarget | null) { return target instanceof HTMLElement && target.matches('input, textarea, select, [contenteditable="true"]') }
+function isTyping(target: EventTarget | null) { return target instanceof HTMLElement && isQuickAddEditableTarget(target) }
 function handleShortcut(event: KeyboardEvent) {
   if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target)) return
   if (event.key === '/') { event.preventDefault(); searchInput.value?.focus(); return }
@@ -108,10 +109,15 @@ function handleShortcut(event: KeyboardEvent) {
   if (event.key.toLowerCase() === 'e' && props.selectedId) emit('edit', props.selectedId)
   if (event.key.toLowerCase() === 'c' && props.selectedId) emit('toggleComplete', props.selectedId)
 }
-function focusQuickAdd() { quickAddComposer.value?.focus() }
+function activateQuickAdd() {
+  activateQuickAddCapture({
+    closeDeleteConfirmation: () => { confirmDeleteIds.value = [] },
+    focusComposer: () => { quickAddComposer.value?.focus() },
+  })
+}
 onMounted(() => window.addEventListener('keydown', handleShortcut))
 onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
-defineExpose({ focusQuickAdd })
+defineExpose({ activateQuickAdd })
 </script>
 
 <template>

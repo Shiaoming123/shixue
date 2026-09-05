@@ -291,7 +291,7 @@ function handleQuickAdd() {
   selectSmartView('inbox')
   selectedTaskId.value = ''
   selectedOccurrenceId.value = ''
-  requestAnimationFrame(() => tasksView.value?.focusQuickAdd())
+  requestAnimationFrame(() => tasksView.value?.activateQuickAdd())
 }
 function handleModuleError() {
   storageError.value = '部分系统能力未能启动。任务数据与核心界面仍可使用。'

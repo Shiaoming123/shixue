@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import {
+  activateQuickAddCapture,
+  isQuickAddEditableTarget,
+  type EditableTargetLike,
+} from '../src/lib/quick-add-shortcut-state.ts'
 import { createShortcutModule } from '../src/modules/shortcut/index.ts'
 import type { ModuleContext } from '../src/modules/types.ts'
 
@@ -63,14 +68,58 @@ test('global quick add closes blocking layers, navigates to Inbox, and focuses t
   assert.match(app, /window\.addEventListener\('shixue:quick-add', handleQuickAdd\)/)
   assert.match(app, /window\.removeEventListener\('shixue:quick-add', handleQuickAdd\)/)
   assert.match(app, /<TasksView\b[\s\S]*ref="tasksView"/)
-  assert.match(app, /function handleQuickAdd\(\)[\s\S]*settingsOpen\.value = false[\s\S]*taskEditorOpen\.value = false[\s\S]*selectSmartView\('inbox'\)[\s\S]*tasksView\.value\?\.focusQuickAdd\(\)/)
+  assert.match(app, /function handleQuickAdd\(\)[\s\S]*settingsOpen\.value = false[\s\S]*taskEditorOpen\.value = false[\s\S]*selectSmartView\('inbox'\)[\s\S]*tasksView\.value\?\.activateQuickAdd\(\)/)
   assert.doesNotMatch(app, /handleQuickAdd[\s\S]{0,700}querySelector/)
+})
+
+test('global capture clears a child delete confirmation before focusing the composer', () => {
+  const actions: string[] = []
+  const state = { confirmDeleteIds: ['task:1'], focused: false }
+
+  activateQuickAddCapture({
+    closeDeleteConfirmation: () => {
+      actions.push('close-delete-confirmation')
+      state.confirmDeleteIds = []
+    },
+    focusComposer: () => {
+      actions.push('focus-composer')
+      state.focused = true
+    },
+  })
+
+  assert.deepEqual(state, { confirmDeleteIds: [], focused: true })
+  assert.deepEqual(actions, ['close-delete-confirmation', 'focus-composer'])
+})
+
+function editableTarget(options: {
+  matches?: boolean
+  isContentEditable?: boolean
+  hostValue?: string | null
+} = {}): EditableTargetLike {
+  return {
+    matches: () => options.matches ?? false,
+    isContentEditable: options.isContentEditable ?? false,
+    closest: () => options.hostValue === undefined ? null : ({
+      getAttribute: () => options.hostValue ?? null,
+    }),
+  }
+}
+
+test('local shortcut recognizes native inputs and every supported contenteditable host shape', () => {
+  assert.equal(isQuickAddEditableTarget(editableTarget({ matches: true })), true)
+  assert.equal(isQuickAddEditableTarget(editableTarget({ isContentEditable: true })), true)
+  assert.equal(isQuickAddEditableTarget(editableTarget({ hostValue: '' })), true)
+  assert.equal(isQuickAddEditableTarget(editableTarget({ hostValue: 'true' })), true)
+  assert.equal(isQuickAddEditableTarget(editableTarget({ hostValue: 'plaintext-only' })), true)
+  assert.equal(isQuickAddEditableTarget(editableTarget({ hostValue: 'false' })), false)
+  assert.equal(isQuickAddEditableTarget(editableTarget()), false)
 })
 
 test('local N focuses the current view composer without hijacking editable targets', () => {
   const tasks = source('src/components/study/TasksView.vue')
-  assert.match(tasks, /target\.matches\('input, textarea, select, \[contenteditable="true"\]'\)/)
+  assert.match(tasks, /target instanceof HTMLElement && isQuickAddEditableTarget\(target\)/)
   assert.match(tasks, /event\.key\.toLowerCase\(\) === 'n'[\s\S]*quickAddComposer\.value\?\.focus\(\)/)
-  assert.match(tasks, /function focusQuickAdd\(\)[\s\S]*quickAddComposer\.value\?\.focus\(\)/)
-  assert.match(tasks, /defineExpose\(\{ focusQuickAdd \}\)/)
+  assert.match(tasks, /function activateQuickAdd\(\)[\s\S]*confirmDeleteIds\.value = \[\][\s\S]*quickAddComposer\.value\?\.focus\(\)/)
+  assert.match(tasks, /defineExpose\(\{ activateQuickAdd \}\)/)
+  assert.doesNotMatch(tasks, /\[contenteditable="true"\]/)
 })
