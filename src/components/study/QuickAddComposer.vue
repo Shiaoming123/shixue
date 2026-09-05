@@ -294,7 +294,7 @@ defineExpose({ focus })
             <DatePicker v-model="editDate" :label="candidate.kind === 'schedule' ? '计划日期' : '截止日期'" />
             <TimePicker v-model="editTime" v-model:valid="editTimeValid" label="本地时间，可选" placeholder="仅日期" />
           </template>
-          <Listbox v-else v-model="editValue" :options="optionsFor(candidate.kind)" :label="`选择${candidateLabel(candidate)}`" />
+          <Listbox v-else v-model="editValue" :options="optionsFor(candidate.kind)" :label="`选择${candidateLabel(candidate)}`" :inline="modal" />
           <p v-if="candidate.status === 'ambiguous'" class="ambiguous-note">这项有多种解释，请确认后再创建。</p>
           <footer>
             <button type="button" class="cancel" @click="close('select')">取消</button>

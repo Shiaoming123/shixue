@@ -50,6 +50,23 @@ async function executeNext(
   })
 }
 
+test('task.plan preserves an explicit precise schedule after its deadline', async () => {
+  const service = fixture()
+  await executeNext(service, 'create-conflict', {
+    type: 'task.create', taskId: 'conflict', listId: 'list:system:learning', title: 'Explicit conflict',
+    dueOn: '2026-09-06',
+  })
+
+  await executeNext(service, 'plan-conflict', {
+    type: 'task.plan', taskId: 'conflict', patch: { startAt: '2026-09-07T06:00:00.000Z' },
+  })
+
+  const snapshot = await service.query({ type: 'workspace.snapshot' })
+  const task = snapshot.tasks.find(({ id }) => id === 'conflict')
+  assert.equal(task?.schedule.startAt, '2026-09-07T06:00:00.000Z')
+  assert.equal(task?.deadline.dueOn, '2026-09-06')
+})
+
 test('does not save when one target in a batch is invalid', async () => {
   const service = fixture()
   const initial = await service.query({ type: 'workspace.snapshot' })

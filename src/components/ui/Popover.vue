@@ -9,12 +9,14 @@ const props = withDefaults(defineProps<{
   offset?: number
   matchTriggerWidth?: boolean
   mobileSheet?: boolean
+  inline?: boolean
 }>(), {
   kind: 'popover',
   align: 'start',
   offset: 8,
   matchTriggerWidth: false,
   mobileSheet: false,
+  inline: false,
 })
 
 const emit = defineEmits<{
@@ -57,7 +59,7 @@ function toggle(event?: Event) {
 }
 
 function requestClose(reason: OverlayCloseReason) {
-  const restoreAfterPointer = mobileSheetActive.value && reason === 'outside'
+  const restoreAfterPointer = (mobileSheetActive.value || props.inline) && reason === 'outside'
   releaseOverlay(layerId, !restoreAfterPointer && (reason === 'escape' || reason === 'select'))
   emit('update:open', false)
   emit('close', reason)
@@ -146,10 +148,10 @@ watch(() => [props.open, mobileSheetActive.value] as const, async ([open, sheet]
   }
   rememberTrigger()
   await nextTick()
-  if (!sheet) updatePosition()
+  if (!sheet && !props.inline) updatePosition()
   bringToFront()
   if (sheet) (focusableElements()[0] ?? panel.value)?.focus({ preventScroll: true })
-  else addPositionListeners()
+  else if (!props.inline) addPositionListeners()
 }, { immediate: true })
 
 onMounted(() => {
@@ -169,16 +171,16 @@ defineExpose({ close: requestClose, updatePosition })
 
 <template>
   <slot name="trigger" :open="open" :toggle="toggle" :trigger-props="triggerProps" />
-  <Teleport defer to="#ui-overlay-host">
+  <Teleport defer to="#ui-overlay-host" :disabled="inline">
     <Transition name="popover">
-      <div v-if="open" class="popover-layer" :class="{ 'popover-layer--mobile-sheet': mobileSheetActive }">
+      <div v-if="open" class="popover-layer" :class="{ 'popover-layer--mobile-sheet': mobileSheetActive, 'popover-layer--inline': inline }">
         <div
           :id="id"
           ref="panel"
           class="popover-panel"
-          :class="{ 'popover-panel--mobile-sheet': mobileSheetActive }"
+          :class="{ 'popover-panel--mobile-sheet': mobileSheetActive, 'popover-panel--inline': inline }"
           :data-overlay-layer="layerId"
-          :style="mobileSheetActive ? undefined : position"
+          :style="mobileSheetActive || inline ? undefined : position"
           :tabindex="mobileSheetActive ? -1 : undefined"
           @keydown="onKeydown"
         >
@@ -224,6 +226,18 @@ defineExpose({ close: requestClose, updatePosition })
   transition: opacity var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
 }
 
+.popover-layer--inline {
+  position: static;
+  pointer-events: auto;
+}
+
+.popover-panel--inline {
+  position: static;
+  width: 100%;
+  max-width: none;
+  margin-top: var(--space-1);
+}
+
 .popover-enter-from .popover-panel,
 .popover-leave-to .popover-panel {
   opacity: 0;
@@ -234,13 +248,20 @@ defineExpose({ close: requestClose, updatePosition })
   .popover-panel--mobile-sheet {
     top: auto !important;
     right: 12px;
-    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     left: 12px !important;
     width: auto;
     max-width: none;
-    max-height: calc(100dvh - 104px - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - 32px - env(safe-area-inset-bottom, 0px));
     border-radius: var(--radius-2xl);
     background: var(--surface);
+  }
+}
+
+@media (max-width: 799px) {
+  .popover-panel--mobile-sheet {
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - 104px - env(safe-area-inset-bottom, 0px));
   }
 }
 

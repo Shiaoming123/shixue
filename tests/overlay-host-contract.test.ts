@@ -6,6 +6,6 @@ const source = (name: string) => readFileSync(new URL(`../src/components/ui/${na
 
 test('overlay primitives defer teleport resolution until the app-level host is mounted', () => {
   for (const component of ['Dialog.vue', 'Popover.vue', 'ToastRegion.vue']) {
-    assert.match(source(component), /<Teleport defer to="#ui-overlay-host">/)
+    assert.match(source(component), /<Teleport\b[^>]*\bdefer\b[^>]*\bto="#ui-overlay-host"/)
   }
 })

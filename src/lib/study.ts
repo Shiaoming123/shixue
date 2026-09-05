@@ -258,8 +258,6 @@ export async function planStudyTask(
   input: StudyTaskMetadataUpdate,
   options: TaskCommandOptions = {},
 ): Promise<StudyTask> {
-  const current = requireTask(await loadStudyState(), taskId)
-  assertStudyDateOrder(effectivePlanDate(input, current.plannedOn), input.dueOn ?? current.dueOn)
   const now = commandTime(options.now)
   await executeCommand({
     type: 'task.plan',

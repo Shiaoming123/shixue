@@ -242,12 +242,20 @@ async function main() {
       await page.locator('.task-row').filter({ hasText: editedMarker }).getByRole('button').nth(1).click()
       await page.getByRole('complementary', { name: '任务详情', exact: true }).waitFor({ state: 'visible' })
       await page.evaluate(() => localStorage.setItem('meow-study-appearance', 'dark'))
-      for (const viewport of [{ width: 700, height: 844 }, { width: 390, height: 844 }]) {
+      for (const viewport of [
+        { width: 700, height: 844, hasBottomNav: true },
+        { width: 810, height: 844, hasBottomNav: false },
+        { width: 390, height: 844, hasBottomNav: true },
+      ]) {
         await page.setViewportSize(viewport)
         await page.reload({ waitUntil: 'networkidle' })
         const mobileNav = page.getByRole('navigation', { name: '移动端主导航' })
-        await mobileNav.waitFor({ state: 'visible' })
-        await mobileNav.getByRole('button', { name: '收件箱', exact: true }).click()
+        await mobileNav.waitFor({ state: viewport.hasBottomNav ? 'visible' : 'hidden' })
+        if (viewport.hasBottomNav) {
+          await mobileNav.getByRole('button', { name: '收件箱', exact: true }).click()
+        } else {
+          await page.locator('.sidebar').getByRole('button', { name: /^收件箱/ }).click()
+        }
         const compactQuickAdd = page.locator('.quick-add-composer')
         await compactQuickAdd.getByRole('textbox', { name: '新建任务' }).fill(quickAddTitle)
         const scheduleTrigger = compactQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ })
@@ -261,9 +269,17 @@ async function main() {
           throw new Error(`Compact schedule editor did not receive focus at ${viewport.width}px.`)
         }
         const apply = scheduleSheet.getByRole('button', { name: '应用', exact: true })
-        const [applyBox, bottomNavBox] = await Promise.all([apply.boundingBox(), mobileNav.boundingBox()])
-        if (!applyBox || !bottomNavBox || applyBox.y + applyBox.height > bottomNavBox.y) {
-          throw new Error(`Compact picker actions overlap bottom navigation at ${viewport.width}px: apply=${JSON.stringify(applyBox)}, nav=${JSON.stringify(bottomNavBox)}`)
+        const [applyBox, sheetBox] = await Promise.all([apply.boundingBox(), scheduleSheet.boundingBox()])
+        if (viewport.hasBottomNav) {
+          const bottomNavBox = await mobileNav.boundingBox()
+          if (!applyBox || !bottomNavBox || applyBox.y + applyBox.height > bottomNavBox.y) {
+            throw new Error(`Compact picker actions overlap bottom navigation at ${viewport.width}px: apply=${JSON.stringify(applyBox)}, nav=${JSON.stringify(bottomNavBox)}`)
+          }
+        } else {
+          const bottomGap = sheetBox ? viewport.height - sheetBox.y - sheetBox.height : Number.POSITIVE_INFINITY
+          if (bottomGap < 8 || bottomGap > 20) {
+            throw new Error(`Compact picker reserves hidden bottom navigation space at ${viewport.width}px: gap=${bottomGap}`)
+          }
         }
         await apply.focus()
         await page.keyboard.press('Tab')
@@ -293,6 +309,47 @@ async function main() {
         }
         await scheduleSheet.getByRole('button', { name: '应用', exact: true }).click()
         await compactQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).waitFor({ state: 'visible' })
+
+        const tagTrigger = compactQuickAdd.getByRole('button', { name: '编辑标签 · 数学', exact: true })
+        await tagTrigger.click()
+        const tagSheet = page.getByRole('dialog', { name: '编辑标签 · 数学', exact: true })
+        const tagListTrigger = tagSheet.getByRole('button', { name: '选择标签 · 数学', exact: true })
+        await tagListTrigger.click()
+        const tagList = page.getByRole('listbox', { name: '选择标签 · 数学', exact: true })
+        await tagList.waitFor({ state: 'visible' })
+        if (!(await tagSheet.evaluate((element) => element.contains(document.activeElement)))) {
+          throw new Error(`Nested tag editor escaped the compact modal at ${viewport.width}px.`)
+        }
+        await page.keyboard.press('Escape')
+        await tagList.waitFor({ state: 'hidden' })
+        await tagSheet.waitFor({ state: 'visible' })
+        if (!(await tagListTrigger.evaluate((element) => element === document.activeElement))) {
+          throw new Error(`Nested tag editor did not restore focus at ${viewport.width}px.`)
+        }
+        await tagListTrigger.click()
+        await tagList.waitFor({ state: 'visible' })
+        await page.mouse.click(2, 2)
+        await tagList.waitFor({ state: 'hidden' })
+        await tagSheet.waitFor({ state: 'visible' })
+        if (!(await tagListTrigger.evaluate((element) => element === document.activeElement))) {
+          throw new Error(`Nested tag editor outside close did not restore focus at ${viewport.width}px.`)
+        }
+        await tagListTrigger.click()
+        await tagList.waitFor({ state: 'visible' })
+        await tagList.getByRole('option', { name: '数学', exact: true }).click()
+        await tagList.waitFor({ state: 'hidden' })
+        await tagSheet.getByRole('button', { name: '应用', exact: true }).click()
+        await tagSheet.waitFor({ state: 'hidden' })
+        if (!(await tagTrigger.evaluate((element) => element === document.activeElement))) {
+          throw new Error(`Compact tag sheet did not restore chip focus at ${viewport.width}px.`)
+        }
+        await tagTrigger.click()
+        await tagSheet.waitFor({ state: 'visible' })
+        await page.mouse.click(2, 2)
+        await tagSheet.waitFor({ state: 'hidden' })
+        if (!(await tagTrigger.evaluate((element) => element === document.activeElement))) {
+          throw new Error(`Compact tag sheet outside close did not restore focus at ${viewport.width}px.`)
+        }
       }
       await page
         .getByRole('navigation', { name: '移动端主导航' })
