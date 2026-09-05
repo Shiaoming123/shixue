@@ -30,7 +30,7 @@ async function bootstrap(): Promise<void> {
   let moduleSetupFailed = false;
 
   // Storage adapters must be selected before App loads its state. A native
-  // capability error is still non-fatal: finally always renders the shell.
+  // capability error is still non-fatal: the handled path still renders the shell.
   await mountModules(app, undefined, runtime)
     .catch((error: unknown) => {
       moduleSetupFailed = true;
