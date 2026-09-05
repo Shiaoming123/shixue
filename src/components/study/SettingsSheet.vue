@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { Bell, Download, Moon, RotateCcw, Sun, Upload, X } from '@lucide/vue'
+import Switch from '../ui/Switch.vue'
 
 export type CloudAccountStatus = 'signed-out' | 'signed-in' | 'syncing' | 'failed'
 
@@ -119,7 +120,9 @@ function signIn() {
 
       <div v-if="remindersAvailable" class="group actions">
         <span>提醒</span>
-        <button role="switch" :aria-checked="remindersEnabled" @click="emit('setReminders', !remindersEnabled)"><Bell :size="18" /><span><strong>到期与复习提醒</strong><small>仅发送数量，不把任务内容交给系统通知</small></span><i :class="{ active: remindersEnabled }" aria-hidden="true" /></button>
+        <Switch :model-value="remindersEnabled" label="到期与复习提醒" description="仅发送数量，不把任务内容交给系统通知" @update:model-value="emit('setReminders', $event)">
+          <template #leading><Bell :size="18" /></template>
+        </Switch>
       </div>
 
       <div v-if="cloudAvailable" class="group cloud-account">
@@ -255,8 +258,6 @@ header button {
   flex-direction: column;
   gap: 3px;
 }
-
-.actions > button > i { width: 34px; height: 20px; display: block; margin-left: auto; padding: 2px; border-radius: 999px; background: var(--border); transition: background var(--motion-fast) var(--ease); }.actions > button > i::after { content: ''; width: 16px; height: 16px; display: block; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow-sm); transition: transform var(--motion-fast) var(--ease-spring); }.actions > button > i.active { background: var(--accent); }.actions > button > i.active::after { transform: translateX(14px); }
 
 .actions strong {
   font-size: 13px;

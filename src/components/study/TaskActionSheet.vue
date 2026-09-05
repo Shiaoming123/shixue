@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ArrowRight, X } from '@lucide/vue'
+import DateTimePicker from '../ui/DateTimePicker.vue'
+import Listbox from '../ui/Listbox.vue'
 
 export type TaskActionMode = 'plan' | 'defer' | 'block' | 'cancel' | 'reopen'
 export interface TopicOption { id: string; title: string }
@@ -32,6 +34,10 @@ const dueOn = ref('')
 const minutes = ref<number | null>(45)
 const criteria = ref('')
 const reason = ref('')
+const topicOptions = computed(() => [
+  { value: '', label: '选择一个主题', disabled: true },
+  ...props.topics.map((topic) => ({ value: topic.id, label: topic.title })),
+])
 
 watch(() => props.open, (open) => {
   if (!open) return
@@ -82,14 +88,14 @@ function submit() {
       <p class="task-title">{{ taskTitle }}</p>
 
       <template v-if="mode === 'plan'">
-        <label><span>所属主题</span><select v-model="topicId" required><option value="" disabled>选择一个主题</option><option v-for="topic in topics" :key="topic.id" :value="topic.id">{{ topic.title }}</option></select></label>
+        <label><span>所属主题</span><Listbox v-model="topicId" :options="topicOptions" label="所属主题" required /></label>
         <label><span>完成标准</span><textarea v-model="criteria" placeholder="每行一条可验证结果" /></label>
       </template>
 
       <template v-if="mode === 'plan' || mode === 'defer' || mode === 'reopen'">
         <div class="date-grid">
-          <label><span>{{ mode === 'defer' ? '延期到' : '计划日期' }}</span><input v-model="plannedOn" type="date" required /></label>
-          <label v-if="mode === 'plan'"><span>截止日期 <small>可选</small></span><input v-model="dueOn" type="date" /></label>
+          <label><span>{{ mode === 'defer' ? '延期到' : '计划日期' }}</span><DateTimePicker v-model="plannedOn" :label="mode === 'defer' ? '延期到' : '计划日期'" required /></label>
+          <label v-if="mode === 'plan'"><span>截止日期 <small>可选</small></span><DateTimePicker v-model="dueOn" label="截止日期" placeholder="不设置截止日期" /></label>
         </div>
         <label v-if="mode === 'plan'"><span>预计时长</span><div class="minutes"><input v-model.number="minutes" type="number" min="5" max="480" /><b>分钟</b></div></label>
       </template>
@@ -111,7 +117,7 @@ function submit() {
 header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; } header p { margin: 0 0 4px; color: var(--accent); font-size: 11px; } h2 { margin: 0; font-size: 23px; font-weight: 650; } header button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--surface-alt); color: var(--muted); }
 .task-title { margin: 20px 0; padding: 12px 0; border-block: 1px solid var(--border); color: var(--muted); font-size: 12px; }
 label { display: block; margin-top: 16px; } label > span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; } label small { color: var(--muted); font-weight: 400; }
-input, textarea, select { width: 100%; min-height: 46px; padding: 11px 13px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font-size: 13px; transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); } textarea { min-height: 82px; resize: vertical; line-height: 1.5; } input:focus, textarea:focus, select:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }
+input, textarea { width: 100%; min-height: 46px; padding: 11px 13px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font-size: 13px; transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); } textarea { min-height: 82px; resize: vertical; line-height: 1.5; } input:focus, textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }
 .date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }.minutes { display: flex; align-items: center; gap: 9px; }.minutes input { width: 110px; }.minutes b { color: var(--muted); font-size: 12px; font-weight: 400; }.note, .danger-note { margin: 18px 0 0; padding: 12px 13px; border-radius: 10px; background: var(--surface-alt); color: var(--muted); font-size: 11px; line-height: 1.55; }.danger-note { color: var(--danger); }
 footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); } footer button { min-height: 46px; padding: 0 18px; border-radius: var(--radius-lg); font-size: 12px; font-weight: 600; }.cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); }.save { min-width: 150px; display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; background: var(--accent); color: var(--accent-text); box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent); }.save.danger { background: var(--danger); }.save:disabled { opacity: .42; box-shadow: none; }
 @media (max-width: 799px) { .backdrop { align-items: flex-end; padding: 0; }.sheet { position: relative; max-height: 94dvh; border-width: 1px 0 0; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; padding: 34px 20px calc(22px + env(safe-area-inset-bottom, 0px)); animation-name: sheet-up; }.sheet::before { content: ''; position: absolute; top: 9px; left: 50%; width: 36px; height: 5px; transform: translateX(-50%); border-radius: 999px; background: color-mix(in srgb, var(--muted) 32%, transparent); }.date-grid { grid-template-columns: 1fr; } footer { align-items: stretch; flex-direction: column-reverse; }.save { width: 100%; min-height: 52px; }.cancel { border-color: transparent; background: transparent; } }
