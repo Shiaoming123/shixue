@@ -78,6 +78,8 @@ function materializeAfterCompletion(
   existing: TaskOccurrence[],
   now: string,
 ): MaterializeResult {
+  const pendingCount = existing.filter((occurrence) => occurrence.status === 'pending').length
+  if (pendingCount >= MAX_PENDING_OCCURRENCES) return { state, created: [], pendingCount }
   const latest = [...existing].sort((left, right) => right.ordinal - left.ordinal)[0]
   let scheduledAt: string | null
   let ordinal: number
@@ -91,7 +93,10 @@ function materializeAfterCompletion(
     return { state, created: [], pendingCount: existing.filter((occurrence) => occurrence.status === 'pending').length }
   }
   if (!scheduledAt || (series.end.kind === 'after' && ordinal > series.end.count)) {
-    return { state, created: [], pendingCount: existing.filter((occurrence) => occurrence.status === 'pending').length }
+    return { state, created: [], pendingCount }
+  }
+  if (series.end.kind === 'on' && parseZonedDateTime(scheduledAt, series.timezone).date > series.end.date) {
+    return { state, created: [], pendingCount }
   }
   const occurrence: TaskOccurrence = {
     id: occurrenceId(series.id, ordinal), seriesId: series.id, ordinal, scheduledAt,
@@ -100,7 +105,7 @@ function materializeAfterCompletion(
   const nextState: WorkspaceStateV3 = {
     ...state, revision: state.revision + 1, occurrences: [...state.occurrences, occurrence], updatedAt: now,
   }
-  return { state: nextState, created: [occurrence], pendingCount: existing.filter((item) => item.status === 'pending').length + 1 }
+  return { state: nextState, created: [occurrence], pendingCount: pendingCount + 1 }
 }
 
 function occurrenceDate(series: RecurrenceSeries, anchorDate: string, ordinal: number): string | null {

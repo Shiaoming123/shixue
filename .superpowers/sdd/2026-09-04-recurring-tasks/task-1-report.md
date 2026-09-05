@@ -36,3 +36,12 @@
 ## Fix Verification
 - Command: `node --test --experimental-strip-types tests/recurrence-calculate.test.ts tests/recurrence-materialize.test.ts`
 - Output: 10 tests passed, 0 failed.
+
+## Scoped Re-review Fix
+- Enforced `end.kind === 'on'` for after-completion candidates using the series timezone's local date.
+- Enforced `MAX_PENDING_OCCURRENCES` before after-completion creation.
+- Added focused tests for after-completion end-on and the existing fifty-pending cap.
+
+## Scoped Re-review Verification
+- Command: `node --test --experimental-strip-types tests/recurrence-calculate.test.ts tests/recurrence-materialize.test.ts`
+- Output: 11 tests passed, 0 failed.

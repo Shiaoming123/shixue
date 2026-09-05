@@ -109,3 +109,30 @@ test('after-completion creates only the first item, then one item after completi
   const idem = materializeOccurrenceWindow(next.state, 'series-1', '2026-09-05T15:00:00.000Z')
   assert.equal(idem.created.length, 0)
 })
+
+test('after-completion respects end-on and the fifty pending cap', () => {
+  const base = state()
+  base.recurrenceSeries[0]!.basis = 'after_completion'
+  base.recurrenceSeries[0]!.end = { kind: 'on', date: '2026-09-05' }
+  base.occurrences = [{
+    id: 'occurrence:series-1:1', seriesId: 'series-1', ordinal: 1,
+    scheduledAt: '2026-09-04T13:00:00.000Z', status: 'completed', override: null,
+    completedAt: '2026-09-05T14:00:00.000Z', revision: 7,
+  }]
+  const end = materializeOccurrenceWindow(base, 'series-1', '2026-09-05T15:00:00.000Z')
+  assert.equal(end.created.length, 0)
+
+  base.occurrences = Array.from({ length: 50 }, (_, index) => ({
+    id: `occurrence:series-1:${index + 1}`, seriesId: 'series-1', ordinal: index + 1,
+    scheduledAt: '2026-09-04T13:00:00.000Z', status: 'pending' as const, override: null,
+    completedAt: null, revision: 7,
+  }))
+  base.occurrences.push({
+    id: 'occurrence:series-1:51', seriesId: 'series-1', ordinal: 51,
+    scheduledAt: '2026-09-04T13:00:00.000Z', status: 'completed', override: null,
+    completedAt: '2026-09-05T14:00:00.000Z', revision: 7,
+  })
+  const capped = materializeOccurrenceWindow(base, 'series-1', '2026-09-05T15:00:00.000Z')
+  assert.equal(capped.created.length, 0)
+  assert.equal(capped.pendingCount, 50)
+})
