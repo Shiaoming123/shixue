@@ -4,22 +4,23 @@
 
 ## 1. 当前基线
 
-截至 PR1（时间规划领域基础）完成：
+截至 PR2（重复任务 occurrence）合并：
 
 - `WorkspaceStateV3`、v1/v2 迁移、`WorkspaceStore` 与事务能力服务是跨端共享的数据和写入边界。
+- recurrence 规则、date-only/timed schedule、occurrence materialization 和对应 capability commands 已进入共享 TypeScript 层；iOS 只复用，不另建原生规则实现。
 - Vue 界面已有窄屏布局、安全区和移动端导航基础；这些只证明前端适配，不证明 iOS 工程可编译或可运行。
 - Rust 入口已有 `tauri::mobile_entry_point`，托盘、单实例、更新器、全局快捷键和提醒调度器按桌面目标隔离。
 - 通知插件可在移动端装配，但当前前端轮询不能保证应用挂起或终止后的投递；原生后台提醒仍未实现。
 - Android 已有调试构建证据；iOS 已在 macOS/Xcode 26.6 上执行 `tauri ios init` 并完成 Apple Silicon Simulator 无签名 Debug 原生编译。最新模拟器启动在 Wry WebView 初始化、前端与 SQLite 运行前以 `SIGTRAP` 失败，因此没有模拟器成功、真机、签名或商店证据。
 
-iOS 可以在 PR1 合并后开始，不必等待 PR2–PR6 全部完成。开始条件是以最新 `origin/main` 为基线，不从未合并的功能分支复制生成工程。
+iOS 基础分支已经同步含 PR2 的最新 `origin/main`。后续 PR3–PR6 可以与 iOS 运行阻断排查并行，但不得从未合并的功能分支复制生成工程或领域规则。
 
 ## 2. 与整体路线的并行关系
 
 | 主路线 | iOS 同期工作 | 合并约束 |
 | --- | --- | --- |
-| PR1：领域基础 | 等待 PR1 合并；准备 macOS 与 Apple 工具链 | iOS 分支必须从含 PR1 的最新 `main` 创建 |
-| PR2：重复任务 | 初始化 Apple 工程、完成模拟器编译、验证 V3 本地持久化 | 复用纯 TypeScript recurrence，不在 Swift/Rust 复制规则 |
+| PR1：领域基础 | 已合并；复用 V3、store 和 capability service | 所有状态修改继续经过共享事务边界 |
+| PR2：重复任务 | 已合并；iOS 直接消费共享 recurrence/occurrence 合同 | 不在 Swift/Rust 复制规则；运行恢复后补 V3 重启持久化证据 |
 | PR3：快速添加 | 验证触摸输入、键盘弹出、日期选择和前后台恢复 | iOS 不实现桌面全局快捷键；用可见的 App 内入口替代 |
 | PR4：多提醒/Windows 调度 | 定义共享提醒规则到 iOS 本地通知请求的适配器 | Windows 托盘轮询与 iOS 系统调度分离，共用规则和能力命令 |
 | PR5：日历工作区 | 适配紧凑宽度、动态字体、手势与可见键盘替代 | 日历投影和命令共享，平台层只负责交互与呈现 |
@@ -106,7 +107,7 @@ sidecar 干扰。每次原生构建先运行 `npm run clean:appledouble`，并�
 
 ### I2：共享功能持续接入
 
-PR2、PR3 和 PR5 的领域规则、解析器、投影和 capability command 保持平台无关。iOS 只提供以下适配：
+PR2 的 recurrence/occurrence 已保持平台无关；PR3 和 PR5 的解析器、投影和 capability command 延续同一边界。iOS 只提供以下适配：
 
 - 输入：触摸命中区不小于 44×44pt，支持动态字体、屏幕键盘和安全区。
 - 导航：iPhone 使用不超过五项的底部一级导航；更多入口进入明确的列表/更多页面。iPad 可转换为侧栏，但路由描述保持一致。
