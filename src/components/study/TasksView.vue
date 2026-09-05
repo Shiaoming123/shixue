@@ -15,6 +15,7 @@ import QuickAddComposer from './QuickAddComposer.vue'
 export type TaskViewStatus = 'inbox' | 'backlog' | 'planned' | 'in_progress' | 'blocked' | 'completed' | 'cancelled'
 export interface TaskViewItem {
   id: string; title: string; notes: string; topic: string; topicId: string | null
+  tags: string[]
   status: TaskViewStatus; plannedOn: string | null; dueOn: string | null; reminderAt: string | null
   priority: StudyTaskPriority; plannedLabel: string; dueLabel: string; reminderLabel: string
   estimateMinutes: number | null; acceptanceCriteria: string[]
@@ -26,7 +27,7 @@ const props = defineProps<{
   tasks: TaskViewItem[]; occurrences: OccurrenceViewItem[]; topics: Array<{ id: string; title: string }>; title: string; subtitle: string
   selectedId?: string; smartView: StudyTaskSmartView; search: string; topicFilter: string
   priorityFilter: StudyTaskPriority | 'all'; sort: StudyTaskQuerySort
-  quickAddDestinationListId: string; quickAddDefaultStartOn?: string; quickAddDefaultEstimateMinutes?: number | null; quickAddRemoveRecognizedText?: boolean
+  quickAddDestinationListId: string; quickAddDefaultStartOn?: string; quickAddDefaultEstimateMinutes?: number | null; quickAddRemoveRecognizedText?: boolean; quickAddCatalogRevision?: number
 }>()
 const emit = defineEmits<{
   created: [entity: EntityRef]; open: [id: string]; toggleComplete: [id: string]; edit: [id: string]; delete: [id: string]
@@ -137,6 +138,7 @@ defineExpose({ activateQuickAdd })
       :default-start-on="quickAddDefaultStartOn"
       :default-estimate-minutes="quickAddDefaultEstimateMinutes"
       :quick-add-remove-recognized-text="quickAddRemoveRecognizedText"
+      :catalog-revision="quickAddCatalogRevision"
       @created="emit('created', $event)"
     />
     <label class="search-field"><Search :size="16" /><input ref="searchInput" v-model="searchModel" type="search" aria-label="搜索任务" placeholder="搜索" /><button v-if="searchModel" type="button" title="清除" aria-label="清除搜索" @click="searchModel = ''"><X :size="14" /></button><kbd v-else>/</kbd></label>

@@ -476,6 +476,14 @@ function createNextAction(
 
 function resetWorkspace(state: WorkspaceStateV3, context: CapabilityCommandContext): CommandApplication {
   const reset = parseWorkspaceStateOrMigrate(createSeedStudyState(context.now), context.now)
+  reset.tags.push({
+    id: 'tag:demo:math',
+    title: '数学',
+    position: 0,
+    createdAt: context.now,
+    updatedAt: context.now,
+    archivedAt: null,
+  })
   reset.commandReceipts = []
   const currentRevision = state.revision
   Object.assign(state, reset)

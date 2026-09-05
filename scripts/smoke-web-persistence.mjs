@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
 import { resolve, sep } from 'node:path'
@@ -7,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { getNpmInvocation } from './release-kit/npm-command.mjs'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
+const quickAddArtifactRoot = resolve(projectRoot, 'artifacts', 'visual-qa', 'quick-add')
 export function webSmokeUrl(port) {
   return `http://127.0.0.1:${port}/`
 }
@@ -98,6 +100,7 @@ function stopPreview(preview) {
 }
 
 async function main() {
+  await mkdir(quickAddArtifactRoot, { recursive: true })
   const npm = getNpmInvocation(['run', 'build:web'])
   await runCommand(npm.command, npm.args, npm.options)
 
@@ -117,11 +120,12 @@ async function main() {
     const browser = await chromium.launch({ executablePath, headless: true })
     const context = await browser.newContext({ viewport: { width: 1440, height: 960 } })
     const page = await context.newPage()
-    const errors = []
+    const consoleErrors = []
+    const pageErrors = []
     page.on('console', (message) => {
-      if (message.type() === 'error') errors.push(`console: ${message.text()}`)
+      if (message.type() === 'error') consoleErrors.push(message.text())
     })
-    page.on('pageerror', (error) => errors.push(`page: ${error.message}`))
+    page.on('pageerror', (error) => pageErrors.push(error.message))
 
     try {
       await page.goto(url, { waitUntil: 'networkidle' })
@@ -133,6 +137,47 @@ async function main() {
       await page.getByRole('button', { name: '设置', exact: true }).click()
       await page.getByRole('button', { name: /恢复演示内容/ }).click()
       await page.getByRole('button', { name: '确认恢复', exact: true }).click()
+
+      const quickAddTitle = '明天下午3点 复习线代 #数学 p1'
+      const quickAdd = page.locator('.quick-add-composer')
+      await page.getByRole('button', { name: /^收件箱/ }).click()
+      await quickAdd.getByRole('textbox', { name: '新建任务' }).fill(quickAddTitle)
+      await quickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).waitFor({ state: 'visible' })
+      await quickAdd.getByRole('button', { name: '编辑标签 · 数学', exact: true }).waitFor({ state: 'visible' })
+      await quickAdd.getByRole('button', { name: '编辑优先级 · 高优先级', exact: true }).waitFor({ state: 'visible' })
+
+      await quickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).click()
+      const scheduleEditor = page.getByRole('dialog', { name: /编辑计划/ })
+      const timeInput = scheduleEditor.getByRole('textbox', { name: '本地时间，可选' })
+      await timeInput.fill('14:00')
+      await timeInput.press('Tab')
+      await page.screenshot({
+        path: resolve(quickAddArtifactRoot, 'quick-add-desktop-picker-1440x960.png'),
+      })
+      await scheduleEditor.getByRole('button', { name: '应用', exact: true }).click()
+      await quickAdd.getByRole('button', { name: /编辑计划.*14:00/ }).waitFor({ state: 'visible' })
+      await quickAdd.getByRole('button', { name: '添加', exact: true }).click()
+
+      await page.reload({ waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('searchbox', { name: '搜索任务' }).fill(quickAddTitle)
+      const quickAddRow = page.locator('.task-row').filter({ hasText: quickAddTitle })
+      await quickAddRow.getByText(quickAddTitle, { exact: true }).waitFor({ state: 'visible' })
+      await quickAddRow.locator('.task-main').click()
+      const quickAddDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
+      await quickAddDetail.getByRole('heading', { name: quickAddTitle, exact: true }).waitFor({ state: 'visible' })
+      const plannedValue = quickAddDetail.locator('.facts div').filter({ hasText: '计划日期' }).locator('dd')
+      if ((await plannedValue.textContent()) !== '明天 14:00') {
+        throw new Error(`Quick add schedule was not preserved after reload: ${await plannedValue.textContent()}`)
+      }
+      const priorityValue = quickAddDetail.locator('.facts div').filter({ hasText: '优先级' }).locator('dd')
+      if ((await priorityValue.textContent()) !== '高') {
+        throw new Error(`Quick add priority was not preserved after reload: ${await priorityValue.textContent()}`)
+      }
+      const tagValue = quickAddDetail.locator('.facts div').filter({ hasText: '标签' }).locator('dd')
+      if ((await tagValue.textContent()) !== '#数学') {
+        throw new Error(`Quick add tag was not preserved after reload: ${await tagValue.textContent()}`)
+      }
 
       const marker = createStudyMarker()
       const editedMarker = `${marker}-edited`
@@ -157,9 +202,13 @@ async function main() {
       await page.getByRole('dialog', { name: '编辑任务' }).getByLabel('任务标题').fill(editedMarker)
       await page.getByRole('dialog', { name: '编辑任务' }).getByLabel('任务备注').fill('持久化编辑验证')
       const today = new Date().toLocaleDateString('sv-SE')
-      await page.getByRole('dialog', { name: '编辑任务' }).getByLabel('日期').fill(today)
-      await page.getByRole('dialog', { name: '编辑任务' }).getByLabel('优先级').selectOption('high')
-      await page.getByRole('button', { name: '保存', exact: true }).click()
+      await page.getByRole('dialog', { name: '编辑任务' }).getByRole('button', { name: '日期', exact: true }).click()
+      await page.getByRole('gridcell', { name: today, exact: true }).click()
+      await page.getByRole('dialog', { name: '编辑任务' }).getByRole('button', { name: '优先级', exact: true }).click()
+      await page.getByRole('listbox', { name: '优先级', exact: true }).getByRole('option', { name: '高', exact: true }).click()
+      const taskEditDialog = page.getByRole('dialog', { name: '编辑任务' })
+      await taskEditDialog.getByRole('button', { name: '保存', exact: true }).click()
+      await taskEditDialog.waitFor({ state: 'hidden' })
       await page.getByRole('button', { name: /^今天/ }).click()
       await page.locator('.task-row').getByText(editedMarker, { exact: true }).waitFor({ state: 'visible' })
       await page.reload({ waitUntil: 'networkidle' })
@@ -173,30 +222,34 @@ async function main() {
 
       await page.locator('.task-row').filter({ hasText: editedMarker }).getByRole('button').nth(1).click()
       await page.getByRole('complementary', { name: '任务详情', exact: true }).waitFor({ state: 'visible' })
-      await page.screenshot({
-        path: resolve(projectRoot, 'docs', 'design', 'shixue-tasks-desktop-implementation.png'),
-      })
-
       await page.setViewportSize({ width: 390, height: 844 })
       await page.evaluate(() => localStorage.setItem('meow-study-appearance', 'dark'))
       await page.reload({ waitUntil: 'networkidle' })
       await page.getByRole('navigation', { name: '移动端主导航' }).waitFor({ state: 'visible' })
       await page
         .getByRole('navigation', { name: '移动端主导航' })
-        .getByRole('button', { name: '今天', exact: true })
+        .getByRole('button', { name: '收件箱', exact: true })
         .click()
+      const mobileQuickAdd = page.locator('.quick-add-composer')
+      await mobileQuickAdd.getByRole('textbox', { name: '新建任务' }).fill(quickAddTitle)
+      await mobileQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).click()
       await page.screenshot({
-        path: resolve(projectRoot, 'docs', 'design', 'shixue-tasks-mobile-implementation.png'),
+        path: resolve(quickAddArtifactRoot, 'quick-add-mobile-picker-390x844.png'),
       })
+      await page.keyboard.press('Escape')
       await page
         .getByRole('navigation', { name: '移动端主导航' })
         .getByRole('button', { name: '主题', exact: true })
         .click()
       await page.getByRole('heading', { name: '清单与主题' }).waitFor({ state: 'visible' })
 
-      if (errors.length > 0) {
-        throw new Error(`Web preview emitted errors:\n${errors.join('\n')}`)
+      if (consoleErrors.length > 0 || pageErrors.length > 0) {
+        throw new Error(`Web preview emitted errors:\n${[
+          ...consoleErrors.map((message) => `console: ${message}`),
+          ...pageErrors.map((message) => `page: ${message}`),
+        ].join('\n')}`)
       }
+      console.log(`Fresh browser errors: console=${consoleErrors.length}, page=${pageErrors.length}`)
       console.log(`Study Web persistence and responsive smoke passed: ${marker}`)
     } finally {
       await context.close()

@@ -15,7 +15,7 @@ export interface TaskEditValue {
   reminderAt: string | null
   priority: StudyTaskPriority
   estimateMinutes: number | null
-  acceptanceCriteria: string[]
+  acceptanceCriteria?: string[]
 }
 
 type EditableStudyTask = TaskEditValue & { status: string }
@@ -25,6 +25,7 @@ const props = defineProps<{
   task?: EditableStudyTask
   topics: StudyTopic[]
   recurrenceRule?: RecurrenceRule | null
+  learning?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -64,7 +65,7 @@ watch(() => [props.open, props.task, props.recurrenceRule] as const, ([open, tas
   reminderAt.value = task.reminderAt ? toLocalDateTime(task.reminderAt) : ''
   priority.value = task.priority
   estimateMinutes.value = task.estimateMinutes
-  criteria.value = task.acceptanceCriteria.join('\n')
+  criteria.value = task.acceptanceCriteria?.join('\n') ?? ''
   recurrenceRule.value = rule ?? null
 }, { immediate: true })
 
@@ -80,7 +81,7 @@ function save() {
     reminderAt: reminderAt.value ? new Date(reminderAt.value).toISOString() : null,
     priority: priority.value,
     estimateMinutes: estimateMinutes.value && estimateMinutes.value > 0 ? estimateMinutes.value : null,
-    acceptanceCriteria: criteria.value.split('\n').map((item) => item.trim()).filter(Boolean),
+    ...(props.learning ? { acceptanceCriteria: criteria.value.split('\n').map((item) => item.trim()).filter(Boolean) } : {}),
   })
 }
 
@@ -106,7 +107,7 @@ function toLocalDateTime(value: string) {
       <label><span><Flag :size="15" />优先级</span><Listbox :model-value="priority" :options="priorityOptions" label="优先级" @update:model-value="priority = $event as StudyTaskPriority" /></label>
       <label><span>重复</span><RecurrenceEditor :model-value="recurrenceRule" @save="recurrenceRule = $event; emit('recurrenceSave', $event)" /></label>
       <label><span>预计分钟</span><input v-model.number="estimateMinutes" type="number" min="1" max="1440" placeholder="分钟" /></label>
-      <label><span>完成标准</span><textarea v-model="criteria" aria-label="完成标准" placeholder="每行一项" /></label>
+      <label v-if="learning"><span>完成标准</span><textarea v-model="criteria" aria-label="完成标准" placeholder="每行一项" /></label>
       <footer><button type="button" class="cancel" @click="emit('close')">取消</button><button class="save" type="submit" :disabled="!title.trim()">保存</button></footer>
     </form>
   </div>

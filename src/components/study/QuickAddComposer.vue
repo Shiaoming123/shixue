@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{
   defaultStartOn?: string
   defaultEstimateMinutes?: number | null
   quickAddRemoveRecognizedText?: boolean
+  catalogRevision?: number
 }>(), {
   defaultStartOn: undefined,
   defaultEstimateMinutes: null,
@@ -86,6 +87,10 @@ watch(input, () => {
   activeCandidateId.value = ''
   error.value = ''
 })
+
+watch(() => props.catalogRevision, () => void refreshCatalog().catch((reason) => {
+  error.value = reason instanceof Error ? reason.message : '无法读取清单与标签。'
+}))
 
 onMounted(() => void refreshCatalog().catch((reason) => {
   error.value = reason instanceof Error ? reason.message : '无法读取清单与标签。'
