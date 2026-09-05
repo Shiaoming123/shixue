@@ -32,6 +32,7 @@
     "mobile:doctor": "node scripts/mobile-doctor.mjs",
     "rust:verify": "node scripts/rust-verify.mjs",
     "smoke:web-persistence": "node scripts/smoke-web-persistence.mjs",
+    "benchmark:task-query": "node --experimental-strip-types scripts/benchmark-study-task-query.mjs",
     "smoke:windows-package": "node scripts/smoke-windows-package.mjs",
     "preview": "vite preview",
     "preview:web": "vite preview --mode web",

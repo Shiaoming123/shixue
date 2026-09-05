@@ -155,7 +155,7 @@ function onDayKeydown(event: KeyboardEvent, value: string) {
   .calendar-row { grid-template-columns: repeat(7, minmax(38px, 1fr)); }
   .calendar button { min-height: 44px; }
 }
-@media (max-width: 359px) {
+@media (max-width: 369px) {
   .calendar-row { grid-template-columns: repeat(7, minmax(44px, 1fr)); gap: 0; }
   .calendar button { aspect-ratio: auto; }
 }

@@ -258,7 +258,7 @@ defineExpose({ close: requestClose, updatePosition })
   }
 }
 
-@media (max-width: 359px) {
+@media (max-width: 369px) {
   .popover-panel--mobile-sheet {
     right: 0;
     left: 0 !important;

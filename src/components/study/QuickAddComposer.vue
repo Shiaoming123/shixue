@@ -341,7 +341,7 @@ defineExpose({ focus })
   .quick-add-input-row > button { width: 44px; height: 44px; }
   .quick-add-chips { gap: var(--space-2); }
 }
-@media (max-width: 359px) {
+@media (max-width: 369px) {
   .candidate-editor { padding-right: var(--space-1); padding-left: var(--space-1); }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }

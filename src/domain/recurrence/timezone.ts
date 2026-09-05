@@ -13,8 +13,12 @@ export function parseZonedDateTime(value: string, timezone: string): { date: str
 }
 
 export function formatInTimeZone(instant: Date, timezone: string): { date: string; time: string } {
+  return createTimeZoneFormatter(timezone)(instant)
+}
+
+export function createTimeZoneFormatter(timezone: string): (instant: Date) => { date: string; time: string } {
   assertIanaTimezone(timezone)
-  const parts = new Intl.DateTimeFormat('en-CA', {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
@@ -22,9 +26,12 @@ export function formatInTimeZone(instant: Date, timezone: string): { date: strin
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-  }).formatToParts(instant)
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
-  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` }
+  })
+  return (instant) => {
+    const parts = formatter.formatToParts(instant)
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
+    return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` }
+  }
 }
 
 /**

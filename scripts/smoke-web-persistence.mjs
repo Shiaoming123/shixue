@@ -286,6 +286,10 @@ async function main() {
         { width: 819, height: 844, hasBottomNav: true, modalPicker: true },
         { width: 820, height: 844, hasBottomNav: false, modalPicker: false },
         { width: 320, height: 700, hasBottomNav: true, modalPicker: true },
+        { width: 359, height: 700, hasBottomNav: true, modalPicker: true },
+        { width: 360, height: 700, hasBottomNav: true, modalPicker: true },
+        { width: 369, height: 700, hasBottomNav: true, modalPicker: true },
+        { width: 370, height: 700, hasBottomNav: true, modalPicker: true },
         { width: 390, height: 844, hasBottomNav: true, modalPicker: true },
       ]) {
         await page.setViewportSize(viewport)
@@ -355,7 +359,8 @@ async function main() {
         await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.startsWith('编辑计划'))
         await scheduleTrigger.click()
         await scheduleSheet.waitFor({ state: 'visible' })
-        if (viewport.width === 320) await scheduleSheet.getByRole('button', { name: '应用', exact: true }).scrollIntoViewIfNeeded()
+        const verifiesMinimumGeometry = [320, 359, 360, 369, 370, 390].includes(viewport.width)
+        if (verifiesMinimumGeometry) await scheduleSheet.getByRole('button', { name: '应用', exact: true }).scrollIntoViewIfNeeded()
         if (viewport.width === 390 || viewport.width === 320) {
           await scheduleSheet.evaluate((element) =>
             new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
@@ -367,18 +372,19 @@ async function main() {
             path: resolve(quickAddArtifactRoot, viewport.width === 390 ? 'quick-add-mobile-picker-390x844.png' : 'quick-add-mobile-min-picker-320x700.png'),
           })
         }
-        if (viewport.width === 320) {
-          const geometry = await scheduleSheet.evaluate((element) => ({
+        if (verifiesMinimumGeometry) {
+          const sheetPanel = scheduleSheet.locator('..')
+          const geometry = await sheetPanel.evaluate((element) => ({
             scrollWidth: element.scrollWidth,
             clientWidth: element.clientWidth,
             pageScrollWidth: document.documentElement.scrollWidth,
             pageClientWidth: document.documentElement.clientWidth,
           }))
           if (geometry.scrollWidth > geometry.clientWidth) {
-            throw new Error(`Quick add candidate editor overflows at 320px: ${JSON.stringify(geometry)}`)
+            throw new Error(`Quick add candidate editor overflows at ${viewport.width}px: ${JSON.stringify(geometry)}`)
           }
           if (geometry.pageScrollWidth > geometry.pageClientWidth) {
-            throw new Error(`Quick add page overflows at 320px: ${JSON.stringify(geometry)}`)
+            throw new Error(`Quick add page overflows at ${viewport.width}px: ${JSON.stringify(geometry)}`)
           }
           const dayBoxes = await scheduleSheet.getByRole('gridcell').evaluateAll((elements) =>
             elements.map((element) => {
@@ -386,17 +392,34 @@ async function main() {
               return { x: box.x, y: box.y, width: box.width, height: box.height }
             }),
           )
+          if (dayBoxes.length !== 42) {
+            throw new Error(`Quick add calendar did not expose 42 day targets at ${viewport.width}px: ${dayBoxes.length}`)
+          }
           const undersized = dayBoxes.find(({ width, height }) => width < 44 || height < 44)
-          if (undersized) throw new Error(`Quick add calendar day target is smaller than 44px at 320px: ${JSON.stringify(undersized)}`)
+          if (undersized) throw new Error(`Quick add calendar day target is smaller than 44px at ${viewport.width}px: ${JSON.stringify(undersized)}`)
+          const sheetBox = await sheetPanel.boundingBox()
+          if (viewport.width <= 369 && (!sheetBox || sheetBox.x > 0.5 || sheetBox.width < viewport.width - 1)) {
+            throw new Error(`Quick add Sheet is not edge-to-edge at ${viewport.width}px: ${JSON.stringify(sheetBox)}`)
+          }
+          if (viewport.width === 370 && (!sheetBox || sheetBox.x <= 0.5 || sheetBox.width >= viewport.width - 1)) {
+            throw new Error(`Quick add Sheet did not restore its inset above the compact threshold: ${JSON.stringify(sheetBox)}`)
+          }
+          const clipped = sheetBox && dayBoxes.find(({ x, width }) => x < sheetBox.x - 0.5 || x + width > sheetBox.x + sheetBox.width + 0.5)
+          if (clipped) {
+            throw new Error(`Quick add calendar day target is clipped by the Sheet at ${viewport.width}px: ${JSON.stringify({ sheetBox, clipped })}`)
+          }
           for (let index = 1; index < dayBoxes.length; index += 1) {
             const previous = dayBoxes[index - 1]
             const current = dayBoxes[index]
             const sameRow = Math.abs(previous.y - current.y) < 1
             if (sameRow && previous.x + previous.width > current.x + 0.5) {
-              throw new Error(`Quick add calendar day targets overlap at 320px: ${JSON.stringify({ previous, current })}`)
+              throw new Error(`Quick add calendar day targets overlap at ${viewport.width}px: ${JSON.stringify({ previous, current })}`)
             }
           }
-          if (!(await apply.isVisible())) throw new Error('Quick add Apply action is not reachable at 320px.')
+          const applyBox = await apply.boundingBox()
+          if (!(await apply.isVisible()) || !applyBox || applyBox.y < 0 || applyBox.y + applyBox.height > viewport.height) {
+            throw new Error(`Quick add Apply action is not reachable at ${viewport.width}px: ${JSON.stringify(applyBox)}`)
+          }
         }
         await scheduleSheet.getByRole('button', { name: '应用', exact: true }).click()
         await compactQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).waitFor({ state: 'visible' })
