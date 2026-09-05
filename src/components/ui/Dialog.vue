@@ -197,10 +197,10 @@ onUnmounted(() => releaseOverlay(layerId))
 }
 
 .dialog-close {
-  width: 34px;
-  height: 34px;
+  width: max(34px, var(--icon-hit));
+  height: max(34px, var(--icon-hit));
   display: grid;
-  flex: 0 0 34px;
+  flex: 0 0 max(34px, var(--icon-hit));
   place-items: center;
   border: 0;
   border-radius: var(--radius-full);

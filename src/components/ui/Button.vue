@@ -60,7 +60,8 @@ defineEmits<{ click: [e: MouseEvent] }>()
 }
 
 .btn:active:not(:disabled) {
-  transform: translateY(1px);
+  opacity: var(--press-opacity);
+  transform: scale(var(--press-scale));
 }
 
 .btn:disabled {
@@ -70,10 +71,12 @@ defineEmits<{ click: [e: MouseEvent] }>()
 
 /* 尺寸 */
 .btn--md {
+  min-height: var(--control-hit);
   padding: var(--space-2) var(--space-4);
   font-size: var(--text-base);
 }
 .btn--sm {
+  min-height: max(28px, var(--control-hit));
   padding: 4px var(--space-3);
   font-size: var(--text-sm);
 }

@@ -318,6 +318,8 @@ function smartLabel(view: StudySmartView, label: string) {
   .sidebar {
     background: var(--surface);
     box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }
 </style>

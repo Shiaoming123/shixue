@@ -26,6 +26,13 @@
     'PingFang SC',
     'Microsoft YaHei UI',
     sans-serif;
+  --font-body-size: 13px;
+  --font-body-leading: 18px;
+  --control-hit: 32px;
+  --icon-hit: 28px;
+  --field-min-height: 40px;
+  --row-min-height: 40px;
+  --screen-inline: 28px;
   font-family: var(--font-sans);
   color-scheme: light dark;
   font-size: 16px;
@@ -80,13 +87,18 @@
   --shadow-md: 0 8px 28px rgba(26, 36, 29, 0.08), 0 1px 3px rgba(26, 36, 29, 0.06);
   --shadow-lg: 0 22px 64px rgba(26, 36, 29, 0.14), 0 4px 14px rgba(26, 36, 29, 0.08);
 
-  /* ---- iOS-inspired materials ---- */
+  /* ---- 平台功能层材质 ---- */
   --hairline: color-mix(in srgb, var(--border) 82%, transparent);
   --material-thin: color-mix(in srgb, var(--surface) 78%, transparent);
   --material-regular: color-mix(in srgb, var(--surface) 90%, transparent);
+  --material-clear: color-mix(in srgb, var(--surface) 18%, transparent);
+  --chrome-blur: 24px;
+  --chrome-saturation: 180%;
   --control-fill: color-mix(in srgb, var(--surface-alt) 78%, var(--surface));
   --press-fill: color-mix(in srgb, var(--accent) 10%, var(--surface));
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+  --press-opacity: 0.8;
+  --press-scale: 0.975;
 
   /* ---- 结构 token：动效 ---- */
   --motion-fast: 140ms;
@@ -156,7 +168,8 @@ button {
 }
 
 button:active:not(:disabled) {
-  transform: scale(0.975);
+  opacity: var(--press-opacity);
+  transform: scale(var(--press-scale));
 }
 
 button:disabled {
@@ -221,6 +234,36 @@ time,
     --material-thin: var(--surface);
     --material-regular: var(--surface);
   }
+}
+
+:root[data-ui-platform='ios'] {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+  --font-display: var(--font-sans);
+  --font-body-size: 17px;
+  --font-body-leading: 22px;
+  --control-hit: 44px;
+  --icon-hit: 44px;
+  --field-min-height: 44px;
+  --row-min-height: 48px;
+  --screen-inline: 16px;
+}
+
+:root[data-ui-platform='android'] {
+  --font-sans: Roboto, 'Noto Sans SC Variable', 'Noto Sans SC', system-ui, sans-serif;
+  --font-display: var(--font-sans);
+  --font-body-size: 16px;
+  --font-body-leading: 24px;
+  --control-hit: 48px;
+  --icon-hit: 48px;
+  --field-min-height: 48px;
+  --row-min-height: 48px;
+  --screen-inline: 16px;
+}
+
+:root[data-input='coarse']:not([data-ui-platform='android']) {
+  --control-hit: 44px;
+  --icon-hit: 44px;
+  --field-min-height: 44px;
 }
 
 /* ---- 语义色工具类 ---- */

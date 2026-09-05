@@ -24,7 +24,7 @@ function clearTimer() {
 
 function schedule() {
   clearTimer()
-  if (!props.message || props.duration <= 0) return
+  if (!props.message || props.actionLabel || props.duration <= 0) return
   startedAt = Date.now()
   timer = setTimeout(() => emit('dismiss'), remaining.value)
 }
@@ -45,7 +45,7 @@ function onFocusout(event: FocusEvent) {
   resume()
 }
 
-watch(() => [props.message, props.duration] as const, ([message, duration]) => {
+watch(() => [props.message, props.duration, props.actionLabel] as const, ([message, duration]) => {
   clearTimer()
   remaining.value = duration
   if (message) schedule()
@@ -70,7 +70,8 @@ onUnmounted(clearTimer)
         @focusout="onFocusout"
       >
         <span>{{ message }}</span>
-        <button v-if="actionLabel" type="button" @click="emit('action')">{{ actionLabel }}</button>
+        <button v-if="actionLabel" class="toast-action" type="button" @click="emit('action')">{{ actionLabel }}</button>
+        <button v-if="actionLabel" class="toast-dismiss" type="button" aria-label="关闭通知" @click="emit('dismiss')">×</button>
       </div>
     </Transition>
   </Teleport>
@@ -106,7 +107,7 @@ onUnmounted(clearTimer)
 }
 
 .toast-region button {
-  min-height: 30px;
+  min-height: max(30px, var(--control-hit));
   padding: 0 var(--space-3);
   border: 0;
   border-radius: var(--radius-full);
@@ -114,6 +115,13 @@ onUnmounted(clearTimer)
   color: var(--bg);
   font-size: var(--text-sm);
   font-weight: 650;
+}
+
+.toast-dismiss {
+  min-width: max(30px, var(--icon-hit));
+  padding: 0 !important;
+  background: transparent !important;
+  font-size: var(--text-lg) !important;
 }
 
 .toast-enter-active,

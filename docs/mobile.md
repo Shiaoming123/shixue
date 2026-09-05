@@ -209,15 +209,17 @@ Tauri 移动端用独立的 capability 文件（`src-tauri/capabilities/` 下，
 当前布局是桌面侧边栏（200px）+ 主区，移动端需改为：
 
 ```
-桌面端（≥ 768px）：侧边栏导航 + 主区        ← 现状
-移动端（< 768px）：底部 tab bar + 内容区     ← 新增
+expanded/medium（≥ 820px）：侧边栏导航 + 主区
+compact（< 820px）：底部 tab bar + 内容区
 ```
 
 具体改造：
 
 1. `index.html` 加 `<meta name="viewport" content="width=device-width, initial-scale=1.0">`
 2. `App.vue` 的侧边栏在窄屏隐藏，改为底部 tab bar
-3. 设计系统的 `--space-*` / 字号在移动端适度缩小（可选，用 media query）
+3. 设计系统按平台映射字体和命中尺寸：iOS Body 默认 17pt、44pt 命中，Android Body 默认 16sp、48dp 命中；不能以缩小字号换空间
+
+这里的阈值表示当前窗口类，不表示设备身份。iPad、Android 平板和折叠屏根据实时窗口宽度在 compact/medium/expanded 间切换；平台特有字体、反馈和材质由 `data-ui-platform` 映射。
 
 ---
 

@@ -143,6 +143,8 @@ git commit -m "feat: connect learning reviews to task planning"
 
 ### Task 4: Complete responsive shell and unified-control audit
 
+This task is also the design-system convergence point. Move remaining business-owned backdrops/sheets onto `Dialog` or a shared `Sheet` built on `use-overlay.ts`; do not leave parallel Escape, focus-restoration, or stacking implementations. Consume platform intent tokens for hit targets, type roles and window classes, while keeping Windows, iOS/iPadOS and Android navigation/material mappings platform-native rather than pixel-identical.
+
 **Files:**
 - Modify: `src/App.vue`
 - Modify: `src/assets/themes/global.css`

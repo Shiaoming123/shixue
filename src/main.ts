@@ -1,9 +1,15 @@
 import { createApp } from "vue";
 import App from "./App.vue";
 import { mountModules } from "./modules/loader";
+import { detectUiPlatform } from "./lib/platform";
 import "@fontsource-variable/manrope/wght.css";
 import "@fontsource-variable/noto-sans-sc/wght.css";
 import "./assets/themes/global.css";
+
+document.documentElement.dataset.uiPlatform = detectUiPlatform(navigator);
+document.documentElement.dataset.input = window.matchMedia("(pointer: coarse)").matches
+  ? "coarse"
+  : "fine";
 
 // 模块化装配：按 modules.config 的开关加载各能力模块。
 // core 模块（设计系统 + 主题初始化）在 loader 里执行。

@@ -27,13 +27,20 @@ src/
         └── OverlayHost.vue / use-overlay.ts
 ```
 
-设计系统分两层：
+设计系统分四层：
 
 1. **语义色**（`--bg` / `--surface` / `--accent` / `--success` / `--warning` / `--danger` / `--text` / `--muted` / `--border`）：随主题切换，由 `applyTheme()` 动态写入 `<html>` 元素。
 2. **结构 token**（`--space-*` / `--radius-*` / `--text-*` / `--font-*` / `--shadow-*` / `--motion-*` / `--z-*`）：与主题无关，在 `global.css` 里静态定义，全主题共享。
 3. **材质 token**（`--hairline` / `--material-*` / `--control-fill` / `--press-fill` / `--focus-ring`）：在语义色之上构成 iOS 风格的细分隔线、半透明面板和控件状态。
+4. **平台意图 token**（`--control-hit` / `--icon-hit` / `--field-min-height` / `--row-min-height` / `--font-body-*` / `--screen-inline`）：由根节点的 `data-ui-platform` 映射 Windows、iOS/iPadOS 和 Android 度量。业务组件只消费意图，不自行判断操作系统。
 
-> **原则**：写组件时只用 CSS 变量，绝不写死颜色、字号、间距。**改主题就能换肤**。
+> **原则**：写组件时只用 CSS 变量，绝不写死颜色、字号、间距。主题负责品牌配色，平台映射负责字体、密度、材质和反馈；业务语义在各端保持一致，但不追求像素一致。
+
+### 0.1 内容层与功能层
+
+- `canvas/content` 是任务、列表、日历和正文所在的内容层，使用不透明或近乎不透明 surface；不能为了“高级感”把普通卡片和输入框做成玻璃。
+- `chrome/floating` 是导航、工具栏、侧栏、Sheet、Popover 和临时操作所在的功能层。iOS 映射为 regular Liquid Glass 与 scroll-edge effect，Windows 映射 Mica/Acrylic，Android 映射 tonal surface/elevation。
+- `clear` glass 只用于图片/视频背景上的短暂控件；亮背景后增加 35% 暗化层。减少透明度时所有功能材质关闭 blur 并回退为不透明 surface。
 
 ---
 
@@ -139,6 +146,21 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 | `--z-modal` | 300 | 模态对话框 |
 | `--z-toast` | 400 | 全局提示 |
 
+### 1.3 平台意图 token
+
+| Token | Windows/细指针 | iOS/iPadOS | Android | 用途 |
+| --- | --- | --- | --- | --- |
+| `--control-hit` | 32px | 44px | 48px | 常规交互命中高度 |
+| `--icon-hit` | 28px | 44px | 48px | 独立图标按钮命中区 |
+| `--field-min-height` | 40px | 44px | 48px | 字段与选择器 |
+| `--row-min-height` | 40px | 48px | 48px | 列表行基础高度 |
+| `--font-body-size/leading` | 13/18px | 17/22px | 16/24px | 平台正文角色 |
+| `--screen-inline` | 28px | 16px | 16px | 紧凑页面边距 |
+
+入口在挂载 Vue 前设置 `data-ui-platform=windows|macos|linux|ios|android|web` 和 `data-input=fine|coarse`。它们只控制表现，不授予任何 Tauri 权限。iPadOS 的桌面 UA 通过 `MacIntel + maxTouchPoints` 识别为 iOS；真正的能力可用性仍以运行时 capability 为准。
+
+字体映射：iOS/iPadOS 使用系统字体与 PingFang SC，不打包 SF；Android 使用 Roboto/Noto；Windows 保留 Manrope/Noto/Segoe 品牌栈。Lucide 是当前 WebView 的统一图标实现，原生壳可把同一语义图标名映射为 SF Symbols、Fluent 或 Material Symbols。
+
 ---
 
 ## 2. 组件用法
@@ -161,6 +183,8 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 | `type` | `button` / `submit` | `button` | 原生 type |
 
 **写法约定**：按钮文案用祈使句（"保存"、"删除"、"开始对话"），不用名词短语。
+
+每个视图最多一个填充强调色的主按钮。iOS 按压使用 opacity/轻微 scale 且无 ripple；Android 可以由平台适配器使用受控 ripple；Windows 保留 hover、focus 和 pressed。危险操作不能成为默认主操作，并始终提供取消或撤销。
 
 ### 2.2 Input
 
@@ -270,6 +294,8 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 ```
 
 `use-overlay.ts` 统一维护浮层顺序、Escape 和外点关闭。`Dialog` 负责焦点陷阱与关闭后的焦点返回；`ToastRegion` 在悬浮或键盘焦点进入时暂停超时。
+
+带操作（例如“撤销”）的 Toast 不自动消失，并必须有明确关闭按钮；纯状态 Toast 才可短时自动关闭。业务 Sheet 必须复用 `Dialog` 的移动呈现，或建立在同一 `use-overlay.ts` 之上的 `Sheet`，不得各自复制 backdrop 和焦点逻辑。
 
 ---
 
