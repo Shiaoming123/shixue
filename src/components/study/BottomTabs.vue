@@ -65,7 +65,6 @@ function activate(item: MobileNavItem) {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     padding: 6px 8px;
-    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
     overflow: hidden;
     border: 1px solid color-mix(in srgb, white 22%, var(--hairline));
     border-radius: var(--radius-xl);
@@ -144,6 +143,15 @@ function activate(item: MobileNavItem) {
 @media (prefers-reduced-transparency: reduce) {
   .tabbar {
     background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
+}
+
+:global(html[data-ui-platform='android']) .tabbar {
+  border-color: var(--hairline);
+  background: var(--surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 </style>

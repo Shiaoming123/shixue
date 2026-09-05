@@ -11,13 +11,37 @@ export function isTauri(): boolean {
 }
 
 /** 是否移动端（Android / iOS）。基于 UA 判断，覆盖 Tauri 移动端与浏览器移动预览 */
-export function isMobileUserAgent(userAgent: string): boolean {
+export function isMobileUserAgent(
+  userAgent: string,
+  platform = '',
+  maxTouchPoints = 0,
+): boolean {
   return /Android|iPhone|iPad|iPod/i.test(userAgent)
+    || (platform === 'MacIntel' && maxTouchPoints > 1)
 }
 
 export function isMobile(): boolean {
   if (typeof navigator === 'undefined') return false
-  return isMobileUserAgent(navigator.userAgent)
+  return isMobileUserAgent(
+    navigator.userAgent,
+    navigator.platform,
+    navigator.maxTouchPoints,
+  )
+}
+
+export type UiPlatform = 'windows' | 'macos' | 'linux' | 'ios' | 'android' | 'web'
+
+type UiNavigator = Pick<Navigator, 'userAgent' | 'platform' | 'maxTouchPoints'>
+
+/** Platform presentation hint. It controls design mappings, never permissions. */
+export function detectUiPlatform(source: UiNavigator): UiPlatform {
+  const { userAgent, platform, maxTouchPoints } = source
+  if (/Android/i.test(userAgent)) return 'android'
+  if (/iPhone|iPad|iPod/i.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1)) return 'ios'
+  if (/Windows/i.test(userAgent)) return 'windows'
+  if (/Macintosh|Mac OS X/i.test(userAgent)) return 'macos'
+  if (/Linux/i.test(userAgent)) return 'linux'
+  return 'web'
 }
 
 /** 是否桌面端 Tauri（有托盘等桌面能力的环境） */

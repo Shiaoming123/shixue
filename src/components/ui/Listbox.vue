@@ -242,13 +242,13 @@ watch(() => props.options.length, () => {
 }
 
 .listbox--compact .listbox-trigger {
-  min-height: 36px;
+  min-height: max(36px, var(--control-hit));
   border-radius: var(--radius-md);
   font-size: var(--text-xs);
 }
 
 .listbox--title .listbox-trigger {
-  min-height: 36px;
+  min-height: max(36px, var(--control-hit));
   padding: 0;
   border: 0;
   background: transparent;
@@ -271,7 +271,7 @@ watch(() => props.options.length, () => {
 }
 
 .listbox-option {
-  min-height: 38px;
+  min-height: max(38px, var(--row-min-height));
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18px;
   align-items: center;

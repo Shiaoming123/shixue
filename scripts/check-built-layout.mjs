@@ -12,7 +12,7 @@ const mobileMedia = /@media\((?:max-width:799px|width<=799px)\)[\s\S]*?/
 const hasMobileShell = new RegExp(`${mobileMedia.source}\\.shell(?:\\[[^\\]]+\\])?\\{[^}]*flex-direction:column`).test(
   compact,
 )
-const hasSafeArea = new RegExp(`${mobileMedia.source}\\.tabbar(?:\\[[^\\]]+\\])?\\{[^}]*padding-bottom:(?:calc\\([^;]*?)?env\\(safe-area-inset-bottom,0px\\)`).test(
+const hasSafeArea = new RegExp(`${mobileMedia.source}\\.tabbar(?:\\[[^\\]]+\\])?\\{[^}]*(?:padding-bottom|bottom):[^;}]*env\\(safe-area-inset-bottom,0px\\)`).test(
   compact,
 )
 

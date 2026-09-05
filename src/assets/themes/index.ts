@@ -204,6 +204,7 @@ export function applyTheme(id: string, dark: boolean) {
   const root = document.documentElement
   root.dataset.theme = id
   root.dataset.mode = dark ? 'dark' : 'light'
+  root.style.colorScheme = dark ? 'dark' : 'light'
   const map: Record<string, string> = {
     '--bg': tokens.bg,
     '--surface': tokens.surface,
