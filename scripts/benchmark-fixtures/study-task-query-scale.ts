@@ -4,12 +4,12 @@ export function createStudyTaskQueryScaleFixture(): WorkspaceStateV3 {
   const tasks: Task[] = []
   const recurrenceSeries: WorkspaceStateV3['recurrenceSeries'] = []
   const occurrences: TaskOccurrence[] = []
-  const preciseDates = Array.from({ length: 50 }, (_, index) =>
-    new Date(Date.UTC(2027, 0, index + 1, 1, 30)).toISOString())
 
   for (let seriesIndex = 0; seriesIndex < 1_000; seriesIndex += 1) {
     const taskId = `task:scale:${seriesIndex}`
     const seriesId = `series:scale:${seriesIndex}`
+    const preciseDates = Array.from({ length: 50 }, (_, occurrenceIndex) =>
+      new Date(Date.UTC(2027, 0, occurrenceIndex + 1, 0, seriesIndex)).toISOString())
     tasks.push({
       id: taskId, revision: 1, mode: 'general', listId: 'list:scale', sectionId: null, tagIds: [],
       title: `Scale task ${seriesIndex}`, notes: '', status: 'planned',

@@ -69,6 +69,44 @@ test('precise task instants use the injected device timezone for local-day proje
   )
 })
 
+test('precise occurrence range boundaries follow 23-hour and 25-hour DST days', () => {
+  for (const scenario of [
+    {
+      date: '2026-03-08',
+      instants: [
+        ['occ:before', '2026-03-08T04:59:59.000Z'],
+        ['occ:start', '2026-03-08T05:00:00.000Z'],
+        ['occ:end', '2026-03-09T03:59:59.000Z'],
+        ['occ:after', '2026-03-09T04:00:00.000Z'],
+      ],
+    },
+    {
+      date: '2026-11-01',
+      instants: [
+        ['occ:before', '2026-11-01T03:59:59.000Z'],
+        ['occ:start', '2026-11-01T04:00:00.000Z'],
+        ['occ:end', '2026-11-02T04:59:59.000Z'],
+        ['occ:after', '2026-11-02T05:00:00.000Z'],
+      ],
+    },
+  ] as const) {
+    const occurrences = scenario.instants.map(([id, scheduledAt], index) => occurrence({ id, ordinal: index + 1, scheduledAt }))
+    const rows = projectTaskItems(
+      fixture({ occurrences }),
+      { from: scenario.date, to: scenario.date },
+      'America/New_York',
+    )
+
+    assert.deepEqual(rows.map(({ occurrenceId }) => occurrenceId), ['occ:before', 'occ:start', 'occ:end'])
+    assert.deepEqual(rows.map(({ scheduledOn }) => scheduledOn), [
+      scenario.date === '2026-03-08' ? '2026-03-07' : '2026-10-31',
+      scenario.date,
+      scenario.date,
+    ])
+    assert.deepEqual(rows.map(({ reasons }) => reasons), [['overdue'], ['repeating'], ['repeating']])
+  }
+})
+
 test('completed occurrence remains projected as history without advancing task dates', () => {
   const completed = occurrence({
     id: 'occ:done',

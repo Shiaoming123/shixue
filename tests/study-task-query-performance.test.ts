@@ -6,6 +6,13 @@ import { createStudyTaskQueryScaleFixture } from '../scripts/benchmark-fixtures/
 
 test('empty Today projection stays linear at 1,000 series and 50,000 precise occurrences', () => {
   const state = createStudyTaskQueryScaleFixture()
+  assert.equal(state.recurrenceSeries.length, 1_000)
+  assert.equal(state.occurrences.length, 50_000)
+  assert.equal(new Set(state.occurrences.map(({ scheduledAt }) => scheduledAt)).size, 50_000)
+  assert.equal(
+    Date.parse(state.occurrences[1]!.scheduledAt!) - Date.parse(state.occurrences[0]!.scheduledAt!),
+    24 * 60 * 60 * 1_000,
+  )
   const startedAt = performance.now()
 
   const result = projectTaskItems(state, { from: '2026-09-05', to: '2026-09-05' }, 'Asia/Shanghai')

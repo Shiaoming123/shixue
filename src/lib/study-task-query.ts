@@ -1,7 +1,7 @@
 import { addCalendarDays } from '../storage/study/types.ts'
 import type { StudyTask, StudyTaskStatus, StudyTopic } from '../storage/study/types.ts'
 import type { Task, TaskOccurrence, WorkspaceStateV3 } from '../domain/workspace/types.ts'
-import { createTimeZoneFormatter } from '../domain/recurrence/timezone.ts'
+import { createTimeZoneFormatter, zonedDateTimeToInstant } from '../domain/recurrence/timezone.ts'
 
 export type StudyTaskSort = 'manual' | 'updatedAt' | 'dueOn' | 'title'
 export type StudyTaskQuerySort = StudyTaskSort | 'priority'
@@ -47,7 +47,7 @@ export function projectTaskItems(
   timezone: string,
 ): TaskProjection[] {
   if (range.from > range.to) throw new Error('Task projection range must start on or before it ends.')
-  const datePart = createLocalDateResolver(timezone)
+  const dates = createProjectionDateContext(range, timezone)
 
   const seriesById = new Map(state.recurrenceSeries.map((series) => [series.id, series]))
   const occurrencesByTask = new Map<string, TaskOccurrence[]>()
@@ -67,34 +67,34 @@ export function projectTaskItems(
       const taskProjections: TaskProjection[] = []
       let hasVisiblePending = false
       for (const occurrence of occurrences) {
-        const projection = projectOccurrence(task, occurrence, range, datePart)
+        const projection = projectOccurrence(task, occurrence, range, dates)
         if (projection) {
           taskProjections.push(projection)
           if (projection.occurrence?.status === 'pending') hasVisiblePending = true
         }
       }
       if (!hasVisiblePending && task.status !== 'completed') {
-        const deadlineOn = task.deadline.dueOn ?? datePart(task.deadline.dueAt)
+        const deadlineOn = task.deadline.dueOn ?? dates.datePart(task.deadline.dueAt)
         const deadlineRelevant = deadlineOn !== null && deadlineOn <= range.to
         if (deadlineRelevant) {
           let next: TaskOccurrence | undefined
           let nextOn = '9999-12-31'
           for (const occurrence of occurrences) {
             if (occurrence.status !== 'pending') continue
-            const occurrenceOn = resolvedOccurrenceOn(occurrence, datePart)
+            const occurrenceOn = resolvedOccurrenceOn(occurrence, dates.datePart)
             if (occurrenceOn < nextOn) {
               next = occurrence
               nextOn = occurrenceOn
             }
           }
-          const projection = next ? projectOccurrence(task, next, range, datePart, true) : projectSingleTask(task, range, datePart)
+          const projection = next ? projectOccurrence(task, next, range, dates, true) : projectSingleTask(task, range, dates.datePart)
           if (projection) taskProjections.push(projection)
         }
       }
       projections.push(...taskProjections)
       continue
     }
-    const projection = projectSingleTask(task, range, datePart)
+    const projection = projectSingleTask(task, range, dates.datePart)
     if (projection) projections.push(projection)
   }
   return projections
@@ -201,6 +201,12 @@ function compareTasks(left: StudyTask, right: StudyTask, sort: StudyTaskQuerySor
 
 type LocalDateResolver = (value: string | null) => string | null
 
+interface ProjectionDateContext {
+  datePart: LocalDateResolver
+  rangeStartMs: number
+  rangeEndExclusiveMs: number
+}
+
 function projectSingleTask(task: Task, range: TaskProjectionRange, datePart: LocalDateResolver): TaskProjection | null {
   const scheduledAt = task.schedule.startAt
   const scheduledOn = task.schedule.startOn ?? datePart(scheduledAt)
@@ -226,20 +232,28 @@ function projectOccurrence(
   task: Task,
   occurrence: TaskOccurrence,
   range: TaskProjectionRange,
-  datePart: LocalDateResolver,
+  dates: ProjectionDateContext,
   includeDeadline = false,
 ): TaskProjection | null {
   if (occurrence.status === 'cancelled') return null
   const scheduledAt = occurrence.override?.scheduledAt ?? occurrence.scheduledAt
-  const occurrenceOn = occurrence.override?.scheduledOn ?? occurrence.scheduledOn ?? datePart(scheduledAt)
+  const explicitOccurrenceOn = occurrence.override?.scheduledOn ?? occurrence.scheduledOn
   const active = occurrence.status === 'pending'
-  const inWindow = occurrenceOn !== null && inRange(occurrenceOn, range)
-  const occurrenceOverdue = active && occurrenceOn !== null && occurrenceOn < range.from
+  let occurrenceOn = explicitOccurrenceOn
+  let inWindow = occurrenceOn !== null && inRange(occurrenceOn, range)
+  let occurrenceOverdue = active && occurrenceOn !== null && occurrenceOn < range.from
+  if (occurrenceOn === null && scheduledAt !== null) {
+    const scheduledMs = Date.parse(scheduledAt)
+    if (Number.isNaN(scheduledMs)) throw new Error(`Invalid datetime: ${scheduledAt}`)
+    inWindow = scheduledMs >= dates.rangeStartMs && scheduledMs < dates.rangeEndExclusiveMs
+    occurrenceOverdue = active && scheduledMs < dates.rangeStartMs
+    if (inWindow || occurrenceOverdue || includeDeadline) occurrenceOn = dates.datePart(scheduledAt)
+  }
   if (!inWindow && !occurrenceOverdue && !includeDeadline) return null
 
-  const taskPlannedOn = task.schedule.startOn ?? datePart(task.schedule.startAt)
+  const taskPlannedOn = task.schedule.startOn ?? dates.datePart(task.schedule.startAt)
   const dueAt = task.deadline.dueAt
-  const dueOn = task.deadline.dueOn ?? datePart(dueAt)
+  const dueOn = task.deadline.dueOn ?? dates.datePart(dueAt)
   const deadlineInWindow = active && dueOn !== null && inRange(dueOn, range)
   const deadlineOverdue = active && dueOn !== null && dueOn < range.from
   if (!inWindow && !occurrenceOverdue && !(includeDeadline && (deadlineInWindow || deadlineOverdue))) return null
@@ -294,6 +308,14 @@ function createLocalDateResolver(timezone: string): LocalDateResolver {
     const date = format(instant).date
     cache.set(value, date)
     return date
+  }
+}
+
+function createProjectionDateContext(range: TaskProjectionRange, timezone: string): ProjectionDateContext {
+  return {
+    datePart: createLocalDateResolver(timezone),
+    rangeStartMs: zonedDateTimeToInstant(range.from, '00:00', timezone).getTime(),
+    rangeEndExclusiveMs: zonedDateTimeToInstant(addCalendarDays(range.to, 1), '00:00', timezone).getTime(),
   }
 }
 

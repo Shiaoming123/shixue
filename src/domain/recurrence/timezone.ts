@@ -1,4 +1,7 @@
 export function assertIanaTimezone(timezone: string): void {
+  if (typeof timezone !== 'string' || timezone.trim() === '') {
+    throw new Error(`Invalid IANA timezone: ${String(timezone)}`)
+  }
   try {
     new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(0))
   } catch {
