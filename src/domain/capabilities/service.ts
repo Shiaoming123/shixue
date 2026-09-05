@@ -74,10 +74,12 @@ export function createTaskCapabilityService(
 
     async preview(envelope: CommandEnvelope): Promise<CommandPreview> {
       const descriptor = getCommandDescriptor(envelope.command.type)
-      const confirmation = getPreviewConfirmation(descriptor)
+      const confirmation = previewConfirmationFor(envelope.command, descriptor)
       const current = await store.load()
       const affected = previewAffected(current, envelope.command)
+      let previewFingerprint: string | null = null
       try {
+        previewFingerprint = await fingerprintRequest(envelope)
         assertEnvelope(current, envelope)
         const draft = structuredClone(current)
         const previewIds = createPreviewIdGenerator(current)
@@ -95,6 +97,7 @@ export function createTaskCapabilityService(
           changes: impact.changes,
           validationErrors: [],
           confirmation,
+          previewFingerprint,
         }
       } catch (error) {
         return {
@@ -104,6 +107,7 @@ export function createTaskCapabilityService(
           changes: [],
           validationErrors: [domainError(error)],
           confirmation,
+          previewFingerprint,
         }
       }
     },
@@ -123,6 +127,7 @@ export function createTaskCapabilityService(
         return structuredClone(cached.result) as unknown as CommandResult
       }
       assertEnvelope(current, envelope)
+      assertExplicitConfirmation(envelope, requestFingerprint, previewConfirmationFor(envelope.command, getCommandDescriptor(envelope.command.type)))
 
       const draft = structuredClone(current)
       const application = applyCapabilityCommand(draft, envelope.command, { now, id: ids })
@@ -261,6 +266,14 @@ function applyUndo(
       task.revision += 1
       events.push(appendUndoEvent(state, task, 'deleted', task.status, context, original.id))
       restored.push(taskRef(task))
+    }
+    if (token.compensation.recurrenceSeriesIds) {
+      const seriesIds = new Set(token.compensation.recurrenceSeriesIds)
+      state.recurrenceSeries = state.recurrenceSeries.filter((series) => !seriesIds.has(series.id))
+    }
+    if (token.compensation.occurrenceIds) {
+      const occurrenceIds = new Set(token.compensation.occurrenceIds)
+      state.occurrences = state.occurrences.filter((occurrence) => !occurrenceIds.has(occurrence.id))
     }
   } else if (token.compensation.type === 'task.restore') {
     const targets = token.compensation.tasks.map((prior) => {
@@ -426,6 +439,34 @@ function isCoreTaskCommand(command: CapabilityCommand): command is TaskCapabilit
     command.type === 'task.batch_reschedule' ||
     command.type === 'task.batch_cancel' ||
     command.type === 'task.batch_delete'
+}
+
+function assertExplicitConfirmation(
+  envelope: CommandEnvelope,
+  requestFingerprint: string,
+  confirmation: PreviewConfirmation,
+): void {
+  if (confirmation !== 'explicit' || !requiresExplicitExecutionConfirmation(envelope.command)) return
+  const accepted = envelope.explicitConfirmation
+  if (
+    !accepted ||
+    accepted.previewFingerprint !== requestFingerprint ||
+    !Number.isFinite(Date.parse(accepted.confirmedAt))
+  ) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Explicit confirmation must reference the accepted preview fingerprint.', {
+      commandType: envelope.command.type,
+      expectedPreviewFingerprint: requestFingerprint,
+    })
+  }
+}
+
+function previewConfirmationFor(command: CapabilityCommand, descriptor: ReturnType<typeof getCommandDescriptor>): PreviewConfirmation {
+  if (command.type === 'recurrence.update' && command.scope === 'occurrence') return 'none'
+  return getPreviewConfirmation(descriptor)
+}
+
+function requiresExplicitExecutionConfirmation(command: CapabilityCommand): boolean {
+  return command.type === 'recurrence.update' && (command.scope === 'future' || command.scope === 'series')
 }
 
 function isRecurrenceCommand(command: CapabilityCommand): command is RecurrenceCapabilityCommand {

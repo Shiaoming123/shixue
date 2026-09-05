@@ -115,6 +115,16 @@ export interface TaskCreateCommand {
   checklist?: TaskChecklistItem[]
   acceptanceCriteria?: string[]
   reminderAt?: string | null
+  recurrence?: {
+    seriesId?: string
+    occurrenceId?: string
+    cadence: RecurrenceCadence
+    basis: RecurrenceSeries['basis']
+    anchorAt: string
+    end: RecurrenceSeries['end']
+    timezone: string
+    estimateMinutes?: number | null
+  }
 }
 
 export interface TaskUpdatePatch {
@@ -378,7 +388,12 @@ export interface WorkspaceResetCommand {
 }
 
 export type UndoCompensation =
-  | { type: 'task.remove_created'; taskIds: string[] }
+  | {
+      type: 'task.remove_created'
+      taskIds: string[]
+      recurrenceSeriesIds?: string[]
+      occurrenceIds?: string[]
+    }
   | {
       type: 'task.restore'
       tasks: Task[]
@@ -456,6 +471,10 @@ export interface CommandEnvelope<C extends CapabilityCommand = CapabilityCommand
   idempotencyKey: string
   source: 'human-ui' | 'keyboard' | 'notification' | 'agent'
   expectedWorkspaceRevision: number
+  explicitConfirmation?: {
+    previewFingerprint: string
+    confirmedAt: string
+  }
   command: C
 }
 
@@ -474,6 +493,7 @@ export interface CommandPreview {
   changes: ChangeSummary[]
   validationErrors: DomainError[]
   confirmation: PreviewConfirmation
+  previewFingerprint: string | null
 }
 
 export interface CommandResult {

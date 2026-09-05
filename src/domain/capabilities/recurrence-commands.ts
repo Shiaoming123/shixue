@@ -118,13 +118,14 @@ function updateRecurrence(
   if (command.scope === 'series') {
     applySeriesPatch(series, command.patch)
     series.revision += 1
+    const pending = recomputePendingOccurrences(state, series)
     return recurrenceApplication({
       tasks: [],
       series: [series],
-      occurrences: [],
-      fields: ['recurrenceSeries'],
+      occurrences: pending,
+      fields: ['recurrenceSeries', 'occurrences'],
       compensation: { ...before, createdSeriesIds: [], createdOccurrenceIds: [] },
-      data: series,
+      data: { series, occurrences: pending },
     })
   }
   const successor = splitFutureSeries(state, task, series, occurrence, command.patch, context)
@@ -209,6 +210,7 @@ function splitFutureSeries(
   if (state.recurrenceSeries.some(({ id }) => id === successorId)) {
     throw validation(`Recurrence successor already exists: ${successorId}.`, { seriesId: successorId })
   }
+  const originalEnd = structuredClone(series.end)
   const closedOn = addCalendarDays(localDate(occurrence.scheduledAt, series.timezone), -1)
   series.end = { kind: 'on', date: closedOn }
   series.revision += 1
@@ -219,7 +221,7 @@ function splitFutureSeries(
     taskId: task.id,
     revision: 1,
     anchorAt: patch.scheduledAt ?? patch.anchorAt ?? occurrence.scheduledAt,
-    end: patch.end ?? { kind: 'never' },
+    end: patch.end ?? successorEnd(originalEnd, occurrence.ordinal),
     createdThrough: patch.scheduledAt ?? patch.anchorAt ?? occurrence.scheduledAt,
     createdCount: 1,
   }
@@ -249,6 +251,34 @@ function splitFutureSeries(
   }
   state.occurrences.push(first)
   return { series: successor, changedOccurrences: [...cancelled, first], createdOccurrences: [first] }
+}
+
+function successorEnd(end: RecurrenceSeries['end'], splitOrdinal: number): RecurrenceSeries['end'] {
+  if (end.kind !== 'after') return structuredClone(end)
+  return { kind: 'after', count: Math.max(1, end.count - splitOrdinal + 1) }
+}
+
+function recomputePendingOccurrences(state: WorkspaceStateV3, series: RecurrenceSeries): TaskOccurrence[] {
+  const changed: TaskOccurrence[] = []
+  for (const occurrence of state.occurrences.filter((item) => item.seriesId === series.id && item.status === 'pending')) {
+    const scheduledAt = occurrenceInstant(series, occurrence.ordinal)
+    if (!scheduledAt || isPastSeriesEnd(series, scheduledAt, occurrence.ordinal)) {
+      occurrence.status = 'cancelled'
+      occurrence.override = null
+      occurrence.completedAt = null
+      occurrence.revision += 1
+      changed.push(occurrence)
+      continue
+    }
+    if (occurrence.scheduledAt !== scheduledAt || occurrence.override !== null || occurrence.revision !== series.revision) {
+      occurrence.scheduledAt = scheduledAt
+      occurrence.override = null
+      occurrence.completedAt = null
+      occurrence.revision += 1
+      changed.push(occurrence)
+    }
+  }
+  return changed
 }
 
 function createAfterCompletionSuccessor(
@@ -410,4 +440,97 @@ function localDate(iso: string, timezone: string): string {
 function addCalendarDays(date: string, days: number): string {
   const [year, month, day] = date.split('-').map(Number)
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
+}
+
+function occurrenceInstant(series: RecurrenceSeries, ordinal: number): string | null {
+  const anchor = localDateTime(series.anchorAt, series.timezone)
+  const date = occurrenceDate(series, anchor.date, ordinal)
+  return date ? zonedDateTimeToInstant(date, anchor.time, series.timezone).toISOString() : null
+}
+
+function occurrenceDate(series: RecurrenceSeries, anchorDate: string, ordinal: number): string | null {
+  const offset = ordinal - 1
+  if (series.cadence.kind === 'daily') return addCalendarDays(anchorDate, offset * series.cadence.interval)
+  if (series.cadence.kind === 'weekly') return weeklyDate(anchorDate, series.cadence.interval, series.cadence.weekdays, offset)
+  if (series.cadence.kind === 'monthly') return addCalendarMonths(anchorDate, offset * series.cadence.interval, series.cadence.dayOfMonth)
+  return addCalendarYears(anchorDate, offset * series.cadence.interval, series.cadence.month, series.cadence.dayOfMonth)
+}
+
+function weeklyDate(anchorDate: string, interval: number, weekdays: readonly number[], offset: number): string | null {
+  let seen = 0
+  for (let dayOffset = 0; dayOffset <= 500 * 7; dayOffset += 1) {
+    const date = addCalendarDays(anchorDate, dayOffset)
+    if (Math.floor(dayOffset / 7) % interval !== 0) continue
+    if (!weekdays.includes(weekdayOf(date))) continue
+    if (seen === offset) return date
+    seen += 1
+  }
+  return null
+}
+
+function isPastSeriesEnd(series: RecurrenceSeries, scheduledAt: string, ordinal: number): boolean {
+  if (series.end.kind === 'never') return false
+  if (series.end.kind === 'after') return ordinal > series.end.count
+  return localDate(scheduledAt, series.timezone) > series.end.date
+}
+
+function localDateTime(iso: string, timezone: string): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(iso))
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` }
+}
+
+function zonedDateTimeToInstant(date: string, time: string, timezone: string): Date {
+  const [year, month, day] = date.split('-').map(Number)
+  const [hour, minute] = time.split(':').map(Number)
+  let utc = new Date(Date.UTC(year, month - 1, day, hour, minute))
+  for (let i = 0; i < 8; i += 1) {
+    const parts = localDateTime(utc.toISOString(), timezone)
+    if (parts.date === date && parts.time === time) return utc
+    const localMinutes = toMinuteNumber(parts.date, parts.time)
+    const targetMinutes = toMinuteNumber(date, time)
+    utc = new Date(utc.getTime() + (targetMinutes - localMinutes) * 60_000)
+  }
+  throw validation(`Unable to resolve ${date}T${time} in ${timezone}`)
+}
+
+function addCalendarMonths(date: string, months: number, dayOfMonth: number): string {
+  const [year, month] = date.split('-').map(Number)
+  const totalMonths = year * 12 + (month - 1) + months
+  const targetYear = Math.floor(totalMonths / 12)
+  const targetMonth = (totalMonths % 12) + 1
+  return formatDate(targetYear, targetMonth, Math.min(dayOfMonth, daysInMonth(targetYear, targetMonth)))
+}
+
+function addCalendarYears(date: string, years: number, month: number, dayOfMonth: number): string {
+  const [year] = date.split('-').map(Number)
+  const targetYear = year + years
+  return formatDate(targetYear, month, Math.min(dayOfMonth, daysInMonth(targetYear, month)))
+}
+
+function weekdayOf(date: string): number {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay()
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate()
+}
+
+function toMinuteNumber(date: string, time: string): number {
+  const [year, month, day] = date.split('-').map(Number)
+  const [hour, minute] = time.split(':').map(Number)
+  return (((year * 12 + month) * 31 + day) * 24 * 60) + hour * 60 + minute
+}
+
+function formatDate(year: number, month: number, day: number): string {
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
