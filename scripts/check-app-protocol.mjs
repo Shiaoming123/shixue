@@ -27,9 +27,9 @@ const EXPECTED_SHIPPED_FOUNDATION = [
   'capability-protocol-v1',
   'live-write-capability-routing',
   'themed-control-foundation',
+  'recurrence-occurrence-v1',
 ]
 const EXPECTED_PLANNED_FEATURES = [
-  'recurrence',
   'offline-natural-language',
   'multi-reminder',
   'calendar',
@@ -155,6 +155,11 @@ function validateDataBoundary(data, implementationFacts, errors) {
   if (!isStringArray(data.exclusions) || !data.exclusions.includes('secrets') || !data.exclusions.includes('sync state')) {
     errors.push('data.exclusions must include secrets and sync state.')
   }
+  if (!sameRecord(data.recurrenceSchedule, {
+    timed: 'scheduledAt', dateOnly: 'scheduledOn', mutuallyExclusive: true, dateOnlyMidnightEncoding: false,
+  })) {
+    errors.push('data.recurrenceSchedule must preserve mutually exclusive timed/date-only fields without midnight encoding.')
+  }
 }
 
 function validateCapabilities(capabilities, implementationFacts, errors) {
@@ -167,6 +172,9 @@ function validateCapabilities(capabilities, implementationFacts, errors) {
   }
   if (capabilities.directStorageWrites !== false) {
     errors.push('capabilities.directStorageWrites must be false.')
+  }
+  if (!sameRecord(capabilities.previewHandles, { persistence: 'none', scope: 'service-instance' })) {
+    errors.push('capabilities.previewHandles must remain ephemeral and service-instance scoped.')
   }
   if (!isRecord(capabilities.futureAgent) || capabilities.futureAgent.status !== 'planned' || capabilities.futureAgent.access !== 'capability-service-only') {
     errors.push('capabilities.futureAgent must remain planned and capability-service-only.')

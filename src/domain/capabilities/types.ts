@@ -2,11 +2,14 @@ import type {
   CompletionRecord,
   JsonValue,
   ListGroup,
+  RecurrenceCadence,
+  RecurrenceSeries,
   ReminderRule,
   StudySession,
   Task,
   TaskChecklistItem,
   TaskEvent,
+  TaskOccurrence,
   TaskList,
   TaskPriority,
   TaskStatus,
@@ -16,6 +19,8 @@ import type {
 export const CAPABILITY_PROTOCOL_VERSION = 1 as const
 export const COMMAND_RECEIPT_LIMIT = 500 as const
 export const COMMAND_RECEIPT_TTL_DAYS = 30 as const
+export const PREVIEW_RECEIPT_LIMIT = 100 as const
+export const PREVIEW_RECEIPT_TTL_MINUTES = 15 as const
 
 export type CommandRisk = 'low' | 'medium' | 'high'
 export type CommandScope = 'single' | 'batch' | 'series' | 'workspace' | 'external'
@@ -26,6 +31,8 @@ export type EntityType =
   | 'list_group'
   | 'list'
   | 'task'
+  | 'recurrence_series'
+  | 'occurrence'
   | 'session'
   | 'checklist_item'
   | 'completion_record'
@@ -110,6 +117,17 @@ export interface TaskCreateCommand {
   checklist?: TaskChecklistItem[]
   acceptanceCriteria?: string[]
   reminderAt?: string | null
+  recurrence?: {
+    seriesId?: string
+    occurrenceId?: string
+    cadence: RecurrenceCadence
+    basis: RecurrenceSeries['basis']
+    anchorAt?: string | null
+    anchorOn?: string | null
+    end: RecurrenceSeries['end']
+    timezone: string
+    estimateMinutes?: number | null
+  }
 }
 
 export interface TaskUpdatePatch {
@@ -200,6 +218,53 @@ export interface TaskBatchDeleteCommand extends TaskBatchCommandTargetRevisions 
   type: 'task.batch_delete'
   taskIds: string[]
   reason?: string
+}
+
+export interface RecurrenceCreateCommand {
+  type: 'recurrence.create'
+  taskId: string
+  expectedTaskRevision?: number
+  seriesId?: string
+  occurrenceId?: string
+  cadence: RecurrenceCadence
+  basis: RecurrenceSeries['basis']
+  anchorAt?: string | null
+  anchorOn?: string | null
+  end: RecurrenceSeries['end']
+  timezone: string
+  estimateMinutes?: number | null
+}
+
+export interface RecurrenceUpdatePatch {
+  cadence?: RecurrenceCadence
+  basis?: RecurrenceSeries['basis']
+  anchorAt?: string | null
+  anchorOn?: string | null
+  end?: RecurrenceSeries['end']
+  timezone?: string
+  scheduledAt?: string | null
+  scheduledOn?: string | null
+  estimateMinutes?: number | null
+}
+
+export interface RecurrenceUpdateCommand {
+  type: 'recurrence.update'
+  occurrenceId: string
+  expectedOccurrenceRevision?: number
+  scope: 'occurrence' | 'future' | 'series'
+  patch: RecurrenceUpdatePatch
+}
+
+export interface RecurrenceCompleteCommand {
+  type: 'recurrence.complete'
+  occurrenceId: string
+  expectedOccurrenceRevision?: number
+}
+
+export interface RecurrenceSkipCommand {
+  type: 'recurrence.skip'
+  occurrenceId: string
+  expectedOccurrenceRevision?: number
 }
 
 export interface WorkspaceImportCommand {
@@ -329,13 +394,26 @@ export interface WorkspaceResetCommand {
 }
 
 export type UndoCompensation =
-  | { type: 'task.remove_created'; taskIds: string[] }
+  | {
+      type: 'task.remove_created'
+      taskIds: string[]
+      recurrenceSeriesIds?: string[]
+      occurrenceIds?: string[]
+    }
   | {
       type: 'task.restore'
       tasks: Task[]
       sessions: StudySession[]
       completionRecordIds: string[]
       reminderRules?: ReminderRule[]
+    }
+  | {
+      type: 'recurrence.restore'
+      tasks: Task[]
+      recurrenceSeries: RecurrenceSeries[]
+      occurrenceSnapshots: TaskOccurrence[]
+      createdSeriesIds: string[]
+      createdOccurrenceIds: string[]
     }
 
 export interface UndoToken {
@@ -362,6 +440,12 @@ export type TaskCapabilityCommand =
   | TaskBatchCancelCommand
   | TaskBatchDeleteCommand
 
+export type RecurrenceCapabilityCommand =
+  | RecurrenceCreateCommand
+  | RecurrenceUpdateCommand
+  | RecurrenceCompleteCommand
+  | RecurrenceSkipCommand
+
 export type LiveCompatibilityCommand =
   | ListUpsertCommand
   | ListGroupUpsertCommand
@@ -383,6 +467,7 @@ export type LiveCompatibilityCommand =
 
 export type CapabilityCommand =
   | TaskCapabilityCommand
+  | RecurrenceCapabilityCommand
   | LiveCompatibilityCommand
   | WorkspaceImportCommand
   | UndoApplyCommand
@@ -392,6 +477,10 @@ export interface CommandEnvelope<C extends CapabilityCommand = CapabilityCommand
   idempotencyKey: string
   source: 'human-ui' | 'keyboard' | 'notification' | 'agent'
   expectedWorkspaceRevision: number
+  explicitConfirmation?: {
+    previewReceiptId: string
+    confirmedAt: string
+  }
   command: C
 }
 
@@ -410,6 +499,7 @@ export interface CommandPreview {
   changes: ChangeSummary[]
   validationErrors: DomainError[]
   confirmation: PreviewConfirmation
+  previewReceiptId: string | null
 }
 
 export interface CommandResult {
@@ -452,6 +542,8 @@ export type CapabilityIdGenerator = (kind:
   | 'session'
   | 'checklist'
   | 'reminder'
+  | 'recurrence_series'
+  | 'occurrence'
 ) => string
 
 export interface CommandApplication {

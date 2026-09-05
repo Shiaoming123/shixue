@@ -3,11 +3,14 @@ import type { CommandReceipt, JsonValue, Task, TaskEvent, WorkspaceStateV3 } fro
 import type { WorkspaceStore } from '../../storage/workspace/types.ts'
 import { getCommandDescriptor, getPreviewConfirmation } from './catalog.ts'
 import { applyLiveCompatibilityCommand } from './live-commands.ts'
+import { applyRecurrenceCommand } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
 import {
   CAPABILITY_PROTOCOL_VERSION,
   COMMAND_RECEIPT_LIMIT,
   COMMAND_RECEIPT_TTL_DAYS,
+  PREVIEW_RECEIPT_LIMIT,
+  PREVIEW_RECEIPT_TTL_MINUTES,
   DomainCommandError,
   type CapabilityClock,
   type CapabilityCommand,
@@ -21,6 +24,8 @@ import {
   type DomainError,
   type EntityRef,
   type LiveCompatibilityCommand,
+  type PreviewConfirmation,
+  type RecurrenceCapabilityCommand,
   type QueryResult,
   type TaskCapabilityCommand,
   type TaskCapabilityService,
@@ -33,6 +38,7 @@ export function createTaskCapabilityService(
   clock: CapabilityClock,
   ids: CapabilityIdGenerator,
 ): TaskCapabilityService {
+  let previewHandles: PreviewHandle[] = []
   return {
     async query<Q extends CapabilityQuery>(query: Q): Promise<QueryResult<Q>> {
       const state = await store.load()
@@ -72,10 +78,12 @@ export function createTaskCapabilityService(
 
     async preview(envelope: CommandEnvelope): Promise<CommandPreview> {
       const descriptor = getCommandDescriptor(envelope.command.type)
-      const confirmation = getPreviewConfirmation(descriptor)
+      const confirmation = previewConfirmationFor(envelope.command, descriptor)
       const current = await store.load()
       const affected = previewAffected(current, envelope.command)
+      let previewReceiptId: string | null = null
       try {
+        const requestFingerprint = await fingerprintRequest(envelope)
         assertEnvelope(current, envelope)
         const draft = structuredClone(current)
         const previewIds = createPreviewIdGenerator(current)
@@ -86,6 +94,25 @@ export function createTaskCapabilityService(
         )
         parseWorkspaceState(draft)
         const impact = publicPreviewImpact(envelope.command, application)
+        if (requiresExplicitExecutionConfirmation(envelope.command)) {
+          const now = clock()
+          const receipt: PreviewHandle = {
+            id: `preview:${globalThis.crypto.randomUUID()}`,
+            idempotencyKey: envelope.idempotencyKey,
+            requestFingerprint,
+            expectedWorkspaceRevision: envelope.expectedWorkspaceRevision,
+            commandType: envelope.command.type,
+            createdAt: now,
+            expiresAt: new Date(Date.parse(now) + PREVIEW_RECEIPT_TTL_MINUTES * 60_000).toISOString(),
+          }
+          previewHandles = prunePreviewReceipts(
+            previewHandles,
+            now,
+            PREVIEW_RECEIPT_LIMIT - 1,
+          )
+          previewHandles.push(receipt)
+          previewReceiptId = receipt.id
+        }
         return {
           accepted: true,
           descriptor,
@@ -93,6 +120,7 @@ export function createTaskCapabilityService(
           changes: impact.changes,
           validationErrors: [],
           confirmation,
+          previewReceiptId,
         }
       } catch (error) {
         return {
@@ -102,6 +130,7 @@ export function createTaskCapabilityService(
           changes: [],
           validationErrors: [domainError(error)],
           confirmation,
+          previewReceiptId,
         }
       }
     },
@@ -121,6 +150,7 @@ export function createTaskCapabilityService(
         return structuredClone(cached.result) as unknown as CommandResult
       }
       assertEnvelope(current, envelope)
+      assertExplicitConfirmation(previewHandles, envelope, requestFingerprint, now)
 
       const draft = structuredClone(current)
       const application = applyCapabilityCommand(draft, envelope.command, { now, id: ids })
@@ -177,6 +207,10 @@ export function createTaskCapabilityService(
           expectedUpdatedAt: current.updatedAt,
         })
       }
+      if (requiresExplicitExecutionConfirmation(envelope.command)) {
+        const receiptId = envelope.explicitConfirmation!.previewReceiptId
+        previewHandles = previewHandles.filter(({ id }) => id !== receiptId)
+      }
       return structuredClone(result)
     },
   }
@@ -188,6 +222,7 @@ function applyCapabilityCommand(
   context: CapabilityCommandContext,
 ): CommandApplication {
   if (isCoreTaskCommand(command)) return applyTaskCommand(state, command, context)
+  if (isRecurrenceCommand(command)) return applyRecurrenceCommand(state, command, context)
   if (isLiveCompatibilityCommand(command)) return applyLiveCompatibilityCommand(state, command, context)
   if (command.type === 'workspace.import') return applyWorkspaceImport(state, command)
   if (command.type === 'undo.apply') return applyUndo(state, command, context)
@@ -244,8 +279,10 @@ function applyUndo(
   }
 
   const events: TaskEvent[] = []
-  const restored: Task[] = []
+  const restored: EntityRef[] = []
   if (token.compensation.type === 'task.remove_created') {
+    const recurrenceSeriesIds = new Set(token.compensation.recurrenceSeriesIds ?? [])
+    const occurrenceIds = new Set(token.compensation.occurrenceIds ?? [])
     const tasks = token.compensation.taskIds.map((taskId) => {
       const task = state.tasks.find(({ id }) => id === taskId)
       if (!task) throw new DomainCommandError('TASK_NOT_FOUND', `Task not found for undo: ${taskId}.`, { taskId })
@@ -256,10 +293,19 @@ function applyUndo(
       task.deletedAt = context.now
       task.updatedAt = context.now
       task.revision += 1
+      if (task.recurrenceSeriesId !== null && recurrenceSeriesIds.has(task.recurrenceSeriesId)) {
+        task.recurrenceSeriesId = null
+      }
       events.push(appendUndoEvent(state, task, 'deleted', task.status, context, original.id))
-      restored.push(task)
+      restored.push(taskRef(task))
     }
-  } else {
+    if (recurrenceSeriesIds.size > 0) {
+      state.recurrenceSeries = state.recurrenceSeries.filter((series) => !recurrenceSeriesIds.has(series.id))
+    }
+    if (occurrenceIds.size > 0) {
+      state.occurrences = state.occurrences.filter((occurrence) => !occurrenceIds.has(occurrence.id))
+    }
+  } else if (token.compensation.type === 'task.restore') {
     const targets = token.compensation.tasks.map((prior) => {
       const index = state.tasks.findIndex(({ id }) => id === prior.id)
       if (index < 0) throw new DomainCommandError('TASK_NOT_FOUND', `Task not found for undo: ${prior.id}.`, { taskId: prior.id })
@@ -290,7 +336,7 @@ function applyUndo(
           original.id,
         ))
       }
-      restored.push(restoredTask)
+      restored.push(taskRef(restoredTask))
     }
     for (const prior of token.compensation.sessions) {
       const index = state.studySessions.findIndex(({ id }) => id === prior.id)
@@ -310,15 +356,44 @@ function applyUndo(
       record.deletedAt = context.now
       record.updatedAt = context.now
     }
+  } else if (token.compensation.type === 'recurrence.restore') {
+    const taskIds = new Set(token.compensation.tasks.map(({ id }) => id))
+    const seriesIds = new Set([
+      ...token.compensation.recurrenceSeries.map(({ id }) => id),
+      ...token.compensation.createdSeriesIds,
+    ])
+    const occurrenceIds = new Set([
+      ...token.compensation.occurrenceSnapshots.map(({ id }) => id),
+      ...token.compensation.createdOccurrenceIds,
+    ])
+    const restoredTasks = token.compensation.tasks.map((task) => ({
+      ...structuredClone(task),
+      updatedAt: context.now,
+      revision: task.revision + 1,
+    }))
+    state.tasks = state.tasks.filter((task) => !taskIds.has(task.id))
+    state.tasks.push(...restoredTasks)
+    state.recurrenceSeries = state.recurrenceSeries.filter((series) => !seriesIds.has(series.id))
+    state.recurrenceSeries.push(...token.compensation.recurrenceSeries.map((series) => structuredClone(series)))
+    state.occurrences = state.occurrences.filter((occurrence) => !occurrenceIds.has(occurrence.id))
+    state.occurrences.push(...token.compensation.occurrenceSnapshots.map((occurrence) => structuredClone(occurrence)))
+    restored.push(
+      ...restoredTasks.map(taskRef),
+      ...token.compensation.recurrenceSeries.map(({ id, revision }) => ({ type: 'recurrence_series' as const, id, revision })),
+      ...token.compensation.occurrenceSnapshots.map(({ id, revision }) => ({ type: 'occurrence' as const, id, revision })),
+    )
   }
 
-  const affected = restored.map(taskRef)
   return {
-    affected,
-    changes: affected.map((entity) => ({ entity, operation: 'restore', fields: ['task'] })),
+    affected: restored,
+    changes: restored.map((entity) => ({ entity, operation: 'restore', fields: ['state'] })),
     events,
     compensation: null,
-    data: { undoTokenId: token.id, restoredTaskIds: restored.map(({ id }) => id) },
+    data: {
+      undoTokenId: token.id,
+      restoredTaskIds: restored.filter(({ type }) => type === 'task').map(({ id }) => id),
+      restoredIds: restored.map(({ id }) => id),
+    },
   }
 }
 
@@ -346,7 +421,19 @@ function previewAffected(
   }
   if (command.type === 'undo.apply') return command.token.compensation.type === 'task.remove_created'
     ? command.token.compensation.taskIds.map((id) => ({ type: 'task', id }))
-    : command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task', id, revision }))
+    : command.token.compensation.type === 'task.restore'
+      ? command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task', id, revision }))
+      : [
+          ...command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task' as const, id, revision })),
+          ...command.token.compensation.recurrenceSeries.map(({ id, revision }) => ({ type: 'recurrence_series' as const, id, revision })),
+          ...command.token.compensation.occurrenceSnapshots.map(({ id, revision }) => ({ type: 'occurrence' as const, id, revision })),
+        ]
+  if (command.type === 'recurrence.create') return [{ type: 'task', id: command.taskId }]
+  if (
+    command.type === 'recurrence.update' ||
+    command.type === 'recurrence.complete' ||
+    command.type === 'recurrence.skip'
+  ) return [{ type: 'occurrence', id: command.occurrenceId }]
   if (command.type === 'task.create') return [{ type: 'task', id: command.taskId ?? 'pending' }]
   if (command.type === 'list.upsert') return [{ type: 'list', id: command.list.id }]
   if (command.type === 'list_group.upsert') return [{ type: 'list_group', id: command.group.id }]
@@ -382,6 +469,45 @@ function isCoreTaskCommand(command: CapabilityCommand): command is TaskCapabilit
     command.type === 'task.batch_reschedule' ||
     command.type === 'task.batch_cancel' ||
     command.type === 'task.batch_delete'
+}
+
+function assertExplicitConfirmation(
+  previewHandles: readonly PreviewHandle[],
+  envelope: CommandEnvelope,
+  requestFingerprint: string,
+  now: string,
+): void {
+  if (!requiresExplicitExecutionConfirmation(envelope.command)) return
+  const accepted = envelope.explicitConfirmation
+  const receipt = accepted && previewHandles.find(({ id }) => id === accepted.previewReceiptId)
+  if (!accepted || !receipt ||
+    receipt.requestFingerprint !== requestFingerprint ||
+    receipt.idempotencyKey !== envelope.idempotencyKey ||
+    receipt.expectedWorkspaceRevision !== envelope.expectedWorkspaceRevision ||
+    receipt.commandType !== envelope.command.type ||
+    Date.parse(receipt.expiresAt) <= Date.parse(now) ||
+    !Number.isFinite(Date.parse(accepted.confirmedAt))) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Explicit confirmation must reference an unconsumed preview receipt.', {
+      commandType: envelope.command.type,
+      previewReceiptId: accepted?.previewReceiptId ?? null,
+    })
+  }
+}
+
+function previewConfirmationFor(command: CapabilityCommand, descriptor: ReturnType<typeof getCommandDescriptor>): PreviewConfirmation {
+  if (command.type === 'recurrence.update' && command.scope === 'occurrence') return 'none'
+  return getPreviewConfirmation(descriptor)
+}
+
+function requiresExplicitExecutionConfirmation(command: CapabilityCommand): boolean {
+  return command.type === 'recurrence.update' && (command.scope === 'future' || command.scope === 'series')
+}
+
+function isRecurrenceCommand(command: CapabilityCommand): command is RecurrenceCapabilityCommand {
+  return command.type === 'recurrence.create' ||
+    command.type === 'recurrence.update' ||
+    command.type === 'recurrence.complete' ||
+    command.type === 'recurrence.skip'
 }
 
 function isLiveCompatibilityCommand(command: CapabilityCommand): command is LiveCompatibilityCommand {
@@ -479,6 +605,27 @@ function pruneReceipts(receipts: readonly CommandReceipt[], now: string, limit: 
     .slice(-limit)
     .map(({ receipt }) => receipt)
   return structuredClone(active)
+}
+
+function prunePreviewReceipts(
+  receipts: readonly PreviewHandle[],
+  now: string,
+  limit: number,
+): PreviewHandle[] {
+  return structuredClone(receipts
+    .filter((receipt) => Date.parse(receipt.expiresAt) > Date.parse(now))
+    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id))
+    .slice(-limit))
+}
+
+interface PreviewHandle {
+  id: string
+  idempotencyKey: string
+  requestFingerprint: string
+  expectedWorkspaceRevision: number
+  commandType: string
+  createdAt: string
+  expiresAt: string
 }
 
 function domainError(error: unknown): DomainError {

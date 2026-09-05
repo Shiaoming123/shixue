@@ -117,7 +117,7 @@ onUnmounted(() => releaseOverlay(layerId))
 </script>
 
 <template>
-  <Teleport to="#ui-overlay-host">
+  <Teleport defer to="#ui-overlay-host">
     <Transition name="dialog">
       <div v-if="open" class="dialog-backdrop">
         <section

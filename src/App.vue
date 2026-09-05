@@ -11,12 +11,15 @@ import SettingsSheet, { type CloudAccountStatus } from './components/study/Setti
 import TaskActionSheet, { type TaskActionMode, type TaskActionPayload } from './components/study/TaskActionSheet.vue'
 import TaskDetailDrawer, { type TaskEventViewItem } from './components/study/TaskDetailDrawer.vue'
 import TaskEditSheet, { type TaskEditValue } from './components/study/TaskEditSheet.vue'
-import TasksView, { type TaskViewItem, type TaskViewStatus } from './components/study/TasksView.vue'
+import RecurrenceScopeDialog, { type RecurrenceRuleScope } from './components/study/RecurrenceScopeDialog.vue'
+import OccurrenceRescheduleSheet from './components/study/OccurrenceRescheduleSheet.vue'
+import { type RecurrenceRule } from './components/study/RecurrenceEditor.vue'
+import TasksView, { type OccurrenceViewItem, type TaskViewItem, type TaskViewStatus } from './components/study/TasksView.vue'
 import TopicsView, { type TopicViewItem } from './components/study/TopicsView.vue'
 import Listbox from './components/ui/Listbox.vue'
 import OverlayHost from './components/ui/OverlayHost.vue'
 import ToastRegion from './components/ui/ToastRegion.vue'
-import { queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView } from './lib/study-task-query'
+import { projectTaskItems, queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView, type TaskProjectionReason } from './lib/study-task-query'
 import { selectStudyReminders, selectTaskReminderTriggers } from './lib/study-reminders'
 import { detectRuntimeInfo, hasRuntimeCapability } from './lib/platform'
 import {
@@ -57,6 +60,10 @@ import {
 } from './lib/study'
 import { createSeedStudyState } from './storage/study/types'
 import { getWorkspaceStore } from './storage/workspace/registry'
+import { createTaskCapabilityService } from './domain/capabilities/service'
+import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview } from './domain/capabilities/types'
+import type { WorkspaceStateV3 } from './domain/workspace/types'
+import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
 const page = ref<StudyPage>('today')
 const state = ref<StudyState>(createSeedStudyState())
@@ -74,6 +81,7 @@ const selectedGroupId = ref('')
 const groupTitle = ref('')
 const selectedTopicId = ref(state.value.topics[0]?.id ?? '')
 const selectedTaskId = ref('')
+const selectedOccurrenceId = ref('')
 const activeSmartView = ref<StudyTaskSmartView>('today')
 const taskSearch = ref('')
 const taskTopicFilter = ref('all')
@@ -83,6 +91,19 @@ const taskActionOpen = ref(false)
 const taskActionMode = ref<TaskActionMode>('plan')
 const taskActionTaskId = ref('')
 const taskEditorOpen = ref(false)
+const recurrenceWorkspace = ref<WorkspaceStateV3 | null>(null)
+const recurrenceScopeOpen = ref(false)
+const recurrencePreview = ref<CommandPreview | null>(null)
+const recurrencePreviewing = ref(false)
+const recurrenceExecuting = ref(false)
+const occurrenceRescheduleOpen = ref(false)
+const occurrenceRescheduleId = ref('')
+const occurrenceRescheduleValue = ref('')
+const occurrenceRescheduleTimed = ref(false)
+let pendingRecurrenceRule: RecurrenceRule | null = null
+type RecurrenceUpdateEnvelope = CommandEnvelope<Extract<CapabilityCommand, { type: 'recurrence.update' }>>
+let recurrencePreviewEnvelope: RecurrenceUpdateEnvelope | null = null
+let recurrencePreviewVersion = 0
 const reviewRevealed = ref(false)
 const reviewMode = ref<'review' | 'records'>('review')
 const appearanceDark = ref(false)
@@ -94,6 +115,7 @@ const toastVersion = ref(0)
 const storageError = ref('')
 const remindersEnabled = ref(false)
 const runtime = detectRuntimeInfo()
+const capabilityService = createTaskCapabilityService(getWorkspaceStore(), () => new Date().toISOString(), (kind) => `${kind}:${crypto.randomUUID()}`)
 const remindersAvailable = hasRuntimeCapability(runtime, 'native-notification')
 const cloudConfig = import.meta.env.VITE_STUDY_SUPABASE_URL?.trim() && import.meta.env.VITE_STUDY_SUPABASE_PUBLISHABLE_KEY?.trim() ? {
   provider: 'supabase' as const,
@@ -116,6 +138,13 @@ const dateLabel = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long
 const activeSession = computed(() => state.value.sessions.find((session) => !session.deletedAt && (session.state === 'running' || session.state === 'paused')))
 const activeTask = computed(() => state.value.tasks.find((task) => task.id === activeSession.value?.taskId && !task.deletedAt))
 const selectedTask = computed(() => state.value.tasks.find((task) => task.id === selectedTaskId.value && !task.deletedAt))
+const selectedOccurrence = computed(() => recurrenceWorkspace.value?.occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId.value) ?? null)
+const selectedRecurrence = computed(() => {
+  const workspace = recurrenceWorkspace.value
+  const task = workspace?.tasks.find((item) => item.id === selectedTask.value?.id)
+  return task?.recurrenceSeriesId ? workspace?.recurrenceSeries.find((series) => series.id === task.recurrenceSeriesId) ?? null : null
+})
+const selectedRecurrenceRule = computed<RecurrenceRule | null>(() => selectedRecurrence.value ? ({ cadence: selectedRecurrence.value.cadence, basis: selectedRecurrence.value.basis, end: selectedRecurrence.value.end }) : null)
 const selectedTaskView = computed(() => selectedTask.value ? toTaskView(selectedTask.value) : undefined)
 const selectedTaskEvents = computed(() => selectedTask.value ? state.value.taskEvents.filter((event) => event.taskId === selectedTask.value?.id).sort((a, b) => b.sequence - a.sequence).map(toEventView) : [])
 const actionTask = computed(() => state.value.tasks.find((task) => task.id === taskActionTaskId.value))
@@ -130,23 +159,51 @@ const timeLabel = computed(() => `${String(Math.floor(elapsedSeconds.value / 60)
 
 const topicMap = computed(() => new Map(state.value.topics.map((topic) => [topic.id, topic])))
 const liveTasks = computed(() => state.value.tasks.filter((task) => !task.deletedAt))
-const taskViews = computed<TaskViewItem[]>(() => queryStudyTasks(liveTasks.value, state.value.topics, {
+const filteredTaskViews = computed<TaskViewItem[]>(() => queryStudyTasks(liveTasks.value, state.value.topics, {
   search: taskSearch.value,
   sort: taskSort.value,
   topicId: taskTopicFilter.value === 'all' ? undefined : taskTopicFilter.value === 'unassigned' ? null : taskTopicFilter.value,
-  smartView: activeSmartView.value,
+  smartView: activeSmartView.value === 'today' ? 'all' : activeSmartView.value,
   today: today.value,
 }).filter((task) => taskPriorityFilter.value === 'all' || task.priority === taskPriorityFilter.value).map(toTaskView))
+const todayProjections = computed(() => recurrenceWorkspace.value ? projectTaskItems(recurrenceWorkspace.value, { from: today.value, to: today.value }) : [])
+const taskViews = computed<TaskViewItem[]>(() => {
+  if (activeSmartView.value !== 'today' || !recurrenceWorkspace.value) return filteredTaskViews.value
+  const eligible = new Map(filteredTaskViews.value.map((task) => [task.id, task]))
+  return todayProjections.value.filter((projection) => projection.occurrenceId === null).map((projection) => eligible.get(projection.taskId)).filter((task): task is TaskViewItem => task !== undefined)
+})
+const occurrenceViews = computed<OccurrenceViewItem[]>(() => {
+  const workspace = recurrenceWorkspace.value
+  if (!workspace) return []
+  const tasks = new Map(liveTasks.value.map((task) => [task.id, task]))
+  const visibleTaskIds = new Set(filteredTaskViews.value.map((task) => task.id))
+  if (activeSmartView.value === 'today') {
+    return todayProjections.value.filter((projection) => projection.occurrence?.status === 'pending' && visibleTaskIds.has(projection.taskId)).map((projection) => ({
+      id: projection.key,
+      title: tasks.get(projection.taskId)?.title ?? projection.task.title,
+      scheduledLabel: formatPlanDate(projection.scheduledOn ?? projection.scheduledAt),
+      deadlineLabel: projection.dueOn || projection.dueAt ? formatPlanDate(projection.dueOn ?? projection.dueAt) : '',
+      reasons: projection.reasons.map(projectionReasonLabel),
+      occurrence: projection.occurrence!,
+    }))
+  }
+  return workspace.occurrences.filter((occurrence) => occurrence.status === 'pending').map((occurrence) => {
+    const series = workspace.recurrenceSeries.find((item) => item.id === occurrence.seriesId)
+    const task = series ? tasks.get(series.taskId) : undefined
+    const scheduled = occurrence.override?.scheduledOn ?? occurrence.override?.scheduledAt ?? occurrence.scheduledOn ?? occurrence.scheduledAt
+    return task && visibleTaskIds.has(task.id) ? { id: `occurrence:${occurrence.id}`, title: task.title, scheduledLabel: formatPlanDate(scheduled), deadlineLabel: task.dueOn ? formatPlanDate(task.dueOn) : '', reasons: ['重复'], occurrence } : null
+  }).filter((item): item is OccurrenceViewItem => item !== null)
+})
 
 const smartViewCounts = computed<StudySmartViewCounts>(() => ({
   inbox: selectStudyTaskSmartView(liveTasks.value, 'inbox', today.value).length,
-  today: selectStudyTaskSmartView(liveTasks.value, 'today', today.value).length,
+  today: recurrenceWorkspace.value ? todayProjections.value.filter((projection) => projection.occurrence?.status !== 'completed' && projection.occurrence?.status !== 'skipped').length : selectStudyTaskSmartView(liveTasks.value, 'today', today.value).length,
   next7: selectStudyTaskSmartView(liveTasks.value, 'next7', today.value).length,
   all: selectStudyTaskSmartView(liveTasks.value, 'all', today.value).length,
   completed: selectStudyTaskSmartView(liveTasks.value, 'completed', today.value).length,
 }))
 const smartViewTitle = computed(() => ({ inbox: '收件箱', today: '今天', next7: '最近 7 天', all: '全部任务', completed: '已完成' })[activeSmartView.value])
-const smartViewSubtitle = computed(() => `${taskViews.value.length} 项 · ${dateLabel.value}`)
+const smartViewSubtitle = computed(() => `${taskViews.value.length + occurrenceViews.value.length} 项 · ${dateLabel.value}`)
 const activeListGroups = computed(() => (state.value.listGroups ?? []).filter(({ archivedAt }) => !archivedAt).sort((left, right) => left.position - right.position))
 const topicGroupOptions = computed(() => [
   { value: '', label: '无分组' },
@@ -192,6 +249,7 @@ onMounted(async () => {
   compactMedia.addEventListener('change', onCompactChange)
   try {
     state.value = await loadStudyState()
+    recurrenceWorkspace.value = await getWorkspaceStore().load()
     selectedTopicId.value = state.value.topics.find((topic) => !topic.archivedAt)?.id ?? ''
     showFocus.value = Boolean(activeSession.value)
   } catch (error) { reportStorageError(error) } finally { loading.value = false }
@@ -229,7 +287,7 @@ function handleModuleError() {
 }
 
 function onCompactChange(event: MediaQueryListEvent) { compact.value = event.matches; if (event.matches && page.value === 'tasks') selectedTaskId.value = '' }
-async function refreshState() { state.value = await loadStudyState(); scheduleCloudSync() }
+async function refreshState() { state.value = await loadStudyState(); recurrenceWorkspace.value = await getWorkspaceStore().load(); scheduleCloudSync() }
 
 function scheduleCloudSync() {
   if (!cloudAvailable || cloudStatus.value !== 'signed-in') return
@@ -314,7 +372,7 @@ function localDeviceId() {
 }
 
 function navigate(next: StudyPage) {
-  page.value = next; showFocus.value = false; reviewRevealed.value = false
+  page.value = next; showFocus.value = false; reviewRevealed.value = false; selectedOccurrenceId.value = ''
   if (next === 'today') activeSmartView.value = 'today'
   if (next === 'tasks' && activeSmartView.value === 'today') activeSmartView.value = 'inbox'
   if ((next === 'tasks' || next === 'today') && !compact.value && !selectedTaskId.value) selectedTaskId.value = taskViews.value[0]?.id ?? ''
@@ -325,12 +383,22 @@ function selectSmartView(view: StudySmartView) {
   activeSmartView.value = view
   page.value = view === 'today' ? 'today' : 'tasks'
   showFocus.value = false
+  selectedOccurrenceId.value = ''
   selectedTaskId.value = compact.value ? '' : taskViews.value[0]?.id ?? ''
 }
-function selectList(id: string) { taskTopicFilter.value = id; activeSmartView.value = 'all'; page.value = 'tasks'; showFocus.value = false; selectedTaskId.value = compact.value ? '' : taskViews.value[0]?.id ?? '' }
+function selectList(id: string) { taskTopicFilter.value = id; activeSmartView.value = 'all'; page.value = 'tasks'; showFocus.value = false; selectedOccurrenceId.value = ''; selectedTaskId.value = compact.value ? '' : taskViews.value[0]?.id ?? '' }
 function openTopicEditor(topic?: StudyTopic) { topicEditorOpen.value = true; selectedTopicId.value = topic?.id ?? ''; topicTitle.value = topic?.title ?? ''; topicGoal.value = topic?.goal ?? ''; topicMinutes.value = topic?.weeklyTargetMinutes ?? 120; topicGroupId.value = topic?.groupId ?? '' }
 function openGroupEditor(group?: StudyListGroup) { groupEditorOpen.value = true; selectedGroupId.value = group?.id ?? ''; groupTitle.value = group?.title ?? '' }
-function openTask(taskId: string) { selectedTaskId.value = taskId; if (page.value !== 'tasks' && page.value !== 'today') page.value = 'tasks'; showFocus.value = false }
+function openTask(taskId: string) { selectedOccurrenceId.value = ''; selectedTaskId.value = taskId; if (page.value !== 'tasks' && page.value !== 'today') page.value = 'tasks'; showFocus.value = false }
+function openOccurrence(occurrenceId: string) {
+  const workspace = recurrenceWorkspace.value
+  const occurrence = workspace?.occurrences.find((item) => item.id === occurrenceId)
+  const series = occurrence ? workspace?.recurrenceSeries.find((item) => item.id === occurrence.seriesId) : undefined
+  if (!occurrence || !series) return
+  selectedOccurrenceId.value = occurrence.id
+  selectedTaskId.value = series.taskId
+  showFocus.value = false
+}
 function alignTaskSelection() {
   if (compact.value) { selectedTaskId.value = ''; return }
   if (!taskViews.value.some((task) => task.id === selectedTaskId.value)) selectedTaskId.value = taskViews.value[0]?.id ?? ''
@@ -421,6 +489,144 @@ async function saveTaskEdit(value: TaskEditValue) {
     taskEditorOpen.value = false
     notify('任务内容已更新。')
   } catch (error) { reportStorageError(error) }
+}
+
+function cloneRecurrenceRuleDto(rule: RecurrenceRule): RecurrenceRule {
+  const cadence = rule.cadence.kind === 'weekly'
+    ? { ...rule.cadence, weekdays: [...rule.cadence.weekdays] }
+    : { ...rule.cadence }
+  return { cadence, basis: rule.basis, end: { ...rule.end } }
+}
+
+async function requestRecurrenceEdit(rule: RecurrenceRule) {
+  const portableRule = cloneRecurrenceRuleDto(rule)
+  if (!selectedRecurrence.value) {
+    const workspace = recurrenceWorkspace.value
+    const task = workspace?.tasks.find((item) => item.id === selectedTask.value?.id)
+    if (!workspace || !task) return
+    recurrenceExecuting.value = true
+    try {
+      await capabilityService.execute({
+        protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+        idempotencyKey: `recurrence:${crypto.randomUUID()}`,
+        source: 'human-ui',
+        expectedWorkspaceRevision: workspace.revision,
+        command: {
+          type: 'recurrence.create', taskId: task.id, expectedTaskRevision: task.revision,
+          cadence: portableRule.cadence, basis: portableRule.basis, anchorOn: selectedTask.value?.plannedOn ?? today.value,
+          end: portableRule.end, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        },
+      })
+      await refreshState(); taskEditorOpen.value = false; notify('已创建重复规则。')
+    } catch (error) { reportStorageError(error) } finally { recurrenceExecuting.value = false }
+    return
+  }
+  pendingRecurrenceRule = portableRule
+  clearRecurrencePreview()
+  recurrenceScopeOpen.value = true
+}
+
+function editableRecurrenceOccurrence() {
+  const workspace = recurrenceWorkspace.value
+  const series = selectedRecurrence.value
+  if (!workspace || !series) return null
+  const selected = selectedOccurrence.value
+  if (selected?.seriesId === series.id && selected.status === 'pending') return selected
+  return workspace.occurrences.find((item) => item.seriesId === series.id && item.status === 'pending') ?? null
+}
+
+function editSingleOccurrence() {
+  const occurrence = editableRecurrenceOccurrence()
+  recurrenceScopeOpen.value = false
+  clearRecurrencePreview()
+  pendingRecurrenceRule = null
+  if (!occurrence) { reportStorageError(new Error('没有可编辑的重复实例。')); return }
+  taskEditorOpen.value = false
+  openOccurrenceReschedule(occurrence.id)
+}
+
+async function previewRecurrenceScope(scope: RecurrenceRuleScope) {
+  const series = selectedRecurrence.value
+  const rule = pendingRecurrenceRule
+  const workspace = recurrenceWorkspace.value
+  if (!series || !rule || !workspace) return
+  clearRecurrencePreview()
+  const version = recurrencePreviewVersion
+  recurrencePreviewing.value = true
+  try {
+    const occurrence = editableRecurrenceOccurrence()
+    if (!occurrence) throw new Error('没有可编辑的重复实例。')
+    const envelope: RecurrenceUpdateEnvelope = {
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `recurrence:${crypto.randomUUID()}`, source: 'human-ui', expectedWorkspaceRevision: workspace.revision,
+      command: { type: 'recurrence.update', occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, scope, patch: { cadence: rule.cadence, basis: rule.basis, end: rule.end } },
+    }
+    const preview = await capabilityService.preview(envelope)
+    if (version !== recurrencePreviewVersion) return
+    recurrencePreview.value = preview
+    recurrencePreviewEnvelope = envelope
+  } catch (error) { reportStorageError(error) } finally { recurrencePreviewing.value = false }
+}
+
+async function executeRecurrenceScope(scope: RecurrenceRuleScope) {
+  const preview = recurrencePreview.value
+  const envelope = recurrencePreviewEnvelope
+  if (!preview?.accepted || !envelope || envelope.command.scope !== scope) return
+  recurrenceExecuting.value = true
+  try {
+    await capabilityService.execute({ ...envelope, explicitConfirmation: preview.confirmation === 'explicit' && preview.previewReceiptId ? { previewReceiptId: preview.previewReceiptId, confirmedAt: new Date().toISOString() } : undefined })
+    await refreshState(); recurrenceScopeOpen.value = false; clearRecurrencePreview(); pendingRecurrenceRule = null
+    notify('重复规则已更新。')
+  } catch (error) { reportStorageError(error) } finally { recurrenceExecuting.value = false }
+}
+
+function clearRecurrencePreview() { recurrencePreviewVersion += 1; recurrencePreview.value = null; recurrencePreviewEnvelope = null }
+
+async function executeOccurrence(id: string, type: 'recurrence.complete' | 'recurrence.skip') {
+  const workspace = recurrenceWorkspace.value
+  const occurrence = workspace?.occurrences.find((item) => item.id === id)
+  if (!workspace || !occurrence) return
+  try {
+    await capabilityService.execute({ protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `recurrence:${crypto.randomUUID()}`, source: 'human-ui', expectedWorkspaceRevision: workspace.revision, command: { type, occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision } })
+    await refreshState(); notify(type === 'recurrence.complete' ? '本次已完成。' : '本次已跳过。')
+  } catch (error) { reportStorageError(error) }
+}
+
+function openOccurrenceReschedule(id: string) {
+  const workspace = recurrenceWorkspace.value
+  const occurrence = workspace?.occurrences.find((item) => item.id === id)
+  const series = occurrence ? workspace?.recurrenceSeries.find((item) => item.id === occurrence.seriesId) : undefined
+  if (!occurrence || !series) return
+  const at = occurrence.override?.scheduledAt ?? occurrence.scheduledAt
+  const on = occurrence.override?.scheduledOn ?? occurrence.scheduledOn
+  occurrenceRescheduleId.value = id
+  occurrenceRescheduleTimed.value = at !== null
+  occurrenceRescheduleValue.value = at ? toZonedDateTimeInput(at, series.timezone) : on ?? today.value
+  occurrenceRescheduleOpen.value = true
+}
+
+async function rescheduleOccurrence(value: string) {
+  const workspace = recurrenceWorkspace.value
+  const occurrence = workspace?.occurrences.find((item) => item.id === occurrenceRescheduleId.value)
+  const series = occurrence ? workspace?.recurrenceSeries.find((item) => item.id === occurrence.seriesId) : undefined
+  if (!workspace || !occurrence || !series) return
+  try {
+    await capabilityService.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+      idempotencyKey: `recurrence:${crypto.randomUUID()}`,
+      source: 'human-ui',
+      expectedWorkspaceRevision: workspace.revision,
+      command: {
+        type: 'recurrence.update', occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, scope: 'occurrence',
+        patch: occurrenceRescheduleTimed.value ? { scheduledAt: zonedDateTimeToInstant(value.slice(0, 10), value.slice(11, 16), series.timezone).toISOString(), scheduledOn: null } : { scheduledAt: null, scheduledOn: value },
+      },
+    })
+    await refreshState(); occurrenceRescheduleOpen.value = false; notify('本次计划已更新。')
+  } catch (error) { reportStorageError(error) }
+}
+
+function toZonedDateTimeInput(value: string, timezone: string) {
+  const local = parseZonedDateTime(value, timezone)
+  return `${local.date}T${local.time}`
 }
 
 async function deleteTask(taskId: string) {
@@ -638,6 +844,7 @@ async function resetDemo() {
 function setAppearance(mode: 'light' | 'dark') { appearanceDark.value = mode === 'dark'; localStorage.setItem('meow-study-appearance', mode); applyTheme('study', appearanceDark.value) }
 
 function topicTitleFor(topicId: string | null) { return topicId ? topicMap.value.get(topicId)?.title ?? '未知主题' : '未归类' }
+function projectionReasonLabel(reason: TaskProjectionReason) { return ({ overdue: '已过期', planned: '已计划', due: '今日截止', repeating: '重复' } as const)[reason] }
 function taskStatus(task: StudyTask): TaskViewStatus { return task.status === 'planned' && !task.plannedOn ? 'backlog' : task.status }
 function toTaskView(task: StudyTask): TaskViewItem { return { id: task.id, title: task.title, notes: task.notes, topic: topicTitleFor(task.topicId), topicId: task.topicId, status: taskStatus(task), plannedOn: task.plannedOn, dueOn: task.dueOn, reminderAt: task.reminderAt, priority: task.priority, plannedLabel: task.plannedOn ? formatPlanDate(task.plannedOn) : '', dueLabel: task.dueOn ? formatPlanDate(task.dueOn) : '', reminderLabel: formatReminder(task.reminderAt), estimateMinutes: task.estimateMinutes, acceptanceCriteria: task.acceptanceCriteria, checklist: task.checklist.map((item) => ({ id: item.id, text: item.text, checked: item.checked })), blockedReason: task.blockedReason ?? '' } }
 function toEventView(event: TaskEvent): TaskEventViewItem {
@@ -673,8 +880,8 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
         <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" @back="showFocus = false" @toggle="toggleFocus" @finish="completionOpen = true" @update:scratchpad="updateScratchpad" />
         <div v-else-if="page === 'tasks' || page === 'today'" class="tasks-layout">
-          <div class="tasks-scroll"><TasksView :tasks="taskViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @capture="captureTask" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" /></div>
-          <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :mobile="compact" @close="selectedTaskId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" />
+          <div class="tasks-scroll"><TasksView :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @capture="captureTask" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
+          <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
         </div>
         <TopicsView v-else-if="page === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
         <ReviewView v-else-if="page === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
@@ -684,7 +891,9 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 
     <CompletionSheet :open="completionOpen" :task-title="activeTask?.title ?? ''" :scratchpad="activeSession?.scratchpad ?? ''" @close="completionOpen = false" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
-    <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" @close="taskEditorOpen = false" @save="saveTaskEdit" />
+    <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" :recurrence-rule="selectedRecurrenceRule" @close="taskEditorOpen = false" @save="saveTaskEdit" @recurrence-save="requestRecurrenceEdit" />
+    <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @edit-occurrence="editSingleOccurrence" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />
+    <OccurrenceRescheduleSheet :open="occurrenceRescheduleOpen" :title="selectedTask?.title ?? ''" :model-value="occurrenceRescheduleValue" :timed="occurrenceRescheduleTimed" @close="occurrenceRescheduleOpen = false" @submit="rescheduleOccurrence" />
     <SettingsSheet :open="settingsOpen" :dark="appearanceDark" :reminders-available="remindersAvailable" :reminders-enabled="remindersEnabled" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @close="settingsOpen = false" @export="exportData" @import="importData" @reset-demo="resetDemo" @set-appearance="setAppearance" @set-reminders="setReminders" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
 
     <div v-if="topicEditorOpen" class="editor-backdrop" @click.self="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" required placeholder="清单名称" /></label><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></div>

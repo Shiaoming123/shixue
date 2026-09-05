@@ -45,11 +45,21 @@
       "enabled": false,
       "provider": "none"
     },
+    "recurrenceSchedule": {
+      "timed": "scheduledAt",
+      "dateOnly": "scheduledOn",
+      "mutuallyExclusive": true,
+      "dateOnlyMidnightEncoding": false
+    },
     "exclusions": ["secrets", "sync state"]
   },
   "capabilities": {
     "protocolVersion": 1,
     "directStorageWrites": false,
+    "previewHandles": {
+      "persistence": "none",
+      "scope": "service-instance"
+    },
     "futureAgent": {
       "status": "planned",
       "access": "capability-service-only"
@@ -61,10 +71,10 @@
       "legacy-study-v1-v2-migration",
       "capability-protocol-v1",
       "live-write-capability-routing",
-      "themed-control-foundation"
+      "themed-control-foundation",
+      "recurrence-occurrence-v1"
     ],
     "planned": [
-      "recurrence",
       "offline-natural-language",
       "multi-reminder",
       "calendar",

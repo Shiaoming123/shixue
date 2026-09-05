@@ -92,6 +92,7 @@ export interface TaskEvent {
   id: string
   sequence: number
   taskId: string
+  occurrenceId?: string | null
   type: TaskEventType
   occurredAt: string
   fromStatus: StudyTaskStatus | null

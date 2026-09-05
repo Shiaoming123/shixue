@@ -21,8 +21,9 @@ UI 沿用 `study` 主题和既有 token，并把色板收敛为雾灰玻璃、�
 | 能力协议 | 已实现 | 协议版本保持 v1；命令预演、幂等、revision 校验和单次 CAS 保存由统一服务负责 |
 | 线上写入路径 | 已实现 | 当前 UI、键盘、通知兼容路径经能力服务写入；不允许绕过服务直接写持久化快照 |
 | 主题控件基础 | 已实现，本轮仅做编译验证 | 已有 overlay、popover、listbox、checkbox、switch、dialog、toast 与日期时间控件；本轮不把未运行的交互/视觉检查写成已验证 |
+| 重复发生项投影 | 已实现 | `projectTaskItems` 以 `task:<id>` / `occurrence:<id>` 生成稳定行；Today 合并计划、截止、逾期与重复来源，一次发生项只显示一次并保留全部原因；全天发生项保留 `scheduledOn`，不伪造成午夜时间戳 |
 
-`WorkspaceStateV3` 为后续能力预留集合不等于对应业务已经交付。重复规则、离线自然语言快速新增、多提醒、日历视图与 Agent 行为仍是计划项；`source: agent` 只是能力信封的调用来源标记，不代表已经存在自动规划或执行 Agent。
+`WorkspaceStateV3` 为后续能力预留集合不等于对应业务已经交付。重复规则与发生项已在当前 PR2 分支实现并通过 focused tests；离线自然语言快速新增、多提醒、日历视图与 Agent 行为仍是计划项。`source: agent` 只是能力信封的调用来源标记，不代表已经存在自动规划或执行 Agent。
 
 ## 2. 实际源码审计范围
 
@@ -68,7 +69,7 @@ TickTick 的公开产品形态以其[功能页](https://ticktick.com/features)�
 ### 不直接照搬的 Todofy 模块
 
 - `pinboard`：优先级已经进入任务模型、筛选与排序，不再增加一套相互竞争的置顶事实源。
-- 重复任务：Todofy 完成后推进同一任务日期；下一阶段改为 `RecurrenceSeries + TaskOccurrence`，完成/跳过只改变当前发生项，并继续保留学习证据归属。
+- 重复任务：Todofy 完成后推进同一任务日期；拾学以 `RecurrenceSeries + TaskOccurrence` 独立实现，完成/跳过只改变当前发生项。查询投影分别展示发生项计划与任务截止，不通过推进父任务日期伪造完成历史。
 - Pomodoro 与 Journal：拾学已有可暂停/恢复的 `StudySession`、scratchpad 和 completion records；重复引入同类模型会造成两套计时和笔记事实源。
 - 自然语言日期解析：下一阶段以完全离线、确定性的中英文解析器实现；识别结果先显示为可编辑 chip，默认不删除标题原文，避免误计划。
 - 指针拖拽：Todofy 为规避 WebView 原生 DnD 问题自行实现 Pointer Events。拾学的日历拖动同样采用 Pointer Events，但释放前只更新预览，释放后统一调用能力命令，并提供完整键盘替代。
