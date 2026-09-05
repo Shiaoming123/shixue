@@ -17,6 +17,7 @@
 - Request notification permission only when the user first enables a reminder or explicitly tests notifications.
 - Background delivery is promised only while the app or tray process is running.
 - Complete, snooze, and open actions call capability commands and remain idempotent.
+- Before enabling the new scheduler, define and verify one authoritative delivery state and one write path. PR1's Rust scheduler writes `study_reminder_deliveries` keyed by task, while this plan introduces workspace `reminderDeliveries` keyed by rule/occurrence/time. Specify how the legacy rows map to known absolute-rule deliveries, how unmappable rows are retained or retired, and when the old scheduler stops writing; an upgrade/restart must not silently replay already acknowledged reminders or run both ledgers as independent authorities. Workspace delivery changes must use the capability transaction boundary, never a native snapshot overwrite.
 
 ---
 
@@ -81,6 +82,7 @@ git commit -m "feat: add multiple reminder rules"
 **Interfaces:**
 - Rust emits `shixue://reminder-action` payload `{ deliveryId, action: 'complete' | 'snooze' | 'open' }`.
 - TypeScript exports `registerReminderActionBridge(service): Promise<() => void>`.
+- Before implementation, specify the claim/ack DTOs and their owner, including delivery identity, revision/conflict handling, send failure, abandoned claims, retry and acknowledgement persistence. Platform adapters consume this shared contract; any native bookkeeping must have an explicit reconciliation boundary with the authoritative ledger. Do not assume a process-local set or the illustrative `claim_due` test below proves persisted deduplication.
 
 - [ ] **Step 1: Write Rust due-selection and TS action-mapping tests**
 
@@ -103,6 +105,8 @@ Expected: FAIL because action registration and claim logic are absent.
 - [ ] **Step 3: Implement registered action types and event bridge**
 
 Register one action type with Complete, Snooze and Open buttons. If Windows does not expose action buttons for the current packaging path, clicking the notification opens an in-app reminder card with the same three actions; do not claim native actions until smoke-verified.
+
+Exercise two competing claim attempts and restarts before send, after send but before ack, and after persisted ack; include repeated action callbacks and legacy-ledger upgrade. Document the chosen retry/recovery outcome for each window. OS notification submission and database acknowledgement are not one atomic transaction, so an ambiguous send/ack crash may cause a duplicate or a missed delivery depending on policy; do not promise exactly-once notification delivery. Distinguish accepted submission, observed delivery and user action in recorded evidence.
 
 - [ ] **Step 4: Run Rust, module, and TS tests**
 

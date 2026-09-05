@@ -16,6 +16,7 @@
 - No NLP, date, or AI runtime dependency; parser output must be deterministic for a supplied clock/timezone.
 - Recognized text remains in the title unless the user preference explicitly removes confirmed tokens.
 - Unknown tags/lists and ambiguous dates remain visible text.
+- Consume PR2's merged `task.create` recurrence configuration and date-only/timed schedule DTOs. PR1's original create command has no recurrence field; a resolved recurrence chip is not supported until the PR2 atomic-create contract is present. Do not silently discard it or save the task before a separate `recurrence.create` call.
 - Chips and pickers use shared themed controls; no visible native date/time/select control.
 
 ---
@@ -117,6 +118,8 @@ const command = computed(() => ({
 ```
 
 Each chip opens the corresponding themed picker, has a remove button and exposes ambiguous state. Press Enter submits only when title and candidates are valid; Escape closes the active picker first.
+
+Map accepted recurrence candidates to the typed PR2 recurrence field and submit one command envelope. Add a focused composer/service check: an accepted daily recurrence creates one task, its series and initial occurrences; invalid recurrence creates nothing; replaying the same envelope creates no duplicates. Removing the recurrence chip produces an ordinary task. Keep date-only input date-only through this mapping.
 
 - [ ] **Step 4: Run UI contract and navigation tests**
 

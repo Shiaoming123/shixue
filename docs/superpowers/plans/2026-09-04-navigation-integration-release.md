@@ -122,11 +122,13 @@ test('completing a generated review task updates its completion record once', as
 })
 ```
 
-- [ ] **Step 2: Run and verify review tasks are not yet visible projections**
+- [ ] **Step 2: Verify the missing bidirectional review commands fail while migrated review tasks remain visible**
 
 - [ ] **Step 3: Implement stable links without duplicating the task model**
 
 Generated review tasks use `mode: 'learning'`, appear in Today/calendar and link to exactly one completion record. Closing learning mode preserves links and past records.
+
+PR1 migration already creates visible pending review tasks, and `completion.review` retires their existing pending links/tasks. Reuse those links rather than generating duplicates. Before adding later stages or occurrence-linked reviews, route both evidence-screen and task completion through the same command and match the exact stage/link/occurrence; reviewing one stage must not close another pending stage. Verify migrated-task reuse, repeated completion from either entry point, and no recursive evidence/review chain.
 
 - [ ] **Step 4: Run learning and migration suites**
 

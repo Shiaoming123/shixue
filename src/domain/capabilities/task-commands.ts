@@ -91,6 +91,9 @@ function updateTask(
 ): CommandApplication {
   const task = requireTask(state, command.taskId, command.expectedRevision)
   const before = structuredClone(task)
+  const reminders = command.patch.reminderAt === undefined ? {} : {
+    reminderRules: structuredClone(state.reminderRules.filter(({ taskId }) => taskId === task.id)),
+  }
   const fields = applyPatch(state, task, command.patch, context, command.reminderRuleId)
   task.revision += 1
   task.updatedAt = context.now
@@ -99,7 +102,7 @@ function updateTask(
     affected: [affected],
     changes: [{ entity: affected, operation: 'update', fields }],
     events: [],
-    compensation: { type: 'task.restore', tasks: [before], sessions: [], completionRecordIds: [] },
+    compensation: { type: 'task.restore', tasks: [before], sessions: [], completionRecordIds: [], ...reminders },
     data: json(task),
   }
 }

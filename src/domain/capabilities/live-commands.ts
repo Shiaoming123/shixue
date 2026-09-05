@@ -401,11 +401,29 @@ function reviewCompletion(
   state.completionRecords[index] = updated
   advanceTask(task, context.now)
   const entity: EntityRef = { type: 'completion_record', id: updated.id }
-  return {
+  const application: CommandApplication = {
     affected: [taskRef(task), entity],
     changes: [{ entity, operation: 'update', fields: ['review'] }],
     events: [], compensation: null, data: json(updated),
   }
+  for (const link of state.reviewTaskLinks) {
+    if (link.completionRecordId !== record.id || link.completedAt !== null) continue
+    link.completedAt = context.now
+    link.updatedAt = context.now
+    application.changes.push({ entity, operation: 'update', fields: ['reviewTaskLinks'] })
+    const reviewTask = state.tasks.find(({ id }) => id === link.reviewTaskId)
+    if (!reviewTask || reviewTask.deletedAt || reviewTask.status === 'completed' || reviewTask.status === 'cancelled') continue
+    const fromStatus = reviewTask.status
+    finishActiveTaskSession(state, reviewTask.id, context.now)
+    reviewTask.status = 'completed'
+    if (reviewTask.learning) reviewTask.learning.blockedReason = null
+    advanceTask(reviewTask, context.now)
+    const event = appendEvent(state, reviewTask, 'completed', fromStatus, 'completed', context, `Reviewed completion ${record.id}.`)
+    application.affected.push(taskRef(reviewTask))
+    application.changes.push({ entity: taskRef(reviewTask), operation: 'update', fields: ['status'] })
+    application.events.push(event)
+  }
+  return application
 }
 
 function createNextAction(

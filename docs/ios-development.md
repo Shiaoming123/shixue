@@ -101,6 +101,8 @@ PR2、PR3 和 PR5 的领域规则、解析器、投影和 capability command 保
 
 iOS 提醒与 Windows 提醒共享 `ReminderRule`、幂等 delivery id、snooze/complete capability command，但实现不同：
 
+共享 delivery id、状态所有权和 claim/ack 语义以 [PR4 提醒计划](./superpowers/plans/2026-09-04-multi-reminder-windows-scheduler.md) 确定并合入主线的契约为依赖；I0/I1 不等待它，I3 不另建一套竞争的业务投递账本。iOS 系统请求标识映射到同一 delivery id，但“系统接受调度”不等于“已经投递”，不得直接据此确认 delivered。沿用共享重试/恢复边界，并单独验证挂起、终止及动作重复回调；系统提交与本地 ack 无法原子完成，不承诺 exactly-once 投递。
+
 - Windows：应用/托盘调度器负责轮询和动作回传。
 - iOS：由系统本地通知调度负责后台投递，不能要求应用常驻。
 
