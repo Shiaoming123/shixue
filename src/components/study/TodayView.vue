@@ -4,12 +4,17 @@ import { AlertCircle, ArrowDown, ArrowRight, ArrowUp, Check, CheckCircle2, Chevr
 
 export interface TodayTaskItem {
   id: string
+  taskId?: string
+  occurrenceId?: string | null
   topic: string
   title: string
   estimateMinutes: number | null
   criteria: string[]
   status: 'planned' | 'in_progress' | 'blocked' | 'completed'
   plannedLabel: string
+  occurrenceScheduleLabel?: string
+  deadlineLabel?: string
+  reasons?: Array<'overdue' | 'planned' | 'due' | 'repeating'>
   isActive: boolean
   activeLabel?: string
 }
@@ -33,6 +38,9 @@ const emit = defineEmits<{
   moveToToday: [id: string]
   defer: [id: string]
   cancel: [id: string]
+  occurrenceComplete: [id: string]
+  occurrenceSkip: [id: string]
+  occurrenceReschedule: [id: string]
   reorder: [taskIds: string[]]
 }>()
 
@@ -80,6 +88,15 @@ function minutesLabel(total: number) {
   const minutes = total % 60
   return `${hours} 小时${minutes ? ` ${minutes} 分钟` : ''}`
 }
+
+function primaryAction(task: TodayTaskItem) {
+  if (task.occurrenceId) emit('occurrenceComplete', task.occurrenceId)
+  else emit('start', task.taskId ?? task.id)
+}
+
+function reasonLabel(reason: NonNullable<TodayTaskItem['reasons']>[number]) {
+  return ({ overdue: '逾期', planned: '计划', due: '截止', repeating: '重复' } as const)[reason]
+}
 </script>
 
 <template>
@@ -95,11 +112,18 @@ function minutesLabel(total: number) {
     <section v-if="overdueTasks.length" class="overdue-section">
       <header><span><AlertCircle :size="17" />逾期 {{ overdueTasks.length }} 项</span><small>先决定今天做不做</small></header>
       <article v-for="task in overdueTasks" :key="task.id" class="overdue-row">
-        <button class="overdue-main" @click="emit('open', task.id)"><strong>{{ task.title }}</strong><small>{{ task.topic }} · 原计划 {{ task.plannedLabel }}</small></button>
+        <button class="overdue-main" @click="emit('open', task.id)"><strong>{{ task.title }}</strong><span v-if="task.reasons?.length" class="reason-tags"><small v-for="reason in task.reasons" :key="reason">{{ reasonLabel(reason) }}</small></span><small>{{ task.topic }} · 原计划 {{ task.occurrenceScheduleLabel || task.plannedLabel }}</small><small v-if="task.deadlineLabel">截止 {{ task.deadlineLabel }}</small></button>
         <div class="overdue-actions">
-          <button class="today" @click="emit('moveToToday', task.id)">放到今天</button>
-          <button @click="emit('defer', task.id)">延期</button>
-          <button class="danger" @click="emit('cancel', task.id)">取消</button>
+          <template v-if="task.occurrenceId">
+            <button class="today" @click="emit('occurrenceComplete', task.occurrenceId)">完成本次</button>
+            <button @click="emit('occurrenceReschedule', task.occurrenceId)">改期</button>
+            <button class="danger" @click="emit('occurrenceSkip', task.occurrenceId)">跳过</button>
+          </template>
+          <template v-else>
+            <button class="today" @click="emit('moveToToday', task.taskId ?? task.id)">放到今天</button>
+            <button @click="emit('defer', task.taskId ?? task.id)">延期</button>
+            <button class="danger" @click="emit('cancel', task.taskId ?? task.id)">取消</button>
+          </template>
         </div>
       </article>
     </section>
@@ -134,6 +158,9 @@ function minutesLabel(total: number) {
         <button class="lead-copy" @click="emit('open', lead.id)">
           <span>{{ lead.topic }}<template v-if="lead.estimateMinutes"> · {{ lead.estimateMinutes }} 分钟</template></span>
           <h2>{{ lead.title }}</h2>
+          <span v-if="lead.reasons?.length" class="reason-tags"><small v-for="reason in lead.reasons" :key="reason">{{ reasonLabel(reason) }}</small></span>
+          <small v-if="lead.occurrenceScheduleLabel">本次计划 {{ lead.occurrenceScheduleLabel }}</small>
+          <small v-if="lead.deadlineLabel">任务截止 {{ lead.deadlineLabel }}</small>
           <small v-if="lead.status === 'blocked'">已受阻，打开任务补充原因或重新安排</small>
           <small v-else-if="lead.status === 'in_progress'">{{ lead.activeLabel || '学习进行中' }}</small>
         </button>
@@ -144,10 +171,12 @@ function minutesLabel(total: number) {
       </article>
 
       <div class="primary-actions">
-        <button class="start-button" :disabled="lead.status === 'blocked'" @click="emit('start', lead.id)">
-          <span>{{ lead.status === 'in_progress' ? (lead.activeLabel || '继续学习') : `开始${lead.estimateMinutes ? ` ${lead.estimateMinutes} 分钟` : '学习'}` }}</span>
+        <button class="start-button" :disabled="lead.status === 'blocked'" @click="primaryAction(lead)">
+          <span>{{ lead.occurrenceId ? '完成本次' : lead.status === 'in_progress' ? (lead.activeLabel || '继续学习') : `开始${lead.estimateMinutes ? ` ${lead.estimateMinutes} 分钟` : '学习'}` }}</span>
           <ArrowRight :size="20" />
         </button>
+        <button v-if="lead.occurrenceId" class="text-button" @click="emit('occurrenceSkip', lead.occurrenceId)">跳过本次</button>
+        <button v-if="lead.occurrenceId" class="text-button" @click="emit('occurrenceReschedule', lead.occurrenceId)">改期</button>
         <button class="text-button" @click="emit('open', lead.id)">查看任务</button>
       </div>
 
@@ -155,7 +184,7 @@ function minutesLabel(total: number) {
         <header><h2>接下来</h2><span>{{ remaining.length }} 项 · {{ minutesLabel(remainingMinutes) }}</span></header>
         <button v-for="(task, index) in remaining" :key="task.id" @click="emit('open', task.id)">
           <span class="order">{{ index + 2 }}</span>
-          <span class="task-copy"><small>{{ task.topic }}</small><strong>{{ task.title }}</strong></span>
+          <span class="task-copy"><small>{{ task.topic }}</small><strong>{{ task.title }}</strong><span v-if="task.reasons?.length" class="reason-tags"><small v-for="reason in task.reasons" :key="reason">{{ reasonLabel(reason) }}</small></span><small v-if="task.occurrenceScheduleLabel">本次 {{ task.occurrenceScheduleLabel }}<template v-if="task.deadlineLabel"> · 截止 {{ task.deadlineLabel }}</template></small></span>
           <span class="duration">{{ task.estimateMinutes ? `${task.estimateMinutes} 分钟` : '未估时' }}</span>
           <ChevronRight :size="18" />
         </button>
@@ -192,6 +221,7 @@ h1 { max-width: 560px; margin: 0; font-size: clamp(31px, 3.2vw, 42px); line-heig
 .order-toggle { min-height: 40px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--control-fill); color: var(--muted); font-size: 12px; white-space: nowrap; }.order-toggle:hover, .order-toggle.active { border-color: color-mix(in srgb, var(--accent) 38%, var(--border)); background: var(--press-fill); color: var(--accent); }
 .inbox-link { min-height: 40px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border: 0; border-radius: var(--radius-lg); background: var(--control-fill); color: var(--accent); font-size: 12px; white-space: nowrap; }
 .inbox-link span { min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: var(--accent); color: var(--accent-text); font-size: 10px; }
+.reason-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }.reason-tags small { padding: 2px 6px; border-radius: var(--radius-sm); background: var(--control-fill); color: var(--muted); font-size: 10px; font-weight: 600; }
 .overdue-section { margin: -6px 0 26px; border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--border)); border-radius: 14px; background: color-mix(in srgb, var(--warning) 5%, transparent); }.overdue-section > header { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 17px; border-bottom: 1px solid color-mix(in srgb, var(--warning) 24%, var(--border)); }.overdue-section > header span { display: inline-flex; align-items: center; gap: 8px; color: var(--warning); font-size: 13px; font-weight: 650; }.overdue-section > header small { color: var(--muted); font-size: 10px; }.overdue-row { min-height: 70px; display: flex; align-items: center; gap: 10px; padding: 9px 11px 9px 17px; border-bottom: 1px solid color-mix(in srgb, var(--warning) 18%, var(--border)); }.overdue-row:last-child { border-bottom: 0; }.overdue-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 5px; border: 0; background: transparent; color: var(--text); text-align: left; }.overdue-main strong { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }.overdue-main small { color: var(--muted); font-size: 10px; }.overdue-actions { display: flex; gap: 5px; }.overdue-actions button { min-height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--muted); font-size: 10px; white-space: nowrap; }.overdue-actions .today { border-color: transparent; background: var(--accent); color: var(--accent-text); }.overdue-actions .danger { color: var(--danger); }
 .order-panel { margin-bottom: 24px; border-top: 1px solid var(--border); }.order-panel > header { display: flex; align-items: center; justify-content: space-between; padding: 17px 3px 10px; }.order-panel h2 { margin: 0; font-size: 15px; }.order-panel header span { color: var(--muted); font-size: 10px; }.order-panel ol { margin: 0; padding: 0; list-style: none; }.order-panel li { min-height: 70px; display: grid; grid-template-columns: 20px 30px minmax(0, 1fr) auto; align-items: center; gap: 9px; border-bottom: 1px solid var(--border); transition: opacity var(--motion-fast) var(--ease); }.order-panel li[draggable='true'] { cursor: grab; }.order-panel li.dragging { opacity: .45; }.order-panel li.fixed { background: color-mix(in srgb, var(--accent) 4%, transparent); }.drag-handle { color: var(--muted); }.order-open { min-width: 0; display: flex; flex-direction: column; gap: 4px; border: 0; background: transparent; color: var(--text); text-align: left; }.order-open small { color: var(--accent); font-size: 10px; }.order-open strong { overflow: hidden; font-size: 13px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }.move-buttons { display: flex; gap: 4px; }.move-buttons button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 9px; background: transparent; color: var(--text); }.move-buttons button:disabled { opacity: .25; }.active-tag { padding: 5px 8px; border-radius: 999px; background: var(--surface-alt); color: var(--accent); font-size: 10px; }
 .lead-task { overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--hairline)); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-md); }

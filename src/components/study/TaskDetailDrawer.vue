@@ -15,6 +15,9 @@ const props = defineProps<{
   task?: TaskViewItem
   events: TaskEventViewItem[]
   dueLabel?: string
+  occurrenceId?: string | null
+  occurrenceScheduleLabel?: string
+  deadlineLabel?: string
   mobile?: boolean
 }>()
 
@@ -29,6 +32,9 @@ const emit = defineEmits<{
   edit: [id: string]
   delete: [id: string]
   toggleComplete: [id: string]
+  occurrenceComplete: [id: string]
+  occurrenceSkip: [id: string]
+  occurrenceReschedule: [id: string]
 }>()
 
 const checklistDraft = ref('')
@@ -65,7 +71,7 @@ function addChecklistItem() {
 
     <div class="drawer-scroll">
       <section class="task-heading">
-        <button class="heading-check" :aria-label="task.status === 'completed' ? '重新打开任务' : '完成任务'" @click="emit('toggleComplete', task.id)"><span :class="{ checked: task.status === 'completed' }"><Check :size="15" /></span></button>
+        <button class="heading-check" :aria-label="occurrenceId ? '完成本次' : task.status === 'completed' ? '重新打开任务' : '完成任务'" @click="occurrenceId ? emit('occurrenceComplete', occurrenceId) : emit('toggleComplete', task.id)"><span :class="{ checked: task.status === 'completed' }"><Check :size="15" /></span></button>
         <div><h1>{{ task.title }}</h1><p class="topic"><Inbox :size="14" />{{ task.topic }}</p></div>
         <p v-if="task.notes" class="notes">{{ task.notes }}</p>
       </section>
@@ -91,8 +97,9 @@ function addChecklistItem() {
       </section>
 
       <dl class="facts">
+        <div v-if="occurrenceId"><dt><CalendarDays :size="18" />本次计划</dt><dd>{{ occurrenceScheduleLabel || '待安排' }}</dd></div>
         <div><dt><CalendarDays :size="18" />计划日期</dt><dd>{{ task.plannedLabel || '待安排' }}</dd></div>
-        <div><dt><CalendarDays :size="18" />截止日期</dt><dd>{{ dueLabel || '未设置' }}</dd></div>
+        <div><dt><CalendarDays :size="18" />截止日期</dt><dd>{{ deadlineLabel || dueLabel || '未设置' }}</dd></div>
         <div><dt><Bell :size="18" />提醒</dt><dd>{{ task.reminderLabel || '未设置' }}</dd></div>
         <div><dt><Flag :size="18" />优先级</dt><dd>{{ ({ none: '无', low: '低', medium: '中', high: '高' } as const)[task.priority] }}</dd></div>
         <div><dt><Clock3 :size="18" />预计时长</dt><dd>{{ task.estimateMinutes ? `${task.estimateMinutes} 分钟` : '未设置' }}</dd></div>
@@ -111,15 +118,19 @@ function addChecklistItem() {
     </div>
 
     <footer class="drawer-actions">
-      <div v-if="task.status === 'planned' || task.status === 'in_progress' || task.status === 'blocked' || task.status === 'backlog'" class="secondary-actions">
+      <div v-if="occurrenceId" class="secondary-actions">
+        <button @click="emit('occurrenceReschedule', occurrenceId)">本次改期</button>
+        <button class="danger" @click="emit('occurrenceSkip', occurrenceId)">跳过本次</button>
+      </div>
+      <div v-if="!occurrenceId && (task.status === 'planned' || task.status === 'in_progress' || task.status === 'blocked' || task.status === 'backlog')" class="secondary-actions">
         <button @click="emit('defer', task.id)">延期</button>
         <button v-if="task.status !== 'blocked'" @click="emit('block', task.id)">标记受阻</button>
         <button class="danger" @click="emit('cancel', task.id)">取消</button>
       </div>
-      <button class="primary" @click="emit('primary', task.id)">
+      <button class="primary" @click="occurrenceId ? emit('occurrenceComplete', occurrenceId) : emit('primary', task.id)">
         <RotateCcw v-if="task.status === 'completed' || task.status === 'cancelled'" :size="18" />
         <MoreHorizontal v-else-if="task.status === 'blocked'" :size="18" />
-        <span>{{ primaryLabel }}</span><ArrowRight :size="20" />
+        <span>{{ occurrenceId ? '完成本次' : primaryLabel }}</span><ArrowRight :size="20" />
       </button>
     </footer>
   </aside>

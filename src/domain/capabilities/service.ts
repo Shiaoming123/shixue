@@ -24,6 +24,7 @@ import {
   type DomainError,
   type EntityRef,
   type LiveCompatibilityCommand,
+  type PreviewConfirmation,
   type RecurrenceCapabilityCommand,
   type QueryResult,
   type TaskCapabilityCommand,

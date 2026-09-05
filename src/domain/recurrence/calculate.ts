@@ -1,4 +1,4 @@
-import type { RecurrenceCadence, RecurrenceSeries } from '../workspace/types.ts'
+import type { RecurrenceSeries } from '../workspace/types.ts'
 
 export function nextFixedOccurrence(series: RecurrenceSeries, after: string): string | null {
   return nextOccurrence(series, after, false)

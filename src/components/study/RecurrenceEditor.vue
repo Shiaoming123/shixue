@@ -67,11 +67,12 @@ function customCadence(): RecurrenceCadence {
   return { kind: 'yearly', interval: safeInterval, month: 1, dayOfMonth: 1 }
 }
 function presetFor(rule: RecurrenceRule): Preset {
-  if (rule.cadence.kind === 'daily' && rule.cadence.interval === 1) return 'daily'
-  if (rule.cadence.kind === 'weekly' && rule.cadence.interval === 1 && [1, 2, 3, 4, 5].every((day) => rule.cadence.weekdays.includes(day)) && rule.cadence.weekdays.length === 5) return 'weekdays'
-  if (rule.cadence.kind === 'weekly' && rule.cadence.interval === 1) return 'weekly'
-  if (rule.cadence.kind === 'monthly' && rule.cadence.interval === 1) return 'monthly'
-  if (rule.cadence.kind === 'yearly' && rule.cadence.interval === 1) return 'yearly'
+  const cadence = rule.cadence
+  if (cadence.kind === 'daily' && cadence.interval === 1) return 'daily'
+  if (cadence.kind === 'weekly' && cadence.interval === 1 && [1, 2, 3, 4, 5].every((day) => cadence.weekdays.includes(day)) && cadence.weekdays.length === 5) return 'weekdays'
+  if (cadence.kind === 'weekly' && cadence.interval === 1) return 'weekly'
+  if (cadence.kind === 'monthly' && cadence.interval === 1) return 'monthly'
+  if (cadence.kind === 'yearly' && cadence.interval === 1) return 'yearly'
   return 'custom'
 }
 function toggleWeekday(day: number) { weekdays.value = weekdays.value.includes(day) ? weekdays.value.filter((item) => item !== day) : [...weekdays.value, day].sort() }

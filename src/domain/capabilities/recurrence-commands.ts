@@ -179,7 +179,7 @@ function completeOccurrence(
 function skipOccurrence(
   state: WorkspaceStateV3,
   command: Extract<RecurrenceCapabilityCommand, { type: 'recurrence.skip' }>,
-  context: CapabilityCommandContext,
+  _context: CapabilityCommandContext,
 ): CommandApplication {
   const occurrence = requireOccurrence(state, command.occurrenceId, command.expectedOccurrenceRevision)
   if (occurrence.status !== 'pending') throw validation(`Occurrence cannot be skipped from ${occurrence.status}.`, { occurrenceId: occurrence.id })
