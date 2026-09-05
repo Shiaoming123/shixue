@@ -1,7 +1,10 @@
 import { nextAfterCompletion } from '../recurrence/calculate.ts'
+import { materializeOccurrenceWindow } from '../recurrence/materialize.ts'
+import { assertIanaTimezone, parseZonedDateTime, zonedDateTimeToInstant } from '../recurrence/timezone.ts'
 import type {
   RecurrenceSeries,
   Task,
+  TaskEvent,
   TaskOccurrence,
   WorkspaceStateV3,
 } from '../workspace/types.ts'
@@ -33,7 +36,7 @@ function createRecurrence(
 ): CommandApplication {
   const anchor = recurrenceSchedule(command.anchorAt ?? null, command.anchorOn ?? null, 'Recurrence anchor')
   assertCadence(command.cadence)
-  if (!command.timezone.trim()) throw validation('Recurrence timezone is required.')
+  assertTimezone(command.timezone)
   const task = requireTask(state, command.taskId, command.expectedTaskRevision)
   if (task.recurrenceSeriesId !== null) {
     throw validation(`Task already has recurrence: ${task.id}.`, { taskId: task.id, seriesId: task.recurrenceSeriesId })
@@ -80,20 +83,23 @@ function createRecurrence(
   task.updatedAt = context.now
   state.recurrenceSeries.push(series)
   state.occurrences.push(occurrence)
+  const materialized = fillSeriesWindow(state, series, context.now)
+  const occurrences = [occurrence, ...materialized]
 
   return recurrenceApplication({
     tasks: [task],
     series: [series],
-    occurrences: [occurrence],
+    occurrences,
     fields: ['recurrenceSeriesId', 'recurrenceSeries', 'occurrence'],
     compensation: {
       tasks: [beforeTask],
       recurrenceSeries: [],
       occurrenceSnapshots: [],
       createdSeriesIds: [series.id],
-      createdOccurrenceIds: [occurrence.id],
+      createdOccurrenceIds: occurrences.map(({ id }) => id),
     },
-    data: { series, occurrence },
+    data: { series, occurrence, occurrences },
+    events: [],
   })
 }
 
@@ -109,6 +115,7 @@ function updateRecurrence(
   const before = recurrenceSnapshot(task, state, series.id)
   if (command.scope === 'occurrence') {
     applyOccurrencePatch(occurrence, command.patch)
+    const event = appendOccurrenceEvent(state, task, occurrence, 'rescheduled', context, 'Occurrence updated.')
     return recurrenceApplication({
       tasks: [],
       series: [],
@@ -116,6 +123,7 @@ function updateRecurrence(
       fields: ['override'],
       compensation: { ...before, createdSeriesIds: [], createdOccurrenceIds: [] },
       data: occurrence,
+      events: [event],
     })
   }
   if (command.scope === 'series') {
@@ -123,16 +131,24 @@ function updateRecurrence(
     applySeriesPatch(series, command.patch)
     series.revision += 1
     const pending = recomputePendingOccurrences(state, series, priorBasis)
+    const materialized = fillSeriesWindow(state, series, context.now)
+    const changed = [...pending, ...materialized]
+    const event = appendOccurrenceEvent(state, task, occurrence, 'rescheduled', context, 'Recurrence series updated.')
     return recurrenceApplication({
       tasks: [],
       series: [series],
-      occurrences: pending,
+      occurrences: changed,
       fields: ['recurrenceSeries', 'occurrences'],
       compensation: { ...before, createdSeriesIds: [], createdOccurrenceIds: [] },
-      data: { series, occurrences: pending },
+      data: { series, occurrences: changed },
+      events: [event],
     })
   }
   const successor = splitFutureSeries(state, task, series, occurrence, command.patch, context)
+  const materialized = fillSeriesWindow(state, successor.series, context.now)
+  successor.changedOccurrences.push(...materialized)
+  successor.createdOccurrences.push(...materialized)
+  const event = appendOccurrenceEvent(state, task, occurrence, 'rescheduled', context, 'Future occurrences updated.')
   return recurrenceApplication({
     tasks: [task],
     series: [series, successor.series],
@@ -144,6 +160,7 @@ function updateRecurrence(
       createdOccurrenceIds: successor.createdOccurrences.map(({ id }) => id),
     },
     data: { closedSeries: series, successorSeries: successor.series, occurrences: successor.createdOccurrences },
+    events: [event],
   })
 }
 
@@ -161,28 +178,32 @@ function completeOccurrence(
   occurrence.completedAt = context.now
   occurrence.revision += 1
 
-  const created = series.basis === 'after_completion'
+  const next = series.basis === 'after_completion'
     ? createAfterCompletionSuccessor(state, series, occurrence, context.now)
     : null
-  const changedOccurrences = created ? [occurrence, created] : [occurrence]
+  const materialized = series.basis === 'fixed_schedule' ? fillSeriesWindow(state, series, context.now) : []
+  const created = [...(next ? [next] : []), ...materialized]
+  const changedOccurrences = [occurrence, ...created]
+  const event = appendOccurrenceEvent(state, task, occurrence, 'completed', context, 'Occurrence completed.')
   return recurrenceApplication({
     tasks: [],
-    series: created ? [series] : [],
+    series: created.length ? [series] : [],
     occurrences: changedOccurrences,
-    fields: created ? ['status', 'completedAt', 'occurrence'] : ['status', 'completedAt'],
+    fields: created.length ? ['status', 'completedAt', 'occurrence'] : ['status', 'completedAt'],
     compensation: {
       ...before,
       createdSeriesIds: [],
-      createdOccurrenceIds: created ? [created.id] : [],
+      createdOccurrenceIds: created.map(({ id }) => id),
     },
-    data: created ? { occurrence, nextOccurrence: created } : occurrence,
+    data: created.length ? { occurrence, nextOccurrence: created[0], occurrences: created } : occurrence,
+    events: [event],
   })
 }
 
 function skipOccurrence(
   state: WorkspaceStateV3,
   command: Extract<RecurrenceCapabilityCommand, { type: 'recurrence.skip' }>,
-  _context: CapabilityCommandContext,
+  context: CapabilityCommandContext,
 ): CommandApplication {
   const occurrence = requireOccurrence(state, command.occurrenceId, command.expectedOccurrenceRevision)
   if (occurrence.status !== 'pending') throw validation(`Occurrence cannot be skipped from ${occurrence.status}.`, { occurrenceId: occurrence.id })
@@ -192,13 +213,16 @@ function skipOccurrence(
   occurrence.status = 'skipped'
   occurrence.completedAt = null
   occurrence.revision += 1
+  const materialized = series.basis === 'fixed_schedule' ? fillSeriesWindow(state, series, context.now) : []
+  const event = appendOccurrenceEvent(state, task, occurrence, 'cancelled', context, 'Occurrence skipped.')
   return recurrenceApplication({
     tasks: [],
-    series: [],
-    occurrences: [occurrence],
+    series: materialized.length ? [series] : [],
+    occurrences: [occurrence, ...materialized],
     fields: ['status'],
-    compensation: { ...before, createdSeriesIds: [], createdOccurrenceIds: [] },
+    compensation: { ...before, createdSeriesIds: [], createdOccurrenceIds: materialized.map(({ id }) => id) },
     data: occurrence,
+    events: [event],
   })
 }
 
@@ -350,7 +374,7 @@ function applySeriesPatch(series: RecurrenceSeries, patch: RecurrenceUpdatePatch
   }
   if (patch.end !== undefined) series.end = structuredClone(patch.end)
   if (patch.timezone !== undefined) {
-    if (!patch.timezone.trim()) throw validation('Recurrence timezone is required.')
+    assertTimezone(patch.timezone)
     series.timezone = patch.timezone
   }
 }
@@ -386,6 +410,41 @@ function recurrenceSnapshot(task: Task, state: WorkspaceStateV3, activeSeriesId:
   }
 }
 
+function fillSeriesWindow(state: WorkspaceStateV3, series: RecurrenceSeries, now: string): TaskOccurrence[] {
+  const created = materializeOccurrenceWindow(state, series.id, now).created
+  state.occurrences.push(...created)
+  const last = created[created.length - 1]
+  if (last) {
+    series.createdThrough = last.scheduledOn ?? last.scheduledAt
+    series.createdCount = Math.max(series.createdCount, last.ordinal)
+  }
+  return created
+}
+
+function appendOccurrenceEvent(
+  state: WorkspaceStateV3,
+  task: Task,
+  occurrence: TaskOccurrence,
+  type: TaskEvent['type'],
+  context: CapabilityCommandContext,
+  reason: string,
+): TaskEvent {
+  const event: TaskEvent = {
+    id: context.id('event'),
+    sequence: state.taskEvents.length + 1,
+    taskId: task.id,
+    occurrenceId: occurrence.id,
+    type,
+    occurredAt: context.now,
+    fromStatus: task.status,
+    toStatus: task.status,
+    reason,
+    completionRecordId: null,
+  }
+  state.taskEvents.push(event)
+  return event
+}
+
 function recurrenceApplication(input: {
   tasks: Task[]
   series: RecurrenceSeries[]
@@ -399,6 +458,7 @@ function recurrenceApplication(input: {
     createdOccurrenceIds: string[]
   }
   data: unknown
+  events: TaskEvent[]
 }): CommandApplication {
   const affected = [
     ...input.tasks.map((task) => ({ type: 'task' as const, id: task.id, revision: task.revision })),
@@ -408,7 +468,7 @@ function recurrenceApplication(input: {
   return {
     affected,
     changes: affected.map((entity) => ({ entity, operation: 'update', fields: input.fields })),
-    events: [],
+    events: input.events,
     compensation: { type: 'recurrence.restore', ...input.compensation },
     data: structuredClone(input.data) as CommandApplication['data'],
   }
@@ -452,6 +512,11 @@ function assertCadence(cadence: RecurrenceSeries['cadence']): void {
   }
 }
 
+function assertTimezone(timezone: string): void {
+  if (!timezone.trim()) throw validation('Recurrence timezone is required.')
+  try { assertIanaTimezone(timezone) } catch (error) { throw validation(error instanceof Error ? error.message : String(error)) }
+}
+
 function assertIso(value: string, label: string): void {
   if (!Number.isFinite(Date.parse(value))) throw validation(`${label} must be an ISO datetime.`)
 }
@@ -465,14 +530,7 @@ function occurrenceIdFor(seriesId: string, ordinal: number): string {
 }
 
 function localDate(iso: string, timezone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(iso))
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
-  return `${get('year')}-${get('month')}-${get('day')}`
+  return parseZonedDateTime(iso, timezone).date
 }
 
 function addCalendarDays(date: string, days: number): string {
@@ -555,31 +613,7 @@ function patchSchedule(patch: RecurrenceUpdatePatch, occurrence: TaskOccurrence)
 }
 
 function localDateTime(iso: string, timezone: string): { date: string; time: string } {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date(iso))
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
-  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` }
-}
-
-function zonedDateTimeToInstant(date: string, time: string, timezone: string): Date {
-  const [year, month, day] = date.split('-').map(Number)
-  const [hour, minute] = time.split(':').map(Number)
-  let utc = new Date(Date.UTC(year, month - 1, day, hour, minute))
-  for (let i = 0; i < 8; i += 1) {
-    const parts = localDateTime(utc.toISOString(), timezone)
-    if (parts.date === date && parts.time === time) return utc
-    const localMinutes = toMinuteNumber(parts.date, parts.time)
-    const targetMinutes = toMinuteNumber(date, time)
-    utc = new Date(utc.getTime() + (targetMinutes - localMinutes) * 60_000)
-  }
-  throw validation(`Unable to resolve ${date}T${time} in ${timezone}`)
+  return parseZonedDateTime(iso, timezone)
 }
 
 function addCalendarMonths(date: string, months: number, dayOfMonth: number): string {
@@ -603,12 +637,6 @@ function weekdayOf(date: string): number {
 
 function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate()
-}
-
-function toMinuteNumber(date: string, time: string): number {
-  const [year, month, day] = date.split('-').map(Number)
-  const [hour, minute] = time.split(':').map(Number)
-  return (((year * 12 + month) * 31 + day) * 24 * 60) + hour * 60 + minute
 }
 
 function formatDate(year: number, month: number, day: number): string {

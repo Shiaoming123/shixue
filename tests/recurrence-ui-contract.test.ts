@@ -14,6 +14,8 @@ test('recurrence editor keeps cadence and basis choices in themed controls', () 
   assert.match(editor, /<Listbox\b/)
   assert.doesNotMatch(editor, /<select\b/i)
   assert.doesNotMatch(editor, /<input\b/)
+  assert.match(editor, /dayOfMonth\.value = rule\.cadence\.dayOfMonth/)
+  assert.match(editor, /month\.value = rule\.cadence\.month/)
 })
 
 test('scope dialog presents all edit ranges and requires a preview before execute', () => {
@@ -33,8 +35,18 @@ test('occurrence row emits occurrence intents without task date fields', () => {
 test('reachable task UI uses capability preview and execute without writing snapshots', () => {
   const app = appSource()
   assert.match(app, /<RecurrenceScopeDialog/)
-  assert.match(app, /service\.preview\(envelope\)/)
-  assert.match(app, /service\.execute\(/)
+  assert.match(app, /capabilityService\.preview\(envelope\)/)
+  assert.match(app, /capabilityService\.execute\(/)
   assert.match(app, /clearRecurrencePreview\(\)/)
   assert.doesNotMatch(app, /getWorkspaceStore\(\)\.save\(/)
+})
+
+test('reachable UI creates a first series, follows the active split series, and executes occurrence reschedule', () => {
+  const app = appSource()
+  assert.match(app, /task\.recurrenceSeriesId/)
+  assert.match(app, /type: 'recurrence\.create'/)
+  assert.match(app, /<OccurrenceRescheduleSheet/)
+  assert.match(app, /scope: 'occurrence'/)
+  assert.match(app, /scheduledAt|scheduledOn/)
+  assert.doesNotMatch(app, /@occurrence-reschedule="notify\(/)
 })

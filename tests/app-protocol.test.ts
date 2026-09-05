@@ -59,6 +59,7 @@ function validProtocol() {
     capabilities: {
       protocolVersion: 1,
       directStorageWrites: false,
+      previewHandles: { persistence: 'none', scope: 'service-instance' },
       futureAgent: { status: 'planned', access: 'capability-service-only' },
     },
     implementation: {

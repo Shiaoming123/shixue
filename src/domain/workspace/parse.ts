@@ -6,7 +6,6 @@ import type {
   ListGroup,
   ListSection,
   OccurrenceOverride,
-  PreviewReceipt,
   RecurrenceCadence,
   RecurrenceSeries,
   ReminderDelivery,
@@ -23,6 +22,7 @@ import type {
   WorkspaceStateV3,
 } from './types.ts'
 import { WORKSPACE_STATE_VERSION } from './types.ts'
+import { assertIanaTimezone } from '../recurrence/timezone.ts'
 
 const MAX_ITEMS = 100_000
 const MAX_TEXT_LENGTH = 100_000
@@ -36,6 +36,9 @@ export function parseWorkspaceState(value: unknown): WorkspaceStateV3 {
   const state = requireRecord(value, 'Workspace state')
   if (state.version !== WORKSPACE_STATE_VERSION) {
     throw new Error('Workspace state must use version 3.')
+  }
+  if (state.previewReceipts !== undefined) {
+    parseArray(state.previewReceipts, 'Workspace state legacy previewReceipts', parseLegacyPreviewReceipt)
   }
   const parsed: WorkspaceStateV3 = {
     version: WORKSPACE_STATE_VERSION,
@@ -54,9 +57,6 @@ export function parseWorkspaceState(value: unknown): WorkspaceStateV3 {
     completionRecords: parseArray(state.completionRecords, 'Workspace state completionRecords', parseCompletionRecord),
     reviewTaskLinks: parseArray(state.reviewTaskLinks, 'Workspace state reviewTaskLinks', parseReviewTaskLink),
     commandReceipts: parseArray(state.commandReceipts, 'Workspace state commandReceipts', parseCommandReceipt),
-    previewReceipts: state.previewReceipts === undefined
-      ? []
-      : parseArray(state.previewReceipts, 'Workspace state previewReceipts', parsePreviewReceipt),
     updatedAt: requireIsoDateTime(state.updatedAt, 'Workspace state updatedAt'),
   }
   assertCollectionSizes(parsed)
@@ -196,6 +196,8 @@ function parseChecklist(raw: unknown): Task['checklist'] {
 function parseSeries(raw: unknown, index: number): RecurrenceSeries {
   const value = requireRecord(raw, `Recurrence series ${index}`)
   const basis = parseEnum(value.basis, ['fixed_schedule', 'after_completion'], 'Recurrence series basis')
+  const timezone = requireText(value.timezone, 'Recurrence series timezone')
+  assertIanaTimezone(timezone)
   const anchorAt = value.anchorAt === undefined ? null : parseNullableIsoDateTime(value.anchorAt, 'Recurrence series anchorAt')
   const anchorOn = value.anchorOn === undefined ? null : parseNullableDateOnly(value.anchorOn, 'Recurrence series anchorOn')
   assertExclusiveSchedule(anchorAt, anchorOn, 'Recurrence series anchor')
@@ -208,7 +210,7 @@ function parseSeries(raw: unknown, index: number): RecurrenceSeries {
     anchorAt,
     anchorOn,
     end: parseSeriesEnd(value.end),
-    timezone: requireText(value.timezone, 'Recurrence series timezone'),
+    timezone,
     createdThrough: parseNullableScheduleValue(value.createdThrough, 'Recurrence series createdThrough'),
     createdCount: requireNonNegativeInteger(value.createdCount, 'Recurrence series createdCount'),
   }
@@ -336,7 +338,9 @@ function parseTaskEvent(raw: unknown, index: number): TaskEvent {
   const value = requireRecord(raw, `Task event ${index}`)
   return {
     id: requireText(value.id, 'Task event id'), sequence: requirePositiveInteger(value.sequence, 'Task event sequence'),
-    taskId: requireText(value.taskId, 'Task event taskId'), type: parseEnum(value.type, EVENT_TYPES, 'Task event type'),
+    taskId: requireText(value.taskId, 'Task event taskId'),
+    ...(value.occurrenceId === undefined ? {} : { occurrenceId: parseNullableText(value.occurrenceId, 'Task event occurrenceId') }),
+    type: parseEnum(value.type, EVENT_TYPES, 'Task event type'),
     occurredAt: requireIsoDateTime(value.occurredAt, 'Task event occurredAt'),
     fromStatus: parseNullableTaskStatus(value.fromStatus), toStatus: parseNullableTaskStatus(value.toStatus),
     reason: parseNullableText(value.reason, 'Task event reason'),
@@ -389,16 +393,14 @@ function parseCommandReceipt(raw: unknown, index: number): CommandReceipt {
   }
 }
 
-function parsePreviewReceipt(raw: unknown, index: number): PreviewReceipt {
+function parseLegacyPreviewReceipt(raw: unknown, index: number): void {
   const value = requireRecord(raw, `Preview receipt ${index}`)
-  return {
-    id: requireText(value.id, 'Preview receipt id'),
-    requestFingerprint: requireText(value.requestFingerprint, 'Preview receipt requestFingerprint'),
-    expectedWorkspaceRevision: requirePositiveInteger(value.expectedWorkspaceRevision, 'Preview receipt expectedWorkspaceRevision'),
-    commandType: requireText(value.commandType, 'Preview receipt commandType'),
-    createdAt: requireIsoDateTime(value.createdAt, 'Preview receipt createdAt'),
-    expiresAt: requireIsoDateTime(value.expiresAt, 'Preview receipt expiresAt'),
-  }
+  requireText(value.id, 'Preview receipt id')
+  requireText(value.requestFingerprint, 'Preview receipt requestFingerprint')
+  requirePositiveInteger(value.expectedWorkspaceRevision, 'Preview receipt expectedWorkspaceRevision')
+  requireText(value.commandType, 'Preview receipt commandType')
+  requireIsoDateTime(value.createdAt, 'Preview receipt createdAt')
+  requireIsoDateTime(value.expiresAt, 'Preview receipt expiresAt')
 }
 
 function assertCollectionSizes(state: WorkspaceStateV3): void {
@@ -410,12 +412,12 @@ function assertCollectionSizes(state: WorkspaceStateV3): void {
 function assertUniqueIds(state: WorkspaceStateV3): void {
   assertUnique(state.listGroups, 'list group'); assertUnique(state.lists, 'list'); assertUnique(state.sections, 'section'); assertUnique(state.tags, 'tag'); assertUnique(state.tasks, 'task')
   assertUnique(state.recurrenceSeries, 'recurrence series'); assertUnique(state.occurrences, 'occurrence'); assertUnique(state.reminderRules, 'reminder rule'); assertUnique(state.reminderDeliveries, 'reminder delivery')
-  assertUnique(state.studySessions, 'study session'); assertUnique(state.taskEvents, 'task event'); assertUnique(state.completionRecords, 'completion record'); assertUnique(state.reviewTaskLinks, 'review task link'); assertUnique(state.commandReceipts, 'command receipt'); assertUnique(state.previewReceipts, 'preview receipt')
+  assertUnique(state.studySessions, 'study session'); assertUnique(state.taskEvents, 'task event'); assertUnique(state.completionRecords, 'completion record'); assertUnique(state.reviewTaskLinks, 'review task link'); assertUnique(state.commandReceipts, 'command receipt')
   assertUniqueAcrossEntities([
     state.listGroups, state.lists, state.sections, state.tags, state.tasks,
     state.recurrenceSeries, state.occurrences, state.reminderRules, state.reminderDeliveries,
     state.studySessions, state.taskEvents, state.completionRecords, state.reviewTaskLinks,
-    state.commandReceipts, state.previewReceipts,
+    state.commandReceipts,
   ])
   assertUnique(state.taskEvents.map((event) => ({ id: String(event.sequence) })), 'task event sequence')
   assertUnique(state.commandReceipts.map((receipt) => ({ id: receipt.idempotencyKey })), 'command receipt idempotencyKey')
@@ -459,7 +461,7 @@ function assertReferences(state: WorkspaceStateV3): void {
     if (!tasks.has(record.taskId)) throw new Error(`Completion record ${record.id} has unknown taskId.`)
     for (const sessionId of record.sessionIds) { const session = sessions.get(sessionId); if (!session) throw new Error(`Completion record ${record.id} has unknown sessionId.`); if (session.taskId !== record.taskId) throw new Error(`Completion record ${record.id} session belongs to another task.`) }
   }
-  assertEvents(state.taskEvents, tasks, records)
+  assertEvents(state.taskEvents, tasks, records, occurrences, series)
   assertStudyEventInvariants(state.taskEvents, state.tasks)
   const activeSessions = state.studySessions.filter(
     (session) => !session.deletedAt && (session.state === 'running' || session.state === 'paused'),
@@ -476,10 +478,17 @@ function assertReferences(state: WorkspaceStateV3): void {
   }
 }
 
-function assertEvents(events: readonly TaskEvent[], tasks: ReadonlyMap<string, Task>, records: ReadonlyMap<string, CompletionRecord>): void {
+function assertEvents(
+  events: readonly TaskEvent[],
+  tasks: ReadonlyMap<string, Task>,
+  records: ReadonlyMap<string, CompletionRecord>,
+  occurrences: ReadonlyMap<string, TaskOccurrence>,
+  series: ReadonlyMap<string, RecurrenceSeries>,
+): void {
   for (const [index, event] of events.entries()) {
     if (event.sequence !== index + 1) throw new Error('Task events must use a continuous sequence in ascending order.')
     if (!tasks.has(event.taskId)) throw new Error(`Task event ${event.id} has unknown taskId.`)
+    if (event.occurrenceId) assertOccurrenceTask(occurrences.get(event.occurrenceId), series, event.taskId, `Task event ${event.id}`)
     if (event.completionRecordId) { const record = records.get(event.completionRecordId); if (!record) throw new Error(`Task event ${event.id} has unknown completionRecordId.`); if (record.taskId !== event.taskId) throw new Error(`Task event ${event.id} completion belongs to another task.`) }
   }
 }

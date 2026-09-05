@@ -67,6 +67,17 @@ test('completed occurrence remains projected as history without advancing task d
   assert.equal(workspace.tasks[0]?.schedule.startOn, null)
 })
 
+test('Today retains the next occurrence when only its independent parent deadline is today', () => {
+  const parent = task({ deadline: { dueAt: null, dueOn: '2026-09-05' } })
+  const future = occurrence({ scheduledAt: null, scheduledOn: '2026-09-08' })
+  const [row] = projectTaskItems(fixture({ task: parent, occurrences: [future] }), todayRange)
+
+  assert.equal(row?.occurrenceId, future.id)
+  assert.equal(row?.scheduledOn, '2026-09-08')
+  assert.equal(row?.dueOn, '2026-09-05')
+  assert.deepEqual(row?.reasons, ['due'])
+})
+
 test('occurrence UI exposes occurrence intent actions and separate schedule/deadline labels', () => {
   const today = readFileSync(new URL('../src/components/study/TodayView.vue', import.meta.url), 'utf8')
   const detail = readFileSync(new URL('../src/components/study/TaskDetailDrawer.vue', import.meta.url), 'utf8')
@@ -119,7 +130,6 @@ function fixture(input: {
     completionRecords: [],
     reviewTaskLinks: [],
     commandReceipts: [],
-    previewReceipts: [],
     updatedAt: '2026-09-05T00:00:00+08:00',
   }
 }

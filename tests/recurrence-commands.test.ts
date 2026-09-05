@@ -76,7 +76,7 @@ async function createRecurringTask(
     cadence: { kind: 'daily', interval: 1 },
     basis,
     anchorAt: '2026-09-05T09:00:00.000Z',
-    end: { kind: 'never' },
+    end: basis === 'fixed_schedule' ? { kind: 'after', count: 1 } : { kind: 'never' },
     timezone: 'UTC',
   })
   return service
@@ -93,7 +93,7 @@ test('complete marks a current occurrence and after-completion creates the next 
 
   assert.equal(snapshot.occurrences.find(({ id }) => id === 'occurrence:series-daily:1')?.status, 'completed')
   assert.equal(snapshot.occurrences.find(({ id }) => id === 'occurrence:series-daily:1')?.completedAt, NOW)
-  assert.equal(snapshot.occurrences.find(({ id }) => id === 'occurrence:series-daily:2')?.scheduledAt, '2026-09-06T09:00:00.000Z')
+  assert.equal(snapshot.occurrences.find(({ id }) => id === 'occurrence:series-daily:2')?.scheduledAt, '2026-09-06T10:00:00.000Z')
   assert.ok(result.undoToken)
 })
 
@@ -129,7 +129,40 @@ test('task.create can atomically create task, series, and initial occurrence wit
   assert.equal(snapshot.tasks.find(({ id }) => id === 'atomic-task')?.recurrenceSeriesId, 'series-atomic')
   assert.equal(snapshot.recurrenceSeries.find(({ id }) => id === 'series-atomic')?.taskId, 'atomic-task')
   assert.equal(snapshot.occurrences.find(({ id }) => id === 'occurrence:series-atomic:1')?.status, 'pending')
+  assert.equal(snapshot.occurrences.filter(({ seriesId, status }) => seriesId === 'series-atomic' && status === 'pending').length, 50)
+  assert.equal(snapshot.revision, initial.revision + 1)
   assert.equal(snapshot.commandReceipts.filter(({ idempotencyKey }) => idempotencyKey === 'create-with-recurrence').length, 1)
+})
+
+test('recurrence commands reject invalid IANA timezones without persisting partial state', async () => {
+  const service = fixture()
+  await executeNext(service, 'timezone-task', { type: 'task.create', taskId: 'timezone-task', listId: 'list:system:learning', title: 'Timezone' })
+  const before = await service.query({ type: 'workspace.snapshot' })
+  await assert.rejects(executeNext(service, 'invalid-timezone', {
+    type: 'recurrence.create', taskId: 'timezone-task', expectedTaskRevision: 1,
+    cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', anchorOn: '2026-09-06',
+    end: { kind: 'never' }, timezone: 'Mars/Olympus_Mons',
+  }), /Invalid IANA timezone/)
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+})
+
+test('recurrence.create and fixed occurrence completion refill the bounded production window', async () => {
+  const service = fixture()
+  await executeNext(service, 'window-task', { type: 'task.create', taskId: 'window-task', listId: 'list:system:learning', title: 'Window' })
+  await executeNext(service, 'window-series', {
+    type: 'recurrence.create', taskId: 'window-task', expectedTaskRevision: 1, seriesId: 'window-series',
+    cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', anchorAt: '2026-09-06T09:00:00.000Z',
+    end: { kind: 'never' }, timezone: 'UTC',
+  })
+  const created = await service.query({ type: 'workspace.snapshot' })
+  assert.equal(created.occurrences.filter(({ seriesId, status }) => seriesId === 'window-series' && status === 'pending').length, 50)
+
+  await executeNext(service, 'window-complete', {
+    type: 'recurrence.complete', occurrenceId: 'occurrence:window-series:1', expectedOccurrenceRevision: 1,
+  })
+  const refilled = await service.query({ type: 'workspace.snapshot' })
+  assert.equal(refilled.occurrences.filter(({ seriesId, status }) => seriesId === 'window-series' && status === 'pending').length, 50)
+  assert.equal(refilled.occurrences.find(({ id }) => id === 'occurrence:window-series:51')?.status, 'pending')
 })
 
 test('task.create recurrence validation and CAS failures leave no partial state', async () => {
@@ -374,6 +407,18 @@ test('future and whole-series updates reject execute without matching explicit p
   )
 
   const preview = await service.preview({ ...future, idempotencyKey: 'future-confirmed' })
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+  await assert.rejects(service.execute({
+    ...future,
+    idempotencyKey: 'future-different-request',
+    explicitConfirmation: { previewReceiptId: preview.previewReceiptId!, confirmedAt: NOW },
+  }), /Explicit confirmation/)
+  const restarted = createTaskCapabilityService(createInMemoryWorkspaceStore(await service.query({ type: 'workspace.snapshot' })), () => NOW, (kind) => `${kind}-restart`)
+  await assert.rejects(restarted.execute({
+    ...future,
+    idempotencyKey: 'future-confirmed',
+    explicitConfirmation: { previewReceiptId: preview.previewReceiptId!, confirmedAt: NOW },
+  }), /Explicit confirmation/)
   await assert.rejects(
     service.execute({
       ...future,
@@ -391,7 +436,6 @@ test('future and whole-series updates reject execute without matching explicit p
     idempotencyKey: 'future-confirmed',
     explicitConfirmation: { previewReceiptId: preview.previewReceiptId!, confirmedAt: NOW },
   })
-  assert.deepEqual((await service.query({ type: 'workspace.snapshot' })).previewReceipts, [])
 })
 
 test('whole-series update previews explicitly, then recomputes pending rows while preserving history', async () => {
@@ -453,7 +497,7 @@ test('whole-series update previews explicitly, then recomputes pending rows whil
 
   assert.equal(preview.accepted, true)
   assert.equal(preview.confirmation, 'explicit')
-  assert.equal((await seeded.query({ type: 'workspace.snapshot' })).previewReceipts.length, 1)
+  assert.deepEqual(await seeded.query({ type: 'workspace.snapshot' }), before)
 
   await seeded.execute({
     ...envelope,
@@ -466,6 +510,22 @@ test('whole-series update previews explicitly, then recomputes pending rows whil
   assert.equal(after.occurrences.find(({ id }) => id === 'occurrence:series-daily:2')?.override, null)
   assert.equal(after.occurrences.find(({ id }) => id === 'occurrence:series-daily:3')?.status, 'completed')
   assert.equal(after.occurrences.find(({ id }) => id === 'occurrence:series-daily:4')?.status, 'skipped')
+})
+
+test('complete, skip, and update append durable occurrence audit events', async () => {
+  const commands = [
+    { type: 'recurrence.complete', occurrenceId: 'occurrence:series-daily:1', expectedOccurrenceRevision: 1 } as const,
+    { type: 'recurrence.skip', occurrenceId: 'occurrence:series-daily:1', expectedOccurrenceRevision: 1 } as const,
+    { type: 'recurrence.update', occurrenceId: 'occurrence:series-daily:1', expectedOccurrenceRevision: 1, scope: 'occurrence', patch: { scheduledOn: '2026-09-08' } } as const,
+  ]
+  for (const [index, command] of commands.entries()) {
+    const service = await createRecurringTask()
+    const result = await executeNext(service, `audited-${index}`, command)
+    assert.equal(result.events.length, 1)
+    assert.equal(result.events[0]?.occurrenceId, 'occurrence:series-daily:1')
+    const audit = await service.query({ type: 'audit.list', commandType: command.type })
+    assert.equal(audit.events.at(-1)?.id, result.events[0]?.id)
+  }
 })
 
 test('whole-series update preserves pending after-completion schedules', async () => {

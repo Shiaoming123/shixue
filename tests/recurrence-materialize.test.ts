@@ -60,7 +60,6 @@ function state(): WorkspaceStateV3 {
     completionRecords: [],
     reviewTaskLinks: [],
     commandReceipts: [],
-    previewReceipts: [],
     updatedAt: '2026-09-04T00:00:00Z',
   }
 }
@@ -84,6 +83,35 @@ test('materialization caps pending occurrences at fifty and within the 90-day wi
   assert.equal(result.created.length, 50)
   assert.equal(result.created.at(-1)?.ordinal, 50)
   assert.ok(new Date(result.created.at(-1)!.scheduledAt).getTime() <= new Date('2026-11-30T00:00:00Z').getTime())
+})
+
+test('fixed materialization counts existing pending once and never exceeds fifty total', () => {
+  const base = state()
+  base.occurrences = Array.from({ length: 49 }, (_, index) => ({
+    id: `occurrence:series-1:${index + 1}`, seriesId: 'series-1', ordinal: index + 1,
+    scheduledAt: new Date(Date.UTC(2026, 8, 5 + index, 13)).toISOString(), scheduledOn: null,
+    status: 'pending' as const, override: null, completedAt: null, revision: 7,
+  }))
+  const result = materializeOccurrenceWindow(base, 'series-1', '2026-09-04T12:00:00Z')
+  assert.equal(result.created.length, 1)
+  assert.equal(result.pendingCount, 50)
+  assert.equal(result.state.occurrences.filter((item) => item.seriesId === 'series-1' && item.status === 'pending').length, 50)
+})
+
+test('fixed materialization honors after-count and on-date endings', () => {
+  const after = state()
+  after.occurrences = []
+  after.recurrenceSeries[0]!.end = { kind: 'after', count: 2 }
+  const afterResult = materializeOccurrenceWindow(after, 'series-1', '2026-09-01T00:00:00Z')
+  assert.deepEqual(afterResult.created.map((item) => item.ordinal), [1, 2])
+  assert.equal(afterResult.pendingCount, 2)
+
+  const on = state()
+  on.occurrences = []
+  on.recurrenceSeries[0]!.end = { kind: 'on', date: '2026-09-05' }
+  const onResult = materializeOccurrenceWindow(on, 'series-1', '2026-09-01T00:00:00Z')
+  assert.deepEqual(onResult.created.map((item) => item.ordinal), [1, 2])
+  assert.equal(onResult.pendingCount, 2)
 })
 
 test('materialization uses now local date for the ninety-calendar-day horizon', () => {

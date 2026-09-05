@@ -173,6 +173,9 @@ function validateCapabilities(capabilities, implementationFacts, errors) {
   if (capabilities.directStorageWrites !== false) {
     errors.push('capabilities.directStorageWrites must be false.')
   }
+  if (!sameRecord(capabilities.previewHandles, { persistence: 'none', scope: 'service-instance' })) {
+    errors.push('capabilities.previewHandles must remain ephemeral and service-instance scoped.')
+  }
   if (!isRecord(capabilities.futureAgent) || capabilities.futureAgent.status !== 'planned' || capabilities.futureAgent.access !== 'capability-service-only') {
     errors.push('capabilities.futureAgent must remain planned and capability-service-only.')
   }

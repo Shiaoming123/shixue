@@ -69,3 +69,28 @@
 
 ## Remaining concerns
 - Pre-existing untracked `.superpowers/sdd/2026-09-04-recurring-tasks/{progress,task-1-brief,task-2-brief,task-3-brief,task-4-brief}.md` files were left untouched and excluded from the commit.
+
+## Whole-PR review fixes
+- After-completion cadence now advances from the actual completion instant in the series timezone instead of returning to the original anchor grid.
+- Fixed-schedule materialization honors both `end.after` and `end.on`, counts existing pending occurrences once, and keeps the total pending window at or below 50.
+- `task.create`, `recurrence.create`, fixed occurrence completion, and recurrence updates invoke bounded materialization inside the same capability transaction.
+- Invalid IANA timezones fail closed. Nonexistent DST wall times use a documented shift-forward policy; overlaps choose the first matching instant.
+- Preview confirmation handles are ephemeral and bound to the service instance, idempotency key, canonical request fingerprint, workspace revision, command type, and expiry. Legacy persisted `previewReceipts` are validated and discarded as a transitional no-op.
+- Recurrence complete, skip, and update commands append durable task audit events carrying the occurrence id.
+- The mounted UI can create a first recurrence, follows the task's active series after a split, preserves monthly/yearly cadence fields, and executes an occurrence-scoped reschedule command.
+- Today projection keeps one occurrence row when the parent deadline is in range even if the occurrence schedule is outside it, while retaining separate schedule and deadline fields.
+
+## Whole-PR review verification
+- RED recurrence calculation/materialization: 11 passed, 5 failed before the fixes.
+- RED recurrence commands: 9 passed, 5 failed before the fixes.
+- RED Today projection: 5 passed, 1 failed before the fix.
+- RED reachable recurrence UI: 3 passed, 2 failed before the fixes.
+- Focused final: `node --test --experimental-strip-types tests/recurrence-calculate.test.ts tests/recurrence-materialize.test.ts tests/recurrence-commands.test.ts tests/capability-service.test.ts tests/recurrence-schedule-contract.test.ts tests/recurrence-projection.test.ts tests/recurrence-ui-contract.test.ts tests/workspace-state-v3.test.ts tests/app-protocol.test.ts`
+  - 100 passed, 0 failed, 0 skipped.
+- `npm run check:protocol`: exit 0.
+- `npm run typecheck`: exit 0.
+- `npm run build`: exit 0; Vite transformed 2068 modules.
+- `git diff --check`: exit 0; only line-ending conversion warnings.
+- Full `npm test`: NOT_RUN per the requested verification boundary.
+- Visual screenshot/state-matrix run: NOT_RUN; no new visual claim is made.
+- Push/PR creation: NOT_RUN; this work remains a focused local commit.

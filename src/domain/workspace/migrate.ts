@@ -172,7 +172,6 @@ function migrateStudyV2(study: StudyState, migratedAt: string): WorkspaceStateV3
     completionRecords: structuredClone(study.completionRecords),
     reviewTaskLinks,
     commandReceipts: [],
-    previewReceipts: [],
     updatedAt: migratedAt,
   }
 }

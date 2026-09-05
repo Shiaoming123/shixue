@@ -1,5 +1,6 @@
 import type { WorkspaceStateV3, RecurrenceSeries, TaskOccurrence } from '../workspace/types.ts'
 import { MAX_PENDING_OCCURRENCES, OCCURRENCE_HORIZON_DAYS, nextAfterCompletion } from './calculate.ts'
+import { parseZonedDateTime, zonedDateTimeToInstant } from './timezone.ts'
 
 export interface MaterializeResult {
   state: WorkspaceStateV3
@@ -31,6 +32,7 @@ export function materializeOccurrenceWindow(
   let ordinal = 1
 
   while (ordinal <= MAX_SEARCH_STEPS && pendingCount < MAX_PENDING_OCCURRENCES) {
+    if (series.end.kind === 'after' && ordinal > series.end.count) break
     const date = occurrenceDate(series, anchor.date, ordinal)
     if (!date || date > horizonDate) break
     if (series.end.kind === 'on' && date > series.end.date) break
@@ -43,7 +45,6 @@ export function materializeOccurrenceWindow(
 
     const id = occurrenceId(seriesId, ordinal)
     if (existingById.has(id)) {
-      if (existingById.get(id)?.status === 'pending') pendingCount += 1
       ordinal += 1
       continue
     }
@@ -163,42 +164,6 @@ function daysInMonth(year: number, month: number): number {
 function weekdayOf(date: string): number {
   const [year, month, day] = date.split('-').map(Number)
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay()
-}
-
-function parseZonedDateTime(value: string, timezone: string): { date: string; time: string } {
-  const instant = new Date(value)
-  if (Number.isNaN(instant.getTime())) throw new Error(`Invalid datetime: ${value}`)
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(instant)
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
-  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` }
-}
-
-function zonedDateTimeToInstant(date: string, time: string, timezone: string): Date {
-  const [year, month, day] = date.split('-').map(Number)
-  const [hour, minute] = time.split(':').map(Number)
-  let utc = new Date(Date.UTC(year, month - 1, day, hour, minute))
-  for (let i = 0; i < 8; i += 1) {
-    const parts = parseZonedDateTime(utc.toISOString(), timezone)
-    if (parts.date === date && parts.time === time) return utc
-    const localMinutes = toMinuteNumber(parts.date, parts.time)
-    const targetMinutes = toMinuteNumber(date, time)
-    utc = new Date(utc.getTime() + (targetMinutes - localMinutes) * 60_000)
-  }
-  throw new Error(`Unable to resolve ${date}T${time} in ${timezone}`)
-}
-
-function toMinuteNumber(date: string, time: string): number {
-  const [year, month, day] = date.split('-').map(Number)
-  const [hour, minute] = time.split(':').map(Number)
-  return (((year * 12 + month) * 31 + day) * 24 * 60) + hour * 60 + minute
 }
 
 function occurrenceId(seriesId: string, ordinal: number): string {

@@ -74,6 +74,29 @@ test('after-completion recurrence stays strictly after the completion timestamp'
   assert.equal(value, '2026-09-05T13:00:00.000Z')
 })
 
+test('after-completion interval advances from the completion instant instead of the original anchor grid', () => {
+  assert.equal(nextAfterCompletion(series({
+    cadence: { kind: 'daily', interval: 3 },
+    basis: 'after_completion',
+    anchorAt: '2026-09-01T09:00:00-04:00',
+  }), '2026-09-05T09:00:00-04:00'), '2026-09-08T13:00:00.000Z')
+})
+
+test('DST gap uses the documented shift-forward policy', () => {
+  assert.equal(nextFixedOccurrence(series({
+    cadence: { kind: 'daily', interval: 1 },
+    anchorAt: '2026-03-07T02:30:00-05:00',
+    timezone: 'America/New_York',
+  }), '2026-03-08T00:00:00-05:00'), '2026-03-08T07:30:00.000Z')
+})
+
+test('invalid IANA timezone fails closed with a stable validation message', () => {
+  assert.throws(
+    () => nextFixedOccurrence(series({ timezone: 'Mars/Olympus_Mons' }), '2026-09-04T00:00:00Z'),
+    /Invalid IANA timezone/,
+  )
+})
+
 test('end-after-count stops once the configured number of occurrences is exhausted', () => {
   const value = nextFixedOccurrence(
     series({

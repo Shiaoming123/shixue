@@ -185,15 +185,6 @@ export interface CommandReceipt {
   expiresAt: string
 }
 
-export interface PreviewReceipt {
-  id: string
-  requestFingerprint: string
-  expectedWorkspaceRevision: number
-  commandType: string
-  createdAt: string
-  expiresAt: string
-}
-
 export interface WorkspaceStateV3 {
   version: typeof WORKSPACE_STATE_VERSION
   revision: number
@@ -211,7 +202,6 @@ export interface WorkspaceStateV3 {
   completionRecords: CompletionRecord[]
   reviewTaskLinks: ReviewTaskLink[]
   commandReceipts: CommandReceipt[]
-  previewReceipts: PreviewReceipt[]
   updatedAt: string
 }
 

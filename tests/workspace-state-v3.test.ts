@@ -97,7 +97,6 @@ function validWorkspaceState() {
     completionRecords: [],
     reviewTaskLinks: [],
     commandReceipts: [],
-    previewReceipts: [],
     updatedAt: at,
   }
 }
@@ -106,6 +105,32 @@ test('accepts a complete v3 workspace and preserves a schedule later than its de
   const state = validWorkspaceState()
 
   assert.deepEqual(parseWorkspaceState(state), state)
+})
+
+test('accepts legacy persisted preview receipts as a transitional no-op', () => {
+  const state = validWorkspaceState()
+  const legacy = {
+    ...state,
+    previewReceipts: [{
+      id: 'preview:legacy', requestFingerprint: 'sha256:legacy', expectedWorkspaceRevision: 1,
+      commandType: 'recurrence.update', createdAt: state.updatedAt, expiresAt: '2026-09-04T09:15:00+08:00',
+    }],
+  }
+  const parsed = parseWorkspaceState(legacy)
+  assert.equal('previewReceipts' in parsed, false)
+  assert.deepEqual(parsed, state)
+})
+
+test('rejects a persisted recurrence with an invalid IANA timezone', () => {
+  const state = validWorkspaceState()
+  state.tasks[0].recurrenceSeriesId = 'series-invalid-zone'
+  state.recurrenceSeries.push({
+    id: 'series-invalid-zone', taskId: 'task-1', revision: 1,
+    cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule',
+    anchorAt: null, anchorOn: '2026-09-05', end: { kind: 'never' },
+    timezone: 'Mars/Olympus_Mons', createdThrough: null, createdCount: 0,
+  })
+  assert.throws(() => parseWorkspaceState(state), /Invalid IANA timezone/)
 })
 
 test('rejects two schedule representations and dangling list ids', () => {

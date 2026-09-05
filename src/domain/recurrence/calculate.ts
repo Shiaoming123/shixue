@@ -1,14 +1,21 @@
 import type { RecurrenceSeries } from '../workspace/types.ts'
+import { assertIanaTimezone, parseZonedDateTime, zonedDateTimeToInstant } from './timezone.ts'
 
 export function nextFixedOccurrence(series: RecurrenceSeries, after: string): string | null {
   return nextOccurrence(series, after, false)
 }
 
 export function nextAfterCompletion(series: RecurrenceSeries, completedAt: string): string | null {
-  return nextOccurrence(series, completedAt, true)
+  assertIanaTimezone(series.timezone)
+  const completion = parseZonedDateTime(completedAt, series.timezone)
+  const date = afterCompletionDate(series, completion.date)
+  if (series.end.kind === 'on' && date > series.end.date) return null
+  if (series.anchorOn != null) return date
+  return zonedDateTimeToInstant(date, completion.time, series.timezone).toISOString()
 }
 
 function nextOccurrence(series: RecurrenceSeries, thresholdIso: string, strictAfter: boolean): string | null {
+  assertIanaTimezone(series.timezone)
   const dateOnly = series.anchorOn != null
   const threshold = dateOnly ? null : new Date(thresholdIso)
   if (!dateOnly && Number.isNaN(threshold!.getTime())) throw new Error(`Invalid datetime: ${thresholdIso}`)
@@ -57,6 +64,17 @@ function nextOccurrence(series: RecurrenceSeries, thresholdIso: string, strictAf
     if (candidateMatches(candidate, date, threshold, thresholdDate, strictAfter)) return candidate
   }
   return null
+}
+
+function afterCompletionDate(series: RecurrenceSeries, completedOn: string): string {
+  if (series.cadence.kind === 'daily') return addCalendarDays(completedOn, series.cadence.interval)
+  if (series.cadence.kind === 'weekly') {
+    let date = addCalendarDays(completedOn, series.cadence.interval * 7)
+    while (!series.cadence.weekdays.includes(weekdayOf(date))) date = addCalendarDays(date, 1)
+    return date
+  }
+  if (series.cadence.kind === 'monthly') return addCalendarMonths(completedOn, series.cadence.interval, series.cadence.dayOfMonth)
+  return addCalendarYears(completedOn, series.cadence.interval, series.cadence.month, series.cadence.dayOfMonth)
 }
 
 function resolveCandidate(date: string, time: string | null, timezone: string): string {
@@ -111,46 +129,6 @@ function parseDateOnly(value: string): { year: number; month: number; day: numbe
 
 function formatDate(year: number, month: number, day: number): string {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-}
-
-function parseZonedDateTime(value: string, timezone: string): { date: string; time: string } {
-  const instant = new Date(value)
-  if (Number.isNaN(instant.getTime())) throw new Error(`Invalid datetime: ${value}`)
-  return formatInTimeZone(instant, timezone)
-}
-
-function formatInTimeZone(instant: Date, timezone: string): { date: string; time: string } {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(instant)
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
-  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` }
-}
-
-function zonedDateTimeToInstant(date: string, time: string, timezone: string): Date {
-  const [year, month, day] = date.split('-').map(Number)
-  const [hour, minute] = time.split(':').map(Number)
-  let utc = new Date(Date.UTC(year, month - 1, day, hour, minute))
-  for (let i = 0; i < 8; i += 1) {
-    const parts = formatInTimeZone(utc, timezone)
-    if (parts.date === date && parts.time === time) return utc
-    const localMinutes = toMinuteNumber(parts.date, parts.time)
-    const targetMinutes = toMinuteNumber(date, time)
-    utc = new Date(utc.getTime() + (targetMinutes - localMinutes) * 60_000)
-  }
-  throw new Error(`Unable to resolve ${date}T${time} in ${timezone}`)
-}
-
-function toMinuteNumber(date: string, time: string): number {
-  const [year, month, day] = date.split('-').map(Number)
-  const [hour, minute] = time.split(':').map(Number)
-  return (((year * 12 + month) * 31 + day) * 24 * 60) + hour * 60 + minute
 }
 
 export const OCCURRENCE_HORIZON_DAYS = 90

@@ -18,6 +18,8 @@ type Preset = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly' | 'custom'
 const preset = ref<Preset>('daily')
 const interval = ref('1')
 const weekdays = ref<number[]>([1, 2, 3, 4, 5])
+const dayOfMonth = ref<string | number>(1)
+const month = ref<string | number>(1)
 const cadenceKind = ref<RecurrenceCadence['kind']>('weekly')
 const basis = ref<RecurrenceSeries['basis']>('fixed_schedule')
 const endKind = ref<RecurrenceSeries['end']['kind']>('never')
@@ -43,6 +45,8 @@ watch(() => props.modelValue, (rule) => {
   cadenceKind.value = rule.cadence.kind
   interval.value = String(rule.cadence.interval)
   if (rule.cadence.kind === 'weekly') weekdays.value = [...rule.cadence.weekdays]
+  if (rule.cadence.kind === 'monthly') dayOfMonth.value = rule.cadence.dayOfMonth
+  if (rule.cadence.kind === 'yearly') { month.value = rule.cadence.month; dayOfMonth.value = rule.cadence.dayOfMonth }
   preset.value = presetFor(rule)
 }, { immediate: true })
 
@@ -50,8 +54,8 @@ const rule = computed<RecurrenceRule>(() => {
   const cadence = preset.value === 'daily' ? { kind: 'daily' as const, interval: 1 }
     : preset.value === 'weekdays' ? { kind: 'weekly' as const, interval: 1, weekdays: [1, 2, 3, 4, 5] }
       : preset.value === 'weekly' ? { kind: 'weekly' as const, interval: 1, weekdays: weekdays.value.length ? weekdays.value : [1] }
-        : preset.value === 'monthly' ? { kind: 'monthly' as const, interval: 1, dayOfMonth: 1 }
-          : preset.value === 'yearly' ? { kind: 'yearly' as const, interval: 1, month: 1, dayOfMonth: 1 }
+        : preset.value === 'monthly' ? { kind: 'monthly' as const, interval: 1, dayOfMonth: safeDayOfMonth() }
+          : preset.value === 'yearly' ? { kind: 'yearly' as const, interval: 1, month: safeMonth(), dayOfMonth: safeDayOfMonth() }
             : customCadence()
   const end = endKind.value === 'on' && endDate.value ? { kind: 'on' as const, date: endDate.value }
     : endKind.value === 'after' ? { kind: 'after' as const, count: Math.max(1, Number(endCount.value) || 1) }
@@ -63,9 +67,11 @@ function customCadence(): RecurrenceCadence {
   const safeInterval = Math.max(1, Number(interval.value) || 1)
   if (cadenceKind.value === 'daily') return { kind: 'daily', interval: safeInterval }
   if (cadenceKind.value === 'weekly') return { kind: 'weekly', interval: safeInterval, weekdays: weekdays.value.length ? weekdays.value : [1] }
-  if (cadenceKind.value === 'monthly') return { kind: 'monthly', interval: safeInterval, dayOfMonth: 1 }
-  return { kind: 'yearly', interval: safeInterval, month: 1, dayOfMonth: 1 }
+  if (cadenceKind.value === 'monthly') return { kind: 'monthly', interval: safeInterval, dayOfMonth: safeDayOfMonth() }
+  return { kind: 'yearly', interval: safeInterval, month: safeMonth(), dayOfMonth: safeDayOfMonth() }
 }
+function safeDayOfMonth() { return Math.min(31, Math.max(1, Number(dayOfMonth.value) || 1)) }
+function safeMonth() { return Math.min(12, Math.max(1, Number(month.value) || 1)) }
 function presetFor(rule: RecurrenceRule): Preset {
   const cadence = rule.cadence
   if (cadence.kind === 'daily' && cadence.interval === 1) return 'daily'
@@ -85,6 +91,8 @@ function toggleWeekday(day: number) { weekdays.value = weekdays.value.includes(d
       <div class="field"><span>间隔</span><Input v-model="interval" inputmode="numeric" aria-label="重复间隔" /></div>
       <div class="field"><span>频率</span><Listbox v-model="cadenceKind" :options="cadenceOptions" label="自定义频率" /></div>
       <div v-if="cadenceKind === 'weekly'" class="field"><span>星期</span><div class="weekday-buttons"><button v-for="day in weekdaysOptions" :key="day.value" type="button" :class="{ selected: weekdays.includes(day.value) }" :aria-pressed="weekdays.includes(day.value)" @click="toggleWeekday(day.value)">{{ day.label }}</button></div></div>
+      <div v-if="cadenceKind === 'monthly' || cadenceKind === 'yearly'" class="field"><span>日期</span><Input :model-value="String(dayOfMonth)" inputmode="numeric" aria-label="每月日期" @update:model-value="dayOfMonth = $event" /></div>
+      <div v-if="cadenceKind === 'yearly'" class="field"><span>月份</span><Input :model-value="String(month)" inputmode="numeric" aria-label="每年月份" @update:model-value="month = $event" /></div>
       <div class="field"><span>依据</span><Listbox v-model="basis" :options="basisOptions" label="重复依据" /></div>
       <div class="field"><span>结束</span><Listbox v-model="endKind" :options="endOptions" label="结束条件" /></div>
       <div v-if="endKind === 'on'" class="field"><span>日期</span><Input v-model="endDate" placeholder="YYYY-MM-DD" aria-label="重复截止日期" /></div>

@@ -1,4 +1,6 @@
 import type { RecurrenceSeries, ReminderRule, StudySession, Task, TaskEvent, TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
+import { materializeOccurrenceWindow } from '../recurrence/materialize.ts'
+import { assertIanaTimezone } from '../recurrence/timezone.ts'
 import {
   DomainCommandError,
   type CapabilityCommandContext,
@@ -81,7 +83,7 @@ function createTask(
     taskRef(task),
     ...(recurrence ? [
       { type: 'recurrence_series' as const, id: recurrence.series.id, revision: recurrence.series.revision },
-      { type: 'occurrence' as const, id: recurrence.occurrence.id, revision: recurrence.occurrence.revision },
+      ...recurrence.occurrences.map((occurrence) => ({ type: 'occurrence' as const, id: occurrence.id, revision: occurrence.revision })),
     ] : []),
   ]
   return {
@@ -91,9 +93,9 @@ function createTask(
     compensation: {
       type: 'task.remove_created',
       taskIds: [task.id],
-      ...(recurrence ? { recurrenceSeriesIds: [recurrence.series.id], occurrenceIds: [recurrence.occurrence.id] } : {}),
+      ...(recurrence ? { recurrenceSeriesIds: [recurrence.series.id], occurrenceIds: recurrence.occurrences.map(({ id }) => id) } : {}),
     },
-    data: json(recurrence ? { task, recurrenceSeries: recurrence.series, occurrence: recurrence.occurrence } : task),
+    data: json(recurrence ? { task, recurrenceSeries: recurrence.series, occurrence: recurrence.occurrence, occurrences: recurrence.occurrences } : task),
   }
 }
 
@@ -102,7 +104,7 @@ function createInitialRecurrence(
   task: Task,
   recurrence: NonNullable<Extract<TaskCapabilityCommand, { type: 'task.create' }>['recurrence']>,
   context: CapabilityCommandContext,
-): { series: RecurrenceSeries; occurrence: TaskOccurrence } {
+): { series: RecurrenceSeries; occurrence: TaskOccurrence; occurrences: TaskOccurrence[] } {
   assertRecurrenceConfig(recurrence)
   const seriesId = recurrence.seriesId ?? context.id('recurrence_series')
   if (state.recurrenceSeries.some(({ id }) => id === seriesId)) {
@@ -143,7 +145,13 @@ function createInitialRecurrence(
   task.recurrenceSeriesId = series.id
   state.recurrenceSeries.push(series)
   state.occurrences.push(occurrence)
-  return { series, occurrence }
+  const created = materializeOccurrenceWindow(state, series.id, context.now).created
+  state.occurrences.push(...created)
+  const occurrences = [occurrence, ...created]
+  const last = occurrences[occurrences.length - 1]!
+  series.createdThrough = last.scheduledOn ?? last.scheduledAt
+  series.createdCount = last.ordinal
+  return { series, occurrence, occurrences }
 }
 
 function updateTask(
@@ -491,6 +499,7 @@ function assertDeadline(dueAt: string | null, dueOn: string | null): void {
 }
 
 function assertRecurrenceConfig(recurrence: NonNullable<Extract<TaskCapabilityCommand, { type: 'task.create' }>['recurrence']>): void {
+  assertIanaTimezone(recurrence.timezone)
   assertRecurrenceSchedule(recurrence.anchorAt ?? null, recurrence.anchorOn ?? null)
   if (!recurrence.timezone.trim()) throw new DomainCommandError('VALIDATION_ERROR', 'Recurrence timezone is required.')
   if (!Number.isInteger(recurrence.cadence.interval) || recurrence.cadence.interval <= 0) {
