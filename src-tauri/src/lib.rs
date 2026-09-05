@@ -1,5 +1,5 @@
 #[cfg(desktop)]
-use tauri::{Manager, WindowEvent};
+use tauri::Manager;
 
 #[cfg(feature = "agent")]
 mod agent;
@@ -15,6 +15,22 @@ mod tray;
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+async fn read_legacy_reminder_deliveries(
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    #[cfg(all(desktop, feature = "notification"))]
+    {
+        let rows = reminder_scheduler::read_legacy_reminder_deliveries(app).await?;
+        serde_json::to_value(rows).map_err(|error| error.to_string())
+    }
+    #[cfg(not(all(desktop, feature = "notification")))]
+    {
+        let _ = app;
+        Err("Legacy reminder storage is unavailable in this build.".into())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -55,7 +71,7 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_notification::init());
     }
 
-    #[cfg(feature = "autostart")]
+    #[cfg(all(desktop, feature = "autostart"))]
     {
         builder = builder.plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -67,6 +83,7 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            read_legacy_reminder_deliveries,
             agent::set_api_key,
             agent::has_api_key,
             agent::delete_api_key,
@@ -84,6 +101,7 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            read_legacy_reminder_deliveries,
             agent::set_api_key,
             agent::has_api_key,
             agent::delete_api_key,
@@ -96,6 +114,7 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            read_legacy_reminder_deliveries,
             study_cloud::study_cloud_sign_in,
             study_cloud::study_cloud_session_status,
             study_cloud::study_cloud_sign_out,
@@ -106,7 +125,10 @@ pub fn run() {
 
     #[cfg(all(not(feature = "agent"), not(feature = "sync")))]
     {
-        builder = builder.invoke_handler(tauri::generate_handler![greet]);
+        builder = builder.invoke_handler(tauri::generate_handler![
+            greet,
+            read_legacy_reminder_deliveries
+        ]);
     }
 
     #[cfg(desktop)]
@@ -121,20 +143,6 @@ pub fn run() {
 
                 #[cfg(feature = "notification")]
                 reminder_scheduler::start(app.handle());
-
-                // 托盘常驻应用：点关闭按钮时隐藏窗口而不是退出进程，
-                // 真正的退出走托盘菜单里的「退出」。
-                if let Some(window) = app.get_webview_window(tray::MAIN_WINDOW_LABEL) {
-                    // Tauri 2 的 on_window_event 闭包只接收 event，
-                    // 窗口句柄需要提前 clone 进闭包。
-                    let event_window = window.clone();
-                    window.on_window_event(move |event| {
-                        if let WindowEvent::CloseRequested { api, .. } = event {
-                            let _ = event_window.hide();
-                            api.prevent_close();
-                        }
-                    });
-                }
 
                 Ok(())
             });

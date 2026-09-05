@@ -23,8 +23,8 @@
     }
   },
   "modulePolicy": {
-    "enabled": ["core", "storage", "sqlite", "indexedDb", "tray", "updater", "themes", "shortcut", "notification"],
-    "disabled": ["sync", "agent", "clipboard", "autostart", "mcp"]
+    "enabled": ["core", "storage", "sqlite", "indexedDb", "tray", "updater", "themes", "shortcut", "notification", "autostart"],
+    "disabled": ["sync", "agent", "clipboard", "mcp"]
   },
   "data": {
     "defaultMode": "local-first",
@@ -72,11 +72,11 @@
       "capability-protocol-v1",
       "live-write-capability-routing",
       "themed-control-foundation",
-      "recurrence-occurrence-v1"
+      "recurrence-occurrence-v1",
+      "offline-natural-language-v1",
+      "multi-reminder-v1"
     ],
     "planned": [
-      "offline-natural-language",
-      "multi-reminder",
       "calendar",
       "agent-behavior"
     ]

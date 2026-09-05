@@ -110,9 +110,13 @@ Outputs are written to `release-artifacts/windows/<version>/`. This directory co
 - JSON export provides backup and manual transfer between Web and desktop runtimes. The two runtimes do not synchronize automatically.
 - Cancelling a task does not physically delete tasks, sessions, events, or completion records. A failed migration does not replace the previous state.
 - Portable and installed builds use the operating-system-managed application data location. Deleting the EXE or uninstalling the application should not be treated as proof that learning data was erased.
-- Cloud sync, collaboration, AI planning, notifications, and authentication are not part of the current release.
+- Cloud sync, collaboration, AI planning, and authentication are outside the current release boundary; see the development reminder status below.
 
 See the [application protocol](./docs/application-protocol.md) for the detailed import, export, migration, and persistence contract.
+
+### PR4 development and validation boundary
+
+This branch adds multiple reminders, in-app actions, notification permission and close lifecycle wiring, alongside settings, date/time and keyboard fixes. OS notification submission requires permission and a running application/tray process. Web screenshots do not prove native buttons, click callbacks, hidden background reliability or Windows 200% scaling. Unknown legacy reminder records block delivery with an error; a crash between submission and acknowledgement has no exactly-once guarantee. These are source-development changes, not a release or native acceptance claim. See the itemized [PR4 product audit](./docs/design/2026-09-05-pr4-product-audit.md).
 
 ## Architecture
 

@@ -1,11 +1,63 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const tauriTargetRoot = resolve(projectRoot, 'src-tauri', 'target')
+const smokeReportPath = resolve(tauriTargetRoot, 'windows-package-smoke-report.json')
+
+const manualStages = [
+  ['permission-first-reminder', 'Observe that startup stays silent and the first enabled reminder requests permission.'],
+  ['two-reminders-one-task', 'Create one task with two reminder rules and observe both due cards or notifications.'],
+  ['snooze-one', 'Snooze one due delivery and verify that the task schedule is unchanged.'],
+  ['complete-one', 'Complete one due delivery and verify that a repeated action is idempotent.'],
+  ['hide-to-tray', 'Close using the tray preference and verify that the process and scheduler remain running.'],
+  ['reopen-from-tray', 'Reopen the hidden main window from the tray.'],
+  ['quit-from-tray', 'Use the tray Quit action and verify that the process exits without another prompt.'],
+  ['no-delivery-after-quit', 'Wait past a due time after Quit and verify that no delivery is observed.'],
+  ['windows-display-scaling-200', 'Repeat the representative flow with Windows display scaling set to 200%.'],
+]
+
+export function createWindowsSmokeReport(now = new Date()) {
+  return {
+    schemaVersion: 1,
+    generatedAt: now.toISOString(),
+    platform: process.platform,
+    automatedResult: 'NOT_RUN',
+    stages: [
+      ['package-build', 'Build an unsigned NSIS package for the current source.'],
+      ['silent-install', 'Install the NSIS package into an isolated target directory.'],
+      ['installed-launch', 'Launch the installed executable and observe that it stays alive for two seconds.'],
+    ].map(([id, description]) => ({ id, verification: 'automated', status: 'NOT_RUN', description })),
+  }
+}
+
+export function appendManualWindowsStages(report) {
+  report.stages.push(...manualStages.map(([id, description]) => ({
+    id,
+    verification: 'manual',
+    status: 'NOT_RUN',
+    description,
+    reason: 'The package smoke script cannot observe Windows notification UI, tray interaction, or system display settings.',
+  })))
+  report.stages.push({
+    id: 'native-notification-action-buttons',
+    verification: 'manual',
+    status: 'UNSUPPORTED',
+    description: 'Invoke Complete, Snooze, and Open from native Windows notification buttons.',
+    reason: 'The current adapter uses the in-app reminder card fallback and does not register native Windows action buttons.',
+  })
+  return report
+}
+
+export function updateSmokeStage(report, id, status, evidence) {
+  const stage = report.stages.find((candidate) => candidate.id === id)
+  if (!stage) throw new Error(`Unknown Windows smoke stage: ${id}`)
+  stage.status = status
+  if (evidence) stage.evidence = evidence
+}
 
 export function assertSmokePath(targetRoot, candidate) {
   const resolvedRoot = resolve(targetRoot)
@@ -104,6 +156,8 @@ async function main() {
     throw new Error('Windows package smoke only runs on Windows.')
   }
 
+  await mkdir(tauriTargetRoot, { recursive: true })
+  const report = appendManualWindowsStages(createWindowsSmokeReport())
   const smokeRoot = assertSmokePath(
     tauriTargetRoot,
     await mkdtemp(resolve(tauriTargetRoot, 'meow-windows-package-smoke-')),
@@ -112,6 +166,7 @@ async function main() {
   const appDataPath = assertSmokePath(smokeRoot, resolve(smokeRoot, 'appdata'))
   const localAppDataPath = assertSmokePath(smokeRoot, resolve(smokeRoot, 'localappdata'))
   let application
+  let activeStage = 'package-build'
 
   try {
     await Promise.all([mkdir(installPath), mkdir(appDataPath), mkdir(localAppDataPath)])
@@ -133,7 +188,9 @@ async function main() {
       '--config',
       '{"bundle":{"createUpdaterArtifacts":false}}',
     ])
+    updateSmokeStage(report, 'package-build', 'PASS', 'Tauri returned exit code 0 for an unsigned NSIS build.')
 
+    activeStage = 'silent-install'
     const installerName = selectNsisInstaller(
       await listNsisInstallers(nsisDirectory),
       tauriConfig.productName,
@@ -141,7 +198,9 @@ async function main() {
     )
     const installerPath = resolve(nsisDirectory, installerName)
     await runCommand(installerPath, createNsisInstallArgs(installerPath, installPath))
+    updateSmokeStage(report, 'silent-install', 'PASS', `Installed ${installerName} into the isolated smoke directory.`)
 
+    activeStage = 'installed-launch'
     const executablePath = assertSmokePath(
       installPath,
       resolveInstalledExecutable(installPath, binaryName),
@@ -159,10 +218,23 @@ async function main() {
       },
     })
     await waitForChildToStayAlive(application, 2_000)
-    console.log(`Windows package smoke passed: ${installerPath}`)
+    updateSmokeStage(report, 'installed-launch', 'PASS', 'The installed executable stayed alive for the two-second automated probe.')
+    report.automatedResult = 'PASS'
+    report.artifact = installerPath
+    console.log(`Windows package automated smoke passed: ${installerPath}`)
+  } catch (error) {
+    updateSmokeStage(report, activeStage, 'FAIL', error instanceof Error ? error.message : String(error))
+    report.automatedResult = 'FAIL'
+    throw error
   } finally {
-    await terminateChild(application)
-    await removeSmokeRoot(tauriTargetRoot, smokeRoot)
+    report.finishedAt = new Date().toISOString()
+    try {
+      await writeFile(smokeReportPath, `${JSON.stringify(report, null, 2)}\n`)
+      console.log(`Windows package smoke report: ${smokeReportPath}`)
+    } finally {
+      await terminateChild(application)
+      await removeSmokeRoot(tauriTargetRoot, smokeRoot)
+    }
   }
 }
 

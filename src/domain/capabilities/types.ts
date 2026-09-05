@@ -1,3 +1,4 @@
+import type { ReminderCapabilityCommand } from './reminder-commands.ts'
 import type {
   CompletionRecord,
   JsonValue,
@@ -255,7 +256,8 @@ export interface RecurrenceUpdateCommand {
   patch: RecurrenceUpdatePatch
 }
 
-export interface RecurrenceCompleteCommand {
+export interface RecurrenceCompleteCommand extends Pick<TaskCompleteCommand, 'learned' | 'evidence' | 'blocker' | 'nextAction' | 'mastery' | 'recordId'> {
+  expectedTaskRevision?: number
   type: 'recurrence.complete'
   occurrenceId: string
   expectedOccurrenceRevision?: number
@@ -409,6 +411,7 @@ export type UndoCompensation =
     }
   | {
       type: 'recurrence.restore'
+      completionRecordIds?: string[]
       tasks: Task[]
       recurrenceSeries: RecurrenceSeries[]
       occurrenceSnapshots: TaskOccurrence[]
@@ -466,6 +469,7 @@ export type LiveCompatibilityCommand =
   | WorkspaceResetCommand
 
 export type CapabilityCommand =
+  | ReminderCapabilityCommand
   | TaskCapabilityCommand
   | RecurrenceCapabilityCommand
   | LiveCompatibilityCommand

@@ -2,6 +2,7 @@ import { nextAfterCompletion } from '../recurrence/calculate.ts'
 import { materializeOccurrenceWindow } from '../recurrence/materialize.ts'
 import { assertIanaTimezone, parseZonedDateTime, zonedDateTimeToInstant } from '../recurrence/timezone.ts'
 import type {
+  CompletionRecord,
   RecurrenceSeries,
   Task,
   TaskEvent,
@@ -173,7 +174,9 @@ function completeOccurrence(
   const occurrence = requireOccurrence(state, command.occurrenceId, command.expectedOccurrenceRevision)
   if (occurrence.status !== 'pending') throw validation(`Occurrence cannot be completed from ${occurrence.status}.`, { occurrenceId: occurrence.id })
   const series = requireSeries(state, occurrence.seriesId)
-  const task = requireTask(state, series.taskId)
+  const task = requireTask(state, series.taskId, command.expectedTaskRevision)
+  const record = createOccurrenceCompletionRecord(task, command, context)
+  if (record) state.completionRecords.push(record)
   const before = recurrenceSnapshot(task, state, series.id)
   occurrence.status = 'completed'
   occurrence.completedAt = context.now
@@ -186,6 +189,7 @@ function completeOccurrence(
   const created = [...(next ? [next] : []), ...materialized]
   const changedOccurrences = [occurrence, ...created]
   const event = appendOccurrenceEvent(state, task, occurrence, 'completed', context, 'Occurrence completed.')
+  event.completionRecordId = record?.id ?? null
   return recurrenceApplication({
     tasks: [],
     series: created.length ? [series] : [],
@@ -193,10 +197,11 @@ function completeOccurrence(
     fields: created.length ? ['status', 'completedAt', 'occurrence'] : ['status', 'completedAt'],
     compensation: {
       ...before,
+      completionRecordIds: record ? [record.id] : [],
       createdSeriesIds: [],
       createdOccurrenceIds: created.map(({ id }) => id),
     },
-    data: created.length ? { occurrence, nextOccurrence: created[0], occurrences: created } : occurrence,
+    data: record ? { occurrence, record, occurrences: created } : created.length ? { occurrence, nextOccurrence: created[0], occurrences: created } : occurrence,
     events: [event],
   })
 }
@@ -483,6 +488,7 @@ function recurrenceApplication(input: {
     occurrenceSnapshots: TaskOccurrence[]
     createdSeriesIds: string[]
     createdOccurrenceIds: string[]
+    completionRecordIds?: string[]
   }
   data: unknown
   events: TaskEvent[]
@@ -678,4 +684,27 @@ function daysInMonth(year: number, month: number): number {
 
 function formatDate(year: number, month: number, day: number): string {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+function createOccurrenceCompletionRecord(
+  task: Task,
+  command: Extract<RecurrenceCapabilityCommand, { type: 'recurrence.complete' }>,
+  context: CapabilityCommandContext,
+): CompletionRecord | null {
+  if (task.mode !== 'learning') return null
+  for (const field of ['learned', 'evidence', 'nextAction'] as const) {
+    if (typeof command[field] !== 'string' || !command[field]!.trim()) throw validation(`Learning completion ${field} evidence is required.`)
+  }
+  const reviewDate = new Date(context.now)
+  reviewDate.setUTCDate(reviewDate.getUTCDate() + 1)
+  return {
+    id: command.recordId ?? context.id('completion'), taskId: task.id,
+    topicId: task.listId === 'list:system:learning' ? null : task.listId,
+    sessionIds: [], taskTitleSnapshot: task.title,
+    learned: command.learned!, evidence: command.evidence!, blocker: command.blocker ?? '',
+    nextAction: command.nextAction!, mastery: command.mastery ?? null, completedAt: context.now,
+    reviewStage: 0, nextReviewOn: reviewDate.toISOString().slice(0, 10),
+    lastReviewResult: null, lastReviewedAt: null, createdAt: context.now,
+    updatedAt: context.now, deletedAt: null,
+  }
 }

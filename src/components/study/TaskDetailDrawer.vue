@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowRight, Bell, CalendarDays, Check, Clock3, Flag, Inbox, MoreHorizontal, Pencil, Plus, RotateCcw, Tag, Trash2, X } from '@lucide/vue'
 import type { TaskViewItem } from './TasksView.vue'
 import type { TaskOccurrence } from '../../domain/workspace/types'
+import { useModalOverlay } from '../ui/use-overlay'
 
 export interface TaskEventViewItem {
   id: string
@@ -40,6 +41,16 @@ const emit = defineEmits<{
 }>()
 
 const checklistDraft = ref('')
+const panel = ref<HTMLElement | null>(null)
+const covering = ref(window.matchMedia('(max-width: 1279px)').matches)
+let coveringMedia: MediaQueryList | undefined
+function updateCovering(event: MediaQueryListEvent) { covering.value = event.matches }
+onMounted(() => {
+  coveringMedia = window.matchMedia('(max-width: 1279px)')
+  coveringMedia.addEventListener('change', updateCovering)
+})
+onUnmounted(() => coveringMedia?.removeEventListener('change', updateCovering))
+const { layerId } = useModalOverlay(() => Boolean(props.task && covering.value), panel, () => emit('close'))
 const confirmDelete = ref(false)
 const checklistLocked = computed(() => props.task?.status === 'completed' || props.task?.status === 'cancelled')
 watch(() => props.task?.id, () => { checklistDraft.value = ''; confirmDelete.value = false })
@@ -63,7 +74,8 @@ function addChecklistItem() {
 </script>
 
 <template>
-  <aside v-if="task" class="detail-drawer" :class="{ mobile }" aria-label="任务详情">
+  <Teleport defer to="#ui-overlay-host" :disabled="!covering">
+  <aside v-if="task" ref="panel" class="detail-drawer" :class="{ mobile }" :data-overlay-layer="covering ? layerId : undefined" :role="covering ? 'dialog' : undefined" :aria-modal="covering ? true : undefined" :tabindex="covering ? -1 : undefined" aria-label="任务详情">
     <header class="drawer-header">
       <div><button title="编辑任务" aria-label="编辑任务" @click="emit('edit', task.id)"><Pencil :size="18" /></button><button title="删除任务" aria-label="删除任务" @click="confirmDelete = true"><Trash2 :size="18" /></button></div>
       <button title="关闭任务详情" aria-label="关闭任务详情" @click="emit('close')"><X :size="22" /></button>
@@ -85,6 +97,7 @@ function addChecklistItem() {
           :key="item.id"
           class="checklist-item"
           :class="{ checked: item.checked }"
+          :aria-pressed="item.checked"
           :disabled="checklistLocked"
           @click="emit('toggleChecklist', task.id, item.id, !item.checked)"
         ><span><Check :size="15" /></span><b>{{ item.text }}</b></button>
@@ -137,9 +150,11 @@ function addChecklistItem() {
       </button>
     </footer>
   </aside>
+  </Teleport>
 </template>
 
 <style scoped>
+.detail-drawer { pointer-events: auto; }
 .detail-drawer { width: 420px; min-width: 420px; height: 100%; display: flex; flex-direction: column; border-left: 1px solid var(--hairline); background: var(--material-regular); box-shadow: -14px 0 38px color-mix(in srgb, var(--text) 5%, transparent); backdrop-filter: saturate(150%) blur(22px); -webkit-backdrop-filter: saturate(150%) blur(22px); }
 .drawer-header { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; }.drawer-header > div { display: flex; gap: 3px; }.drawer-header button { width: 42px; height: 42px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.drawer-header button:hover { background: var(--control-fill); }.drawer-header > div button:last-child { color: var(--danger); }
 .delete-confirm { margin: 0 28px 12px; padding: 13px; border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border)); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }.delete-confirm > span { display: flex; flex-direction: column; gap: 4px; }.delete-confirm strong { color: var(--danger); font-size: 12px; }.delete-confirm small { color: var(--muted); font-size: 10px; line-height: 1.5; }.delete-confirm > div { display: flex; justify-content: flex-end; gap: 7px; margin-top: 10px; }.delete-confirm button { min-height: 34px; padding: 0 11px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font-size: 11px; }.delete-confirm button.danger { color: var(--danger); }

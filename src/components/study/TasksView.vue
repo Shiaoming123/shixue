@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, MoreHorizontal, Pencil, Search, Trash2, X } from '@lucide/vue'
+import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, ListTree, MoreHorizontal, Pencil, Search, Trash2, X } from '@lucide/vue'
 import type { StudyTaskPriority } from '../../storage/study/types'
 import type { StudyTaskQuerySort, StudyTaskSmartView } from '../../lib/study-task-query'
 import { isQuickAddEditableTarget } from '../../lib/quick-add-shortcut-state'
@@ -9,6 +9,8 @@ import type { EntityRef } from '../../domain/capabilities/types'
 import Checkbox from '../ui/Checkbox.vue'
 import Dialog from '../ui/Dialog.vue'
 import Listbox from '../ui/Listbox.vue'
+import Popover from '../ui/Popover.vue'
+import { hasActiveOverlay } from '../ui/use-overlay'
 import OccurrenceRow from './OccurrenceRow.vue'
 import QuickAddComposer from './QuickAddComposer.vue'
 
@@ -42,6 +44,7 @@ const emit = defineEmits<{
 const quickAddComposer = ref<InstanceType<typeof QuickAddComposer> | null>(null)
 const searchInput = ref<HTMLInputElement>()
 const toolbarOpen = ref(false)
+const smartViewMenuOpen = ref(false)
 const batchMode = ref(false)
 const selectedIds = ref<string[]>([])
 const confirmDeleteIds = ref<string[]>([])
@@ -101,7 +104,7 @@ function finishBatch(action: 'complete' | 'today' | 'delete') {
 }
 function isTyping(target: EventTarget | null) { return target instanceof HTMLElement && isQuickAddEditableTarget(target) }
 function handleShortcut(event: KeyboardEvent) {
-  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target)) return
+  if (hasActiveOverlay() || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target)) return
   if (event.key === '/') { event.preventDefault(); searchInput.value?.focus(); return }
   if (event.key.toLowerCase() === 'n') { event.preventDefault(); quickAddComposer.value?.focus(); return }
   const index = props.tasks.findIndex(({ id }) => id === props.selectedId)
@@ -125,8 +128,14 @@ defineExpose({ activateQuickAdd })
 <template>
   <section class="tasks-view">
     <header class="page-header">
-      <div class="page-title"><h1>{{ title }}</h1><Listbox class="mobile-smart-view" variant="title" :model-value="smartView" :options="smartViewOptions" label="智能清单" @update:model-value="emit('smartViewChange', $event as StudyTaskSmartView)" /><span>{{ subtitle }}</span></div>
+      <div class="page-title"><h1>{{ title }}</h1><span>{{ subtitle }}</span></div>
       <div class="header-actions">
+        <Popover :open="smartViewMenuOpen" kind="menu" align="end" mobile-sheet @update:open="smartViewMenuOpen = $event">
+          <template #trigger="{ triggerProps }"><button v-bind="triggerProps" type="button" title="切换智能清单" aria-label="切换智能清单"><ListTree :size="18" /></button></template>
+          <div class="smart-view-menu" role="menu" aria-label="智能清单">
+            <button v-for="option in smartViewOptions" :key="option.value" type="button" role="menuitemradio" :aria-checked="smartView === option.value" @click="emit('smartViewChange', option.value as StudyTaskSmartView); smartViewMenuOpen = false"><span>{{ option.label }}</span><Check v-if="smartView === option.value" :size="16" /></button>
+          </div>
+        </Popover>
         <button type="button" :class="{ active: toolbarOpen }" title="筛选" aria-label="筛选" @click="toolbarOpen = !toolbarOpen"><Filter :size="18" /></button>
         <button type="button" :class="{ active: batchMode }" title="批量操作" aria-label="批量操作" @click="batchMode = !batchMode; clearSelection()"><ListFilter :size="18" /></button>
         <button type="button" title="更多" aria-label="更多"><MoreHorizontal :size="19" /></button>
@@ -171,13 +180,13 @@ defineExpose({ activateQuickAdd })
 </template>
 
 <style scoped>
-.tasks-view { width: min(100%, 760px); min-height: 100%; margin: 0 auto; padding: 28px 28px 80px; }.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }.page-header h1 { margin: 0; font-size: 22px; line-height: 1.25; font-weight: 650; letter-spacing: -.02em; }.page-header span { display: block; margin-top: 5px; color: var(--muted); font-size: var(--text-xs); }.mobile-smart-view { display: none; }.header-actions { display: flex; gap: 2px; }.header-actions button, .search-field button, .row-actions button { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--muted); }.header-actions button:hover, .header-actions button.active, .row-actions button:hover { background: var(--control-fill); color: var(--text); }
+.tasks-view { width: min(100%, 760px); min-height: 100%; margin: 0 auto; padding: 28px 28px 80px; }.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }.page-header h1 { margin: 0; font-size: 22px; line-height: 1.25; font-weight: 650; letter-spacing: -.02em; }.page-header span { display: block; margin-top: 5px; color: var(--muted); font-size: var(--text-xs); }.header-actions { display: flex; gap: 2px; }.header-actions button, .search-field button, .row-actions button { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--muted); }.header-actions button:hover, .header-actions button.active, .row-actions button:hover { background: var(--control-fill); color: var(--text); }.smart-view-menu { width: 190px; display: grid; gap: 2px; padding: 6px; }.smart-view-menu button { min-height: 38px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text); font-size: var(--text-base); text-align: left; }.smart-view-menu button:hover, .smart-view-menu button[aria-checked="true"] { background: var(--control-fill); }.smart-view-menu button svg { color: var(--accent); }
 .capture { min-height: max(48px, var(--field-min-height)); display: grid; grid-template-columns: 24px 1fr max(36px, var(--icon-hit)); align-items: center; gap: 8px; margin-top: 22px; padding: 0 6px 0 14px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--control-fill); box-shadow: var(--shadow-sm); }.capture > svg { color: var(--accent); }.capture input { min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--text-base); }.capture button { width: max(36px, var(--icon-hit)); height: max(36px, var(--icon-hit)); display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: var(--accent); color: var(--accent-text); }.capture button:disabled { opacity: .28; }
 .search-field { height: 38px; display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 6px; margin-top: 14px; padding: 0 8px 0 11px; border: 1px solid transparent; border-radius: var(--radius-md); background: var(--control-fill); color: var(--muted); }.search-field:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }.search-field input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--text-sm); }.search-field button { width: 28px; height: 28px; }.search-field kbd { padding: 2px 6px; border: 1px solid var(--hairline); border-radius: 6px; color: var(--muted); font: inherit; font-size: 10px; }.filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 9px; padding: 10px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--material-thin); }
 .batch-bar { min-height: 46px; display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding: 5px 7px 5px 13px; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); color: var(--accent); font-size: var(--text-sm); }.batch-bar > div { display: flex; gap: 3px; }.batch-bar button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: transparent; color: inherit; }.task-sections { margin-top: 20px; }.task-section + .task-section { margin-top: 20px; }.task-section h2 { margin: 0 0 7px; color: var(--accent); font-size: var(--text-sm); font-weight: 650; }.task-section h2.overdue { color: var(--danger); }.task-section h2 span { margin-left: 4px; color: var(--muted); font-weight: 500; }
 .task-row { position: relative; min-height: 64px; display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: stretch; border-bottom: 1px solid var(--hairline); transition: background var(--motion-fast) var(--ease); }.task-row:first-of-type { border-top: 1px solid var(--hairline); }.task-row:hover, .task-row.selected { background: color-mix(in srgb, var(--press-fill) 72%, transparent); }.task-row.selected { box-shadow: inset 3px 0 var(--accent); }.complete-button, .select-button { display: grid; place-items: center; border: 0; background: transparent; }.complete-button span { width: 22px; height: 22px; display: grid; place-items: center; border: 1.5px solid color-mix(in srgb, var(--muted) 78%, transparent); border-radius: 50%; color: transparent; }.complete-button span.high { border-color: var(--danger); }.complete-button span.medium { border-color: var(--warning); }.complete-button span.low { border-color: var(--accent); }.complete-button span.checked { border-color: var(--success); background: var(--success); color: var(--accent-text); }
 .task-main { min-width: 0; min-height: 63px; display: grid; grid-template-columns: minmax(0, 1fr) 22px 20px; align-items: center; gap: 6px; padding: 8px 8px 8px 0; border: 0; background: transparent; color: var(--text); text-align: left; }.task-copy { min-width: 0; }.task-copy strong { display: block; overflow: hidden; font-size: var(--text-base); font-weight: 550; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }.task-copy small { min-height: 18px; display: flex; align-items: center; gap: 12px; margin-top: 5px; overflow: hidden; color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }.task-copy small span { display: inline-flex; align-items: center; gap: 4px; }.task-row.completed .task-copy strong { color: var(--muted); text-decoration: line-through; }.priority.high { color: var(--danger); }.priority.medium { color: var(--warning); }.priority.low { color: var(--accent); }.chevron { color: color-mix(in srgb, var(--muted) 55%, transparent); }.row-actions { position: absolute; right: 7px; top: 50%; display: flex; transform: translateY(-50%); gap: 2px; padding-left: 18px; background: linear-gradient(90deg, transparent, var(--surface) 25%); opacity: 0; pointer-events: none; }.task-row:is(:hover, :focus-within) .row-actions { opacity: 1; pointer-events: auto; }.row-actions button { width: 34px; height: 34px; background: var(--control-fill); }.danger { color: var(--danger) !important; }
 .empty-state { min-height: 320px; display: grid; place-content: center; justify-items: center; gap: 12px; color: color-mix(in srgb, var(--muted) 72%, transparent); }.empty-state strong { color: var(--muted); font-size: var(--text-base); font-weight: 550; }.confirm-button { min-height: 38px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font-size: var(--text-sm); }
-@media (max-width: 819px) { .tasks-view { width: 100%; padding: 18px 16px calc(106px + env(safe-area-inset-bottom, 0px)); }.page-header h1 { display: none; }.mobile-smart-view { display: block; max-width: 190px; }.capture { margin-top: 16px; }.task-sections { margin-top: 15px; }.task-row { min-height: 68px; }.task-main { min-height: 67px; grid-template-columns: minmax(0, 1fr) 22px; }.chevron { display: none; }.task-copy strong { white-space: normal; }.task-copy small { gap: 9px; }.task-copy small span:nth-child(2) { display: none; }.row-actions { display: none !important; }.filters { grid-template-columns: 1fr; }.complete-button span { width: 24px; height: 24px; } }
+@media (max-width: 819px) { .tasks-view { width: 100%; padding: 18px 16px calc(106px + env(safe-area-inset-bottom, 0px)); }.page-header h1 { font-size: 21px; }.capture { margin-top: 16px; }.task-sections { margin-top: 15px; }.task-row { min-height: 68px; }.task-main { min-height: 67px; grid-template-columns: minmax(0, 1fr) 22px; }.chevron { display: none; }.task-copy strong { white-space: normal; }.task-copy small { gap: 9px; }.task-copy small span:nth-child(2) { display: none; }.row-actions { display: none !important; }.filters { grid-template-columns: 1fr; }.complete-button span { width: 24px; height: 24px; } }
 @media (hover: none) { .row-actions { display: none !important; } }
 </style>

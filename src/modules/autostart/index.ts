@@ -31,3 +31,22 @@ export async function isAutostartEnabled(): Promise<boolean> {
   const { isEnabled } = await import('@tauri-apps/plugin-autostart')
   return isEnabled()
 }
+
+export async function queryAutostartStatus(read = isAutostartEnabled): Promise<
+  { available: true; enabled: boolean } | { available: false; message: string }
+> {
+  try { return { available: true, enabled: await read() } }
+  catch { return { available: false, message: '开机启动暂不可用，请确认当前构建启用了此能力。' } }
+}
+
+export async function setAutostartEnabled(
+  enabled: boolean,
+  bindings = { enable: enableAutostart, disable: disableAutostart, read: isAutostartEnabled },
+): Promise<boolean> {
+  try {
+    await (enabled ? bindings.enable() : bindings.disable())
+    const actual = await bindings.read()
+    if (actual !== enabled) throw new Error('Autostart state did not change')
+    return actual
+  } catch { throw new Error('开机启动设置未能保存，请重试。') }
+}

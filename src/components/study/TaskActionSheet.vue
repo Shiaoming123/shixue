@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { ArrowRight, X } from '@lucide/vue'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import Listbox from '../ui/Listbox.vue'
+import { useModalOverlay } from '../ui/use-overlay'
 
 export type TaskActionMode = 'plan' | 'defer' | 'block' | 'cancel' | 'reopen'
 export interface TopicOption { id: string; title: string }
@@ -28,6 +29,9 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ close: []; submit: [payload: TaskActionPayload] }>()
+const panel = ref<HTMLElement | null>(null)
+const titleId = `task-action-title-${useId()}`
+const { layerId } = useModalOverlay(() => props.open, panel, () => emit('close'))
 const topicId = ref('')
 const plannedOn = ref('')
 const dueOn = ref('')
@@ -82,9 +86,10 @@ function submit() {
 </script>
 
 <template>
-  <div v-if="open" class="backdrop" @click.self="emit('close')">
-    <form class="sheet" role="dialog" aria-modal="true" @submit.prevent="submit">
-      <header><div><p>任务操作</p><h2>{{ title }}</h2></div><button type="button" title="关闭" @click="emit('close')"><X :size="20" /></button></header>
+  <Teleport defer to="#ui-overlay-host">
+  <div v-if="open" class="backdrop">
+    <form ref="panel" :data-overlay-layer="layerId" tabindex="-1" class="sheet" role="dialog" aria-modal="true" :aria-labelledby="titleId" @submit.prevent="submit">
+      <header><div><p>任务操作</p><h2 :id="titleId">{{ title }}</h2></div><button type="button" title="关闭" aria-label="关闭" @click="emit('close')"><X :size="20" /></button></header>
       <p class="task-title">{{ taskTitle }}</p>
 
       <template v-if="mode === 'plan'">
@@ -108,9 +113,11 @@ function submit() {
       <footer><button type="button" class="cancel" @click="emit('close')">返回</button><button type="submit" class="save" :class="{ danger: mode === 'cancel' }" :disabled="!ready"><span>{{ submitLabel }}</span><ArrowRight :size="18" /></button></footer>
     </form>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>
+.backdrop { pointer-events: auto; }
 .backdrop { position: fixed; z-index: var(--z-modal); inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: color-mix(in srgb, var(--text) 22%, transparent); backdrop-filter: saturate(120%) blur(12px); }
 .sheet { width: min(100%, 560px); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; padding: 28px; border: 1px solid var(--hairline); border-radius: var(--radius-2xl); background: var(--material-regular); box-shadow: var(--shadow-lg); animation: sheet-in var(--motion-slow) var(--ease-spring); }
 @keyframes sheet-in { from { transform: translateY(20px) scale(.985); opacity: .75; } }

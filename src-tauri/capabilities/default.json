@@ -12,6 +12,7 @@
       "global-shortcut:allow-register",
       "global-shortcut:allow-unregister",
       "notification:default",
+      "autostart:default",
       "opener:default",
       "sql:default",
       "sql:allow-execute",

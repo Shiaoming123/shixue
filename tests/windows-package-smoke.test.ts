@@ -3,11 +3,30 @@ import test from 'node:test'
 import { resolve } from 'node:path'
 import {
   assertSmokePath,
+  appendManualWindowsStages,
+  createWindowsSmokeReport,
   createNsisInstallArgs,
   removeSmokeRoot,
   resolveInstalledExecutable,
   selectNsisInstaller,
+  updateSmokeStage,
 } from '../scripts/smoke-windows-package.mjs'
+
+test('reports automated and manual Windows evidence without promoting unobserved stages', () => {
+  const report = appendManualWindowsStages(createWindowsSmokeReport(new Date('2026-09-05T00:00:00.000Z')))
+  updateSmokeStage(report, 'package-build', 'PASS', 'exit code 0')
+  assert.equal(report.generatedAt, '2026-09-05T00:00:00.000Z')
+  assert.deepEqual(report.stages.map((stage) => stage.id), [
+    'package-build', 'silent-install', 'installed-launch',
+    'permission-first-reminder', 'two-reminders-one-task', 'snooze-one', 'complete-one',
+    'hide-to-tray', 'reopen-from-tray', 'quit-from-tray', 'no-delivery-after-quit',
+    'windows-display-scaling-200', 'native-notification-action-buttons',
+  ])
+  assert.equal(report.stages.find((stage) => stage.id === 'package-build')?.status, 'PASS')
+  assert.equal(report.stages.find((stage) => stage.id === 'permission-first-reminder')?.status, 'NOT_RUN')
+  assert.equal(report.stages.find((stage) => stage.id === 'windows-display-scaling-200')?.verification, 'manual')
+  assert.equal(report.stages.find((stage) => stage.id === 'native-notification-action-buttons')?.status, 'UNSUPPORTED')
+})
 
 test('rejects cleanup outside the dedicated target subtree', () => {
   const targetRoot = resolve('D:/repo/src-tauri/target')

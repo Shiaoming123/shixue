@@ -32,6 +32,7 @@ const registration = {
   id,
   kind: 'dialog' as const,
   trigger: null as HTMLElement | null,
+  panel: () => panel.value,
   close(reason: OverlayCloseReason) {
     if (reason === 'outside' && !props.closeOnOutside) {
       bringToFront()

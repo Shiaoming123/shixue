@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Depend on merged PRs 1–3.
+- Merge requires PRs 1–3. Development may proceed on the explicitly recorded PR3-dependent worktree; PR3 #14 was OPEN when this PR4 worktree was created. Do not claim merge eligibility before rechecking.
 - Multiple reminders are independent; snooze never changes task schedule or deadline.
 - Request notification permission only when the user first enables a reminder or explicitly tests notifications.
 - Background delivery is promised only while the app or tray process is running.
@@ -32,7 +32,7 @@
 **Interfaces:**
 - Produces: `resolveReminderInstant(rule, task, occurrence): string | null`; commands `reminder.set`, `reminder.snooze`, `reminder.dismiss`; unique key `deliveryKey(ruleId, occurrenceId, scheduledFor)`.
 
-- [ ] **Step 1: Write tests for start/due offsets, absolute reminders, dedupe, and snooze isolation**
+- [x] **Step 1: Write tests for start/due offsets, absolute reminders, dedupe, and snooze isolation**
 
 ```ts
 test('snooze changes only the delivery', async () => {
@@ -43,11 +43,11 @@ test('snooze changes only the delivery', async () => {
 })
 ```
 
-- [ ] **Step 2: Run and verify missing reminder commands fail**
+- [x] **Step 2: Run and verify missing reminder commands fail**
 
 Run: `node --test --experimental-strip-types tests/reminder-rules.test.ts`
 
-- [ ] **Step 3: Implement rule resolution and idempotent delivery creation**
+- [x] **Step 3: Implement rule resolution and idempotent delivery creation**
 
 ```ts
 export function deliveryKey(ruleId: string, occurrenceId: string | null, scheduledFor: string): string {
@@ -57,7 +57,7 @@ export function deliveryKey(ruleId: string, occurrenceId: string | null, schedul
 
 Disabled rules produce no pending delivery. Completed/cancelled tasks and completed/skipped occurrences cancel future pending deliveries without deleting audit rows.
 
-- [ ] **Step 4: Run reminder and capability tests**
+- [x] **Step 4: Run reminder and capability tests**
 
 Run: `node --test --experimental-strip-types tests/reminder-rules.test.ts tests/capability-service.test.ts`
 
@@ -84,7 +84,7 @@ git commit -m "feat: add multiple reminder rules"
 - TypeScript exports `registerReminderActionBridge(service): Promise<() => void>`.
 - Before implementation, specify the claim/ack DTOs and their owner, including delivery identity, revision/conflict handling, send failure, abandoned claims, retry and acknowledgement persistence. Platform adapters consume this shared contract; any native bookkeeping must have an explicit reconciliation boundary with the authoritative ledger. Do not assume a process-local set or the illustrative `claim_due` test below proves persisted deduplication.
 
-- [ ] **Step 1: Write Rust due-selection and TS action-mapping tests**
+- [x] **Step 1: Write Rust due-selection and TS action-mapping tests**
 
 ```rust
 #[test]
@@ -96,19 +96,19 @@ fn same_delivery_is_claimed_once() {
 }
 ```
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 Run: `npm run rust:verify; node --test --experimental-strip-types tests/notification-action-bridge.test.ts`
 
 Expected: FAIL because action registration and claim logic are absent.
 
-- [ ] **Step 3: Implement registered action types and event bridge**
+- [x] **Step 3: Implement registered action types and event bridge**
 
 Register one action type with Complete, Snooze and Open buttons. If Windows does not expose action buttons for the current packaging path, clicking the notification opens an in-app reminder card with the same three actions; do not claim native actions until smoke-verified.
 
 Exercise two competing claim attempts and restarts before send, after send but before ack, and after persisted ack; include repeated action callbacks and legacy-ledger upgrade. Document the chosen retry/recovery outcome for each window. OS notification submission and database acknowledgement are not one atomic transaction, so an ambiguous send/ack crash may cause a duplicate or a missed delivery depending on policy; do not promise exactly-once notification delivery. Distinguish accepted submission, observed delivery and user action in recorded evidence.
 
-- [ ] **Step 4: Run Rust, module, and TS tests**
+- [x] **Step 4: Run Rust, module, and TS tests**
 
 Run: `npm run rust:verify; npm run check:modules; node --test --experimental-strip-types tests/notification-action-bridge.test.ts`
 
@@ -126,14 +126,14 @@ git commit -m "feat: bridge actionable reminder notifications"
 - Create: `src/components/study/ReminderCard.vue`
 - Test: `tests/reminder-ui-contract.test.ts`
 - Modify: `src/components/study/TaskEditSheet.vue`
-- Modify: `src/components/study/SettingsSheet.vue`
+- Modify: `src/components/study/SettingsView.vue`
 - Modify: `src/lib/study-reminders.ts`
 
 **Interfaces:**
 - Consumes: DatePicker/TimePicker/Listbox, notification module, reminder commands.
 - Produces: multiple ordered rules and action card; `ensureNotificationPermission(reason: 'first-reminder' | 'test'): Promise<PermissionState>`.
 
-- [ ] **Step 1: Write tests that startup never requests permission and first reminder does**
+- [x] **Step 1: Write tests that startup never requests permission and first reminder does**
 
 ```ts
 assert.equal(permissionRequestsAfterBoot(), 0)
@@ -142,22 +142,22 @@ assert.equal(permissionRequests(), 1)
 assert.doesNotMatch(source('ReminderEditor.vue'), /<select\b|type=["']time["']/)
 ```
 
-- [ ] **Step 2: Run and confirm current eager/single-reminder behavior fails**
+- [x] **Step 2: Run and confirm current eager/single-reminder behavior fails**
 
 Run: `node --test --experimental-strip-types tests/reminder-ui-contract.test.ts tests/study-reminders.test.ts`
 
-- [ ] **Step 3: Implement editor and concise denial/retry states**
+- [x] **Step 3: Implement editor and concise denial/retry states**
 
 Provide presets “开始时 / 提前 10 分钟 / 提前 1 小时 / 自定义” plus add/remove. Permission denial preserves the rule and marks delivery unavailable; Settings shows status and a notification test action.
 
-- [ ] **Step 4: Run reminder and UI contract tests**
+- [x] **Step 4: Run reminder and UI contract tests**
 
 Expected: PASS; three in-app actions produce the same command envelopes as OS events.
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add src/components/study/ReminderEditor.vue src/components/study/ReminderCard.vue src/components/study/TaskEditSheet.vue src/components/study/SettingsSheet.vue src/lib/study-reminders.ts tests/reminder-ui-contract.test.ts tests/study-reminders.test.ts
+git add src/components/study/ReminderEditor.vue src/components/study/ReminderCard.vue src/components/study/TaskEditSheet.vue src/components/study/SettingsView.vue src/lib/study-reminders.ts tests/reminder-ui-contract.test.ts tests/study-reminders.test.ts
 git commit -m "feat: add multiple reminder interface"
 ```
 
@@ -168,13 +168,13 @@ git commit -m "feat: add multiple reminder interface"
 - Test: `tests/window-lifecycle.test.ts`
 - Modify: `src/modules/tray/index.ts`
 - Modify: `src/modules/autostart/index.ts`
-- Modify: `src/components/study/SettingsSheet.vue`
+- Modify: `src/components/study/SettingsView.vue`
 - Modify: `src/App.vue`
 
 **Interfaces:**
 - Produces: `handleCloseRequested(event, preferences)`; tray actions `open`, `quick-add`, `quit`.
 
-- [ ] **Step 1: Write ask/tray/quit and remembered-choice tests**
+- [x] **Step 1: Write ask/tray/quit and remembered-choice tests**
 
 ```ts
 assert.equal(await closeWith('tray'), 'prevent-and-hide')
@@ -182,20 +182,20 @@ assert.equal(await closeWith('quit'), 'allow-close')
 assert.equal(defaultPreferences().launchAtLogin, false)
 ```
 
-- [ ] **Step 2: Run and confirm the lifecycle helper is missing**
+- [x] **Step 2: Run and confirm the lifecycle helper is missing**
 
-- [ ] **Step 3: Implement first-close choice with shared Dialog**
+- [x] **Step 3: Implement first-close choice with shared Dialog**
 
 Quit must stop the process; hide must leave the scheduler active. Tray “退出” always exits without asking. Autostart changes only after explicit user toggle and surfaces plugin failure.
 
-- [ ] **Step 4: Run tests and module checks**
+- [x] **Step 4: Run tests and module checks**
 
 Run: `node --test --experimental-strip-types tests/window-lifecycle.test.ts; npm run check:modules`
 
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add src/lib/window-lifecycle.ts src/modules/tray/index.ts src/modules/autostart/index.ts src/components/study/SettingsSheet.vue src/App.vue tests/window-lifecycle.test.ts
+git add src/lib/window-lifecycle.ts src/modules/tray/index.ts src/modules/autostart/index.ts src/components/study/SettingsView.vue src/App.vue tests/window-lifecycle.test.ts
 git commit -m "feat: manage tray and close lifecycle"
 ```
 
@@ -209,11 +209,13 @@ git commit -m "feat: manage tray and close lifecycle"
 **Interfaces:**
 - Consumes: packaged executable and generated smoke report.
 
-- [ ] **Step 1: Add machine-readable smoke stages**
+- [x] **Step 1: Add machine-readable smoke stages**
 
 Stages: launch, permission prompt on first reminder, deliver two reminders for one task, snooze one, complete one, hide to tray, reopen, quit, verify no delivery after quit.
 
-- [ ] **Step 2: Build the unsigned local package**
+The script writes `src-tauri/target/windows-package-smoke-report.json`. Automated package/install/process-liveness probes and manual Windows UI stages have separate `verification` fields. Unobserved notification, tray, and 200% Windows display-scaling stages remain `NOT_RUN`; the current native notification action-button path is `UNSUPPORTED` and uses the in-app card fallback.
+
+- [x] **Step 2: Build the unsigned local package**
 
 Run: `npm run package:windows`
 
@@ -225,7 +227,9 @@ Run: `npm run smoke:windows-package`
 
 Expected: PASS for tray/background/in-app actions. Native action buttons are PASS or explicitly `NOT_RUN/UNSUPPORTED`; never silently promoted.
 
-- [ ] **Step 4: Run full gates**
+Automated package, isolated install, and process-liveness smoke is `PASS`. The notification, reminder-action, tray, quit-silence, and Windows 200% display stages were not manually observed and remain `NOT_RUN`; native notification action buttons remain `UNSUPPORTED` with the in-app card fallback.
+
+- [x] **Step 4: Run full gates**
 
 Run: `npm test; npm run typecheck; npm run build; npm run build:web; npm run rust:verify; npm run check:docs; npm run release:check; git diff --check`
 

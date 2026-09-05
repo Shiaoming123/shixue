@@ -34,6 +34,7 @@ const registration = {
   id,
   kind: props.kind as OverlayKind,
   trigger: null as HTMLElement | null,
+  panel: () => panel.value,
   close: (reason: OverlayCloseReason) => requestClose(reason),
 }
 const { layerId, bringToFront } = useOverlay(registration)
