@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { AlertCircle, ArrowDown, ArrowRight, ArrowUp, Check, CheckCircle2, ChevronRight, Clock3, GripVertical, Inbox, ListTodo, SlidersHorizontal } from '@lucide/vue'
+import type { EntityRef } from '../../domain/capabilities/types'
+import QuickAddComposer from './QuickAddComposer.vue'
 
 export interface TodayTaskItem {
   id: string
@@ -27,6 +29,9 @@ const props = defineProps<{
   weeklyCompleted: number
   weeklyTarget: number
   weeklyMinutes: number
+  quickAddDestinationListId: string
+  quickAddDefaultStartOn: string
+  quickAddRemoveRecognizedText?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -42,6 +47,7 @@ const emit = defineEmits<{
   occurrenceSkip: [id: string]
   occurrenceReschedule: [id: string]
   reorder: [taskIds: string[]]
+  created: [entity: EntityRef]
 }>()
 
 const ordering = ref(false)
@@ -108,6 +114,13 @@ function reasonLabel(reason: NonNullable<TodayTaskItem['reasons']>[number]) {
         <button class="inbox-link" aria-label="打开任务收件箱" @click="emit('openInbox')"><Inbox :size="18" />收件箱 <span>{{ inboxCount }}</span></button>
       </div>
     </header>
+
+    <QuickAddComposer
+      :destination-list-id="quickAddDestinationListId"
+      :default-start-on="quickAddDefaultStartOn"
+      :quick-add-remove-recognized-text="quickAddRemoveRecognizedText"
+      @created="emit('created', $event)"
+    />
 
     <section v-if="overdueTasks.length" class="overdue-section">
       <header><span><AlertCircle :size="17" />逾期 {{ overdueTasks.length }} 项</span><small>先决定今天做不做</small></header>

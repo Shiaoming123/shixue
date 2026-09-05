@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from '@lucide/vue'
+import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, MoreHorizontal, Pencil, Search, Trash2, X } from '@lucide/vue'
 import type { StudyTaskPriority } from '../../storage/study/types'
 import type { StudyTaskQuerySort, StudyTaskSmartView } from '../../lib/study-task-query'
 import type { TaskOccurrence } from '../../domain/workspace/types'
+import type { EntityRef } from '../../domain/capabilities/types'
 import Checkbox from '../ui/Checkbox.vue'
 import Dialog from '../ui/Dialog.vue'
 import Listbox from '../ui/Listbox.vue'
 import OccurrenceRow from './OccurrenceRow.vue'
+import QuickAddComposer from './QuickAddComposer.vue'
 
 export type TaskViewStatus = 'inbox' | 'backlog' | 'planned' | 'in_progress' | 'blocked' | 'completed' | 'cancelled'
 export interface TaskViewItem {
@@ -23,9 +25,10 @@ const props = defineProps<{
   tasks: TaskViewItem[]; occurrences: OccurrenceViewItem[]; topics: Array<{ id: string; title: string }>; title: string; subtitle: string
   selectedId?: string; smartView: StudyTaskSmartView; search: string; topicFilter: string
   priorityFilter: StudyTaskPriority | 'all'; sort: StudyTaskQuerySort
+  quickAddDestinationListId: string; quickAddDefaultStartOn?: string; quickAddRemoveRecognizedText?: boolean
 }>()
 const emit = defineEmits<{
-  capture: [title: string]; open: [id: string]; toggleComplete: [id: string]; edit: [id: string]; delete: [id: string]
+  created: [entity: EntityRef]; open: [id: string]; toggleComplete: [id: string]; edit: [id: string]; delete: [id: string]
   bulkDelete: [ids: string[]]; bulkComplete: [ids: string[]]; bulkMoveToToday: [ids: string[]]
   smartViewChange: [value: StudyTaskSmartView]
   searchChange: [value: string]; topicFilterChange: [value: string]
@@ -34,8 +37,7 @@ const emit = defineEmits<{
   occurrenceOpen: [id: string]
 }>()
 
-const draft = ref('')
-const captureInput = ref<HTMLInputElement>()
+const quickAddComposer = ref<InstanceType<typeof QuickAddComposer> | null>(null)
 const searchInput = ref<HTMLInputElement>()
 const toolbarOpen = ref(false)
 const batchMode = ref(false)
@@ -85,7 +87,6 @@ watch(() => props.tasks.map(({ id }) => id).join('|'), () => {
   selectedIds.value = selectedIds.value.filter((id) => available.has(id))
 })
 
-function capture() { const title = draft.value.trim(); if (!title) return; emit('capture', title); draft.value = '' }
 function dateFor(task: TaskViewItem) { return task.plannedOn ?? task.dueOn }
 function toggleSelection(id: string) { selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter((value) => value !== id) : [...selectedIds.value, id] }
 function clearSelection() { selectedIds.value = []; confirmDeleteIds.value = [] }
@@ -100,7 +101,7 @@ function isTyping(target: EventTarget | null) { return target instanceof HTMLEle
 function handleShortcut(event: KeyboardEvent) {
   if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target)) return
   if (event.key === '/') { event.preventDefault(); searchInput.value?.focus(); return }
-  if (event.key.toLowerCase() === 'n') { event.preventDefault(); captureInput.value?.focus(); return }
+  if (event.key.toLowerCase() === 'n') { event.preventDefault(); quickAddComposer.value?.focus(); return }
   const index = props.tasks.findIndex(({ id }) => id === props.selectedId)
   if (event.key === 'j' || event.key === 'ArrowDown') { event.preventDefault(); const task = props.tasks[Math.min(props.tasks.length - 1, Math.max(0, index + 1))]; if (task) emit('open', task.id) }
   if (event.key === 'k' || event.key === 'ArrowUp') { event.preventDefault(); const task = props.tasks[Math.max(0, index < 0 ? 0 : index - 1)]; if (task) emit('open', task.id) }
@@ -121,7 +122,13 @@ onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
         <button type="button" title="更多" aria-label="更多"><MoreHorizontal :size="19" /></button>
       </div>
     </header>
-    <form class="capture" @submit.prevent="capture"><Plus :size="19" /><input ref="captureInput" v-model="draft" aria-label="新建任务" :placeholder="smartView === 'today' ? '添加到今天' : '添加任务'" /><button type="submit" :disabled="!draft.trim()" title="添加" aria-label="添加"><Check :size="17" /></button></form>
+    <QuickAddComposer
+      ref="quickAddComposer"
+      :destination-list-id="quickAddDestinationListId"
+      :default-start-on="quickAddDefaultStartOn"
+      :quick-add-remove-recognized-text="quickAddRemoveRecognizedText"
+      @created="emit('created', $event)"
+    />
     <label class="search-field"><Search :size="16" /><input ref="searchInput" v-model="searchModel" type="search" aria-label="搜索任务" placeholder="搜索" /><button v-if="searchModel" type="button" title="清除" aria-label="清除搜索" @click="searchModel = ''"><X :size="14" /></button><kbd v-else>/</kbd></label>
     <div v-if="toolbarOpen" class="filters">
       <Listbox v-model="topicModel" :options="topicOptions" label="清单" variant="compact" />

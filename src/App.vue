@@ -27,7 +27,6 @@ import {
   archiveStudyListGroup,
   bulkDeleteStudyTasks,
   bulkRescheduleStudyTasks,
-  captureStudyTask,
   completeStudyTask,
   createTaskFromNextAction,
   deleteStudyTask,
@@ -61,7 +60,7 @@ import {
 import { createSeedStudyState } from './storage/study/types'
 import { getWorkspaceStore } from './storage/workspace/registry'
 import { createTaskCapabilityService } from './domain/capabilities/service'
-import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview } from './domain/capabilities/types'
+import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef } from './domain/capabilities/types'
 import type { WorkspaceStateV3 } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
@@ -204,6 +203,9 @@ const smartViewCounts = computed<StudySmartViewCounts>(() => ({
 }))
 const smartViewTitle = computed(() => ({ inbox: '收件箱', today: '今天', next7: '最近 7 天', all: '全部任务', completed: '已完成' })[activeSmartView.value])
 const smartViewSubtitle = computed(() => `${taskViews.value.length + occurrenceViews.value.length} 项 · ${dateLabel.value}`)
+const quickAddDestinationListId = computed(() => taskTopicFilter.value !== 'all' && taskTopicFilter.value !== 'unassigned'
+  ? taskTopicFilter.value
+  : 'list:system:learning')
 const activeListGroups = computed(() => (state.value.listGroups ?? []).filter(({ archivedAt }) => !archivedAt).sort((left, right) => left.position - right.position))
 const topicGroupOptions = computed(() => [
   { value: '', label: '无分组' },
@@ -408,12 +410,9 @@ function setTaskTopicFilter(value: string) { taskTopicFilter.value = value; alig
 function setTaskPriorityFilter(value: StudyTaskPriority | 'all') { taskPriorityFilter.value = value; alignTaskSelection() }
 function setTaskSort(value: StudyTaskQuerySort) { taskSort.value = value; alignTaskSelection() }
 
-async function captureTask(title: string) {
-  const now = new Date().toISOString()
+async function quickAddCreated(entity: EntityRef) {
   try {
-    let task = await captureStudyTask({ title, notes: '' }, { taskId: crypto.randomUUID(), eventId: crypto.randomUUID(), now })
-    if (activeSmartView.value === 'today') task = await planStudyTask(task.id, { plannedOn: today.value }, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now })
-    await refreshState(); selectedTaskId.value = task.id; notify(activeSmartView.value === 'today' ? '已加入今天。' : '已加入收件箱。')
+    await refreshState(); selectedTaskId.value = entity.id; selectedOccurrenceId.value = ''; notify(activeSmartView.value === 'today' ? '已加入今天。' : '已加入收件箱。')
   } catch (error) { reportStorageError(error) }
 }
 
@@ -880,7 +879,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
         <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" @back="showFocus = false" @toggle="toggleFocus" @finish="completionOpen = true" @update:scratchpad="updateScratchpad" />
         <div v-else-if="page === 'tasks' || page === 'today'" class="tasks-layout">
-          <div class="tasks-scroll"><TasksView :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @capture="captureTask" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
+          <div class="tasks-scroll"><TasksView :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-remove-recognized-text="false" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
           <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
         </div>
         <TopicsView v-else-if="page === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
