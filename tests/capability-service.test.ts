@@ -552,6 +552,39 @@ test('metadata update and its undo use receipts without fabricated lifecycle eve
   assert.equal(afterUndo.tasks.find(({ id }) => id === 'metadata-task')?.title, 'Before')
 })
 
+test('undo restores a task reminder after adding, changing, or clearing it without touching other tasks', async (context) => {
+  for (const scenario of ['add', 'change', 'clear'] as const) {
+    await context.test(scenario, async () => {
+      const service = fixture()
+      const originalAt = '2026-09-06T09:00:00.000Z'
+      const replacementAt = '2026-09-07T09:00:00.000Z'
+      await executeNext(service, 'create-reminder-target', {
+        type: 'task.create', taskId: 'reminder-target', listId: 'list:system:learning', title: 'Reminder target',
+        ...(scenario === 'add' ? {} : { reminderAt: originalAt }),
+      })
+      await executeNext(service, 'create-unrelated-reminder', {
+        type: 'task.create', taskId: 'unrelated-reminder', listId: 'list:system:learning', title: 'Keep reminder',
+        reminderAt: originalAt,
+      })
+      const before = await service.query({ type: 'workspace.snapshot' })
+      const update = await executeNext(service, 'edit-reminder', {
+        type: 'task.update', taskId: 'reminder-target',
+        patch: { reminderAt: scenario === 'clear' ? null : replacementAt },
+      })
+      await executeNext(service, 'undo-reminder', { type: 'undo.apply', token: update.undoToken! })
+      const after = await service.query({ type: 'workspace.snapshot' })
+      const reminderValues = (state: typeof before) => state.reminderRules
+        .filter(({ taskId }) => taskId === 'reminder-target')
+        .map(({ revision: _revision, ...rule }) => rule)
+      assert.deepEqual(reminderValues(after), reminderValues(before))
+      assert.deepEqual(
+        after.reminderRules.filter(({ taskId }) => taskId !== 'reminder-target'),
+        before.reminderRules.filter(({ taskId }) => taskId !== 'reminder-target'),
+      )
+    })
+  }
+})
+
 test('undo token revision rejects compensation after an intervening command without saving', async () => {
   const service = fixture()
   await executeNext(service, 'cas-create', {

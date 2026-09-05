@@ -106,6 +106,8 @@ Run: `node --test --experimental-strip-types tests/calendar-commands.test.ts`
 
 Accept durations from 5 to 1440 minutes in 5-minute steps. Moving to an all-day slot sets `startOn` and clears `startAt`; moving to a time slot does the inverse.
 
+For an occurrence, map those command fields to PR2's persisted date-only/timed override contract, not the parent task schedule. PR1's timestamp-only `OccurrenceOverride.scheduledAt` is insufficient. Verify timed-to-all-day and all-day-to-timed moves survive reload/export/import in two timezones, keep the series and other occurrences unchanged for `scope: 'occurrence'`, and undo restores the original schedule kind and value. Reuse PR2's schema/version handling instead of introducing a calendar-only persisted schedule model.
+
 - [ ] **Step 4: Run calendar, recurrence, and capability tests**
 
 Run: `node --test --experimental-strip-types tests/calendar-commands.test.ts tests/recurrence-commands.test.ts tests/capability-service.test.ts`

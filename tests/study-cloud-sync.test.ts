@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import test from 'node:test'
+import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
 import * as cloud from '../src/lib/study-cloud-sync.ts'
 import { parseWorkspaceStateOrMigrate } from '../src/domain/workspace/migrate.ts'
 import { parseWorkspaceState } from '../src/domain/workspace/parse.ts'
@@ -212,6 +213,32 @@ test('newer remote snapshot crosses workspace.import and strips foreign receipt 
   assert.equal(saved.commandReceipts.some(({ id }) => id === 'foreign-receipt'), false)
   assert.deepEqual(saved.commandReceipts.map(({ commandType }) => commandType), ['workspace.import'])
   assert.equal(pushes, 0)
+})
+
+test('downloaded workspace converges after controller restart and still uploads a real edit', async () => {
+  const store = createInMemoryWorkspaceStore(stateAt('2026-09-04T10:00:01.000Z', 'older'))
+  let remote = await cloud.createStudyCloudSnapshot(stateAt('2026-09-04T10:00:02.000Z', 'newer'), 'device-b')
+  let pushes = 0
+  const controller = () => cloud.createStudyCloudSyncController({
+    enabled: true, config, deviceId: 'device-a', store,
+    adapter: {
+      async sessionStatus() { return { state: 'signed-in' } },
+      async pull() { return remote },
+      async push(_config, snapshot) { pushes += 1; remote = snapshot; return { applied: true } },
+    },
+  })
+  assert.equal((await controller().syncOnce() as { action: string }).action, 'downloaded')
+  const imported = await store.load()
+  assert.equal((await controller().syncOnce() as { action: string }).action, 'unchanged')
+  assert.deepEqual(await store.load(), imported, 'no extra import receipt or revision for unchanged data')
+  assert.equal(pushes, 0)
+  await createTaskCapabilityService(store, () => new Date().toISOString(), (kind) => `${kind}:${crypto.randomUUID()}`).execute({
+    protocolVersion: 1, source: 'human-ui', idempotencyKey: 'edit-after-download',
+    expectedWorkspaceRevision: imported.revision,
+    command: { type: 'task.update', taskId: imported.tasks[0].id, patch: { notes: 'edited locally' } },
+  })
+  assert.equal((await controller().syncOnce() as { action: string }).action, 'uploaded')
+  assert.equal(pushes, 1)
 })
 
 test('newer legacy v2 remote snapshot migrates before workspace import', async () => {

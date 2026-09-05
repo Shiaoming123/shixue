@@ -194,12 +194,15 @@ export function createStudyCloudSyncController(
         return finish({ state: 'failed', reason: 'remote-invalid', localPreserved: true })
       }
 
-      const order = compareStudyCloudSnapshots(local, remote)
+      // Import advances local CAS metadata and replaces foreign receipts. Those
+      // local transaction details must not turn a download into another upload.
+      const sameContent = workspaceContent(local.state) === workspaceContent(remote.state)
+      const order = sameContent ? 0 : compareStudyCloudSnapshots(local, remote)
       if (order === 0) {
         return finish({
           state: 'success',
           action: 'unchanged',
-          revision: local.mutation.revision,
+          revision: remote.mutation.revision,
           localPreserved: true,
         })
       }
@@ -285,6 +288,11 @@ async function parseCloudSnapshot(value: SyncMutation): Promise<ParsedStudyCloud
     throw new Error('Invalid Study cloud snapshot revision.')
   }
   return { mutation: value, state, updatedAt: state.updatedAt, digest }
+}
+
+function workspaceContent(state: WorkspaceStateV3): string {
+  const { revision, updatedAt, commandReceipts, ...content } = state
+  return canonicalJson(content)
 }
 
 function canonicalJson(value: unknown): string {

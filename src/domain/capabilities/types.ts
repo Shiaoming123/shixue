@@ -2,6 +2,7 @@ import type {
   CompletionRecord,
   JsonValue,
   ListGroup,
+  ReminderRule,
   StudySession,
   Task,
   TaskChecklistItem,
@@ -334,6 +335,7 @@ export type UndoCompensation =
       tasks: Task[]
       sessions: StudySession[]
       completionRecordIds: string[]
+      reminderRules?: ReminderRule[]
     }
 
 export interface UndoToken {

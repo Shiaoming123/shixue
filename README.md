@@ -50,7 +50,7 @@
 - **证据式完成**：学习收获、成果证据和下一步均为必填项；结束一次专注不会自动完成整个任务。
 - **主题**：围绕目标和成功标准组织任务，不再维护与任务重复的步骤数据。
 - **回顾**：按 1 / 3 / 7 天安排复习；完成记录支持搜索、主题筛选，并可从“下一步”显式创建新任务。
-- **本地数据演进**：StudyState v2 支持旧版迁移、升级前备份、JSON v1/v2 导入以及 v2 导出。
+- **本地数据演进**：WorkspaceState v3 支持 Study v1/v2 迁移与导入；IndexedDB / SQLite 在迁移前保留旧快照，新导出使用 `meow-study/workspace-export` v3。旧版本应用不能读取 v3 数据，升级前备份不包含升级后的新增记录，也不提供自动降级恢复。
 
 ## Windows 下载
 
@@ -152,7 +152,7 @@ Windows 本地交付另运行 `npm run smoke:windows-package`：它在隔离目�
 ## 路线图
 
 - [x] 学习任务状态机、专注会话、证据式完成与复习闭环
-- [x] IndexedDB / SQLite 本地持久化、v1 → v2 迁移与 JSON 交换
+- [x] IndexedDB / SQLite 本地持久化、Study v1/v2 → Workspace v3 迁移与 JSON 交换
 - [x] Windows x64 Portable、NSIS、MSI 本地打包和安装启动 smoke
 - [x] GitHub Release 与 Tauri 更新元数据构建链路
 - [ ] Authenticode 签名与签名后安装验证

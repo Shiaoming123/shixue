@@ -17,6 +17,7 @@
 - Materialize at most 90 future days and 50 pending occurrences per series.
 - Completing/skipping an occurrence never overwrites prior occurrences.
 - All recurrence controls use shared Listbox/Popover/Dialog/Sheet components.
+- Before materialization, settle the shared date-only/timed recurrence contract for PRs 3 and 5. PR1's `anchorAt`, `scheduledAt` and occurrence override accept timestamps only; they cannot represent an all-day occurrence. Define mutually exclusive date/time fields for the series, occurrence and override in the existing workspace DTOs, parser and serializer. Preserve existing timestamp records, specify schema-version and older-reader behavior, and update the foundation spec/protocol together. Never encode a date-only occurrence as an arbitrary midnight instant or infer its type from the parent task after an individual override.
 
 ---
 
@@ -25,6 +26,8 @@
 **Files:**
 - Create: `src/domain/recurrence/calculate.ts`
 - Create: `src/domain/recurrence/materialize.ts`
+- Modify: `src/domain/workspace/types.ts` and `src/domain/workspace/parse.ts`
+- Modify: workspace serialization/migration and protocol/spec documentation as required by the schedule contract
 - Test: `tests/recurrence-calculate.test.ts`
 - Test: `tests/recurrence-materialize.test.ts`
 
@@ -61,6 +64,8 @@ export function materializeOccurrenceWindow(state: WorkspaceStateV3, seriesId: s
 
 Expected: PASS; calling materialize twice returns no new items the second time.
 
+Also round-trip pre-PR2 timestamp records and new date-only series/occurrences/overrides through persistence and export/import. Verify the same all-day date in two timezones, mixed timed/all-day overrides, and the documented older-reader refusal or lossless behavior.
+
 - [ ] **Step 5: Commit**
 
 ```powershell
@@ -74,10 +79,12 @@ git commit -m "feat: calculate bounded recurrence occurrences"
 - Create: `src/domain/capabilities/recurrence-commands.ts`
 - Modify: `src/domain/capabilities/catalog.ts`
 - Modify: `src/domain/capabilities/service.ts`
+- Modify: `src/domain/capabilities/types.ts` and `src/domain/capabilities/task-commands.ts`
 - Test: `tests/recurrence-commands.test.ts`
 
 **Interfaces:**
 - Produces commands: `recurrence.create`, `recurrence.update`, `recurrence.complete`, `recurrence.skip`; `scope: 'occurrence' | 'future' | 'series'` for update.
+- Extends `task.create` with an optional, typed recurrence configuration using the same cadence/basis/anchor/end/timezone DTO as `recurrence.create`. PR3 consumes this field: task creation, series association and the initial bounded occurrences must commit in one capability transaction. Ordinary `task.create` callers remain compatible; do not require the composer to chain two independently committed commands.
 
 - [ ] **Step 1: Write tests for completion, skip, occurrence override, future split, and whole-series preview**
 
@@ -98,6 +105,8 @@ Run: `node --test --experimental-strip-types tests/recurrence-commands.test.ts`
 - [ ] **Step 3: Implement occurrence-first mutation and series splitting**
 
 Whole-series and future updates require preview; complete/skip current are reversible single-item operations. After-completion creates the next occurrence only after completion and uses the completion instant as its basis.
+
+For `task.create` with recurrence, verify invalid rules and save conflicts leave no task, series, occurrence or receipt behind; retrying the same envelope returns the same task/series once. These are the PR3 handoff checks, alongside the exported command DTO.
 
 - [ ] **Step 4: Run recurrence and capability suites**
 

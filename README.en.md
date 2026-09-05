@@ -50,7 +50,7 @@ See the [visual fidelity ledger](./docs/design/fidelity-ledger.md) for concepts,
 - **Evidence-backed completion:** Learning, evidence, and the next action are required. Finishing one focus session does not silently complete the whole task.
 - **Topics:** Organize tasks around a goal and success criteria without maintaining a duplicate step model.
 - **Review:** Schedule reviews at 1, 3, and 7 days. Search or filter completed records and explicitly turn a recorded next action into a new task.
-- **Local data evolution:** StudyState v2 supports legacy migration, pre-upgrade backup, v1/v2 JSON import, and v2 export.
+- **Local data evolution:** WorkspaceState v3 supports Study v1/v2 migration and import. IndexedDB / SQLite preserve the legacy snapshot before migration; new exports use `meow-study/workspace-export` v3. Older application versions cannot read v3 data. Pre-upgrade backups exclude later records and do not provide automatic downgrade recovery.
 
 ## Download for Windows
 
@@ -152,7 +152,7 @@ For the local Windows package, `npm run smoke:windows-package` installs the NSIS
 ## Roadmap
 
 - [x] Learning-task state machine, focus sessions, evidence-backed completion, and review loop
-- [x] IndexedDB / SQLite persistence, v1 → v2 migration, and JSON exchange
+- [x] IndexedDB / SQLite persistence, Study v1/v2 → Workspace v3 migration, and JSON exchange
 - [x] Local Windows x64 Portable, NSIS, and MSI packaging plus install/launch smoke
 - [x] GitHub Release and Tauri updater-metadata build pipeline
 - [ ] Authenticode signing and post-signing installation verification

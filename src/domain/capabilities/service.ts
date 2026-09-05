@@ -296,6 +296,15 @@ function applyUndo(
       const index = state.studySessions.findIndex(({ id }) => id === prior.id)
       state.studySessions[index] = structuredClone(prior)
     }
+    if (token.compensation.reminderRules !== undefined) {
+      const taskIds = new Set(token.compensation.tasks.map(({ id }) => id))
+      const revisions = new Map(state.reminderRules.map(({ id, revision }) => [id, revision]))
+      state.reminderRules = state.reminderRules.filter(({ taskId }) => !taskIds.has(taskId))
+      state.reminderRules.push(...token.compensation.reminderRules.map((prior) => ({
+        ...structuredClone(prior),
+        revision: Math.max(prior.revision, revisions.get(prior.id) ?? 0) + 1,
+      })))
+    }
     for (const recordId of token.compensation.completionRecordIds) {
       const record = state.completionRecords.find(({ id }) => id === recordId)!
       record.deletedAt = context.now
