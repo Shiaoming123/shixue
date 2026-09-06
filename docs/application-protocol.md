@@ -39,15 +39,20 @@ alter configuration, load modules, contact a network endpoint, or read secrets.
 
 - `local-smoke`: an explicit local smoke command exists; it is not signing or
   distribution proof.
-- `template-only`: code/configuration exists but an adopter must configure and
-  verify their own delivery path.
+- `configured-unverified`: a real endpoint, updater public key, updater artifact
+  setting, and release workflow are configured, but an installed-client update
+  has not been exercised end to end (`NOT_RUN`).
 - `local-debug`: a generated native project has completed a local debug build
   and emulator run; it is not a signed artifact, real-device result, store
   submission, or hosted delivery channel.
 - `unverified`: no platform delivery claim has been demonstrated here.
 
-The current protocol intentionally says nothing stronger about signing, hosted
-updates, deployed Web hosting, real-device execution, or store submission.
+The current protocol marks `desktopPackage` as `current-candidate-unverified`:
+the current source candidate has no package/install acceptance evidence yet.
+Historical package smoke belongs in its versioned README or release acceptance
+ledger and does not raise this candidate's status. The protocol intentionally
+says nothing stronger about signing, hosted updates, deployed Web hosting,
+real-device execution, or store submission.
 Native mobile delivery remains `unverified`. Runtime maturity is a separate
 statement: desktop is the primary stable runtime path; Web and mobile are Beta
 adaptations with documented capability degradation.

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { validateApplicationProtocol } from '../scripts/check-app-protocol.mjs'
 import { moduleContracts, moduleIds } from '../src/modules/contract.ts'
@@ -22,9 +23,12 @@ const packageJson = {
     'smoke:calendar': 'node scripts/smoke-calendar.mjs',
     'benchmark:task-query': 'node scripts/benchmark-study-task-query.mjs',
     'smoke:windows-package': 'node scripts/smoke-windows-package.mjs',
+    'mobile:doctor': 'node scripts/mobile-doctor.mjs',
     'check:android-artifact': 'node scripts/check-android-artifact.mjs',
   },
 }
+
+const projectRoot = new URL('..', import.meta.url)
 
 function validProtocol() {
   return {
@@ -85,15 +89,15 @@ function validProtocol() {
       planned: ['agent-behavior'],
     },
     delivery: {
-      desktopPackage: 'unverified',
+      desktopPackage: 'current-candidate-unverified',
       signing: 'unverified',
-      updater: 'template-only',
+      updater: 'configured-unverified',
       webDeployment: 'unverified',
       mobileNative: 'unverified',
     },
     acceptance: {
       required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
-      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:windows-package', 'check:android-artifact'],
+      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
     },
     evolution: {
       additive: 'Add fields in a new schema version.',
@@ -102,13 +106,14 @@ function validProtocol() {
   }
 }
 
-function validate(protocol: ReturnType<typeof validProtocol>) {
+function validate(protocol: ReturnType<typeof validProtocol>, evidenceFileExists?: (path: string) => boolean) {
   return validateApplicationProtocol({
     protocol,
     packageJson,
     config: defaultModuleConfig,
     contracts: moduleContracts,
     moduleIds,
+    evidenceFileExists,
   })
 }
 
@@ -164,4 +169,48 @@ test('rejects a protocol that drops calendar acceptance commands', () => {
   protocol.acceptance.conditional = protocol.acceptance.conditional.filter((command) => command !== 'smoke:calendar')
 
   assert.match(validate(protocol).errors.join('\n'), /acceptance\.conditional must retain the calendar smoke and task-query benchmark commands/)
+})
+
+test('publishes the distinct calendar move and resize scope boundaries in both READMEs', () => {
+  const chinese = readFileSync(new URL('README.md', projectRoot), 'utf8')
+  const english = readFileSync(new URL('README.en.md', projectRoot), 'utf8')
+
+  assert.match(chinese, /日历移动支持普通任务、单次发生项、未来发生项和整个系列；调整时长仅支持普通任务或单次发生项，未来\/系列范围会被明确拒绝。/)
+  assert.match(english, /Calendar moves support a task, one occurrence, future occurrences, or the entire series\. Duration resizing supports only a task or one occurrence; future\/series resize scopes are explicitly rejected\./)
+})
+
+test('rejects equal-length duplicate replacements in declared protocol sets', () => {
+  const protocol = validProtocol()
+  protocol.implementation.shippedFoundation[protocol.implementation.shippedFoundation.length - 1] = protocol.implementation.shippedFoundation[0]
+
+  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedFoundation/)
+})
+
+test('requires unique evidence ids, source paths, and test paths', () => {
+  const duplicateId = validProtocol()
+  duplicateId.implementation.shippedEvidence[1] = structuredClone(duplicateId.implementation.shippedEvidence[0])
+  assert.match(validate(duplicateId).errors.join('\n'), /evidence ids must be unique/i)
+
+  const duplicateSource = validProtocol()
+  duplicateSource.implementation.shippedEvidence[1].sources[1] = duplicateSource.implementation.shippedEvidence[1].sources[0]
+  assert.match(validate(duplicateSource).errors.join('\n'), /source paths must be unique/i)
+
+  const duplicateTest = validProtocol()
+  duplicateTest.implementation.shippedEvidence[3].tests[1] = duplicateTest.implementation.shippedEvidence[3].tests[0]
+  assert.match(validate(duplicateTest).errors.join('\n'), /test paths must be unique/i)
+})
+
+test('rejects an evidence pointer whose declared file is missing', () => {
+  const missingPath = 'tests/review-task-link.test.ts'
+  const result = validate(validProtocol(), (path) => path !== missingPath)
+
+  assert.match(result.errors.join('\n'), /tests\/review-task-link\.test\.ts does not exist/)
+})
+
+test('accepts only the current-candidate package and configured-unverified updater delivery states', () => {
+  const protocol = validProtocol()
+  assert.deepEqual(validate(protocol).errors, [])
+
+  protocol.delivery.updater = 'template-only'
+  assert.match(validate(protocol).errors.join('\n'), /delivery must retain the currently evidenced release boundary/)
 })

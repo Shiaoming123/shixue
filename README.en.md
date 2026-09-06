@@ -45,7 +45,7 @@ See the [visual fidelity ledger](./docs/design/fidelity-ledger.md) for concepts,
 
 - **General todos:** Save an inbox item with only a title, then optionally add a list, tags, priority, planned time, due time, and estimate.
 - **Today and Upcoming:** Today combines tasks planned for today, due today, overdue, and today's recurring occurrences with stable de-duplication. Upcoming groups the next seven days by date.
-- **Calendar:** Day, week, month, and agenda views support scheduling unplanned tasks, moving time blocks, and resizing durations. Recurring tasks default to changing one occurrence; changing the series requires an explicit choice.
+- **Calendar:** Day, week, month, and agenda views support scheduling unplanned tasks. Calendar moves support a task, one occurrence, future occurrences, or the entire series. Duration resizing supports only a task or one occurrence; future/series resize scopes are explicitly rejected.
 - **Recurrence:** Generate occurrences daily, weekly, monthly, yearly, or after completion while retaining completion, skip, and exception history.
 - **Offline quick add:** Deterministic Chinese and English rules parse dates, times, due markers, priorities, recurrence, `#tags`, and `@lists` locally. Ambiguous or conflicting results require confirmation and do not depend on a model or network.
 - **Multiple reminders and tray:** A task can have several reminders. System notification submission is attempted only while the app or tray process is running and permission is available; reminders are not guaranteed after a full exit. In-app cards provide Complete, Snooze, and Open when native actions are unavailable.

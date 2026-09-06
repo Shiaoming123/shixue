@@ -104,9 +104,9 @@
     ]
   },
   "delivery": {
-    "desktopPackage": "unverified",
+    "desktopPackage": "current-candidate-unverified",
     "signing": "unverified",
-    "updater": "template-only",
+    "updater": "configured-unverified",
     "webDeployment": "unverified",
     "mobileNative": "unverified"
   },
