@@ -256,6 +256,10 @@ test('resolves DST gap and fold wall times through the shared timezone policy', 
 
 test('rejects an invalid explicit clock or IANA timezone', () => {
   assert.throws(
+    () => parseQuickAdd('tomorrow 0pm x', context('2026-09-04T09:00:00+08:00')),
+    /Invalid quick-add time/,
+  )
+  assert.throws(
     () => parseQuickAdd('today', context('not-a-date')),
     /Invalid datetime/,
   )
