@@ -1,5 +1,6 @@
 import type { ReminderCapabilityCommand } from './reminder-commands.ts'
 import type { CalendarCapabilityCommand } from './calendar-commands.ts'
+import type { WorkspaceSearchQuery, WorkspaceSearchResult } from '../search/workspace-search.ts'
 import type {
   CompletionRecord,
   JsonValue,
@@ -574,6 +575,7 @@ export interface CommandResult {
 
 export type CapabilityQuery =
   | { type: 'workspace.snapshot' }
+  | ({ type: 'workspace.search' } & WorkspaceSearchQuery)
   | { type: 'task.get'; taskId: string; includeDeleted?: boolean }
   | { type: 'task.list'; listId?: string; statuses?: TaskStatus[]; includeDeleted?: boolean }
   | { type: 'task.search'; text: string; includeDeleted?: boolean }
@@ -587,11 +589,12 @@ export interface AuditListResult {
 
 export type QueryResult<Q extends CapabilityQuery> =
   Q extends { type: 'workspace.snapshot' } ? WorkspaceStateV3
-    : Q extends { type: 'task.get' } ? Task | null
-      : Q extends { type: 'task.list' | 'task.search' } ? Task[]
-        : Q extends { type: 'command.describe' } ? CommandDescriptor
-          : Q extends { type: 'audit.list' } ? AuditListResult
-            : never
+    : Q extends { type: 'workspace.search' } ? WorkspaceSearchResult
+      : Q extends { type: 'task.get' } ? Task | null
+        : Q extends { type: 'task.list' | 'task.search' } ? Task[]
+          : Q extends { type: 'command.describe' } ? CommandDescriptor
+            : Q extends { type: 'audit.list' } ? AuditListResult
+              : never
 
 export type CapabilityClock = () => string
 export type CapabilityIdGenerator = (kind:

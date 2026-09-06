@@ -11,6 +11,7 @@ import { applyRecurrenceCommand } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
 import { applyReviewCommand } from './review-commands.ts'
 import { applyTagCommand } from './tag-commands.ts'
+import { searchWorkspace } from '../search/workspace-search.ts'
 import { ensureReviewTask, pendingReviewLinkForTarget, resolveLegacyReviewLink } from '../learning/review-task-link.ts'
 import {
   CAPABILITY_PROTOCOL_VERSION,
@@ -52,6 +53,9 @@ export function createTaskCapabilityService(
     async query<Q extends CapabilityQuery>(query: Q): Promise<QueryResult<Q>> {
       const state = await store.load()
       if (query.type === 'workspace.snapshot') return structuredClone(state) as QueryResult<Q>
+      if (query.type === 'workspace.search') {
+        return structuredClone(searchWorkspace(state, query)) as QueryResult<Q>
+      }
       if (query.type === 'task.get') {
         const task = state.tasks.find(({ id }) => id === query.taskId) ?? null
         return structuredClone(task && (!task.deletedAt || query.includeDeleted) ? task : null) as QueryResult<Q>
@@ -64,11 +68,11 @@ export function createTaskCapabilityService(
         return structuredClone(tasks) as QueryResult<Q>
       }
       if (query.type === 'task.search') {
-        const text = query.text.trim().toLocaleLowerCase()
-        const tasks = state.tasks.filter((task) =>
-          (query.includeDeleted || task.deletedAt === null) &&
-          [task.title, task.notes, ...(task.learning?.acceptanceCriteria ?? []), ...task.checklist.map(({ text }) => text)]
-            .some((value) => value.toLocaleLowerCase().includes(text)))
+        const tasks = searchWorkspace(state, {
+          text: query.text,
+          kinds: ['task'],
+          includeDeleted: query.includeDeleted,
+        }).tasks.map(({ task }) => task)
         return structuredClone(tasks) as QueryResult<Q>
       }
       if (query.type === 'command.describe') return getCommandDescriptor(query.commandType) as QueryResult<Q>
