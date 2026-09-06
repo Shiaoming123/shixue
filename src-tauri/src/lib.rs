@@ -35,6 +35,19 @@ async fn read_legacy_reminder_deliveries(
     }
 }
 
+#[tauri::command]
+fn set_quick_add_shortcut(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    #[cfg(all(desktop, feature = "shortcut"))]
+    {
+        return shortcut::set_registered(&app, enabled);
+    }
+    #[cfg(not(all(desktop, feature = "shortcut")))]
+    {
+        let _ = (app, enabled);
+        Err("Global quick capture is unavailable in this build.".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -86,6 +99,7 @@ pub fn run() {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
             read_legacy_reminder_deliveries,
+            set_quick_add_shortcut,
             agent::set_api_key,
             agent::has_api_key,
             agent::delete_api_key,
@@ -104,6 +118,7 @@ pub fn run() {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
             read_legacy_reminder_deliveries,
+            set_quick_add_shortcut,
             agent::set_api_key,
             agent::has_api_key,
             agent::delete_api_key,
@@ -117,6 +132,7 @@ pub fn run() {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
             read_legacy_reminder_deliveries,
+            set_quick_add_shortcut,
             study_cloud::study_cloud_sign_in,
             study_cloud::study_cloud_session_status,
             study_cloud::study_cloud_sign_out,
@@ -129,7 +145,8 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
-            read_legacy_reminder_deliveries
+            read_legacy_reminder_deliveries,
+            set_quick_add_shortcut
         ]);
     }
 
@@ -141,9 +158,6 @@ pub fn run() {
                 show_main_window(app);
             }))
             .setup(|app| {
-                #[cfg(feature = "shortcut")]
-                shortcut::register(app.handle());
-
                 tray::create_tray(app.handle())?;
 
                 #[cfg(feature = "notification")]

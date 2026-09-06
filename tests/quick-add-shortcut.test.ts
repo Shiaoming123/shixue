@@ -16,14 +16,16 @@ test('desktop registers quick capture in the native lifecycle and routes it thro
 
   assert.match(lib, /mod shortcut;/)
   assert.match(lib, /builder = builder\.plugin\(shortcut::plugin\(\)\)/)
-  assert.match(lib, /shortcut::register\(app\.handle\(\)\);/)
+  assert.match(lib, /fn set_quick_add_shortcut[\s\S]*shortcut::set_registered\(&app, enabled\)/)
+  assert.doesNotMatch(lib, /shortcut::register\(app\.handle\(\)\)/)
   assert.match(shortcut, /Builder::new\(\)[\s\S]*\.with_handler\([\s\S]*\.build\(\)/)
-  assert.match(shortcut, /pub fn register[\s\S]*if let Err\(error\) = app\.global_shortcut\(\)\.register\(quick_add_shortcut\(\)\)/)
+  assert.match(shortcut, /pub fn set_registered[\s\S]*global_shortcut\.register\(shortcut\)[\s\S]*global_shortcut\.unregister\(shortcut\)/)
   assert.doesNotMatch(shortcut, /\.with_shortcut\(/)
   assert.match(shortcut, /state == ShortcutState::Pressed/)
   assert.match(shortcut, /tray::show_quick_add\(app\)/)
   assert.match(tray, /pub const QUICK_ADD_EVENT: &str = "shixue:quick-add"/)
-  assert.doesNotMatch(frontend, /@tauri-apps\/plugin-global-shortcut|\bregister\(|\bunregister\(|\bsetup\b|\bteardown\b/)
+  assert.match(frontend, /invoke\('set_quick_add_shortcut', \{ enabled \}\)/)
+  assert.doesNotMatch(frontend, /@tauri-apps\/plugin-global-shortcut|\bregister\(|\bunregister\(/)
 })
 
 test('global quick add closes blocking layers, navigates to Inbox, and focuses the exposed composer', () => {

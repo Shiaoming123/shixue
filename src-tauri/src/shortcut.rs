@@ -20,10 +20,18 @@ pub fn plugin<R: Runtime>() -> TauriPlugin<R> {
         .build()
 }
 
-pub fn register<R: Runtime>(app: &AppHandle<R>) {
-    if let Err(error) = app.global_shortcut().register(quick_add_shortcut()) {
-        eprintln!("global quick capture is unavailable: {error}");
+pub fn set_registered<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> Result<(), String> {
+    let shortcut = quick_add_shortcut();
+    let global_shortcut = app.global_shortcut();
+    if global_shortcut.is_registered(shortcut) == enabled {
+        return Ok(());
     }
+    if enabled {
+        global_shortcut.register(shortcut)
+    } else {
+        global_shortcut.unregister(shortcut)
+    }
+    .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
