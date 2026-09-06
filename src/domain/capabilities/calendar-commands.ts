@@ -1,5 +1,5 @@
 import type { TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
-import { applyRecurrenceCommand } from './recurrence-commands.ts'
+import { applyRecurrenceCommand, seriesMovePatchForOccurrence } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
 import {
   DomainCommandError,
@@ -8,7 +8,8 @@ import {
   type RecurrenceUpdateCommand,
 } from './types.ts'
 
-export type CalendarCommandScope = 'task' | RecurrenceUpdateCommand['scope']
+export type CalendarMoveScope = 'task' | RecurrenceUpdateCommand['scope']
+export type CalendarResizeScope = 'single' | 'occurrence'
 
 export interface CalendarMoveCommand {
   type: 'calendar.move'
@@ -16,7 +17,7 @@ export interface CalendarMoveCommand {
   occurrenceId?: string
   startAt?: string | null
   startOn?: string | null
-  scope?: CalendarCommandScope
+  scope?: CalendarMoveScope
 }
 
 export interface CalendarResizeCommand {
@@ -24,7 +25,7 @@ export interface CalendarResizeCommand {
   taskId: string
   occurrenceId?: string
   estimateMinutes: number
-  scope?: CalendarCommandScope
+  scope?: CalendarResizeScope
 }
 
 export type CalendarCapabilityCommand = CalendarMoveCommand | CalendarResizeCommand
@@ -34,8 +35,8 @@ export function applyCalendarCommand(
   command: CalendarCapabilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
-  assertScopeTarget(command.occurrenceId, command.scope)
   if (command.type === 'calendar.resize') {
+    assertResizeScopeTarget(command.occurrenceId, command.scope)
     assertDuration(command.estimateMinutes)
     if (command.occurrenceId === undefined) {
       return applyTaskCommand(state, {
@@ -45,28 +46,15 @@ export function applyCalendarCommand(
       }, context)
     }
     const occurrence = requireOccurrenceTask(state, command.taskId, command.occurrenceId)
-    const scope = recurrenceScope(command.scope)
-    if (scope === 'future') {
-      throw new DomainCommandError(
-        'VALIDATION_ERROR',
-        'Calendar duration cannot target future occurrences without a persisted future-duration model.',
-      )
-    }
-    if (scope === 'series') {
-      return applyTaskCommand(state, {
-        type: 'task.update',
-        taskId: command.taskId,
-        patch: { estimateMinutes: command.estimateMinutes },
-      }, context)
-    }
     const schedule = effectiveOccurrenceSchedule(occurrence)
     return applyRecurrenceCommand(state, {
       type: 'recurrence.update',
       occurrenceId: command.occurrenceId,
-      scope,
+      scope: 'occurrence',
       patch: { ...schedule, estimateMinutes: command.estimateMinutes },
     }, context)
   }
+  assertMoveScopeTarget(command.occurrenceId, command.scope)
   assertMoveTarget(command.startAt ?? null, command.startOn ?? null)
   if (command.occurrenceId === undefined) {
     return applyTaskCommand(state, {
@@ -79,7 +67,12 @@ export function applyCalendarCommand(
   const occurrence = requireOccurrenceTask(state, command.taskId, command.occurrenceId)
   const scope = recurrenceScope(command.scope)
   const patch = scope === 'series'
-    ? { anchorAt: command.startAt, anchorOn: command.startOn }
+    ? seriesMovePatchForOccurrence(
+        state.recurrenceSeries.find(({ id }) => id === occurrence.seriesId)!,
+        occurrence,
+        command.startAt ?? null,
+        command.startOn ?? null,
+      )
     : {
         scheduledAt: command.startAt,
         scheduledOn: command.startOn,
@@ -95,7 +88,7 @@ export function applyCalendarCommand(
   }, context)
 }
 
-function assertScopeTarget(occurrenceId: string | undefined, scope: CalendarCommandScope | undefined): void {
+function assertMoveScopeTarget(occurrenceId: string | undefined, scope: CalendarMoveScope | undefined): void {
   if (occurrenceId === undefined && scope !== undefined && scope !== 'task') {
     throw new DomainCommandError('VALIDATION_ERROR', 'A task calendar command must use task scope.')
   }
@@ -104,7 +97,16 @@ function assertScopeTarget(occurrenceId: string | undefined, scope: CalendarComm
   }
 }
 
-function recurrenceScope(scope: CalendarCommandScope | undefined): RecurrenceUpdateCommand['scope'] {
+function assertResizeScopeTarget(occurrenceId: string | undefined, scope: CalendarResizeScope | undefined): void {
+  if (occurrenceId === undefined && scope !== undefined && scope !== 'single') {
+    throw new DomainCommandError('VALIDATION_ERROR', 'A task calendar resize must use single scope.')
+  }
+  if (occurrenceId !== undefined && scope !== undefined && scope !== 'occurrence') {
+    throw new DomainCommandError('VALIDATION_ERROR', 'An occurrence calendar resize must use occurrence scope.')
+  }
+}
+
+function recurrenceScope(scope: CalendarMoveScope | undefined): RecurrenceUpdateCommand['scope'] {
   if (scope === 'task') {
     throw new DomainCommandError('VALIDATION_ERROR', 'An occurrence calendar command cannot use task scope.')
   }

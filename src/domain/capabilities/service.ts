@@ -530,12 +530,13 @@ function assertExplicitConfirmation(
 
 function previewConfirmationFor(command: CapabilityCommand, descriptor: ReturnType<typeof getCommandDescriptor>): PreviewConfirmation {
   if (command.type === 'recurrence.update' && command.scope === 'occurrence') return 'none'
-  if (isCalendarCommand(command) && (command.occurrenceId === undefined || command.scope === undefined || command.scope === 'occurrence')) return 'none'
+  if (command.type === 'calendar.resize') return 'none'
+  if (command.type === 'calendar.move' && (command.occurrenceId === undefined || command.scope === undefined || command.scope === 'occurrence')) return 'none'
   return getPreviewConfirmation(descriptor)
 }
 
 function requiresExplicitExecutionConfirmation(command: CapabilityCommand): boolean {
-  return (command.type === 'recurrence.update' || isCalendarCommand(command)) &&
+  return (command.type === 'recurrence.update' || command.type === 'calendar.move') &&
     (command.scope === 'future' || command.scope === 'series')
 }
 

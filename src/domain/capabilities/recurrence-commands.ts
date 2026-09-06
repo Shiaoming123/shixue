@@ -30,6 +30,52 @@ export function applyRecurrenceCommand(
   throw new DomainCommandError('COMMAND_NOT_FOUND', `Command is not implemented: ${commandType}.`, { commandType })
 }
 
+export function seriesMovePatchForOccurrence(
+  series: RecurrenceSeries,
+  occurrence: TaskOccurrence,
+  startAt: string | null,
+  startOn: string | null,
+): RecurrenceUpdatePatch {
+  const target = recurrenceSchedule(startAt, startOn, 'Calendar series target')
+  const timedTarget = target.at === null ? null : localDateTime(target.at, series.timezone)
+  const targetDate = target.on ?? timedTarget!.date
+  const current = occurrenceSchedule(series, occurrence.ordinal)
+  if (!current) throw validation(`Occurrence is outside its recurrence series: ${occurrence.id}.`)
+  const currentDate = scheduleDate(current.at, current.on, series.timezone)
+  const currentAnchorDate = series.anchorOn ?? localDateTime(series.anchorAt!, series.timezone).date
+  let anchorDate: string
+  const cadence = structuredClone(series.cadence)
+
+  if (cadence.kind === 'daily' || cadence.kind === 'weekly') {
+    const dayShift = calendarDayDifference(currentDate, targetDate)
+    anchorDate = addCalendarDays(currentAnchorDate, dayShift)
+    if (cadence.kind === 'weekly') {
+      const weekdayShift = ((dayShift % 7) + 7) % 7
+      cadence.weekdays = cadence.weekdays
+        .map((weekday) => (weekday + weekdayShift) % 7)
+        .sort((left, right) => left - right)
+    }
+  } else if (cadence.kind === 'monthly') {
+    const targetDay = Number(targetDate.slice(8, 10))
+    anchorDate = addCalendarMonths(targetDate, -(occurrence.ordinal - 1) * cadence.interval, targetDay)
+    cadence.dayOfMonth = targetDay
+  } else {
+    const targetMonth = Number(targetDate.slice(5, 7))
+    const targetDay = Number(targetDate.slice(8, 10))
+    anchorDate = addCalendarYears(targetDate, -(occurrence.ordinal - 1) * cadence.interval, targetMonth, targetDay)
+    cadence.month = targetMonth
+    cadence.dayOfMonth = targetDay
+  }
+
+  return target.at === null
+    ? { anchorAt: null, anchorOn: anchorDate, cadence }
+    : {
+        anchorAt: zonedDateTimeToInstant(anchorDate, timedTarget!.time, series.timezone).toISOString(),
+        anchorOn: null,
+        cadence,
+      }
+}
+
 function createRecurrence(
   state: WorkspaceStateV3,
   command: Extract<RecurrenceCapabilityCommand, { type: 'recurrence.create' }>,
@@ -579,6 +625,10 @@ function localDate(iso: string, timezone: string): string {
 function addCalendarDays(date: string, days: number): string {
   const [year, month, day] = date.split('-').map(Number)
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
+}
+
+function calendarDayDifference(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / 86_400_000)
 }
 
 function occurrenceSchedule(series: RecurrenceSeries, ordinal: number): { at: string | null; on: string | null } | null {
