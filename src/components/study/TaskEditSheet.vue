@@ -4,7 +4,7 @@ import { Bell, CalendarDays, Flag, ListTree, X } from '@lucide/vue'
 import type { StudyTaskPriority, StudyTopic } from '../../storage/study/types'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import Listbox from '../ui/Listbox.vue'
-import { useModalOverlay } from '../ui/use-overlay'
+import Sheet from '../ui/Sheet.vue'
 import RecurrenceEditor, { type RecurrenceRule } from './RecurrenceEditor.vue'
 import ReminderEditor, { type ReminderPermission, type ReminderSetValue } from './ReminderEditor.vue'
 import type { ReminderRule as TaskReminderRule } from '../../domain/workspace/types'
@@ -49,8 +49,6 @@ const emit = defineEmits<{
 }>()
 
 const title = ref('')
-const panel = ref<HTMLElement | null>(null)
-const { layerId } = useModalOverlay(() => Boolean(props.open && props.task), panel, () => emit('close'))
 const notes = ref('')
 const topicId = ref('')
 const plannedOn = ref('')
@@ -122,9 +120,8 @@ function toLocalDateTime(value: string) {
 </script>
 
 <template>
-  <Teleport defer to="#ui-overlay-host">
-  <div v-if="open && task" class="backdrop">
-    <form ref="panel" :data-overlay-layer="layerId" tabindex="-1" class="sheet" role="dialog" aria-modal="true" aria-labelledby="task-edit-title" @submit.prevent="save">
+  <Sheet :open="Boolean(open && task)" label="编辑任务" @close="emit('close')">
+    <form v-if="task" class="sheet-content" @submit.prevent="save">
       <header><h2 id="task-edit-title">编辑任务</h2><button type="button" title="关闭" aria-label="关闭" @click="emit('close')"><X :size="19" /></button></header>
       <label><span>标题</span><input v-model="title" aria-label="任务标题" required autofocus /></label>
       <label><span>备注</span><textarea v-model="notes" aria-label="任务备注" placeholder="备注" /></label>
@@ -141,18 +138,13 @@ function toLocalDateTime(value: string) {
       <label v-if="learning"><span>完成标准</span><textarea v-model="criteria" aria-label="完成标准" placeholder="每行一项" /></label>
       <footer><button type="button" class="cancel" @click="emit('close')">取消</button><button class="save" type="submit" :disabled="!title.trim()">保存</button></footer>
     </form>
-  </div>
-  </Teleport>
+  </Sheet>
 </template>
 
 <style scoped>
-.backdrop { pointer-events: auto; }
-.backdrop { position: fixed; z-index: var(--z-modal); inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--text) 22%, transparent); backdrop-filter: saturate(120%) blur(12px); }
-.sheet { width: min(100%, 520px); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 28px; border: 1px solid var(--hairline); border-radius: var(--radius-2xl); background: var(--material-regular); box-shadow: var(--shadow-lg); animation: sheet-in var(--motion-slow) var(--ease-spring); }
+.sheet-content { width: 100%; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding-bottom: 15px; border-bottom: 1px solid var(--hairline); } h2 { margin: 0; font-size: var(--text-xl); font-weight: 600; } header button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--control-fill); color: var(--muted); }
 label { display: block; margin-top: 14px; } label > span { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: var(--muted); font-size: var(--text-xs); font-weight: 600; } input, textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font: inherit; font-size: var(--text-base); } textarea { min-height: 72px; resize: vertical; } input:focus, textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); } footer button { min-height: 44px; padding: 0 17px; border-radius: var(--radius-lg); font-size: 12px; font-weight: 650; } .cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); } .save { border: 0; background: var(--accent); color: var(--accent-text); } .save:disabled { opacity: .4; }
-@keyframes sheet-in { from { transform: translateY(16px) scale(.985); opacity: .7; } }
-@media (max-width: 819px) { .backdrop { align-items: flex-end; padding: 0; } .sheet { max-height: 94dvh; padding: 30px 20px calc(22px + env(safe-area-inset-bottom, 0px)); border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; } .field-grid { grid-template-columns: 1fr; gap: 0; } }
-@media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+@media (max-width: 819px) { .field-grid { grid-template-columns: 1fr; gap: 0; } }
 </style>

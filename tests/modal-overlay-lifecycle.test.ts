@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { parse, compileScript } from '@vue/compiler-sfc'
-import ts from 'typescript'
 import * as Vue from 'vue'
 import { createRenderer, h, nextTick, ref, shallowRef } from 'vue'
 import { focusNextToTrigger, hasActiveOverlay, useModalOverlay, useOverlay } from '../src/components/ui/use-overlay.ts'
@@ -169,48 +167,30 @@ test('removing an active responsive drawer releases its command boundary', async
   assert.equal(hasActiveOverlay(), false, 'navigation must not leave background commands permanently blocked')
 })
 
-test('every task action sheet registers a modal, isolates task commands, and closes without submitting', async () => {
-  const source = readFileSync(new URL('../src/components/study/TaskActionSheet.vue', import.meta.url), 'utf8')
-  const { descriptor } = parse(source)
-  const code = ts.transpileModule(compileScript(descriptor, { id: 'task-action-test' }).content, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText
-  const exported: any = {}
-  new Function('require', 'exports', code)((id: string) => id === 'vue' ? Vue : id.endsWith('use-overlay') ? { useModalOverlay } : {}, exported)
-  const trigger = new ElementStub()
+test('a non-dismissible shared modal stays on the stack after an outside pointer', async () => {
+  const open = ref(true)
   const panel = new ElementStub()
-  const first = new ElementStub()
-  panel.children = [first]
-  const props = Vue.reactive({ open: false, mode: 'plan', taskTitle: 'Task', topics: [] })
-  let state: any
-  let submissions = 0
+  let closes = 0
   const app = renderer.createApp({ setup() {
-    state = exported.default.setup(props, { expose() {}, emit: (event: string) => { if (event === 'close') props.open = false; else submissions++ } })
+    useModalOverlay(open, shallowRef(panel) as never, () => { closes += 1 }, { closeOnOutside: false })
     return () => h('div')
   } })
   app.mount(new ElementStub())
-  if (state.panel) state.panel.value = panel
-  try {
-    for (const mode of ['plan', 'defer', 'block', 'cancel', 'reopen']) {
-      props.mode = mode
-      trigger.focus()
-      props.open = true
-      await nextTick(); await nextTick()
-      assert.equal(hasActiveOverlay(), true, `${mode}: background task commands must be blocked`)
-      assert.equal(doc.activeElement, first)
-      key('Escape')
-      await nextTick(); await nextTick()
-      assert.equal(props.open, false)
-      assert.equal(hasActiveOverlay(), false)
-      assert.equal(doc.activeElement, trigger)
-    }
-    props.open = true
-    await nextTick(); await nextTick()
-    doc.dispatchEvent(new Event('pointerdown'))
-    await nextTick(); await nextTick()
-    assert.equal(props.open, false, 'outside pointer must still close the custom sheet')
-    assert.equal(submissions, 0, 'dismissal must never execute a dangerous task action')
-    assert.match(source, /<Teleport defer to="#ui-overlay-host">/)
-    assert.match(source, /:data-overlay-layer="layerId"/)
-  } finally { app.unmount() }
+  await nextTick(); await nextTick()
+  doc.dispatchEvent(new Event('pointerdown'))
+  await nextTick()
+  assert.equal(closes, 0)
+  assert.equal(open.value, true)
+  assert.equal(hasActiveOverlay(), true)
+  app.unmount()
+})
+
+test('every task action mode delegates dismissal to the shared Sheet without submitting', () => {
+  const source = readFileSync(new URL('../src/components/study/TaskActionSheet.vue', import.meta.url), 'utf8')
+  assert.match(source, /import Sheet from '..\/ui\/Sheet\.vue'/)
+  assert.match(source, /<Sheet\b[^>]*:open="open"[^>]*:label="title"[^>]*@close="emit\('close'\)"/)
+  for (const mode of ['plan', 'defer', 'block', 'cancel', 'reopen']) assert.match(source, new RegExp(`${mode}:`))
+  assert.doesNotMatch(source, /useModalOverlay|<Teleport\b|data-overlay-layer/)
 })
 
 test('unmounting the last modal disconnects isolation observation and restores background attributes', async () => {

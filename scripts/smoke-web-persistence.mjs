@@ -394,7 +394,7 @@ async function main() {
           })
         }
         if (verifiesMinimumGeometry) {
-          const sheetPanel = scheduleSheet.locator('..')
+          const sheetPanel = scheduleSheet
           const geometry = await sheetPanel.evaluate((element) => ({
             scrollWidth: element.scrollWidth,
             clientWidth: element.clientWidth,
