@@ -118,7 +118,7 @@ npm run smoke:windows-package
 
 | 项目 | 当前证据 |
 | --- | --- |
-| Windows 基础安装包 | v0.3.0 无签名本地候选的 NSIS 自动 smoke 和已安装应用验收为 `PASS`，覆盖可见启动、单实例、数据与深色重启持久化、真实 Win32 快捷键、四种日历视图、应用内提醒动作、托盘重开/退出和卸载清理。它尚未发布；MSI 安装、退出后不再投递、200% 缩放和 Narrator 仍为 `NOT_RUN`。 |
+| Windows 基础安装包 | v0.3.0 无签名本地候选的 NSIS 自动 smoke 和已安装应用基础验收为 `PASS`，覆盖可见启动、单实例、深色重启、真实 Win32 快捷键、四种日历视图和卸载清理。它尚未发布；最终重建 SHA 的复习完成 UI、提醒动作、托盘动作、MSI 安装、退出后不再投递、200% 缩放和 Narrator 仍为 `NOT_RUN`。 |
 | Authenticode | `NOT_RUN`；当前 Windows 包未签名，Tauri updater `.sig` 和 SHA-256 都不代表 Windows 发布者签名。 |
 | 已发布版本自动更新 | `NOT_RUN`；仓库有 updater 元数据与载荷签名构建链路，但尚无安装端跨已发布版本的端到端升级证据。 |
 | Windows 原生缩放与读屏 | 系统 200% 缩放和 Narrator 均为 `NOT_RUN`；Web 的 CSS zoom、等效回流和 Edge 截图不能替代原生证据。 |

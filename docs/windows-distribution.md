@@ -72,4 +72,4 @@ signtool verify /pa /all /v .\Shixue_*.msi
 - Authenticode 证书采购、CI 代码签名和干净设备上的签名验证：尚未实现。
 - SmartScreen 信誉不是单次构建可以证明的结果；即使签名有效，也需要真实分发积累。
 
-早先 PR4 本地工作树曾生成 Portable、NSIS、MSI 三种未签名制品，并留下自动 package smoke 的历史证据；这些结果不能作为当前 v0.3.0 候选的验收结果。当前工作树已生成并审计 v0.3.0 `unsigned-local` 制品；精确 NSIS 的自动 smoke 与已安装应用验收覆盖可见窗口、单实例、重启持久化、真实 Win32 快捷键、应用内提醒动作、托盘重开/退出和卸载清理，结果为 `PASS`。它尚未发布；MSI 安装、托盘退出后不再投递、200% 缩放和 Narrator 仍按 [v0.3.0 验收账本](./releases/v0.3.0-acceptance.md)保留为 `NOT_RUN`。
+早先 PR4 本地工作树曾生成 Portable、NSIS、MSI 三种未签名制品，并留下自动 package smoke 的历史证据；这些结果不能作为当前 v0.3.0 候选的验收结果。当前工作树已生成并审计 v0.3.0 `unsigned-local` 制品；精确 NSIS 的自动 smoke 与已安装应用基础验收覆盖可见窗口、单实例、深色重启、真实 Win32 快捷键、日历模式和卸载清理，结果为 `PASS`。它尚未发布；最终重建 SHA 的复习完成 UI、提醒/托盘动作、MSI 安装、退出后不再投递、200% 缩放和 Narrator 仍按 [v0.3.0 验收账本](./releases/v0.3.0-acceptance.md)保留为 `NOT_RUN`。

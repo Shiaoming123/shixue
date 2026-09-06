@@ -118,7 +118,7 @@ See the [application protocol](./docs/application-protocol.md) for the detailed 
 
 | Item | Current evidence |
 | --- | --- |
-| Basic Windows package | The v0.3.0 unsigned local candidate passed NSIS smoke and installed-app acceptance for visible launch, single instance, data and dark-theme restart persistence, a real Win32 shortcut, all four calendar views, in-app reminder actions, tray reopen/quit, and uninstall cleanup. It remains unreleased; MSI installation, no delivery after quit, 200% scaling, and Narrator are `NOT_RUN`. |
+| Basic Windows package | The v0.3.0 unsigned local candidate passed NSIS smoke and baseline installed-app acceptance for visible launch, single instance, dark-theme restart, a real Win32 shortcut, all four calendar views, and uninstall cleanup. It remains unreleased; installed review completion, reminder and tray actions on the final rebuilt SHA, MSI installation, no delivery after quit, 200% scaling, and Narrator are `NOT_RUN`. |
 | Authenticode | `NOT_RUN`; current Windows packages are unsigned. Tauri updater `.sig` files and SHA-256 hashes do not establish a Windows publisher signature. |
 | Updates between published versions | `NOT_RUN`; the repository builds updater metadata and signed payloads, but there is no end-to-end installed-client upgrade evidence across published versions. |
 | Native Windows scaling and screen reader | System 200% scaling and Narrator are `NOT_RUN`. Web CSS zoom, equivalent reflow, and Edge screenshots do not substitute for native evidence. |
