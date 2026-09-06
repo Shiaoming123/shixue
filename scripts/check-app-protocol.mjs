@@ -30,10 +30,17 @@ const EXPECTED_SHIPPED_FOUNDATION = [
   'recurrence-occurrence-v1',
   'offline-natural-language-v1',
   'multi-reminder-v1',
+  'calendar-planning-v1',
 ]
 const EXPECTED_PLANNED_FEATURES = [
-  'calendar',
   'agent-behavior',
+]
+const CALENDAR_ACCEPTANCE_COMMANDS = ['smoke:calendar', 'benchmark:task-query']
+const EXPECTED_SHIPPED_EVIDENCE = [
+  { id: 'navigation', sources: ['src/lib/workspace-view.ts'], tests: ['tests/workspace-navigation.test.ts'] },
+  { id: 'today-upcoming', sources: ['src/domain/views/today.ts', 'src/domain/views/upcoming.ts'], tests: ['tests/workspace-projections.test.ts'] },
+  { id: 'review-link', sources: ['src/domain/learning/review-task-link.ts'], tests: ['tests/review-task-link.test.ts'] },
+  { id: 'responsive-shell', sources: ['src/lib/responsive-shell.ts'], tests: ['tests/responsive-shell.test.ts', 'tests/business-sheet-mount.test.ts'] },
 ]
 
 const IMPLEMENTATION_FACTS = {
@@ -187,10 +194,13 @@ function validateImplementationStatus(implementation, errors) {
     return
   }
   if (!sameStrings(implementation.shippedFoundation, EXPECTED_SHIPPED_FOUNDATION)) {
-    errors.push('implementation.shippedFoundation must match the currently implemented planning foundation.')
+    errors.push('implementation.shippedFoundation must include calendar-planning-v1 and match the currently implemented planning foundation.')
+  }
+  if (!sameShippedEvidence(implementation.shippedEvidence, EXPECTED_SHIPPED_EVIDENCE)) {
+    errors.push('implementation.shippedEvidence must match navigation, today-upcoming, review-link, and responsive-shell evidence.')
   }
   if (!sameStrings(implementation.planned, EXPECTED_PLANNED_FEATURES)) {
-    errors.push('implementation.planned must retain calendar and Agent behaviour as planned.')
+    errors.push('implementation.planned must retain Agent behaviour as planned.')
   }
 }
 
@@ -211,6 +221,9 @@ function validateAcceptance(acceptance, packageJson, errors) {
         errors.push(`acceptance.${section} references missing package script "${command}".`)
       }
     }
+  }
+  if (!CALENDAR_ACCEPTANCE_COMMANDS.every((command) => acceptance.conditional.includes(command))) {
+    errors.push('acceptance.conditional must retain the calendar smoke and task-query benchmark commands.')
   }
 }
 
@@ -242,6 +255,15 @@ function sameStrings(actual, expected) {
 
 function sameNumbers(actual, expected) {
   return Array.isArray(actual) && actual.length === expected.length && actual.every((value) => expected.includes(value))
+}
+
+function sameShippedEvidence(actual, expected) {
+  if (!Array.isArray(actual) || actual.length !== expected.length) return false
+  if (new Set(actual.map((entry) => isRecord(entry) ? entry.id : undefined)).size !== actual.length) return false
+  return expected.every((expectedEntry) => {
+    const entry = actual.find((candidate) => isRecord(candidate) && candidate.id === expectedEntry.id)
+    return isRecord(entry) && sameStrings(entry.sources, expectedEntry.sources) && sameStrings(entry.tests, expectedEntry.tests)
+  })
 }
 
 function sameRecord(actual, expected) {

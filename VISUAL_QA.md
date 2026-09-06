@@ -8,19 +8,19 @@
 
 CSS zoom、等效回流视口、系统真实缩放分别命名；不能以 CSS zoom 截图替代 Windows 200% 缩放。内置浏览器发现的裁切截图拒绝用作固定尺寸通过证据，改用 Edge 当前渲染并等待实际过渡结束。Web/Edge 证据仍不是 Tauri 原生壳证据。
 
-## 1. 基线与待确认画面
+## 1. 已确认基线与实现证据
 
 现有实现基线：
 
 - `docs/design/shixue-tasks-desktop-implementation.png`（1440×960）
 - `docs/design/shixue-tasks-mobile-implementation.png`（390×844）
 
-本轮候选方案：
+已确认的时间规划方向：
 
 - `docs/design/shixue-time-planning-desktop-proposal.svg`（可编辑源）
 - `docs/design/shixue-time-planning-desktop-proposal.png`（1440×960 渲染稿，用户于 2026-09-04 确认）
 
-时间规划实现必须补齐并经人工确认：
+已确认方向的 Web 实现证据继续覆盖：
 
 1. 桌面浅色 Today：侧栏、分组任务、快速新增、打开的主题化日期 ARIA `grid` Popover。
 2. 桌面深色日历周视图：时间脊线、未计划任务托盘、拖动预览。
@@ -74,7 +74,7 @@ CSS zoom、等效回流视口、系统真实缩放分别命名；不能以 CSS z
 ## 4. 响应式行为
 
 - 1280px 以上三栏；820–1279px 图标侧栏 + 详情覆盖抽屉；819px 以下单栏 + 底部导航。
-- 日期、重复、提醒、筛选在桌面为有名称的非模态 `dialog` Popover，在窄屏为有名称的模态 `dialog` Sheet；共享 panel 单独拥有 dialog 语义，日期选择使用 6×7 的 ARIA `grid`/`gridcell`，内容和选择结果一致。
+- 锚定式日期等普通 Popover 在桌面为有名称的非模态 `dialog`，菜单型 Popover 由内部 `menu` 提供语义；两者切到窄屏 adaptive Sheet 后均为有名称的模态 `dialog`。任务、重复与多提醒编辑复用共享 Sheet/Dialog 宿主。每个共享 panel 单独拥有 dialog 语义，日期选择使用 6×7 的 ARIA `grid`/`gridcell`，内容和选择结果一致。
 - Calendar 的日/周/月/议程视图不通过缩小文字解决空间问题；窄屏优先日视图并保留视图切换。
 - 未经设计系统适配的浏览器 `<select>`、默认复选框、默认日期/时间输入和浏览器确认框出现即为视觉验收失败；经过平台适配器审查的原生 picker、switch、sheet 或菜单允许使用。
 
@@ -95,12 +95,12 @@ npm run check:docs
 3. 核对键盘、触控、焦点与浮层边界。
 4. 最后比较基线截图，只记录有意变化，不以像素相似替代可用性判断。
 
-## 6. 阻断项
+## 6. 阻断项与证据边界
 
-- 未合入 Manrope Variable / Noto Sans SC Variable 字体资产。
 - 任一核心流程只有鼠标可用。
 - 任一可见控件泄露平台默认皮肤。
 - 把未经适配的浏览器默认皮肤误当平台原生控件；或为了像素一致而破坏平台惯例。
 - 深色、高对比或减少透明度下信息不可辨。
 - 截图通过但 console/page error 非零。
 - Web 窄屏截图被误报为 iOS/Android 原生证据。
+- Windows 安装应用、签名、更新器、200% 原生缩放、Narrator、系统通知/托盘及 iOS/Android 原生流程均为 `NOT_RUN`；Web smoke 不能关闭这些证据缺口。

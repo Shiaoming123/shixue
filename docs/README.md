@@ -1,17 +1,17 @@
 # 📚 文档中心
 
-欢迎来到 meow-starter 的文档中心。按你的角色或目标，选择入口：
+欢迎来到 MeowStarter 与拾学的文档中心。拾学是本地优先的通用待办与时间规划应用，学习模式可选；按你的角色或目标选择入口：
 
 ## 成熟度速览
 
 | 级别 | 能力 |
 | --- | --- |
 | **Stable** | core、SQLite、主题、桌面托盘/单实例 |
-| **Beta** | Web IndexedDB、更新器、移动端响应式与桌面能力降级 |
+| **Beta** | 拾学通用任务与时间规划源码、Web IndexedDB、updater 构建链路、移动端响应式与桌面能力降级 |
 | **Preview** | Sync、Agent、Ollama、MCP、可选系统插件 |
 | **Roadmap** | sidecar、RAG、语音、OCR |
 
-专题文档既包含当前用法，也包含目标设计；每篇开头的成熟度说明优先于路线图描述。
+专题文档既包含当前用法，也包含目标设计；每篇开头的成熟度说明优先于路线图描述。拾学桌面导航有七个一级入口，紧凑布局有五个底栏入口；Web smoke 与窄屏截图不构成原生验收。v0.2.4 基础无签名 NSIS 自动安装/启动 smoke 已通过，但本轮时间规划累计版的 Windows 人工安装验收、Authenticode、已发布版本 updater 端到端升级、系统 200% 缩放、Narrator，以及 iOS/iPadOS/Android 原生验收均为 `NOT_RUN`。
 
 ## 按目标导航
 
@@ -21,7 +21,7 @@
 | 配置本地开发与 exFAT 工作区 | [development.md](./development.md) |
 | 定义产品目标、数据与交付边界 | [application-protocol.md](./application-protocol.md) |
 | 查看拾学与 Todofy 的源码级功能对标 | [todofy-benchmark.md](./todofy-benchmark.md) |
-| 评审拾学下一阶段时间规划方案 | [时间规划总规格](./superpowers/specs/2026-09-04-shixue-time-planning-foundation.md) · [视觉合同](../DESIGN.md) · [视觉验收](../VISUAL_QA.md) |
+| 了解拾学已锁定的时间规划范围与验收边界 | [时间规划总规格](./superpowers/specs/2026-09-04-shixue-time-planning-foundation.md) · [集成与发布计划](./superpowers/plans/2026-09-04-navigation-integration-release.md) · [视觉合同](../DESIGN.md) · [视觉验收](../VISUAL_QA.md) |
 | 了解 Release Kit 与发布边界 | [release-kit.md](./release-kit.md) |
 | 下载 Windows 免安装版、了解 Authenticode | [windows-distribution.md](./windows-distribution.md) |
 | 复盘 Windows v0.2.3 发布事故与门禁 | [windows-v0.2.3-release-retrospective.md](./windows-v0.2.3-release-retrospective.md) |
@@ -57,8 +57,9 @@
 | development.md | 本地开发：环境诊断、验证命令与 exFAT 处理 |
 | application-protocol.md | 应用协议：产品意图、能力、数据、降级与证据边界 |
 | todofy-benchmark.md | Todofy 固定提交的源码审计、功能取舍、落地模块与验收点 |
-| superpowers/specs/2026-09-04-shixue-time-planning-foundation.md | 通用任务、重复、NLP、多提醒、日历与未来 Agent 能力协议的总规格 |
-| ../DESIGN.md / ../VISUAL_QA.md | 时间规划视觉合同、统一控件规则与固定视口验收矩阵 |
+| superpowers/specs/2026-09-04-shixue-time-planning-foundation.md | 通用任务、可选学习、Today / 最近 7 天、重复、离线 NLP、多提醒/托盘和四种日历视图的总规格 |
+| superpowers/plans/2026-09-04-navigation-integration-release.md | 七入口桌面导航、五入口紧凑导航、文档与 Windows 安装包验收计划 |
+| ../DESIGN.md / ../VISUAL_QA.md | 用户批准的 `LOCKED / NAVIGATION AMENDED` 视觉合同、统一控件规则与固定视口验收矩阵 |
 | release-kit.md | Release Kit：配置检查与发布成熟度边界 |
 | windows-distribution.md | Windows 免安装交付、SmartScreen 与 Authenticode 选择指南 |
 | windows-v0.2.3-release-retrospective.md | v0.2.3 Windows 交付事故、证据边界与防复发清单 |

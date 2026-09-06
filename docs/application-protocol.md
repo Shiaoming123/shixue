@@ -27,7 +27,8 @@ The protocol deliberately summarizes rather than replaces implementation facts:
 `npm run check:protocol` reads the JSON and cross-checks the product name,
 module policy, Workspace export format/version, legacy Study input format,
 capability protocol version, default local-first/sync boundary, acceptance
-commands, maturity labels, and current delivery evidence. Data-port and
+commands, maturity labels, shipped implementation evidence, and current
+delivery evidence. Data-port and
 capability facts are compared with constants exported by the implementation;
 they are not inferred by comparing duplicated JSON fields. The checker does not
 alter configuration, load modules, contact a network endpoint, or read secrets.
@@ -76,10 +77,28 @@ application capability.
 
 The shipped foundation comprises WorkspaceStateV3 parsing, Study v1/v2
 migration and v3 export, capability protocol v1 with transactional command
-execution, routing of current live writes through that service, and the shared
-themed-control foundation. This statement does not claim that every future v3
-collection has business behaviour: recurrence, offline natural-language quick
-add, multiple reminders, calendar views, and Agent behaviour remain planned.
+execution, routing of current live writes through that service, the shared
+themed-control foundation, recurrence and occurrences, offline natural-language
+quick add, multiple reminders, and `calendar-planning-v1`.
+
+`calendar-planning-v1` is backed by machine-checkable source and test pointers:
+
+| Evidence id | Implemented boundary | Behavioural evidence |
+| --- | --- | --- |
+| `navigation` | `src/lib/workspace-view.ts` | `tests/workspace-navigation.test.ts` |
+| `today-upcoming` | `src/domain/views/today.ts`, `src/domain/views/upcoming.ts` | `tests/workspace-projections.test.ts` |
+| `review-link` | `src/domain/learning/review-task-link.ts` | `tests/review-task-link.test.ts` |
+| `responsive-shell` | `src/lib/responsive-shell.ts` | `tests/responsive-shell.test.ts`, `tests/business-sheet-mount.test.ts` |
+
+These entries claim the local application behaviour covered by those sources
+and tests. They do not claim an external calendar provider, hosted service,
+native-device validation, or any release channel.
+
+The conditional acceptance commands include `smoke:calendar` for the five fixed
+Web viewports and `benchmark:task-query` for deterministic Today, Upcoming, and
+calendar projection counts. These checks do not change native delivery status.
+
+Agent behaviour remains planned.
 The command envelope reserves `source: agent`, but there is no shipped Agent
 planner or autonomous execution policy. A future Agent must use the same
 query/preview/execute boundary and cannot bypass validation or write storage

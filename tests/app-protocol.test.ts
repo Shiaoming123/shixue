@@ -19,6 +19,8 @@ const packageJson = {
     'check:protocol': 'node scripts/check-app-protocol.mjs',
     'rust:verify': 'node scripts/rust-verify.mjs',
     'smoke:web-persistence': 'node scripts/smoke-web-persistence.mjs',
+    'smoke:calendar': 'node scripts/smoke-calendar.mjs',
+    'benchmark:task-query': 'node scripts/benchmark-study-task-query.mjs',
     'smoke:windows-package': 'node scripts/smoke-windows-package.mjs',
     'check:android-artifact': 'node scripts/check-android-artifact.mjs',
   },
@@ -72,8 +74,15 @@ function validProtocol() {
         'recurrence-occurrence-v1',
         'offline-natural-language-v1',
         'multi-reminder-v1',
+        'calendar-planning-v1',
       ],
-      planned: ['calendar', 'agent-behavior'],
+      shippedEvidence: [
+        { id: 'navigation', sources: ['src/lib/workspace-view.ts'], tests: ['tests/workspace-navigation.test.ts'] },
+        { id: 'today-upcoming', sources: ['src/domain/views/today.ts', 'src/domain/views/upcoming.ts'], tests: ['tests/workspace-projections.test.ts'] },
+        { id: 'review-link', sources: ['src/domain/learning/review-task-link.ts'], tests: ['tests/review-task-link.test.ts'] },
+        { id: 'responsive-shell', sources: ['src/lib/responsive-shell.ts'], tests: ['tests/responsive-shell.test.ts', 'tests/business-sheet-mount.test.ts'] },
+      ],
+      planned: ['agent-behavior'],
     },
     delivery: {
       desktopPackage: 'unverified',
@@ -84,7 +93,7 @@ function validProtocol() {
     },
     acceptance: {
       required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
-      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:windows-package', 'check:android-artifact'],
+      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:windows-package', 'check:android-artifact'],
     },
     evolution: {
       additive: 'Add fields in a new schema version.',
@@ -134,4 +143,25 @@ test('rejects a mobile delivery claim that does not match recorded local evidenc
   protocol.delivery.mobileNative = 'local-debug'
 
   assert.match(validate(protocol).errors.join('\n'), /delivery must retain the currently evidenced release boundary/)
+})
+
+test('rejects a protocol that omits the shipped calendar planning capability', () => {
+  const protocol = validProtocol()
+  protocol.implementation.shippedFoundation = protocol.implementation.shippedFoundation.filter((id) => id !== 'calendar-planning-v1')
+
+  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedFoundation must include calendar-planning-v1/)
+})
+
+test('rejects missing or unverified shipped calendar planning evidence', () => {
+  const protocol = validProtocol()
+  protocol.implementation.shippedEvidence = protocol.implementation.shippedEvidence.filter(({ id }) => id !== 'review-link')
+
+  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedEvidence must match navigation, today-upcoming, review-link, and responsive-shell evidence/)
+})
+
+test('rejects a protocol that drops calendar acceptance commands', () => {
+  const protocol = validProtocol()
+  protocol.acceptance.conditional = protocol.acceptance.conditional.filter((command) => command !== 'smoke:calendar')
+
+  assert.match(validate(protocol).errors.join('\n'), /acceptance\.conditional must retain the calendar smoke and task-query benchmark commands/)
 })

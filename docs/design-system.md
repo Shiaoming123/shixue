@@ -23,7 +23,7 @@ src/
         ├── EmptyState.vue
         ├── Listbox.vue / Checkbox.vue / Switch.vue
         ├── DateTimePicker.vue
-        ├── Popover.vue / Dialog.vue / ToastRegion.vue
+        ├── Popover.vue / Dialog.vue / Sheet.vue / ToastRegion.vue
         └── OverlayHost.vue / use-overlay.ts
 ```
 
@@ -278,7 +278,7 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 
 ### 2.9 浮层与提示
 
-应用根部只挂载一次 `<OverlayHost />`。`Popover`、`Dialog` 与 `ToastRegion` 会传送到这个宿主；业务组件不要再创建新的 Portal 根节点。
+应用根部只挂载一次 `<OverlayHost />`。`Popover`、`Dialog`、`Sheet` 与 `ToastRegion` 会传送到这个宿主；业务组件不要再创建新的 Portal 根节点。
 
 ```vue
 <Popover v-model:open="open">
@@ -293,9 +293,9 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 <ToastRegion :message="notice" action-label="撤销" @action="undo" @dismiss="notice = ''" />
 ```
 
-`use-overlay.ts` 统一维护浮层顺序、Escape 和外点关闭。`Dialog` 负责焦点陷阱与关闭后的焦点返回；`ToastRegion` 在悬浮或键盘焦点进入时暂停超时。
+`use-overlay.ts` 统一维护浮层顺序、Escape、外点策略和关闭后的焦点返回。`Dialog` 与 `Sheet` 负责各自的焦点陷阱；普通 `Popover` 的桌面 panel 使用有名称的非模态 `dialog`，菜单型 Popover 由内部 `menu` 提供语义，紧凑视口的 adaptive Sheet 使用有名称的模态 `dialog`。每个共享 panel 只拥有一层 dialog 语义。`ToastRegion` 在悬浮或键盘焦点进入时暂停超时。
 
-带操作（例如“撤销”）的 Toast 不自动消失，并必须有明确关闭按钮；纯状态 Toast 才可短时自动关闭。业务 Sheet 必须复用 `Dialog` 的移动呈现，或建立在同一 `use-overlay.ts` 之上的 `Sheet`，不得各自复制 backdrop 和焦点逻辑。
+带操作（例如“撤销”）的 Toast 不自动消失，并必须有明确关闭按钮；纯状态 Toast 才可短时自动关闭。业务抽屉与移动面板必须复用共享 `Sheet`；提醒、重复和任务编辑器只提供业务内容，不得各自复制 backdrop、焦点或嵌套 dialog 语义。
 
 ---
 
@@ -315,7 +315,7 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 
 > 结构 token（间距、字号、动效）**不属于主题**。如果你想为某个场景定制更大字号，去 `global.css` 改 `--text-xl` 即可，主题会自动跟随。
 
-主题切换立即生效，自动持久化到 `localStorage`（key=`app-theme`），并跟随系统深浅色（`prefers-color-scheme`）。
+主题切换立即生效，自动持久化到 `localStorage`（key=`meow-study-theme`），并跟随系统深浅色（`prefers-color-scheme`）。
 
 ---
 
@@ -387,14 +387,15 @@ AI 类应用（Vercel AI SDK 等）建议：
 
 ---
 
-## 6. 可访问性底线（无需额外工作，已默认开启）
+## 6. 可访问性底线
 
 - 键盘 `Tab` 可遍历所有交互元素，`focus-visible` 有可见焦点环（2px accent 边）
 - `prefers-reduced-motion: reduce` 自动把所有动效缩短到 0.01ms（全局 CSS 已配）
 - 颜色对比度：主题需同时校验浅色与深色模式；高对比度偏好会自动加强分隔线
 - `prefers-reduced-transparency` 会把半透明材质回退为不透明 surface
 - 移动端使用 `100dvh` 与顶部/底部 safe-area，避免刘海、任务栏和虚拟键盘遮挡
-- 窗口最小尺寸 820×560，已在 `tauri.conf.json` 设好；过窄的窗口会强制缩放，按钮可能挤压
+- Tauri 窗口最小尺寸为 800×560；响应式壳仍以 819/820 和 1279/1280 为精确边界，内容不得靠强制缩放隐藏溢出
+- Web 固定视口、ARIA 与键盘自动化不等同于 Windows 原生证据；安装应用、200% 系统缩放、Narrator 和原生高对比验收保持 `NOT_RUN`
 
 ---
 

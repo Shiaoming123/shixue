@@ -74,10 +74,32 @@
       "themed-control-foundation",
       "recurrence-occurrence-v1",
       "offline-natural-language-v1",
-      "multi-reminder-v1"
+      "multi-reminder-v1",
+      "calendar-planning-v1"
+    ],
+    "shippedEvidence": [
+      {
+        "id": "navigation",
+        "sources": ["src/lib/workspace-view.ts"],
+        "tests": ["tests/workspace-navigation.test.ts"]
+      },
+      {
+        "id": "today-upcoming",
+        "sources": ["src/domain/views/today.ts", "src/domain/views/upcoming.ts"],
+        "tests": ["tests/workspace-projections.test.ts"]
+      },
+      {
+        "id": "review-link",
+        "sources": ["src/domain/learning/review-task-link.ts"],
+        "tests": ["tests/review-task-link.test.ts"]
+      },
+      {
+        "id": "responsive-shell",
+        "sources": ["src/lib/responsive-shell.ts"],
+        "tests": ["tests/responsive-shell.test.ts", "tests/business-sheet-mount.test.ts"]
+      }
     ],
     "planned": [
-      "calendar",
       "agent-behavior"
     ]
   },
@@ -90,7 +112,7 @@
   },
   "acceptance": {
     "required": ["test", "check:protocol", "check:csp", "typecheck", "build", "build:web", "check:modules", "check:docs"],
-    "conditional": ["rust:verify", "smoke:web-persistence", "smoke:windows-package", "mobile:doctor", "check:android-artifact"]
+    "conditional": ["rust:verify", "smoke:web-persistence", "smoke:calendar", "benchmark:task-query", "smoke:windows-package", "mobile:doctor", "check:android-artifact"]
   },
   "evolution": {
     "additive": "Add fields only in an application schema version that the checker explicitly understands; capability protocol versions evolve independently.",
