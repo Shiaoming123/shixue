@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { cpus, platform, release } from 'node:os'
 import { performance } from 'node:perf_hooks'
 import { resolve } from 'node:path'
 import { build } from 'vite'
@@ -6,27 +7,35 @@ import { createStudyTaskQueryScaleFixture } from './benchmark-fixtures/study-tas
 
 const samples = 7
 const state = createStudyTaskQueryScaleFixture()
-const projectTaskItems = await loadReleaseProjection()
+const [projectTaskItems, projectCalendarItems] = await Promise.all([
+  loadReleaseProjection('src/lib/study-task-query.ts', 'projectTaskItems'),
+  loadReleaseProjection('src/domain/calendar/project.ts', 'projectCalendarItems'),
+])
 
-measure('Today', { from: '2026-09-05', to: '2026-09-05' }, 100)
-measure('7-day range', { from: '2026-09-05', to: '2026-09-11' }, 150)
+console.log(`Fixture: tasks=${state.tasks.length} series=${state.recurrenceSeries.length} occurrences=${state.occurrences.length}`)
+console.log(`Runtime: node=${process.versions.node} platform=${platform()} arch=${process.arch} release=${release()} cpu=${cpus()[0]?.model ?? 'unknown'}`)
+measure('Today', () => projectTaskItems(state, { from: '2026-09-05', to: '2026-09-05' }, 'Asia/Shanghai'), 100, 0)
+measure('7-day range', () => projectTaskItems(state, { from: '2026-09-05', to: '2026-09-11' }, 'Asia/Shanghai'), 100, 0)
+measure('Calendar range', () => projectCalendarItems(state, { start: '2027-01-01', end: '2027-02-12' }), 150, 41_960)
 
-function measure(label, range, targetMs) {
-  projectTaskItems(state, range, 'Asia/Shanghai')
+function measure(label, project, targetMs, expectedCount) {
+  project()
+  let resultCount = 0
   const timings = Array.from({ length: samples }, () => {
     const startedAt = performance.now()
-    const result = projectTaskItems(state, range, 'Asia/Shanghai')
+    const result = project()
     const elapsedMs = performance.now() - startedAt
-    assert.equal(result.length, 0)
+    resultCount = result.length
     return elapsedMs
   }).sort((left, right) => left - right)
   const medianMs = timings[Math.floor(timings.length / 2)]
   const maxMs = timings.at(-1)
-  console.log(`${label}: median=${medianMs.toFixed(1)}ms max=${maxMs.toFixed(1)}ms samples=${samples}`)
+  assert.equal(resultCount, expectedCount, `${label} projected an unexpected result count`)
+  console.log(`${label}: count=${resultCount} median=${medianMs.toFixed(1)}ms max=${maxMs.toFixed(1)}ms samples=${samples} target=<${targetMs}ms`)
   assert.ok(medianMs < targetMs, `${label} median ${medianMs.toFixed(1)}ms exceeds ${targetMs}ms target`)
 }
 
-async function loadReleaseProjection() {
+async function loadReleaseProjection(entry, exportName) {
   const result = await build({
     configFile: false,
     logLevel: 'silent',
@@ -35,9 +44,9 @@ async function loadReleaseProjection() {
       minify: 'oxc',
       target: 'es2022',
       lib: {
-        entry: resolve('src/lib/study-task-query.ts'),
+        entry: resolve(entry),
         formats: ['es'],
-        fileName: 'study-task-query',
+        fileName: exportName,
       },
       rollupOptions: {
         output: { format: 'es', codeSplitting: false },
@@ -49,6 +58,6 @@ async function loadReleaseProjection() {
   assert.ok(chunk && chunk.type === 'chunk', 'Release benchmark bundle did not emit an entry chunk.')
   const url = `data:text/javascript;base64,${Buffer.from(chunk.code).toString('base64')}`
   const module = await import(url)
-  assert.equal(typeof module.projectTaskItems, 'function')
-  return module.projectTaskItems
+  assert.equal(typeof module[exportName], 'function')
+  return module[exportName]
 }

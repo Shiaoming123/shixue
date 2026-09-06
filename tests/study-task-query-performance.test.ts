@@ -4,8 +4,9 @@ import test from 'node:test'
 import { projectTaskItems } from '../src/lib/study-task-query.ts'
 import { createStudyTaskQueryScaleFixture } from '../scripts/benchmark-fixtures/study-task-query-scale.ts'
 
-test('empty Today projection stays linear at 1,000 series and 50,000 precise occurrences', () => {
+test('empty Today projection stays linear at 10,000 tasks, 1,000 series and 50,000 precise occurrences', () => {
   const state = createStudyTaskQueryScaleFixture()
+  assert.equal(state.tasks.length, 10_000)
   assert.equal(state.recurrenceSeries.length, 1_000)
   assert.equal(state.occurrences.length, 50_000)
   assert.equal(new Set(state.occurrences.map(({ scheduledAt }) => scheduledAt)).size, 50_000)
