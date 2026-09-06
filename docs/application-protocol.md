@@ -63,6 +63,14 @@ The iOS runtime contract is limited to `native-sql` and
 `native-notification`; desktop-only modules, including autostart, remain
 excluded by platform and capability checks.
 
+The iOS launch smoke command is `npm run smoke:ios-launch -- --device <UDID>
+--app <absolute .app path>`. It is local diagnostic evidence only: it records
+install/launch commands, Simulator logs, process termination, and separate
+WebView, native-host, Vue, workspace, and frontend markers. It does not prove
+signing, device execution, SQLite persistence, or visual acceptance. The
+current iOS simulator result remains `fail` until all markers are observed and
+the process survives the stability window.
+
 ## Workspace data evolution
 
 New exports use `meow-study/workspace-export` version 3. `WorkspaceStateV3`
@@ -124,6 +132,7 @@ npm run check:modules
 npm run check:modules -- web
 npm run check:modules -- mobile
 npm run verify
+npm run smoke:ios-launch -- --device <UDID> --app <absolute .app path>
 ```
 
 Run `npm run rust:verify` for Rust/Tauri changes. Web and Windows smoke checks

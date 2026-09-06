@@ -328,11 +328,15 @@ onMounted(async () => {
   compactMedia = window.matchMedia('(max-width: 819px)')
   compact.value = compactMedia.matches
   compactMedia.addEventListener('change', onCompactChange)
+  let workspaceReady = false
   try {
     await refreshState()
     selectedTopicId.value = state.value.topics.find((topic) => !topic.archivedAt)?.id ?? ''
     showFocus.value = Boolean(activeSession.value)
+    workspaceReady = true
+    console.info('[shixue:smoke] workspace-ready')
   } catch (error) { reportStorageError(error) } finally { loading.value = false }
+  if (workspaceReady) console.info('[shixue:smoke] frontend-ready')
   if (cloudAvailable) void refreshCloudSession()
   await initializeDeviceCapabilities()
   await initializeReminders()
