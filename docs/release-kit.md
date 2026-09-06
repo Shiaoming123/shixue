@@ -7,16 +7,20 @@ The Release Kit makes a checkout diagnosable and validates release configuration
 | Stage | Current maturity | What is available now | Still required |
 | --- | --- | --- | --- |
 | Local checks | Available | `npm run doctor`, `npm run verify`, and `npm run release:check` | Project-specific platform validation |
-| Desktop build/package | Local Windows delivery available, not signed release proof | `npm run package:windows` builds and audits an unsigned x64 NSIS installer, zh-CN MSI, and portable EXE; `npm run smoke:windows-package` installs and launches the NSIS package in an isolated temporary profile | Code signing and public distribution remain separate |
+| Desktop build/package | v0.3.0 local candidate verified | `npm run package:windows` built and audited an unsigned x64 NSIS installer, zh-CN MSI, and portable EXE; `npm run smoke:windows-package` verified the manifest-selected NSIS lifecycle in an isolated temporary profile | Manual installed UI, code signing, and public distribution remain separate |
 | Desktop code signing | Deferred | Workflow accepts optional signing inputs | Certificate ownership, secret provisioning, signed-artifact verification |
 | macOS notarization | Deferred | Workflow accepts optional Apple signing/notarization inputs | Apple account, certificates, notarization submission, and installed-artifact validation |
 | Updater signing/delivery | Configured for GitHub Releases | Real HTTPS endpoint and application-specific public key are committed; the private key remains outside Git | Hosted signed updater artifacts and update-path validation |
-| Windows distribution | Local delivery verified | NSIS, zh-CN MSI and portable EXE are packaged, hashed, audited and smoke-tested | Authenticode certificate and SmartScreen reputation |
+| Windows distribution | v0.3.0 unsigned local evidence | The current candidate produced NSIS, zh-CN MSI, portable EXE, hashes, audit, and automated package lifecycle evidence | Manual installed-app acceptance, Authenticode certificate, and SmartScreen reputation |
 | Android package | Local debug evidence | Android emulator `tauri android dev` and local universal debug APK/AAB build have completed | Recreate the ignored generated project on a clean checkout; real-device smoke, signing, Play Console, and store submission |
 | iOS package and store | Deferred | Responsive UI and desktop-capability degradation only | Native project initialization, Xcode/CocoaPods, accounts, certificates, device testing, and store submission |
 | Web deployment | Deferred | `npm run build:web` creates a static build | Select/configure a provider and validate a deployed site |
 
 An unsigned desktop artifact is not evidence of a signed, notarized, store-ready, or auto-updatable release. Likewise, a responsive mobile interface is not an APK, AAB, IPA, TestFlight build, or store submission.
+
+The current candidate status is tracked in the
+[v0.3.0 acceptance ledger](./releases/v0.3.0-acceptance.md). Evidence from an
+earlier local candidate remains historical and does not validate v0.3.0.
 
 `src-tauri/gen/` is intentionally ignored. The Android Gradle project and its
 debug APK/AAB are local build outputs, so a clean checkout must regenerate it
@@ -85,9 +89,21 @@ notarization, hosted updater availability, or a successful user installation.
 
 ## Optional local runtime smoke
 
-On Windows, `npm run smoke:windows-package` performs an explicit local package lifecycle check: it builds an unsigned NSIS installer with a transient `bundle.createUpdaterArtifacts=false` overlay, silently installs beneath a fresh `src-tauri/target/meow-windows-package-smoke-*` directory, redirects `APPDATA` and `LOCALAPPDATA` there, confirms the installed process remains alive briefly, then force-stops that child process and removes only the validated temporary directory.
+On Windows, `npm run smoke:windows-package` reads the current version's
+`release-artifacts/windows/<version>/manifest.json`, selects its single NSIS
+artifact, and verifies the exact file size and SHA-256 before installation. It
+refuses to continue when the real product registry identity already exists. It
+then silently installs beneath a fresh
+`src-tauri/target/meow-windows-package-smoke-*` directory, redirects `APPDATA`
+and `LOCALAPPDATA` there, probes the installed process, stops and relaunches the
+same executable, runs the uninstaller, and removes the validated temporary and
+registry state.
 
-The command leaves the generated NSIS bundle under the ignored Tauri target directory and does not need a signing private key. It is deliberately not a signed release, updater-delivery, offline-installation, tray graceful-exit, store, or macOS/Linux package test.
+The command does not rebuild or substitute the candidate selected by the
+manifest and does not need a signing private key for an `unsigned-local`
+candidate. It is deliberately not signed-release, updater-delivery,
+double-click UI, tray graceful-exit, notification UI, store, or macOS/Linux
+package evidence.
 
 ## Windows delivery package
 
@@ -100,7 +116,7 @@ npm run tauri -- icon docs/design/shixue-app-icon-master.png
 Create the complete local x64 delivery directory with:
 
 ```bash
-npm run release:check
+npm run release:check -- --mode=release
 npm run verify
 npm run rust:verify
 npm run package:windows

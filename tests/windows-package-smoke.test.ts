@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { resolve } from 'node:path'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import {
   assertSmokePath,
   appendManualWindowsStages,
@@ -12,23 +14,67 @@ import {
   removeSmokeRoot,
   resolveInstalledExecutable,
   selectNsisInstaller,
+  loadCandidateNsisArtifact,
+  waitForFileRemoval,
   updateSmokeStage,
 } from '../scripts/smoke-windows-package.mjs'
 
 test('reports automated and manual Windows evidence without promoting unobserved stages', () => {
   const report = appendManualWindowsStages(createWindowsSmokeReport(new Date('2026-09-05T00:00:00.000Z')))
-  updateSmokeStage(report, 'package-build', 'PASS', 'exit code 0')
+  updateSmokeStage(report, 'manifest-audit', 'PASS', 'checksum verified')
   assert.equal(report.generatedAt, '2026-09-05T00:00:00.000Z')
   assert.deepEqual(report.stages.map((stage) => stage.id), [
-    'package-build', 'silent-install', 'installed-launch',
+    'manifest-audit', 'silent-install', 'installed-launch', 'installed-relaunch', 'silent-uninstall', 'cleanup',
     'permission-first-reminder', 'two-reminders-one-task', 'snooze-one', 'complete-one',
     'hide-to-tray', 'reopen-from-tray', 'quit-from-tray', 'no-delivery-after-quit',
     'windows-display-scaling-200', 'native-notification-action-buttons',
   ])
-  assert.equal(report.stages.find((stage) => stage.id === 'package-build')?.status, 'PASS')
+  assert.equal(report.stages.find((stage) => stage.id === 'manifest-audit')?.status, 'PASS')
   assert.equal(report.stages.find((stage) => stage.id === 'permission-first-reminder')?.status, 'NOT_RUN')
   assert.equal(report.stages.find((stage) => stage.id === 'windows-display-scaling-200')?.verification, 'manual')
   assert.equal(report.stages.find((stage) => stage.id === 'native-notification-action-buttons')?.status, 'UNSUPPORTED')
+})
+
+test('waits for the NSIS uninstaller to remove the installed executable', async () => {
+  let checks = 0
+  await waitForFileRemoval('D:/install/meow-study.exe', {
+    attempts: 3,
+    delay: async () => {},
+    exists: async () => ++checks < 3,
+  })
+  assert.equal(checks, 3)
+
+  await assert.rejects(waitForFileRemoval('D:/install/meow-study.exe', {
+    attempts: 2,
+    delay: async () => {},
+    exists: async () => true,
+  }), /remains after uninstall/)
+})
+
+test('loads the exact manifest NSIS bytes and rejects a checksum mismatch', async (t) => {
+  const root = await mkdtemp(resolve(tmpdir(), 'shixue-candidate-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const directory = resolve(root, 'release-artifacts', 'windows', '0.3.0')
+  await mkdir(directory, { recursive: true })
+  const file = 'Shixue_0.3.0_x64_Setup.exe'
+  await writeFile(resolve(directory, file), 'candidate bytes')
+  const manifest = {
+    schemaVersion: 1,
+    version: '0.3.0',
+    platform: 'windows',
+    identifier: 'com.shiaoming123.shixue',
+    signing: 'unsigned-local',
+    artifacts: [{ kind: 'nsis', file, bytes: 15, sha256: '732d058fadd90c70f22429227ab5d9c74919217099efe737aa46835ce3a60856' }],
+  }
+  await writeFile(resolve(directory, 'manifest.json'), JSON.stringify(manifest))
+
+  const artifact = await loadCandidateNsisArtifact(root, '0.3.0')
+  assert.equal(artifact.path, resolve(directory, file))
+  assert.equal(artifact.sha256, manifest.artifacts[0].sha256)
+
+  manifest.artifacts[0].sha256 = '0'.repeat(64)
+  await writeFile(resolve(directory, 'manifest.json'), JSON.stringify(manifest))
+  await assert.rejects(loadCandidateNsisArtifact(root, '0.3.0'), /checksum mismatch/i)
 })
 
 test('rejects cleanup outside the dedicated target subtree', () => {

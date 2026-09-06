@@ -67,9 +67,9 @@ signtool verify /pa /all /v .\Shixue_*.msi
 ## 当前边界
 
 - Portable、NSIS、MSI、SHA-256 与安装启动 smoke：已实现；updater 签名用于安装包更新产物，不覆盖 Portable EXE。
-- `npm run smoke:windows-package` 会输出 `src-tauri/target/windows-package-smoke-report.json`。其中构建、静默安装、启动后存活 2 秒属于自动验证；首次提醒权限、单任务双提醒、稍后提醒、完成、隐藏/恢复/退出托盘、退出后不再投递及 Windows 200% 显示缩放均需人工实机观察，脚本会保持为 `NOT_RUN`，不会把进程存活当作功能通过。
+- `npm run smoke:windows-package` 只消费 `release-artifacts/windows/<version>/manifest.json` 精确指向的单一 NSIS，并在安装前核对大小和 SHA-256；真实产品注册表身份已存在时拒绝覆盖。报告位于 `src-tauri/target/windows-package-smoke-report.json`，自动阶段分别记录 manifest audit、隔离静默安装、首次启动、重启、卸载和清理。首次提醒权限、单任务双提醒、稍后提醒、完成、隐藏/恢复/退出托盘、退出后不再投递及 Windows 200% 显示缩放仍需人工实机观察，脚本保持为 `NOT_RUN`，不会把进程存活当作可用 UI 证明。
 - 当前原生通知只提交通知正文，Windows 原生通知操作按钮为 `UNSUPPORTED`；Complete / Snooze / Open 由应用内提醒卡承接。只有实机观察到系统通知后，才可把“接受提交”升级为“观察到投递”。
 - Authenticode 证书采购、CI 代码签名和干净设备上的签名验证：尚未实现。
 - SmartScreen 信誉不是单次构建可以证明的结果；即使签名有效，也需要真实分发积累。
 
-本 PR4 工作树已生成 Portable、NSIS、MSI 三种未签名本地制品，并运行自动 package smoke：NSIS 构建、隔离静默安装和安装后进程存活探针为 `PASS`。通知显示、单任务双提醒、稍后与完成、托盘隐藏/恢复/退出、退出后静默和 Windows 200% 系统缩放尚未人工观察，仍为 `NOT_RUN`；原生通知操作按钮为 `UNSUPPORTED`，由应用内提醒卡回退。
+早先 PR4 本地工作树曾生成 Portable、NSIS、MSI 三种未签名制品，并留下自动 package smoke 的历史证据；这些结果不能作为当前 v0.3.0 候选的验收结果。当前工作树已生成并审计 v0.3.0 `unsigned-local` 制品，精确 NSIS 的静默安装、进程启动、重启、静默卸载和隔离清理为 `PASS`；可用窗口、交互与系统集成仍按 [v0.3.0 验收账本](./releases/v0.3.0-acceptance.md)中的 `NOT_RUN` 边界处理。

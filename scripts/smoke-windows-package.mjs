@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
@@ -27,9 +28,12 @@ export function createWindowsSmokeReport(now = new Date()) {
     platform: process.platform,
     automatedResult: 'NOT_RUN',
     stages: [
-      ['package-build', 'Build an unsigned NSIS package for the current source.'],
-      ['silent-install', 'Install the NSIS package into an isolated target directory.'],
+      ['manifest-audit', 'Load the versioned candidate manifest and verify the exact NSIS bytes by SHA-256.'],
+      ['silent-install', 'Install the manifest-selected NSIS package into an isolated target directory.'],
       ['installed-launch', 'Launch the installed executable and observe that it stays alive for two seconds.'],
+      ['installed-relaunch', 'Launch the same installed executable again after the first process exits.'],
+      ['silent-uninstall', 'Run the installed candidate uninstaller and verify the executable is removed.'],
+      ['cleanup', 'Remove the isolated smoke directory and installer registry residue.'],
     ].map(([id, description]) => ({ id, verification: 'automated', status: 'NOT_RUN', description })),
   }
 }
@@ -68,6 +72,31 @@ export function assertSmokePath(targetRoot, candidate) {
   return resolvedCandidate
 }
 
+export async function loadCandidateNsisArtifact(root, version) {
+  const directory = resolve(root, 'release-artifacts', 'windows', version)
+  const manifestPath = assertSmokePath(resolve(root, 'release-artifacts', 'windows'), resolve(directory, 'manifest.json'))
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+  if (manifest.version !== version || manifest.platform !== 'windows') {
+    throw new Error(`Windows candidate manifest must describe version ${version} for Windows.`)
+  }
+  const matches = Array.isArray(manifest.artifacts)
+    ? manifest.artifacts.filter((artifact) => artifact?.kind === 'nsis')
+    : []
+  if (matches.length !== 1) throw new Error(`Windows candidate manifest must contain exactly one NSIS artifact; found ${matches.length}.`)
+  const artifact = matches[0]
+  if (typeof artifact.file !== 'string' || !artifact.file || typeof artifact.sha256 !== 'string') {
+    throw new Error('Windows candidate NSIS metadata is incomplete.')
+  }
+  const path = assertSmokePath(directory, resolve(directory, artifact.file))
+  const [contents, artifactStat] = await Promise.all([readFile(path), stat(path)])
+  if (!artifactStat.isFile() || artifactStat.size !== artifact.bytes) {
+    throw new Error(`Windows candidate NSIS size mismatch: ${artifact.file}`)
+  }
+  const digest = createHash('sha256').update(contents).digest('hex')
+  if (digest !== artifact.sha256) throw new Error(`Windows candidate NSIS checksum mismatch: ${artifact.file}`)
+  return { ...artifact, path, manifestPath, manifest }
+}
+
 export function createNsisInstallArgs(_installerPath, installPath) {
   return ['/S', `/D=${installPath}`]
 }
@@ -99,6 +128,18 @@ export function selectNsisInstaller(candidates, productName, version) {
 
 export function resolveInstalledExecutable(installPath, binaryName) {
   return resolve(installPath, `${binaryName}.exe`)
+}
+
+export async function waitForFileRemoval(path, {
+  attempts = 20,
+  exists = async (candidate) => stat(candidate).then((entry) => entry.isFile()).catch(() => false),
+  delay = async () => new Promise((resolveDelay) => setTimeout(resolveDelay, 250)),
+} = {}) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (!await exists(path)) return
+    if (attempt + 1 < attempts) await delay()
+  }
+  throw new Error(`Installed executable remains after uninstall: ${path}`)
 }
 
 export async function removeSmokeRoot(
@@ -204,12 +245,11 @@ async function main() {
   const localAppDataPath = assertSmokePath(smokeRoot, resolve(smokeRoot, 'localappdata'))
   let application
   let installerRegistryKey
-  let activeStage = 'package-build'
+  let executablePath
+  let activeStage = 'manifest-audit'
+  let failure
 
   try {
-    await Promise.all([mkdir(installPath), mkdir(appDataPath), mkdir(localAppDataPath)])
-    const tauriCli = resolve(projectRoot, 'node_modules', '@tauri-apps', 'cli', 'tauri.js')
-    const nsisDirectory = resolve(tauriTargetRoot, 'release', 'bundle', 'nsis')
     const [tauriConfig, packageJson, cargoManifest] = await Promise.all([
       readFile(resolve(projectRoot, 'src-tauri', 'tauri.conf.json'), 'utf8').then(JSON.parse),
       readFile(resolve(projectRoot, 'package.json'), 'utf8').then(JSON.parse),
@@ -221,31 +261,34 @@ async function main() {
       throw new Error('Could not read the package author for Windows installer cleanup.')
     }
     const binaryName = tauriConfig.mainBinaryName?.trim() || cargoPackageName
-    const smokeBundleConfig = createSmokeBundleConfig(tauriConfig)
-    installerRegistryKey = `HKCU\\Software\\${packageJson.author}\\${smokeBundleConfig.productName}`
-    await runCommand(process.execPath, [
-      tauriCli,
-      'build',
-      '--bundles',
-      'nsis',
-      '--no-sign',
-      '--config',
-      JSON.stringify(smokeBundleConfig),
-    ])
-    updateSmokeStage(report, 'package-build', 'PASS', 'Tauri returned exit code 0 for an unsigned NSIS build.')
+    const candidate = await loadCandidateNsisArtifact(projectRoot, packageJson.version)
+    if (candidate.manifest.identifier !== tauriConfig.identifier) {
+      throw new Error('Windows candidate manifest identifier does not match the current Tauri identity.')
+    }
+    const candidateRegistryKey = `HKCU\\Software\\${packageJson.author}\\${tauriConfig.productName}`
+    const installedIdentity = await runRegistryCommand(['query', candidateRegistryKey])
+    if (installedIdentity === 0) {
+      throw new Error(`BLOCKED: ${candidateRegistryKey} is already installed; refusing to overwrite the real application identity.`)
+    }
+    if (installedIdentity !== 1) throw new Error(`Could not audit installed Windows identity: ${candidateRegistryKey}`)
+    installerRegistryKey = candidateRegistryKey
+    report.artifact = {
+      path: candidate.path,
+      manifest: candidate.manifestPath,
+      sha256: candidate.sha256,
+      version: candidate.manifest.version,
+      identifier: candidate.manifest.identifier,
+      signing: candidate.manifest.signing,
+    }
+    updateSmokeStage(report, 'manifest-audit', 'PASS', `Verified ${candidate.file} SHA-256 ${candidate.sha256}.`)
 
     activeStage = 'silent-install'
-    const installerName = selectNsisInstaller(
-      await listNsisInstallers(nsisDirectory),
-      smokeBundleConfig.productName,
-      tauriConfig.version,
-    )
-    const installerPath = resolve(nsisDirectory, installerName)
-    await runCommand(installerPath, createNsisInstallArgs(installerPath, installPath))
-    updateSmokeStage(report, 'silent-install', 'PASS', `Installed ${installerName} into the isolated smoke directory.`)
+    await Promise.all([mkdir(installPath), mkdir(appDataPath), mkdir(localAppDataPath)])
+    await runCommand(candidate.path, createNsisInstallArgs(candidate.path, installPath))
+    updateSmokeStage(report, 'silent-install', 'PASS', `Installed ${candidate.file} into the isolated smoke directory.`)
 
     activeStage = 'installed-launch'
-    const executablePath = assertSmokePath(
+    executablePath = assertSmokePath(
       installPath,
       resolveInstalledExecutable(installPath, binaryName),
     )
@@ -263,25 +306,56 @@ async function main() {
     })
     await waitForChildToStayAlive(application, 2_000)
     updateSmokeStage(report, 'installed-launch', 'PASS', 'The installed executable stayed alive for the two-second automated probe.')
+    await terminateChild(application)
+    application = undefined
+
+    activeStage = 'installed-relaunch'
+    application = spawn(executablePath, [], {
+      cwd: installPath,
+      windowsHide: true,
+      env: { ...process.env, APPDATA: appDataPath, LOCALAPPDATA: localAppDataPath },
+    })
+    await waitForChildToStayAlive(application, 2_000)
+    updateSmokeStage(report, 'installed-relaunch', 'PASS', 'The same installed executable stayed alive after relaunch.')
+    await terminateChild(application)
+    application = undefined
+
+    activeStage = 'silent-uninstall'
+    const uninstallerPath = assertSmokePath(smokeRoot, resolve(installPath, 'uninstall.exe'))
+    const uninstallerStat = await stat(uninstallerPath)
+    if (!uninstallerStat.isFile()) throw new Error(`Installed uninstaller is missing: ${uninstallerPath}`)
+    await runCommand(uninstallerPath, createNsisUninstallArgs())
+    await waitForFileRemoval(executablePath)
+    updateSmokeStage(report, 'silent-uninstall', 'PASS', 'The candidate uninstaller completed and removed the installed executable.')
+
+    activeStage = 'cleanup'
+    await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath, {
+      registryKey: installerRegistryKey,
+      exists: async () => false,
+    })
+    updateSmokeStage(report, 'cleanup', 'PASS', 'Removed the isolated smoke root and installer registry residue.')
     report.automatedResult = 'PASS'
-    report.artifact = installerPath
-    console.log(`Windows package automated smoke passed: ${installerPath}`)
+    console.log(`Windows package automated smoke passed: ${candidate.path}`)
   } catch (error) {
     updateSmokeStage(report, activeStage, 'FAIL', error instanceof Error ? error.message : String(error))
     report.automatedResult = 'FAIL'
-    throw error
+    failure = error
   } finally {
-    report.finishedAt = new Date().toISOString()
     try {
-      await writeFile(smokeReportPath, `${JSON.stringify(report, null, 2)}\n`)
-      console.log(`Windows package smoke report: ${smokeReportPath}`)
-    } finally {
       await terminateChild(application)
-      await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath, {
-        registryKey: installerRegistryKey,
-      })
+      if (report.stages.find((stage) => stage.id === 'cleanup')?.status !== 'PASS') {
+        await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath, { registryKey: installerRegistryKey })
+        if (activeStage !== 'cleanup') updateSmokeStage(report, 'cleanup', 'PASS', 'Cleaned the isolated smoke state after an earlier stage failed.')
+      }
+    } catch (cleanupError) {
+      updateSmokeStage(report, 'cleanup', 'FAIL', cleanupError instanceof Error ? cleanupError.message : String(cleanupError))
+      failure ??= cleanupError
     }
+    report.finishedAt = new Date().toISOString()
+    await writeFile(smokeReportPath, `${JSON.stringify(report, null, 2)}\n`)
+    console.log(`Windows package smoke report: ${smokeReportPath}`)
   }
+  if (failure) throw failure
 }
 
 export async function cleanupWindowsSmokeInstallation(
