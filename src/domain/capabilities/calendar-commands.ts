@@ -1,6 +1,7 @@
 import type { TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
 import { applyRecurrenceCommand, seriesMovePatchForOccurrence } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
+import { assertPlanningDuration } from './duration-validation.ts'
 import {
   DomainCommandError,
   type CapabilityCommandContext,
@@ -38,7 +39,7 @@ export function applyCalendarCommand(
 ): CommandApplication {
   if (command.type === 'calendar.resize') {
     assertResizeScopeTarget(command.occurrenceId, command.scope)
-    assertDuration(command.estimateMinutes)
+    assertPlanningDuration(command.estimateMinutes)
     if (command.occurrenceId === undefined) {
       return applyTaskCommand(state, {
         type: 'task.update',
@@ -58,7 +59,7 @@ export function applyCalendarCommand(
   assertMoveScopeTarget(command.occurrenceId, command.scope)
   assertMoveTarget(command.startAt ?? null, command.startOn ?? null)
   if (command.estimateMinutes !== undefined) {
-    assertDuration(command.estimateMinutes)
+    assertPlanningDuration(command.estimateMinutes)
     if (!command.startAt) {
       throw new DomainCommandError('VALIDATION_ERROR', 'Calendar move duration requires a timed target.')
     }
@@ -127,14 +128,6 @@ function recurrenceScope(scope: CalendarMoveScope | undefined): RecurrenceUpdate
 function assertMoveTarget(startAt: string | null, startOn: string | null): void {
   if ((startAt === null) === (startOn === null)) {
     throw new DomainCommandError('VALIDATION_ERROR', 'Calendar move requires exactly one of startAt or startOn.')
-  }
-}
-
-function assertDuration(estimateMinutes: number): void {
-  if (!Number.isInteger(estimateMinutes) || estimateMinutes < 5 || estimateMinutes > 1440 || estimateMinutes % 5 !== 0) {
-    throw new DomainCommandError('VALIDATION_ERROR', 'Calendar duration must be from 5 to 1440 minutes in 5-minute steps.', {
-      estimateMinutes,
-    })
   }
 }
 

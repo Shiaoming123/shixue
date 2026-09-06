@@ -13,6 +13,7 @@ export interface CalendarDragPreview {
 
 export interface CalendarDragSession {
   itemKey: string
+  item: CalendarItem
   action: 'move' | 'resize'
   sourceStart: string | null
   sourceDuration: number
@@ -33,9 +34,9 @@ interface CalendarPointerEvent {
 export interface CalendarDragController {
   preview: Readonly<Ref<CalendarDragPreview | null>>
   session: Readonly<Ref<CalendarDragSession | null>>
-  begin(event: CalendarPointerEvent, session: CalendarDragSession): void
+  begin(event: CalendarPointerEvent, session: CalendarDragSession): boolean
   update(event: CalendarPointerEvent, preview: CalendarDragPreview): void
-  release(event: CalendarPointerEvent, command: CalendarCapabilityCommand | null): Promise<void>
+  release(event: CalendarPointerEvent, command: CalendarCapabilityCommand | null, itemKey: string): Promise<void>
   cancel(event: CalendarPointerEvent): void
   cancelActive(): void
 }
@@ -50,13 +51,14 @@ export function createCalendarDragController(
   let origin = { x: 0, y: 0 }
 
   function begin(event: CalendarPointerEvent, nextSession: CalendarDragSession) {
-    if (pointerId !== null) return
+    if (pointerId !== null) return false
     const target = pointerCaptureTarget(event.currentTarget)
     pointerId = event.pointerId
     captureTarget = target
     origin = { x: event.clientX ?? 0, y: event.clientY ?? 0 }
-    session.value = { ...nextSession }
+    session.value = { ...nextSession, item: { ...nextSession.item } }
     target?.setPointerCapture(event.pointerId)
+    return true
   }
 
   function update(event: CalendarPointerEvent, nextPreview: CalendarDragPreview) {
@@ -65,11 +67,12 @@ export function createCalendarDragController(
     preview.value = nextPreview
   }
 
-  async function release(event: CalendarPointerEvent, command: CalendarCapabilityCommand | null) {
+  async function release(event: CalendarPointerEvent, command: CalendarCapabilityCommand | null, itemKey: string) {
     if (event.pointerId !== pointerId) return
     const currentPreview = preview.value
+    const currentSession = session.value
     clear(event.pointerId)
-    if (!currentPreview?.valid || command === null) return
+    if (!currentPreview?.valid || command === null || currentSession?.itemKey !== itemKey || currentPreview.itemKey !== itemKey || !commandTargetsItem(command, currentSession.item)) return
     await execute(command)
   }
 
@@ -143,6 +146,17 @@ export function calendarResizeCommand(
   }
 }
 
+export function calendarCommandForPreview(
+  item: CalendarItem,
+  action: 'move' | 'resize',
+  preview: CalendarDragPreview,
+  fromTray = false,
+): CalendarCapabilityCommand {
+  if (action === 'resize') return calendarResizeCommand(item, preview.proposedDuration)
+  const target = preview.proposedStart.includes('T') ? { startAt: preview.proposedStart } : { startOn: preview.proposedStart }
+  return calendarMoveCommand(item, target, 'startAt' in target && (fromTray || item.kind === 'all-day') ? preview.proposedDuration : undefined)
+}
+
 export function calendarKeyboardCommand(
   item: CalendarItem,
   key: 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown',
@@ -184,4 +198,8 @@ function pointerCaptureTarget(value: unknown): PointerCaptureTarget | null {
   return typeof target.setPointerCapture === 'function' && typeof target.releasePointerCapture === 'function'
     ? target as PointerCaptureTarget
     : null
+}
+
+function commandTargetsItem(command: CalendarCapabilityCommand, item: CalendarItem): boolean {
+  return command.taskId === item.taskId && (command.occurrenceId ?? null) === item.occurrenceId
 }

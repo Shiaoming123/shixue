@@ -5,6 +5,7 @@ import type { LaidOutCalendarItem } from '../../domain/calendar/layout.ts'
 import type { CalendarItem as CalendarItemModel } from '../../domain/calendar/project.ts'
 import CalendarItem from './CalendarItem.vue'
 import { durationMinutes, snapCalendarMinutes, type CalendarDragPreview } from './use-calendar-drag.ts'
+import { calendarOverlapMessage } from './calendar-conflicts.ts'
 
 const HALF_HOUR = 30
 const MINUTES_PER_DAY = 1440
@@ -81,7 +82,7 @@ function propose(clientX: number, clientY: number, item: CalendarItemModel, acti
   if (action === 'resize') {
     const startMinute = minuteOfDay(item.start)
     const proposedDuration = Math.min(1440, Math.max(15, snapCalendarMinutes(pointerMinute - startMinute)))
-    return { itemKey: item.key, proposedStart: item.start, proposedDuration, valid: true, conflict: overlapMessage(item.key, dateForItem(item), startMinute, proposedDuration) }
+    return { itemKey: item.key, proposedStart: item.start, proposedDuration, valid: true, conflict: calendarOverlapMessage(props.timedItems, item.key, dateForItem(item), startMinute, proposedDuration) }
   }
 
   const proposedMinute = Math.min(MINUTES_PER_DAY - originalDuration, Math.max(0, snapCalendarMinutes(pointerMinute)))
@@ -91,15 +92,8 @@ function propose(clientX: number, clientY: number, item: CalendarItemModel, acti
     proposedStart,
     proposedDuration: originalDuration,
     valid: true,
-    conflict: overlapMessage(item.key, proposedDate, proposedMinute, originalDuration),
+    conflict: calendarOverlapMessage(props.timedItems, item.key, proposedDate, proposedMinute, originalDuration),
   }
-}
-
-function overlapMessage(itemKey: string, day: string, start: number, duration: number): string | null {
-  const end = start + duration
-  const count = props.timedItems.filter((item) => item.key !== itemKey && dateForItem(item) === day)
-    .filter((item) => minuteOfDay(item.start) < end && minuteOfDay(item.start) + durationMinutes(item) > start).length
-  return count ? `与 ${count} 个任务重叠` : null
 }
 
 function dateForItem(item: CalendarItemModel) { return dateForValue(item.start) }

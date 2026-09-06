@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
   calendarKeyboardCommand,
+  calendarCommandForPreview,
   calendarMoveCommand,
   calendarResizeCommand,
   createCalendarDragController,
@@ -13,6 +14,9 @@ import {
 import type { CalendarItem } from '../src/domain/calendar/project.ts'
 import type { Task } from '../src/domain/workspace/types.ts'
 import { currentSidebarDestination } from '../src/lib/sidebar-navigation.ts'
+import { calendarDeadlineConflict, calendarOverlapMessage } from '../src/components/calendar/calendar-conflicts.ts'
+import { layoutTimedItems } from '../src/domain/calendar/layout.ts'
+import type { WorkspaceStateV3 } from '../src/domain/workspace/types.ts'
 
 const source = (name: string) => readFileSync(new URL(`../src/components/calendar/${name}`, import.meta.url), 'utf8')
 const appSource = () => readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
@@ -29,7 +33,7 @@ test('pointer movement is preview-only and a valid release executes exactly once
   }
   const event = { pointerId: 7, currentTarget: target, clientX: 10, clientY: 10 }
 
-  controller.begin(event, { itemKey: 'task:one', action: 'move', sourceStart: null, sourceDuration: 45 })
+  controller.begin(event, { itemKey: 'task:one', item: timedItem({ key: 'task:one', taskId: 'one' }), action: 'move', sourceStart: null, sourceDuration: 45 })
   const preview: CalendarDragPreview = {
     itemKey: 'task:one', proposedStart: '2026-09-07T09:15:00.000Z', proposedDuration: 45,
     valid: true, conflict: null,
@@ -39,7 +43,7 @@ test('pointer movement is preview-only and a valid release executes exactly once
   assert.deepEqual(executed, [])
 
   const command = { type: 'calendar.move', taskId: 'one', startAt: preview.proposedStart, scope: 'task' } as const
-  await Promise.all([controller.release(event, command), controller.release(event, command)])
+  await Promise.all([controller.release(event, command, 'task:one'), controller.release(event, command, 'task:one')])
 
   assert.deepEqual(executed, [command])
   assert.equal(controller.preview.value, null)
@@ -52,14 +56,14 @@ test('pointer cancellation clears preview without executing a command', async ()
   const controller = createCalendarDragController(async () => { executions += 1 })
   const target = { setPointerCapture() {}, releasePointerCapture() {} }
   const event = { pointerId: 4, currentTarget: target, clientX: 0, clientY: 0 }
-  controller.begin(event, { itemKey: 'task:cancel', action: 'move', sourceStart: null, sourceDuration: 30 })
+  controller.begin(event, { itemKey: 'task:cancel', item: timedItem({ key: 'task:cancel', taskId: 'cancel' }), action: 'move', sourceStart: null, sourceDuration: 30 })
   controller.update({ ...event, clientY: 10 }, {
     itemKey: 'task:cancel', proposedStart: '2026-09-07', proposedDuration: 30,
     valid: true, conflict: null,
   })
 
   controller.cancel(event)
-  await controller.release(event, { type: 'calendar.move', taskId: 'cancel', startOn: '2026-09-07', scope: 'task' })
+  await controller.release(event, { type: 'calendar.move', taskId: 'cancel', startOn: '2026-09-07', scope: 'task' }, 'task:cancel')
 
   assert.equal(executions, 0)
   assert.equal(controller.preview.value, null)
@@ -70,10 +74,11 @@ test('drag threshold, foreign pointers, second begins and active cancellation ca
   const controller = createCalendarDragController(async () => { executions += 1 })
   const target = { setPointerCapture() {}, releasePointerCapture() {} }
   const event = { pointerId: 1, currentTarget: target, clientX: 10, clientY: 10 }
-  const source = { itemKey: 'task:one', action: 'move' as const, sourceStart: null, sourceDuration: 30 }
+  const source = { itemKey: 'task:one', item: timedItem({ key: 'task:one', taskId: 'one' }), action: 'move' as const, sourceStart: null, sourceDuration: 30 }
   controller.begin(event, source)
   source.sourceDuration = 90
-  controller.begin({ ...event, pointerId: 2 }, { itemKey: 'task:two', action: 'move', sourceStart: null, sourceDuration: 45 })
+  source.item.taskId = 'mutated-after-begin'
+  controller.begin({ ...event, pointerId: 2 }, { itemKey: 'task:two', item: timedItem({ key: 'task:two', taskId: 'two' }), action: 'move', sourceStart: null, sourceDuration: 45 })
   controller.update({ ...event, clientX: 12 }, {
     itemKey: 'task:one', proposedStart: '2026-09-07T09:00:00.000Z', proposedDuration: 30, valid: true, conflict: null,
   })
@@ -82,15 +87,16 @@ test('drag threshold, foreign pointers, second begins and active cancellation ca
   })
   assert.equal(controller.preview.value, null)
   assert.equal(controller.session.value?.itemKey, 'task:one')
+  assert.equal(controller.session.value?.item.taskId, 'one')
   assert.equal(controller.session.value?.sourceDuration, 30)
-  await controller.release(event, { type: 'calendar.move', taskId: 'one', startAt: '2026-09-07T09:00:00.000Z', scope: 'task' })
+  await controller.release(event, { type: 'calendar.move', taskId: 'one', startAt: '2026-09-07T09:00:00.000Z', scope: 'task' }, 'task:one')
   assert.equal(executions, 0)
 
   controller.begin(event, source)
   controller.update({ ...event, clientX: 20 }, {
     itemKey: 'task:one', proposedStart: '2026-09-07T09:00:00.000Z', proposedDuration: 30, valid: false, conflict: '超出有效范围',
   })
-  await controller.release(event, { type: 'calendar.move', taskId: 'one', startAt: '2026-09-07T09:00:00.000Z', scope: 'task' })
+  await controller.release(event, { type: 'calendar.move', taskId: 'one', startAt: '2026-09-07T09:00:00.000Z', scope: 'task' }, 'task:one')
   assert.equal(executions, 0)
 
   controller.begin(event, source)
@@ -98,8 +104,30 @@ test('drag threshold, foreign pointers, second begins and active cancellation ca
     itemKey: 'task:one', proposedStart: '2026-09-07T09:00:00.000Z', proposedDuration: 30, valid: true, conflict: null,
   })
   controller.cancelActive()
-  await controller.release(event, { type: 'calendar.move', taskId: 'one', startAt: '2026-09-07T09:00:00.000Z', scope: 'task' })
+  await controller.release(event, { type: 'calendar.move', taskId: 'one', startAt: '2026-09-07T09:00:00.000Z', scope: 'task' }, 'task:one')
   assert.equal(executions, 0)
+})
+
+test('a rejected second pointer cannot replace the accepted item or command target', async () => {
+  const executed: unknown[] = []
+  const controller = createCalendarDragController(async (command) => { executed.push(command) })
+  const target = { setPointerCapture() {}, releasePointerCapture() {} }
+  const first = { pointerId: 1, currentTarget: target, clientX: 0, clientY: 0 }
+  const second = { pointerId: 2, currentTarget: target, clientX: 20, clientY: 20 }
+  assert.equal(controller.begin(first, { itemKey: 'task:a', item: timedItem({ key: 'task:a', taskId: 'a' }), action: 'move', sourceStart: null, sourceDuration: 30 }), true)
+  controller.update({ ...first, clientX: 10 }, { itemKey: 'task:a', proposedStart: '2026-09-07', proposedDuration: 30, valid: true, conflict: null })
+  assert.equal(controller.begin(second, { itemKey: 'task:b', item: timedItem({ key: 'task:b', taskId: 'b' }), action: 'move', sourceStart: null, sourceDuration: 30 }), false)
+  assert.equal(controller.session.value?.item.taskId, 'a')
+  await Promise.all([
+    controller.release(first, { type: 'calendar.move', taskId: 'a', startOn: '2026-09-07', scope: 'task' }, 'task:a'),
+    controller.release(first, { type: 'calendar.move', taskId: 'a', startOn: '2026-09-07', scope: 'task' }, 'task:a'),
+  ])
+  assert.deepEqual(executed, [{ type: 'calendar.move', taskId: 'a', startOn: '2026-09-07', scope: 'task' }])
+
+  assert.equal(controller.begin(first, { itemKey: 'task:a', item: timedItem({ key: 'task:a', taskId: 'a' }), action: 'move', sourceStart: null, sourceDuration: 30 }), true)
+  controller.update({ ...first, clientX: 10 }, { itemKey: 'task:a', proposedStart: '2026-09-07', proposedDuration: 30, valid: true, conflict: null })
+  await controller.release(first, { type: 'calendar.move', taskId: 'b', startOn: '2026-09-07', scope: 'task' }, 'task:a')
+  assert.deepEqual(executed, [{ type: 'calendar.move', taskId: 'a', startOn: '2026-09-07', scope: 'task' }])
 })
 
 test('calendar keyboard commands preserve target scope and step sizes', () => {
@@ -131,6 +159,17 @@ test('pointer, keyboard and visible actions share command construction', () => {
   assert.deepEqual(calendarResizeCommand(occurrence, 45), {
     type: 'calendar.resize', taskId: 'task:repeat', occurrenceId: 'occ:3', estimateMinutes: 45, scope: 'occurrence',
   })
+  const allDay = { ...timedItem({ key: 'task:day', taskId: 'day' }), kind: 'all-day' as const, start: '2026-09-06', end: null }
+  assert.deepEqual(calendarCommandForPreview(allDay, 'move', {
+    itemKey: 'task:day', proposedStart: '2026-09-06T02:00:00.000Z', proposedDuration: 30, valid: true, conflict: null,
+  }), { type: 'calendar.move', taskId: 'day', startAt: '2026-09-06T02:00:00.000Z', estimateMinutes: 30, scope: 'task' })
+  const allDayOccurrence = { ...allDay, key: 'occurrence:day', taskId: 'repeat', occurrenceId: 'occurrence:day' }
+  assert.deepEqual(calendarCommandForPreview(allDayOccurrence, 'move', {
+    itemKey: 'occurrence:day', proposedStart: '2026-09-06T03:00:00.000Z', proposedDuration: 45, valid: true, conflict: null,
+  }), { type: 'calendar.move', taskId: 'repeat', occurrenceId: 'occurrence:day', startAt: '2026-09-06T03:00:00.000Z', estimateMinutes: 45, scope: 'occurrence' })
+  assert.deepEqual(calendarMoveCommand(allDayOccurrence, { startAt: '2026-09-06T04:00:00.000Z' }, 30), {
+    type: 'calendar.move', taskId: 'repeat', occurrenceId: 'occurrence:day', startAt: '2026-09-06T04:00:00.000Z', estimateMinutes: 30, scope: 'occurrence',
+  })
 })
 
 test('unscheduled tray includes only active tasks with no start date or time', () => {
@@ -141,6 +180,18 @@ test('unscheduled tray includes only active tasks with no start date or time', (
   const recurringParent = task({ id: 'task:series', recurrenceSeriesId: 'series:one' })
 
   assert.deepEqual(filterUnscheduledTasks([scheduledOn, completed, recurringParent, unscheduled, scheduledAt]).map(({ id }) => id), ['task:inbox'])
+})
+
+test('overlap warns without invalidating and deadline confirmation is pure', () => {
+  const overlapping = layoutTimedItems([
+    timedItem({ key: 'task:a', taskId: 'a', start: '2026-09-06T09:00:00+08:00', end: '2026-09-06T10:00:00+08:00' }),
+    timedItem({ key: 'task:b', taskId: 'b', start: '2026-09-06T09:30:00+08:00', end: '2026-09-06T10:30:00+08:00' }),
+  ])
+  assert.equal(calendarOverlapMessage(overlapping, 'task:new', '2026-09-06', 9 * 60 + 45, 30), '与 2 个任务重叠')
+  const workspace = { tasks: [task({ id: 'deadline', deadline: { dueAt: null, dueOn: '2026-09-06' } })] } as WorkspaceStateV3
+  const before = structuredClone(workspace)
+  assert.equal(calendarDeadlineConflict(workspace, { type: 'calendar.move', taskId: 'deadline', startOn: '2026-09-07' }), '安排时间晚于截止时间，请确认仍然安排。')
+  assert.deepEqual(workspace, before)
 })
 
 test('calendar components expose the locked pointer, keyboard, menu, grid and navigation contracts', () => {

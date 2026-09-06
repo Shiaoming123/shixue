@@ -13,11 +13,11 @@ import TimeGrid from './TimeGrid.vue'
 import UnscheduledTray from './UnscheduledTray.vue'
 import {
   createCalendarDragController,
-  calendarMoveCommand,
-  calendarResizeCommand,
+  calendarCommandForPreview,
   durationMinutes,
   type CalendarDragPreview,
 } from './use-calendar-drag.ts'
+import { calendarDeadlineConflict } from './calendar-conflicts.ts'
 
 const props = withDefaults(defineProps<{
   workspace: WorkspaceStateV3 | null
@@ -39,7 +39,6 @@ const compact = ref(false)
 const compactOverride = ref(false)
 const selectedKey = ref('')
 const statusMessage = ref('')
-const dragItem = ref<CalendarItem | null>(null)
 const pendingCommand = ref<{ command: CalendarCapabilityCommand; source: CommandEnvelope['source']; message: string } | null>(null)
 const timeGrid = ref<InstanceType<typeof TimeGrid> | null>(null)
 let compactMedia: MediaQueryList | undefined
@@ -82,8 +81,7 @@ function selectToday() { anchor.value = localDate(new Date()) }
 
 function beginItemPointer(event: PointerEvent, item: CalendarItem, action: 'move' | 'resize') {
   if (item.kind === 'deadline-marker') return
-  dragItem.value = item
-  drag.begin(event, { itemKey: item.key, action, sourceStart: item.start, sourceDuration: durationMinutes(item) })
+  drag.begin(event, { itemKey: item.key, item, action, sourceStart: item.start, sourceDuration: durationMinutes(item) })
 }
 
 function beginTrayPointer(event: PointerEvent, task: Task) {
@@ -94,14 +92,14 @@ function beginTrayPointer(event: PointerEvent, task: Task) {
     key: `task:${task.id}`, taskId: task.id, occurrenceId: null,
     kind: 'timed', start, end: new Date(Date.parse(start) + duration * 60_000).toISOString(),
   }
-  selectedKey.value = item.key
-  dragItem.value = item
-  drag.begin(event, { itemKey: item.key, action: 'move', sourceStart: null, sourceDuration: duration })
+  if (drag.begin(event, { itemKey: item.key, item, action: 'move', sourceStart: null, sourceDuration: duration })) {
+    selectedKey.value = item.key
+  }
 }
 
 function updatePointer(event: PointerEvent) {
-  const item = dragItem.value
   const session = drag.session.value
+  const item = session?.item
   if (!item || !session) return
   const proposed = timeGrid.value?.propose(event.clientX, event.clientY, item, session.action)
   if (!proposed) return
@@ -109,34 +107,24 @@ function updatePointer(event: PointerEvent) {
 }
 
 async function finishPointer(event: PointerEvent) {
-  const item = dragItem.value
   const session = drag.session.value
+  const item = session?.item
   const preview = drag.preview.value
-  dragItem.value = null
   if (!item || !session || !preview) {
-    await drag.release(event, null)
+    await drag.release(event, null, item?.key ?? '')
     return
   }
-  const command = commandForPreview(item, session.action, preview, session.sourceStart === null)
-  try { await drag.release(event, command) } catch { /* App already refreshed and announced the exact failure. */ }
+  const command = calendarCommandForPreview(item, session.action, preview, session.sourceStart === null)
+  try { await drag.release(event, command, item.key) } catch { /* App already refreshed and announced the exact failure. */ }
 }
 
 function cancelPointer(event?: PointerEvent) {
-  dragItem.value = null
   if (event) drag.cancel(event)
   else drag.cancelActive()
 }
 
-function commandForPreview(item: CalendarItem, action: 'move' | 'resize', preview: CalendarDragPreview, fromTray: boolean): CalendarCapabilityCommand {
-  if (action === 'resize') {
-    return calendarResizeCommand(item, preview.proposedDuration)
-  }
-  const target = preview.proposedStart.includes('T') ? { startAt: preview.proposedStart } : { startOn: preview.proposedStart }
-  return calendarMoveCommand(item, target, fromTray && 'startAt' in target ? preview.proposedDuration : undefined)
-}
-
 async function requestCommand(command: CalendarCapabilityCommand, source: CommandEnvelope['source']) {
-  const warning = deadlineConflict(command)
+  const warning = calendarDeadlineConflict(props.workspace, command)
   if (warning) {
     pendingCommand.value = { command, source, message: warning }
     statusMessage.value = warning
@@ -161,29 +149,15 @@ async function executeRequested(command: CalendarCapabilityCommand, source: Comm
 }
 
 function withDeadlineConflict(item: CalendarItem, preview: CalendarDragPreview): CalendarDragPreview {
-  const warning = deadlineConflict(commandForPreview(item, drag.session.value?.action ?? 'move', preview, drag.session.value?.sourceStart === null))
+  const warning = calendarDeadlineConflict(props.workspace, calendarCommandForPreview(item, drag.session.value?.action ?? 'move', preview, drag.session.value?.sourceStart === null))
   if (!warning) return preview
   return { ...preview, conflict: preview.conflict ? `${preview.conflict}；${warning}` : warning }
-}
-
-function deadlineConflict(command: CalendarCapabilityCommand): string | null {
-  if (command.type !== 'calendar.move') return null
-  const task = props.workspace?.tasks.find(({ id }) => id === command.taskId)
-  if (!task) return null
-  const target = command.startAt ?? command.startOn
-  const deadline = task.deadline.dueAt ?? task.deadline.dueOn
-  if (!target || !deadline) return null
-  const after = target.includes('T') && deadline.includes('T')
-    ? Date.parse(target) > Date.parse(deadline)
-    : dateValue(target) > dateValue(deadline)
-  return after ? '安排时间晚于截止时间，请确认仍然安排。' : null
 }
 
 function datesBetween(start: string, end: string) { const result: string[] = []; for (let date = start; date < end; date = addDays(date, 1)) result.push(date); return result }
 function addDays(value: string, days: number) { const [year, month, day] = value.split('-').map(Number); return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10) }
 function localDate(date: Date) { return date.toLocaleDateString('sv-SE') }
 function shortDate(value?: string) { if (!value) return ''; const date = new Date(`${value}T00:00:00`); return `${date.getMonth() + 1}/${date.getDate()}` }
-function dateValue(value: string) { return value.includes('T') ? localDate(new Date(value)) : value }
 </script>
 
 <template>

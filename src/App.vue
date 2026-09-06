@@ -72,8 +72,9 @@ import {
 import { createSeedStudyState } from './storage/study/types'
 import { getWorkspaceStore } from './storage/workspace/registry'
 import { createTaskCapabilityService } from './domain/capabilities/service'
-import { CAPABILITY_PROTOCOL_VERSION, DomainCommandError, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef } from './domain/capabilities/types'
+import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef } from './domain/capabilities/types'
 import type { CalendarCapabilityCommand } from './domain/capabilities/calendar-commands'
+import { calendarCommandErrorDetail, runCalendarCommand } from './lib/calendar-command-handler'
 import type { WorkspaceStateV3, ReminderRule } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
@@ -121,7 +122,7 @@ const appearanceDark = ref(false)
 const compact = ref(false)
 const clock = ref(Date.now())
 const toast = ref('')
-const toastAction = ref<{ label: string; run: () => Promise<void> } | null>(null)
+const toastAction = ref<{ label: string; run: () => Promise<void>; successMessage?: string } | null>(null)
 const toastVersion = ref(0)
 const storageError = ref('')
 const remindersEnabled = ref(false)
@@ -545,38 +546,43 @@ async function refreshState() {
 }
 
 async function executeCalendarCommand(command: CalendarCapabilityCommand, source: CommandEnvelope['source']) {
-  const workspace = await capabilityService.query({ type: 'workspace.snapshot' })
-  try {
-    const result = await capabilityService.execute({
+  await runCalendarCommand({
+    preflight: async () => (await capabilityService.query({ type: 'workspace.snapshot' })).revision,
+    execute: (expectedWorkspaceRevision) => capabilityService.execute({
       protocolVersion: CAPABILITY_PROTOCOL_VERSION,
       idempotencyKey: `calendar-ui:${crypto.randomUUID()}`,
       source,
-      expectedWorkspaceRevision: workspace.revision,
+      expectedWorkspaceRevision,
       command,
-    })
-    await refreshState()
-    notify('日历安排已更新。', result.undoToken ? {
+    }),
+    refresh: refreshState,
+    notify,
+    successAction: calendarUndoAction,
+  })
+}
+
+function calendarUndoAction(result: Awaited<ReturnType<typeof capabilityService.execute>>) {
+  return result.undoToken ? {
       label: '撤销',
+      successMessage: '',
       run: async () => {
-        const current = await capabilityService.query({ type: 'workspace.snapshot' })
-        await capabilityService.execute({
-          protocolVersion: CAPABILITY_PROTOCOL_VERSION,
-          idempotencyKey: `calendar-undo:${crypto.randomUUID()}`,
-          source: 'human-ui',
-          expectedWorkspaceRevision: current.revision,
-          command: { type: 'undo.apply', token: result.undoToken! },
-        })
-        await refreshState()
+        try {
+          const current = await capabilityService.query({ type: 'workspace.snapshot' })
+          await capabilityService.execute({
+            protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+            idempotencyKey: `calendar-undo:${crypto.randomUUID()}`,
+            source: 'human-ui',
+            expectedWorkspaceRevision: current.revision,
+            command: { type: 'undo.apply', token: result.undoToken! },
+          })
+          await refreshState()
+          notify('已撤销。')
+        } catch (error) {
+          try { await refreshState() } catch { /* Keep the undo error primary. */ }
+          notify(`日历撤销未完成：${calendarCommandErrorDetail(error)}`)
+        }
       },
-    } : undefined)
-  } catch (error) {
-    try { await refreshState() } catch { /* Preserve the command error as the primary feedback. */ }
-    const detail = error instanceof DomainCommandError
-      ? `${error.code}：${error.message.replace(/^\[[^\]]+\]\s*/u, '')}`
-      : error instanceof Error ? error.message : String(error)
-    notify(`日历调整未保存：${detail}`)
-    throw error
-  }
+    } : undefined
 }
 
 function scheduleCloudSync() {
@@ -1186,13 +1192,13 @@ function formatShortDate(value: string | null | undefined) { if (!value) return 
 function formatAge(value: string) { const diff = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 86_400_000)); return diff === 0 ? '今天' : `${diff} 天前` }
 function formatEventTime(value: string) { const date = new Date(value); return `${date.getMonth() + 1} 月 ${date.getDate()} 日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` }
 function formatReminder(value: string | null) { if (!value) return ''; const date = new Date(value); const day = date.toLocaleDateString('sv-SE') === today.value ? '今天' : `${date.getMonth() + 1}/${date.getDate()}`; return `${day} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` }
-function notify(message: string, action?: { label: string; run: () => Promise<void> }) { toast.value = message; toastAction.value = action ?? null; toastVersion.value += 1 }
+function notify(message: string, action?: { label: string; run: () => Promise<void>; successMessage?: string }) { toast.value = message; toastAction.value = action ?? null; toastVersion.value += 1 }
 function dismissToast() { toast.value = ''; toastAction.value = null }
 async function runToastAction() {
   const action = toastAction.value
   if (!action) return
   dismissToast()
-  try { await action.run(); notify('已撤销。') } catch (error) { reportStorageError(error) }
+  try { await action.run(); if (action.successMessage !== '') notify(action.successMessage ?? '已撤销。') } catch (error) { reportStorageError(error) }
 }
 function reportStorageError(error: unknown) { storageError.value = error instanceof Error ? error.message : String(error); notify('这次更改还没写入本地，内容仍保留在页面中。') }
 </script>

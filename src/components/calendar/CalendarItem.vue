@@ -61,7 +61,7 @@ function applyMove(close: (reason: 'select') => void) {
   const target = moveTime.value
     ? { startAt: new Date(`${moveDate.value}T${moveTime.value}:00`).toISOString() }
     : { startOn: moveDate.value }
-  emit('command', calendarMoveCommand(props.item, target, props.item.kind === 'timed' ? duration.value : undefined), 'human-ui')
+  emit('command', calendarMoveCommand(props.item, target, 'startAt' in target ? duration.value : undefined), 'human-ui')
   close('select')
 }
 
@@ -108,7 +108,7 @@ function formatTime(value: string) { return timePart(value) || datePart(value) }
           <header><strong>{{ title }}</strong><span>移动与时长</span></header>
           <DatePicker v-model="moveDate" label="移动到日期" />
           <TimePicker v-model="moveTime" v-model:valid="timeValid" label="开始时间" />
-          <fieldset v-if="item.kind === 'timed'">
+          <fieldset v-if="moveTime">
             <legend>预计时长</legend>
             <div class="calendar-item__durations">
               <button v-for="value in durationOptions" :key="value" type="button" :aria-pressed="duration === value" @click="applyDuration(value)">{{ value }} 分</button>

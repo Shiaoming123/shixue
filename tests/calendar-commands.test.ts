@@ -4,6 +4,7 @@ import { createTaskCapabilityService } from '../src/domain/capabilities/service.
 import { DomainCommandError, type CommandEnvelope } from '../src/domain/capabilities/types.ts'
 import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { createWorkspaceExport, parseWorkspaceExport } from '../src/storage/workspace/data-port.ts'
+import { projectCalendarItems } from '../src/domain/calendar/project.ts'
 
 const NOW = '2026-09-05T10:00:00.000Z'
 
@@ -134,6 +135,48 @@ test('timed placement atomically stores start and duration while existing moves 
     type: 'calendar.move', taskId: 'task:drop', startAt: '2026-09-06T11:00:00+08:00', scope: 'task',
   } as CommandEnvelope['command'])
   assert.equal((await service.query({ type: 'task.get', taskId: 'task:drop' }))?.schedule.estimateMinutes, 30)
+})
+
+test('all-day task with no estimate becomes a projected timed item and undo restores it', async () => {
+  const service = fixture()
+  await executeNext(service, 'create-date-only-null-duration', {
+    type: 'task.create', taskId: 'task:date-only', listId: 'list:system:learning', title: 'Date only', startOn: '2026-09-06',
+  })
+  const before = await service.query({ type: 'workspace.snapshot' })
+  const originalSchedule = before.tasks.find(({ id }) => id === 'task:date-only')?.schedule
+  const moved = await executeNext(service, 'time-date-only-atomically', {
+    type: 'calendar.move', taskId: 'task:date-only', startAt: '2026-09-06T10:00:00+08:00', estimateMinutes: 30,
+  } as CommandEnvelope['command'])
+  const after = await service.query({ type: 'workspace.snapshot' })
+  assert.equal(projectCalendarItems(after, { start: '2026-09-06', end: '2026-09-07' }).find(({ taskId }) => taskId === 'task:date-only')?.kind, 'timed')
+  await executeNext(service, 'undo-time-date-only', { type: 'undo.apply', token: moved.undoToken! })
+  const restored = await service.query({ type: 'workspace.snapshot' })
+  assert.deepEqual(restored.tasks.find(({ id }) => id === 'task:date-only')?.schedule, originalSchedule)
+  assert.equal(projectCalendarItems(restored, { start: '2026-09-06', end: '2026-09-07' }).find(({ taskId }) => taskId === 'task:date-only')?.kind, 'all-day')
+})
+
+test('date-only occurrence with no estimate becomes a projected timed item and undo restores it', async () => {
+  const service = fixture()
+  await executeNext(service, 'create-date-series-task', {
+    type: 'task.create', taskId: 'task:date-series', listId: 'list:system:learning', title: 'Date series',
+  })
+  await executeNext(service, 'create-date-series', {
+    type: 'recurrence.create', taskId: 'task:date-series', expectedTaskRevision: 1, seriesId: 'series:date',
+    cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', anchorOn: '2026-09-05',
+    end: { kind: 'after', count: 3 }, timezone: 'Asia/Shanghai',
+  })
+  const before = await service.query({ type: 'workspace.snapshot' })
+  const occurrenceId = 'occurrence:series:date:2'
+  const originalOccurrence = before.occurrences.find(({ id }) => id === occurrenceId)
+  const moved = await executeNext(service, 'time-date-occurrence-atomically', {
+    type: 'calendar.move', taskId: 'task:date-series', occurrenceId, scope: 'occurrence',
+    startAt: '2026-09-06T10:00:00+08:00', estimateMinutes: 45,
+  } as CommandEnvelope['command'])
+  const after = await service.query({ type: 'workspace.snapshot' })
+  const projected = projectCalendarItems(after, { start: '2026-09-05', end: '2026-09-08' }).find(({ occurrenceId: id }) => id === occurrenceId)
+  assert.deepEqual({ kind: projected?.kind, minutes: projected && projected.end ? (Date.parse(projected.end) - Date.parse(projected.start)) / 60_000 : null }, { kind: 'timed', minutes: 45 })
+  await executeNext(service, 'undo-time-date-occurrence', { type: 'undo.apply', token: moved.undoToken! })
+  assert.deepEqual((await service.query({ type: 'workspace.snapshot' })).occurrences.find(({ id }) => id === occurrenceId), originalOccurrence)
 })
 
 test('atomic timed placement rejects invalid or date-only duration without saving', async () => {
