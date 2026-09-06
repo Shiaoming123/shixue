@@ -23,7 +23,7 @@ For the Web-only app, use `npm run dev:web`. It uses IndexedDB and browser fallb
 
 The desktop app previously opened a blank window after the shortcut module was enabled. The process and Vite server stayed alive, and the Web app rendered normally, but the native log reported `global-shortcut.register not allowed`. The failure happened before Vue mounted: `src/main.ts` waits for `mountModules(app)` and only then calls `app.mount("#app")`, so the rejected shortcut `setup()` prevented the entire first screen.
 
-The shortcut module invokes both `register` and `unregister`. Its contract and the main-window capability therefore declare the concrete permissions `global-shortcut:allow-register` and `global-shortcut:allow-unregister`. An aggregate name such as `global-shortcut:default` must not be treated as proof that those commands are granted; plugin aggregate permissions can omit the invoked commands or grant nothing relevant. `src/main.ts` also catches module setup failures and mounts the shell from `finally`, preserving the required storage-selection order while preventing another rejected optional module from leaving a blank window.
+Quick capture is now registered during the Rust plugin lifecycle and emits the same `shixue:quick-add` event as the tray action. The WebView no longer receives global-shortcut registration commands or their permissions. `src/main.ts` still catches module setup failures and mounts the shell from `finally`, preserving the required storage-selection order while preventing another rejected optional module from leaving a blank window.
 
 Use this checklist whenever a native module changes:
 

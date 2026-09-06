@@ -65,8 +65,6 @@ test('audit reports every missing native requirement for an enabled module', () 
 
   assert.deepEqual(result.errors, [
     'Module "shortcut" requires Cargo feature "shortcut".',
-    'Module "shortcut" requires Tauri permission "global-shortcut:allow-register".',
-    'Module "shortcut" requires Tauri permission "global-shortcut:allow-unregister".',
   ])
 })
 
@@ -83,11 +81,10 @@ test('capability permissions apply only to the matching runtime targets', () => 
   assert.deepEqual(capabilityPermissions(capabilities, 'mobile'), ['core:default'])
 })
 
-test('quick capture declares the concrete shortcut commands it invokes', () => {
-  assert.deepEqual(moduleContracts.shortcut.nativeBuild.permissions, [
-    'global-shortcut:allow-register',
-    'global-shortcut:allow-unregister',
-  ])
+test('native quick capture does not expose registration commands to the WebView', () => {
+  const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.deepEqual(moduleContracts.shortcut.nativeBuild.permissions, [])
+  assert.equal(packageJson.dependencies['@tauri-apps/plugin-global-shortcut'], undefined)
 })
 
 test('quick capture, notifications, and autostart settings are enabled across frontend, Cargo defaults, and desktop permissions', () => {

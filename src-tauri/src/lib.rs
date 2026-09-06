@@ -6,6 +6,8 @@ mod agent;
 mod db;
 #[cfg(all(desktop, feature = "notification"))]
 mod reminder_scheduler;
+#[cfg(all(desktop, feature = "shortcut"))]
+mod shortcut;
 #[cfg(feature = "sync")]
 mod study_cloud;
 #[cfg(desktop)]
@@ -58,7 +60,7 @@ pub fn run() {
 
     #[cfg(all(desktop, feature = "shortcut"))]
     {
-        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+        builder = builder.plugin(shortcut::plugin());
     }
 
     #[cfg(feature = "clipboard")]
@@ -139,6 +141,9 @@ pub fn run() {
                 show_main_window(app);
             }))
             .setup(|app| {
+                #[cfg(feature = "shortcut")]
+                shortcut::register(app.handle());
+
                 tray::create_tray(app.handle())?;
 
                 #[cfg(feature = "notification")]
