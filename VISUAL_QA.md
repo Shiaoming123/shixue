@@ -103,4 +103,4 @@ npm run check:docs
 - 深色、高对比或减少透明度下信息不可辨。
 - 截图通过但 console/page error 非零。
 - Web 窄屏截图被误报为 iOS/Android 原生证据。
-- Windows 安装应用、签名、更新器、200% 原生缩放、Narrator、系统通知/托盘及 iOS/Android 原生流程均为 `NOT_RUN`；Web smoke 不能关闭这些证据缺口。
+- Web smoke 不能替代 Windows 或移动原生证据。v0.3.0 精确本地候选已另行通过安装应用和真实托盘验收；签名、更新器、200% 原生缩放、Narrator、Windows 系统通知投递及 iOS/Android 原生流程仍为 `NOT_RUN` 或 `BLOCKED`，详见[验收账本](./docs/releases/v0.3.0-acceptance.md)。

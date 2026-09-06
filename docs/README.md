@@ -11,7 +11,7 @@
 | **Preview** | Sync、Agent、Ollama、MCP、可选系统插件 |
 | **Roadmap** | sidecar、RAG、语音、OCR |
 
-专题文档既包含当前用法，也包含目标设计；每篇开头的成熟度说明优先于路线图描述。拾学桌面导航有七个一级入口，紧凑布局有五个底栏入口；Web smoke 与窄屏截图不构成原生验收。v0.2.4 基础无签名 NSIS 自动安装/启动 smoke 已通过，但本轮时间规划累计版的 Windows 人工安装验收、Authenticode、已发布版本 updater 端到端升级、系统 200% 缩放、Narrator，以及 iOS/iPadOS/Android 原生验收均为 `NOT_RUN`。
+专题文档既包含当前用法，也包含目标设计；每篇开头的成熟度说明优先于路线图描述。拾学桌面导航有七个一级入口，紧凑布局有五个底栏入口；Web smoke 与窄屏截图不构成原生验收。v0.3.0 无签名本地候选已通过自动 package smoke 和已安装应用验收；它尚未发布，MSI 安装、退出后不再投递、系统 200% 缩放、Narrator、Authenticode、已发布版本 updater 端到端升级，以及 iOS/iPadOS/Android 原生验收仍为 `NOT_RUN` 或 `BLOCKED`，详见[验收账本](./releases/v0.3.0-acceptance.md)。
 
 ## 按目标导航
 

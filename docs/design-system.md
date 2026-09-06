@@ -395,7 +395,7 @@ AI 类应用（Vercel AI SDK 等）建议：
 - `prefers-reduced-transparency` 会把半透明材质回退为不透明 surface
 - 移动端使用 `100dvh` 与顶部/底部 safe-area，避免刘海、任务栏和虚拟键盘遮挡
 - Tauri 窗口最小尺寸为 800×560；响应式壳仍以 819/820 和 1279/1280 为精确边界，内容不得靠强制缩放隐藏溢出
-- Web 固定视口、ARIA 与键盘自动化不等同于 Windows 原生证据；安装应用、200% 系统缩放、Narrator 和原生高对比验收保持 `NOT_RUN`
+- Web 固定视口、ARIA 与键盘自动化不等同于 Windows 原生证据；v0.3.0 精确本地候选的安装应用验收已单独通过，200% 系统缩放、Narrator 和原生高对比验收保持 `NOT_RUN`
 
 ---
 

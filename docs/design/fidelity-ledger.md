@@ -52,4 +52,4 @@
 - 证据级别：`web-implementation`。`npm run smoke:calendar` 使用隔离的 Edge 浏览器上下文与 IndexedDB，种入重叠日程、仅截止事项、重复发生项和未安排任务；真实完成未安排任务的指针放置、指针调整时长、`Alt+ArrowRight` 键盘移动、月/议程切换及刷新后持久化核对。
 - 固定视口：1440×960 深色周视图拖动预览、1280×800 浅色周视图日期 Popover、820×560 浅色月视图溢出披露与议程、390×844 深色日视图日期 Sheet、320×700 浅色未安排任务规划 Sheet。截图保留在未提交的 `artifacts/visual-qa/calendar/`。
 - 自动检查：五个视口均无页面级横向滚动；1280×800 与 390×844 各只有一个可见日期 `grid` 且恰好包含 42 个可见 `gridcell`，移动日期格至少 44px；820×560 命中 72px 图标侧栏；两种日历移动 Sheet 均为有名称的模态 `dialog` 并锁定焦点；320×700 滚动后主要操作可见、可聚焦且至少 44px。未出现未经适配的 `select`、日期/时间输入、复选框或单选框；要求显示的 Popover/Sheet 边界均在视口内；console error 与 page error 均为 0。
-- 证据边界：这些截图不属于 Tauri/WebView2 或 Windows 原生壳证据。Windows 100%/200% 系统缩放、高对比模式、安装包及真实通知/托盘仍为 `NOT_RUN`。
+- 证据边界：这些截图本身不属于 Tauri/WebView2 或 Windows 原生壳证据。独立的 [v0.3.0 Windows 验收账本](../releases/v0.3.0-acceptance.md)记录了精确本地候选的安装包、125% 缩放、应用内提醒和真实托盘结果；200% 缩放、Narrator 与 Windows 原生通知投递仍未由这些截图或该次安装验收证明。
