@@ -282,16 +282,79 @@ test('failed native autostart write leaves the visible switch at the confirmed s
 
 test('ordinary task edits omit the compatibility reminder field so independently edited rules survive', async () => {
   let update: Record<string, unknown> | undefined
+  const original = { title: 'Stored', notes: '', topicId: null, plannedOn: null, dueOn: null, reminderAt: null, priority: 'none', estimateMinutes: null }
   const api = handlers('App.vue', ['saveTaskEdit'], {
     selectedTask: ref({ id: 'task', revision: 3 }), updateStudyTask: async (_id: string, value: Record<string, unknown>) => { update = value },
+    readCurrentTaskEdit: async () => ({ task: { id: 'task', revision: 3 }, value: original }), resolveTaskEditWrite: () => 'write',
     refreshState: async () => {}, taskEditorOpen: ref(true), reminderBusy: ref(false), reminderError: ref(''), recurrenceScopeOpen: ref(false),
     runTaskEditCommit: async (input: any, steps: any) => { await steps.saveTask(); for (const reminder of input.reminders) await steps.saveReminder(reminder); if (input.recurrence) await steps.saveRecurrence(input.recurrence) },
     reminderCommandForCurrentState: () => null, saveReminderRuleWithoutBusyGuard: async () => {}, requestRecurrenceEdit: async () => {},
     notify() {}, reportStorageError(error: unknown) { throw error },
   })
-  await api.saveTaskEdit({ title: 'Updated', reminderAt: null }, { reminderCommands: [] })
+  await api.saveTaskEdit({ ...original, title: 'Updated' }, { baseTask: original, reminderCommands: [] })
   assert.equal(update?.title, 'Updated')
   assert.equal(Object.hasOwn(update!, 'reminderAt'), false)
+})
+
+test('task edit retry skips an already saved task and resumes only the failed nested write', async () => {
+  const original = { title: 'Stored', notes: '', topicId: null, plannedOn: '2026-09-06', dueOn: null, reminderAt: null, priority: 'none', estimateMinutes: 15, acceptanceCriteria: [] }
+  const desired = { ...original, title: 'Updated' }
+  let current = original
+  let revision = 3
+  let taskSaves = 0
+  let reminderAttempts = 0
+  const errors: unknown[] = []
+  const api = handlers('App.vue', ['saveTaskEdit'], {
+    selectedTask: ref({ id: 'task', revision }), reminderBusy: ref(false), reminderError: ref(''), recurrenceScopeOpen: ref(false), taskEditorOpen: ref(true),
+    readCurrentTaskEdit: async () => ({ task: { id: 'task', revision }, value: current }),
+    resolveTaskEditWrite: (value: any, base: any, target: any) => JSON.stringify(value) === JSON.stringify(target) ? 'noop' : JSON.stringify(value) === JSON.stringify(base) ? 'write' : 'conflict',
+    updateStudyTask: async () => { taskSaves++; revision++; current = desired }, refreshState: async () => {},
+    runTaskEditCommit: async (input: any, steps: any) => { await steps.saveTask(); for (const reminder of input.reminders) await steps.saveReminder(reminder) },
+    reminderCommandForCurrentState: (value: any) => value,
+    saveReminderRuleWithoutBusyGuard: async () => { reminderAttempts++; if (reminderAttempts === 1) throw Error('reminder CAS') },
+    requestRecurrenceEdit: async () => {}, notify() {}, reportStorageError: (error: unknown) => errors.push(error),
+  })
+  const changes = { baseTask: original, reminderCommands: [{ type: 'reminder.set', ruleId: 'r', taskId: 'task', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true }] }
+  await api.saveTaskEdit(desired, changes)
+  await api.saveTaskEdit(desired, changes)
+  assert.equal(taskSaves, 1, 'retry must not create a second task revision after the first task save succeeded')
+  assert.equal(reminderAttempts, 2, 'retry resumes the failed reminder')
+  assert.equal(errors.length, 1)
+})
+
+test('task edit fails loud when editable task state changed externally', async () => {
+  const original = { title: 'Stored', notes: '', topicId: null, plannedOn: '2026-09-06', dueOn: null, reminderAt: null, priority: 'none', estimateMinutes: 15, acceptanceCriteria: [] }
+  const errors: unknown[] = []
+  let taskSaves = 0
+  const api = handlers('App.vue', ['saveTaskEdit'], {
+    selectedTask: ref({ id: 'task', revision: 4 }), reminderBusy: ref(false), reminderError: ref(''), recurrenceScopeOpen: ref(false), taskEditorOpen: ref(true),
+    readCurrentTaskEdit: async () => ({ task: { id: 'task', revision: 4 }, value: { ...original, title: 'External edit' } }), resolveTaskEditWrite: () => 'conflict',
+    updateStudyTask: async () => { taskSaves++ }, refreshState: async () => {},
+    runTaskEditCommit: async (_input: any, steps: any) => steps.saveTask(), reminderCommandForCurrentState: () => null,
+    saveReminderRuleWithoutBusyGuard: async () => {}, requestRecurrenceEdit: async () => {}, notify() {}, reportStorageError: (error: unknown) => errors.push(error),
+  })
+  await api.saveTaskEdit({ ...original, title: 'My draft' }, { baseTask: original, reminderCommands: [] })
+  assert.equal(taskSaves, 0)
+  assert.match(String(errors[0]), /其他位置|冲突/)
+})
+
+test('successful recurrence scope commit closes the dirty editor while failure keeps it open', async () => {
+  const preview = { accepted: true, confirmation: 'none' }
+  const envelope = { command: { scope: 'future' } }
+  for (const fails of [false, true]) {
+    const taskEditorOpen = ref(true)
+    const recurrenceScopeOpen = ref(true)
+    const errors: unknown[] = []
+    const api = handlers('App.vue', ['executeRecurrenceScope', 'clearRecurrencePreview'], {
+      recurrencePreview: ref(preview), recurrencePreviewEnvelope: envelope, recurrenceExecuting: ref(false), recurrenceScopeOpen, taskEditorOpen,
+      recurrencePreviewVersion: 0, pendingRecurrenceRule: {}, capabilityService: { execute: async () => { if (fails) throw Error('recurrence CAS') } },
+      refreshState: async () => {}, notify() {}, reportStorageError: (error: unknown) => errors.push(error),
+    })
+    await api.executeRecurrenceScope('future')
+    assert.equal(taskEditorOpen.value, fails, fails ? 'failure keeps the dirty editor open' : 'success closes the committed editor')
+    assert.equal(recurrenceScopeOpen.value, fails)
+    assert.equal(errors.length, fails ? 1 : 0)
+  }
 })
 
 test('learning reminder completion opens evidence entry without completing either task or occurrence', async () => {

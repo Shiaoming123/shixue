@@ -24,6 +24,7 @@ export interface TaskEditValue {
 }
 
 export interface TaskEditChanges {
+  baseTask: TaskEditValue
   reminderCommands: ReminderSetValue[]
   recurrenceRule?: RecurrenceRule
 }
@@ -64,6 +65,7 @@ const criteria = ref('')
 const recurrenceRule = ref<RecurrenceRule | null>(null)
 const recurrenceDirty = ref(false)
 const reminderCommands = ref<ReminderSetValue[]>([])
+const baseTask = ref<TaskEditValue | null>(null)
 const draftReminderRules = computed<TaskReminderRule[]>(() => {
   const rules = [...(props.reminderRules ?? [])]
   for (const command of reminderCommands.value) {
@@ -90,7 +92,13 @@ const priorityOptions = [
 
 watch([() => props.open, () => props.task?.id, () => Boolean(props.task)], ([open]) => {
   const task = props.task
-  if (!open || !task) return
+  if (!open) {
+    recurrenceDirty.value = false
+    reminderCommands.value = []
+    baseTask.value = null
+    return
+  }
+  if (!task) return
   title.value = task.title
   notes.value = task.notes
   topicId.value = task.topicId ?? ''
@@ -105,6 +113,7 @@ watch([() => props.open, () => props.task?.id, () => Boolean(props.task)], ([ope
   recurrenceRule.value = props.recurrenceRule ?? null
   recurrenceDirty.value = false
   reminderCommands.value = []
+  baseTask.value = draftValue()
 }, { immediate: true })
 
 watch(() => JSON.stringify(props.recurrenceRule ?? null), () => {
@@ -141,10 +150,10 @@ function stageRecurrence(rule: RecurrenceRule) {
 
 function requestClose() { emit('close') }
 
-function save() {
+function draftValue(): TaskEditValue | null {
   const normalizedTitle = title.value.trim()
-  if (!normalizedTitle) return
-  emit('save', {
+  if (!normalizedTitle) return null
+  return {
     title: normalizedTitle,
     notes: notes.value.trim(),
     topicId: topicId.value || null,
@@ -158,7 +167,14 @@ function save() {
     priority: priority.value,
     estimateMinutes: estimateMinutes.value && estimateMinutes.value > 0 ? estimateMinutes.value : null,
     ...(props.learning ? { acceptanceCriteria: criteria.value.split('\n').map((item) => item.trim()).filter(Boolean) } : {}),
-  }, {
+  }
+}
+
+function save() {
+  const value = draftValue()
+  if (!value) return
+  emit('save', value, {
+    baseTask: baseTask.value ?? value,
     reminderCommands: [...reminderCommands.value],
     ...(recurrenceDirty.value && recurrenceRule.value ? { recurrenceRule: recurrenceRule.value } : {}),
   })

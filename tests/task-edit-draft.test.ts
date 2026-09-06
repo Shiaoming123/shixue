@@ -4,7 +4,7 @@ import test from 'node:test'
 import { parse, compileScript } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import * as Vue from 'vue'
-import { runTaskEditCommit } from '../src/lib/task-edit-commit.ts'
+import { resolveTaskEditWrite, runTaskEditCommit } from '../src/lib/task-edit-commit.ts'
 
 const { descriptor } = parse(readFileSync(new URL('../src/components/study/TaskEditSheet.vue', import.meta.url), 'utf8'))
 const code = ts.transpileModule(compileScript(descriptor, { id: 'edit-draft-test' }).content, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText
@@ -60,7 +60,7 @@ test('switching task identity and closing then reopening each initialize fresh p
 })
 
 test('reminder and recurrence edits stay local until the outer save and cancel paths submit nothing', async () => {
-  const { state, events, unmount } = mount()
+  const { props, state, events, unmount } = mount()
   const replacement = { type: 'reminder.set', ruleId: 'rule:b', taskId: 'one', occurrenceId: null, trigger: { kind: 'before_start', minutes: 10 }, enabled: true, expectedRevision: 2 }
   const addition = { type: 'reminder.set', ruleId: 'rule:a', taskId: 'one', occurrenceId: null, trigger: { kind: 'absolute', at: '2026-09-06T01:00:00.000Z' }, enabled: true }
   const recurrence = { cadence: { kind: 'daily', interval: 2 }, basis: 'fixed_schedule', end: { kind: 'never' } }
@@ -80,12 +80,26 @@ test('reminder and recurrence edits stay local until the outer save and cancel p
   assert.equal(events[0][0], 'save')
   assert.equal(events[0][1].title, 'Updated title', 'ordinary fields retain their existing save contract')
   assert.deepEqual(events[0][2], {
+    baseTask: {
+      title: 'Stored title', notes: 'Stored notes', topicId: null, plannedOn: '2026-09-05', dueOn: null,
+      reminderAt: null, priority: 'none', estimateMinutes: 15,
+    },
     reminderCommands: [
       { ...addition, trigger: { kind: 'absolute', at: '2026-09-07T01:00:00.000Z' } },
       replacement,
     ],
     recurrenceRule: recurrence,
   }, 'the outer save emits each final reminder change once, in staging order, followed by the recurrence draft')
+
+  props.open = false
+  await Vue.nextTick()
+  assert.equal(state.recurrenceDirty.value, false, 'a committed close clears the recurrence draft')
+  props.recurrenceRule = recurrence
+  props.open = true
+  await Vue.nextTick()
+  events.length = 0
+  state.save()
+  assert.equal(Object.hasOwn(events[0][2], 'recurrenceRule'), false, 'reopening after commit does not submit or reconfirm the persisted recurrence')
   unmount()
 })
 
@@ -129,4 +143,18 @@ test('outer task edit commit is ordered and stops at the failing nested change',
     saveRecurrence: async (value) => { order.push(value) },
   }), /CAS failure/)
   assert.deepEqual(order, ['task', 'first', 'failed'], 'a failed nested write must keep later changes pending')
+})
+
+test('task edit retry resolution only writes from its captured base and treats convergence as complete', () => {
+  const base = { title: 'Stored', notes: '', topicId: null, plannedOn: '2026-09-06', dueOn: null, priority: 'none', estimateMinutes: 15 }
+  const desired = { ...base, title: 'Updated' }
+  assert.equal(resolveTaskEditWrite(base, base, desired), 'write')
+  assert.equal(resolveTaskEditWrite(desired, base, desired), 'noop')
+  assert.equal(resolveTaskEditWrite({ ...base, title: 'External' }, base, desired), 'conflict')
+  assert.equal(resolveTaskEditWrite({ ...desired, reminderAt: '2026-09-07T01:00:00.000Z' }, base, desired), 'noop', 'legacy reminder compatibility state is outside task edit ownership')
+  assert.equal(resolveTaskEditWrite(
+    { ...base, dueOn: undefined, dueAt: '2026-09-07T16:00:00+08:00' },
+    { ...base, dueOn: undefined, dueAt: '2026-09-07T08:00:00.000Z' },
+    { ...desired, dueOn: undefined, dueAt: '2026-09-07T08:00:00.000Z' },
+  ), 'write', 'equivalent timestamp offsets are the same captured business state')
 })

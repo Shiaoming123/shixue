@@ -93,8 +93,8 @@ import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelo
 import type { CalendarCapabilityCommand } from './domain/capabilities/calendar-commands'
 import { createCalendarUndoAction, runCalendarCommand } from './lib/calendar-command-handler'
 import { runOverdueBatchMove } from './lib/overdue-batch-command'
-import { runTaskEditCommit } from './lib/task-edit-commit'
-import type { WorkspaceStateV3 } from './domain/workspace/types'
+import { resolveTaskEditWrite, runTaskEditCommit } from './lib/task-edit-commit'
+import type { Task, WorkspaceStateV3 } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
 const destination = ref<ShellDestination>({ kind: 'today' })
@@ -828,7 +828,28 @@ function reminderCommandForCurrentState(command: ReminderSetValue): ReminderSetV
   return { ...command, expectedRevision: current.revision }
 }
 
-async function saveTaskEdit(value: TaskEditValue, changes: TaskEditChanges = { reminderCommands: [] }) {
+async function readCurrentTaskEdit(taskId: string): Promise<{ task: Task; value: TaskEditValue }> {
+  const workspace = await getWorkspaceStore().load()
+  const task = workspace.tasks.find((item) => item.id === taskId && !item.deletedAt)
+  const projected = projectWorkspaceState(workspace).tasks.find((item) => item.id === taskId && !item.deletedAt)
+  if (!task || !projected) throw new Error('任务已不存在，编辑内容未保存。')
+  return {
+    task,
+    value: {
+      title: task.title,
+      notes: task.notes,
+      topicId: projected.topicId,
+      ...(task.schedule.startAt !== null ? { plannedAt: task.schedule.startAt } : { plannedOn: task.schedule.startOn }),
+      ...(task.deadline.dueAt !== null ? { dueAt: task.deadline.dueAt } : { dueOn: task.deadline.dueOn }),
+      reminderAt: null,
+      priority: task.priority,
+      estimateMinutes: task.schedule.estimateMinutes,
+      ...(task.mode === 'learning' ? { acceptanceCriteria: [...(task.learning?.acceptanceCriteria ?? [])] } : {}),
+    },
+  }
+}
+
+async function saveTaskEdit(value: TaskEditValue, changes: TaskEditChanges) {
   const task = selectedTask.value
   if (!task || reminderBusy.value) return
   try {
@@ -838,8 +859,11 @@ async function saveTaskEdit(value: TaskEditValue, changes: TaskEditChanges = { r
     }
     await runTaskEditCommit({ reminders: changes.reminderCommands, recurrence: changes.recurrenceRule }, {
       saveTask: async () => {
+        const current = await readCurrentTaskEdit(task.id)
+        const decision = resolveTaskEditWrite(current.value, changes.baseTask, value)
+        if (decision === 'conflict') throw new Error('任务已在其他位置修改，请重新打开后合并更改。')
         const { reminderAt: _legacyReminderAt, ...taskValue } = value
-        await updateStudyTask(task.id, taskValue, { expectedRevision: task.revision, now: new Date().toISOString() })
+        if (decision === 'write') await updateStudyTask(task.id, taskValue, { expectedRevision: current.task.revision, now: new Date().toISOString() })
         await refreshState()
       },
       saveReminder: async (draftCommand) => {
@@ -940,7 +964,7 @@ async function executeRecurrenceScope(scope: RecurrenceRuleScope) {
   recurrenceExecuting.value = true
   try {
     await capabilityService.execute({ ...envelope, explicitConfirmation: preview.confirmation === 'explicit' && preview.previewReceiptId ? { previewReceiptId: preview.previewReceiptId, confirmedAt: new Date().toISOString() } : undefined })
-    await refreshState(); recurrenceScopeOpen.value = false; clearRecurrencePreview(); pendingRecurrenceRule = null
+    await refreshState(); recurrenceScopeOpen.value = false; clearRecurrencePreview(); pendingRecurrenceRule = null; taskEditorOpen.value = false
     notify('重复规则已更新。')
   } catch (error) { reportStorageError(error) } finally { recurrenceExecuting.value = false }
 }

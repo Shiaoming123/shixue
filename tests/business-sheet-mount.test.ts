@@ -109,7 +109,13 @@ test('mounted TaskEditSheet stages child reminder and recurrence events until ou
   assert.ok(submit, 'the mounted task editor renders its real outer form')
   submit(new Event('submit', { cancelable: true }))
   assert.equal(events[0][0], 'save')
-  assert.deepEqual(events[0][2], { reminderCommands: [addition], recurrenceRule: recurrence })
+  assert.deepEqual(events[0][2], {
+    baseTask: {
+      title: 'Stored', notes: '', topicId: null, plannedAt: '2026-09-06T01:00:00.000Z', dueOn: null,
+      reminderAt: null, priority: 'none', estimateMinutes: 15,
+    },
+    reminderCommands: [addition], recurrenceRule: recurrence,
+  })
   app.unmount()
 })
 
