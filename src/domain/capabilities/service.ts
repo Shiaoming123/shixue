@@ -513,7 +513,11 @@ function applyUndo(
 
   return {
     affected: restored,
-    changes: restored.map((entity) => ({ entity, operation: 'restore', fields: ['state'] })),
+    changes: restored.map((entity) => ({
+      entity,
+      operation: token.compensation.type === 'tag.remove_created' ? 'delete' : 'restore',
+      fields: ['state'],
+    })),
     events,
     compensation: null,
     data: {
@@ -703,6 +707,13 @@ function publicPreviewImpact(
   command: CommandEnvelope['command'],
   application: CommandApplication,
 ): Pick<CommandApplication, 'affected' | 'changes'> {
+  if (command.type === 'tag.create' && command.tagId === undefined) {
+    const entity: EntityRef = { type: 'tag', id: 'new' }
+    return {
+      affected: [entity],
+      changes: [{ entity, operation: 'create', fields: ['tag'] }],
+    }
+  }
   if (command.type !== 'task.create' || command.taskId !== undefined) {
     return { affected: application.affected, changes: application.changes }
   }

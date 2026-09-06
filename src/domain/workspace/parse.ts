@@ -63,6 +63,7 @@ export function parseWorkspaceState(value: unknown): WorkspaceStateV3 {
   }
   assertCollectionSizes(parsed)
   assertUniqueIds(parsed)
+  assertActiveTagTitles(parsed.tags)
   assertReferences(parsed)
   return parsed
 }
@@ -440,6 +441,16 @@ function assertUniqueIds(state: WorkspaceStateV3): void {
   ])
   assertUnique(state.taskEvents.map((event) => ({ id: String(event.sequence) })), 'task event sequence')
   assertUnique(state.commandReceipts.map((receipt) => ({ id: receipt.idempotencyKey })), 'command receipt idempotencyKey')
+}
+
+function assertActiveTagTitles(tags: readonly Tag[]): void {
+  const activeTitles = new Set<string>()
+  for (const tag of tags) {
+    if (tag.archivedAt !== null) continue
+    if (tag.title !== tag.title.trim()) throw new Error(`Active tag ${tag.id} title must be trimmed.`)
+    if (activeTitles.has(tag.title)) throw new Error(`Workspace state contains a duplicate active tag title: ${tag.title}.`)
+    activeTitles.add(tag.title)
+  }
 }
 
 function assertReferences(state: WorkspaceStateV3): void {

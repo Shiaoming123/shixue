@@ -51,8 +51,32 @@ test('tag create is trimmed, audited, idempotent, and undoable', async () => {
     service.execute({ ...envelope, command: { type: 'tag.create', tagId: 'tag:other', title: '其他' } }),
     (error) => error instanceof DomainCommandError && error.code === 'IDEMPOTENCY_KEY_CONFLICT',
   )
+  const beforeUndo = await service.query({ type: 'workspace.snapshot' })
+  const undoPreview = await service.preview({
+    protocolVersion: 1,
+    idempotencyKey: 'undo-create-math',
+    source: 'human-ui',
+    expectedWorkspaceRevision: beforeUndo.revision,
+    command: { type: 'undo.apply', token: first.undoToken! },
+  })
+  assert.deepEqual(undoPreview.changes, [{ entity: { type: 'tag', id: 'tag:math' }, operation: 'delete', fields: ['state'] }])
   await execute('undo-create-math', { type: 'undo.apply', token: first.undoToken! })
   assert.equal((await service.query({ type: 'workspace.snapshot' })).tags.some(({ id }) => id === 'tag:math'), false)
+})
+
+test('automatic tag ids stay private during preview and preview does not persist', async () => {
+  const { service } = setup()
+  const before = await service.query({ type: 'workspace.snapshot' })
+  const preview = await service.preview({
+    protocolVersion: 1,
+    idempotencyKey: 'preview-auto-tag',
+    source: 'human-ui',
+    expectedWorkspaceRevision: before.revision,
+    command: { type: 'tag.create', title: 'Previewed' },
+  })
+  assert.deepEqual(preview.affected, [{ type: 'tag', id: 'new' }])
+  assert.deepEqual(preview.changes, [{ entity: { type: 'tag', id: 'new' }, operation: 'create', fields: ['tag'] }])
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
 })
 
 test('tag titles and explicit ids remain unambiguous while archived titles may be reused', async () => {

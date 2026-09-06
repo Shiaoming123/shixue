@@ -195,6 +195,21 @@ test('rejects duplicate ids and broken list, section, tag, and event references'
   assert.throws(() => parseWorkspaceState(missingEventTask), /unknown taskId/)
 })
 
+test('requires exact trimmed titles to be unique among active tags', () => {
+  const duplicate = validWorkspaceState()
+  duplicate.tags.push({ ...duplicate.tags[0], id: 'tag-2' })
+  assert.throws(() => parseWorkspaceState(duplicate), /duplicate active tag title/)
+
+  const padded = validWorkspaceState()
+  padded.tags[0].title = ' home '
+  assert.throws(() => parseWorkspaceState(padded), /title must be trimmed/)
+
+  const archived = validWorkspaceState()
+  archived.tags[0].archivedAt = archived.updatedAt
+  archived.tags.push({ ...archived.tags[0], id: 'tag-2' })
+  assert.doesNotThrow(() => parseWorkspaceState(archived))
+})
+
 test('rejects invalid recurrence, reminder, and occurrence links without generating records', () => {
   const state = validWorkspaceState()
   state.recurrenceSeries.push({
