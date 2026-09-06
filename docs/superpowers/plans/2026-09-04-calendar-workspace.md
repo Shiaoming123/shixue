@@ -205,6 +205,17 @@ git commit -m "feat: add month and agenda calendar views"
 **Files:**
 - Create: `scripts/smoke-calendar.mjs`
 - Modify: `package.json`
+- Modify: `src/components/ui/Popover.vue`
+- Modify: `src/components/ui/DateTimePicker.vue`
+- Modify: `src/components/calendar/CalendarToolbar.vue`
+- Modify: `src/components/calendar/CalendarItem.vue`
+- Modify: `src/components/calendar/MonthGrid.vue`
+- Modify: `src/components/calendar/UnscheduledTray.vue`
+- Modify: `src/components/study/QuickAddComposer.vue`
+- Modify: `src/components/study/TasksView.vue`
+- Test: `tests/popover-mobile-sheet-contract.test.ts`
+- Modify: `VISUAL_QA.md`
+- Modify: `docs/superpowers/plans/2026-09-04-calendar-workspace.md`
 - Modify: `docs/design/fidelity-ledger.md`
 - Modify: `docs/todofy-benchmark.md`
 
@@ -219,18 +230,22 @@ Seed overlapping tasks, deadline-only task, repeating occurrence and unscheduled
 
 Fail when Today/7-day exceeds 100ms or calendar range exceeds 150ms in a production Node run on the recorded host; print counts and elapsed time only, never task contents.
 
+Run: `npm run benchmark:task-query`
+
 - [ ] **Step 3: Capture and inspect all five `VISUAL_QA.md` viewports**
 
-Open date Listbox, drag preview and mobile Sheet states. Any visible native control, clipped overlay or horizontal page scroll fails acceptance.
+Open the themed date ARIA `grid`, drag preview and both named mobile Sheet states. The date grid must expose exactly 42 visible `gridcell` elements at 1280×800 and 390×844; mobile cells and the 320×700 planning primary action must be at least 44px. Assert the 820px icon-sidebar breakpoint, modal Sheet naming and focus trapping. Any visible unadapted native control, clipped overlay or horizontal page scroll fails acceptance.
 
 - [ ] **Step 4: Run full gates**
 
-Run: `npm test; npm run typecheck; npm run build; npm run build:web; npm run smoke:calendar; npm run check:docs; git diff --check`
+Run: `npm test; npm run typecheck; npm run build; npm run build:web; npm run benchmark:task-query; npm run smoke:calendar; npm run check:docs; git diff --check`
 
-- [ ] **Step 5: Commit and push PR 5**
+- [ ] **Step 5: Review, then commit and push PR 5**
+
+Complete an independent spec and code-quality review before any push. Resolve every Critical or Important finding and rerun the affected gates.
 
 ```powershell
-git add scripts/smoke-calendar.mjs package.json docs/design/fidelity-ledger.md docs/todofy-benchmark.md
+git add scripts/smoke-calendar.mjs package.json src/components/ui/Popover.vue src/components/ui/DateTimePicker.vue src/components/calendar/CalendarToolbar.vue src/components/calendar/CalendarItem.vue src/components/calendar/MonthGrid.vue src/components/calendar/UnscheduledTray.vue src/components/study/QuickAddComposer.vue src/components/study/TasksView.vue tests/popover-mobile-sheet-contract.test.ts VISUAL_QA.md docs/superpowers/plans/2026-09-04-calendar-workspace.md docs/design/fidelity-ledger.md docs/todofy-benchmark.md
 git commit -m "test: verify calendar planning workflow"
 git push -u origin feat/calendar-workspace
 ```

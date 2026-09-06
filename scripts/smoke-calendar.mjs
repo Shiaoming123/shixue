@@ -10,6 +10,13 @@ import { resolveBrowserExecutable } from './smoke-web-persistence.mjs'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const artifactRoot = resolve(projectRoot, 'artifacts', 'visual-qa', 'calendar')
+const UNADAPTED_NATIVE_CONTROL_SELECTOR = [
+  'select',
+  'input[type="date"]',
+  'input[type="time"]',
+  'input[type="checkbox"]',
+  'input[type="radio"]',
+].join(',')
 const seededTitles = {
   overlapA: '深度工作 A',
   overlapB: '深度工作 B',
@@ -264,12 +271,17 @@ async function captureRemainingViewports(page) {
   await page.getByRole('button', { name: '周', exact: true }).click()
   await page.getByTitle('选择日期').click()
   await page.locator('.date-picker').waitFor({ state: 'visible' })
+  await assertDateGrid(page)
+  const desktopDatePopover = page.locator('.popover-panel:not(.popover-panel--mobile-sheet)').filter({ has: page.locator('.date-picker') })
+  assert.equal(await desktopDatePopover.getAttribute('role'), null, 'Desktop date Popover must remain non-modal.')
+  assert.equal(await desktopDatePopover.getAttribute('aria-modal'), null, 'Desktop date Popover must not expose modal semantics.')
   await page.waitForTimeout(150)
   await assertVisualState(page, true)
   await page.screenshot({ path: resolve(artifactRoot, 'calendar-desktop-min-date-picker-1280x800.png') })
   await page.keyboard.press('Escape')
 
   await page.setViewportSize({ width: 820, height: 560 })
+  await assertIconSidebarBreakpoint(page)
   await page.getByRole('button', { name: '月', exact: true }).click()
   await page.locator('.month-grid').waitFor({ state: 'visible' })
   const desktopOverflow = page.getByRole('button', { name: /还有 \d+ 项，查看全部/ }).first()
@@ -290,7 +302,11 @@ async function captureRemainingViewports(page) {
   await openCalendar(page)
   await page.getByRole('button', { name: '日', exact: true }).click()
   await page.getByTitle('选择日期').click()
-  await page.locator('.popover-panel--mobile-sheet .date-picker').waitFor({ state: 'visible' })
+  const dateSheet = page.getByRole('dialog', { name: '选择日历日期', exact: true })
+  await dateSheet.waitFor({ state: 'visible' })
+  await assertModalSheet(dateSheet, '选择日历日期')
+  await assertDateGrid(page, 44)
+  await assertFocusTrap(page, dateSheet)
   await page.waitForTimeout(150)
   await assertVisualState(page, true)
   await page.screenshot({ path: resolve(artifactRoot, 'calendar-mobile-date-sheet-390x844.png') })
@@ -301,20 +317,79 @@ async function captureRemainingViewports(page) {
   await page.reload({ waitUntil: 'networkidle' })
   await openCalendar(page)
   await page.getByRole('button', { name: `安排 ${seededTitles.visualUnscheduled}`, exact: true }).click()
-  await page.locator('.popover-panel--mobile-sheet .unscheduled-tray__panel').waitFor({ state: 'visible' })
+  const planningSheet = page.getByRole('dialog', { name: `安排 ${seededTitles.visualUnscheduled}`, exact: true })
+  await planningSheet.waitFor({ state: 'visible' })
+  await assertModalSheet(planningSheet, `安排 ${seededTitles.visualUnscheduled}`)
+  const primaryAction = planningSheet.getByRole('button', { name: '加入日历', exact: true })
+  await primaryAction.scrollIntoViewIfNeeded()
+  await primaryAction.focus()
+  const primaryBox = await primaryAction.boundingBox()
+  assert.ok(primaryBox && primaryBox.height >= 44, 'The mobile-min planning primary action must be at least 44px tall.')
+  assert.ok(primaryBox.y >= 0 && primaryBox.y + primaryBox.height <= 700, 'The mobile-min planning primary action must be visible after Sheet scrolling.')
   await page.waitForTimeout(150)
   await assertVisualState(page, true)
   await page.screenshot({ path: resolve(artifactRoot, 'calendar-mobile-min-planning-sheet-320x700.png') })
 }
 
+async function assertDateGrid(page, minimumCellHeight = 0) {
+  const grids = page.locator('[role="grid"]:visible')
+  assert.equal(await grids.count(), 1, 'Expected exactly one visible themed date grid.')
+  const cells = grids.getByRole('gridcell')
+  const boxes = await cells.evaluateAll((elements) => elements
+    .filter((element) => {
+      const box = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0
+    })
+    .map((element) => {
+      const box = element.getBoundingClientRect()
+      return { width: box.width, height: box.height }
+    }))
+  assert.equal(boxes.length, 42, 'The visible date grid must expose exactly 42 visible gridcells.')
+  if (minimumCellHeight) {
+    assert.ok(boxes.every(({ width, height }) => width >= minimumCellHeight && height >= minimumCellHeight), `Every date gridcell must be at least ${minimumCellHeight}px in both dimensions.`)
+  }
+}
+
+async function assertModalSheet(sheet, expectedName) {
+  assert.equal(await sheet.getAttribute('aria-modal'), 'true', `${expectedName} must be modal on mobile.`)
+  assert.equal(await sheet.getAttribute('aria-label'), expectedName, `${expectedName} must name the mobile Sheet panel.`)
+}
+
+async function assertFocusTrap(page, sheet) {
+  const focusable = sheet.locator('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+  const count = await focusable.count()
+  assert.ok(count > 1, 'The date Sheet must have multiple focusable controls.')
+  assert.equal(await sheet.evaluate((element) => element.contains(document.activeElement)), true, 'Opening a mobile Sheet must move focus inside it.')
+  await focusable.first().focus()
+  await page.keyboard.press('Shift+Tab')
+  assert.equal(await sheet.evaluate((element) => element.contains(document.activeElement)), true, 'Shift+Tab must not escape the Sheet.')
+  await focusable.last().focus()
+  await page.keyboard.press('Tab')
+  assert.equal(await sheet.evaluate((element) => element.contains(document.activeElement)), true, 'Tab must not escape the Sheet.')
+}
+
+async function assertIconSidebarBreakpoint(page) {
+  const sidebar = page.locator('.sidebar')
+  await sidebar.waitFor({ state: 'visible' })
+  const sidebarBox = await sidebar.boundingBox()
+  assert.ok(sidebarBox && Math.abs(sidebarBox.width - 72) <= 1, `The 820px breakpoint must render the 72px icon sidebar; received ${sidebarBox?.width ?? 'no box'}px.`)
+  assert.equal(await page.getByRole('navigation', { name: '移动端主导航' }).isVisible(), false, 'The 820px breakpoint must not render mobile bottom navigation.')
+  const labelsHidden = await sidebar.locator('.nav-label').evaluateAll((elements) => elements.every((element) => {
+    const style = getComputedStyle(element)
+    return Number.parseFloat(style.opacity) === 0 && Number.parseFloat(style.maxWidth) === 0
+  }))
+  assert.equal(labelsHidden, true, 'The 820px breakpoint must hide sidebar labels and keep icons.')
+}
+
 async function assertVisualState(page, requireOverlay) {
-  const result = await page.evaluate(() => {
+  const result = await page.evaluate((nativeControlSelector) => {
     const visible = (element) => {
       const style = getComputedStyle(element)
       const box = element.getBoundingClientRect()
       return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0
     }
-    const nativeControls = Array.from(document.querySelectorAll('select,input[type="date"],input[type="time"],input[type="checkbox"]')).filter(visible)
+    const nativeControls = Array.from(document.querySelectorAll(nativeControlSelector)).filter(visible)
     const overlays = Array.from(document.querySelectorAll('.popover-panel')).filter(visible).map((element) => {
       const box = element.getBoundingClientRect()
       return box.left >= -1 && box.top >= -1 && box.right <= innerWidth + 1 && box.bottom <= innerHeight + 1
@@ -325,7 +400,7 @@ async function assertVisualState(page, requireOverlay) {
       overlayCount: overlays.length,
       overlaysInsideViewport: overlays.every(Boolean),
     }
-  })
+  }, UNADAPTED_NATIVE_CONTROL_SELECTOR)
   assert.ok(result.horizontalOverflow <= 1, `Page has ${result.horizontalOverflow}px horizontal overflow.`)
   assert.equal(result.nativeControlCount, 0, 'An unadapted native form control is visible.')
   assert.equal(result.overlaysInsideViewport, true, 'A required overlay is clipped by the viewport.')

@@ -47,7 +47,7 @@ function formatMinute(minute: number) { return `${String(Math.floor(minute / 60)
             <span>{{ timeLabel(item) }}</span><strong>{{ titleFor(item) }}</strong>
           </div>
         </div>
-        <Popover v-if="overflow(day).hiddenCount" :open="openDay === day" mobile-sheet @update:open="openDay = $event ? day : ''">
+        <Popover v-if="overflow(day).hiddenCount" :open="openDay === day" mobile-sheet :mobile-sheet-label="`${dayLabel(day)}当日安排`" @update:open="openDay = $event ? day : ''">
           <template #trigger="{ triggerProps }">
             <Button variant="ghost" size="sm" class="month-grid__more" v-bind="triggerProps" :aria-label="`${dayLabel(day)}还有 ${overflow(day).hiddenCount} 项，查看全部`">+{{ overflow(day).hiddenCount }}</Button>
           </template>

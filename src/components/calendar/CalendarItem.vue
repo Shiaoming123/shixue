@@ -98,7 +98,7 @@ function formatTime(item: CalendarItem) { return timePart(item) || item.displayD
     </button>
     <div v-else class="calendar-item__fact"><strong>{{ title }}</strong><span>{{ item.kind === 'deadline-marker' ? `截止 ${formatTime(item)}` : formatTime(item) }}</span></div>
 
-    <Popover v-if="interactive" v-model:open="menuOpen" align="end" mobile-sheet>
+    <Popover v-if="interactive" v-model:open="menuOpen" align="end" mobile-sheet :mobile-sheet-label="`安排 ${title}`">
       <template #trigger="{ triggerProps }">
         <button class="calendar-item__menu" type="button" v-bind="triggerProps" :aria-label="`安排 ${title}`" title="安排任务" @pointerdown.stop><MoreHorizontal :size="15" /></button>
       </template>

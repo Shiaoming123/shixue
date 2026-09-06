@@ -129,7 +129,7 @@ defineExpose({ activateQuickAdd })
     <header class="page-header">
       <div class="page-title"><h1>{{ title }}</h1><span>{{ subtitle }}</span></div>
       <div class="header-actions">
-        <Popover :open="smartViewMenuOpen" kind="menu" align="end" mobile-sheet @update:open="smartViewMenuOpen = $event">
+        <Popover :open="smartViewMenuOpen" kind="menu" align="end" mobile-sheet mobile-sheet-label="切换智能清单" @update:open="smartViewMenuOpen = $event">
           <template #trigger="{ triggerProps }"><button v-bind="triggerProps" type="button" title="切换智能清单" aria-label="切换智能清单"><ListTree :size="18" /></button></template>
           <div class="smart-view-menu" role="menu" aria-label="智能清单">
             <button v-for="option in smartViewOptions" :key="option.value" type="button" role="menuitemradio" :aria-checked="smartView === option.value" @click="emit('smartViewChange', option.value as StudyTaskSmartView); smartViewMenuOpen = false"><span>{{ option.label }}</span><Check v-if="smartView === option.value" :size="16" /></button>

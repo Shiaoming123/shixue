@@ -52,7 +52,7 @@ function plan(task: Task, close: (reason: 'select') => void) {
     <div v-else class="unscheduled-tray__items">
       <div v-for="task in unscheduled" :key="task.id" class="unscheduled-tray__item">
         <button type="button" class="unscheduled-tray__drag" :aria-label="`拖动安排 ${task.title}`" @pointerdown="emit('pointer-start', $event, task)">{{ task.title }}</button>
-        <Popover :open="openTaskId === task.id" align="end" mobile-sheet @update:open="$event ? openPlanner(task.id) : openTaskId = ''">
+        <Popover :open="openTaskId === task.id" align="end" mobile-sheet :mobile-sheet-label="`安排 ${task.title}`" @update:open="$event ? openPlanner(task.id) : openTaskId = ''">
           <template #trigger="{ triggerProps }">
             <button type="button" class="unscheduled-tray__menu" v-bind="triggerProps" :aria-label="`安排 ${task.title}`" title="安排任务" @click="openPlanner(task.id)"><MoreHorizontal :size="16" /></button>
           </template>
@@ -94,6 +94,7 @@ function plan(task: Task, close: (reason: 'select') => void) {
   .unscheduled-tray { grid-template-columns: 1fr; padding: 10px 16px; }
   .unscheduled-tray__drag, .unscheduled-tray__menu, .unscheduled-tray__panel fieldset button { min-height: 44px; }
   .unscheduled-tray__menu { width: 44px; height: 44px; top: 0; right: 0; }
+  .unscheduled-tray__panel footer :deep(.btn) { min-height: 44px; }
 }
 @media (prefers-reduced-transparency: reduce) { .unscheduled-tray { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
 </style>

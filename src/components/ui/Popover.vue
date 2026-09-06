@@ -9,6 +9,7 @@ const props = withDefaults(defineProps<{
   offset?: number
   matchTriggerWidth?: boolean
   mobileSheet?: boolean
+  mobileSheetLabel?: string
   inline?: boolean
 }>(), {
   kind: 'popover',
@@ -183,6 +184,9 @@ defineExpose({ close: requestClose, updatePosition })
           :data-overlay-layer="layerId"
           :style="mobileSheetActive || inline ? undefined : position"
           :tabindex="mobileSheetActive ? -1 : undefined"
+          :role="mobileSheetActive ? 'dialog' : undefined"
+          :aria-modal="mobileSheetActive ? 'true' : undefined"
+          :aria-label="mobileSheetActive ? mobileSheetLabel : undefined"
           @keydown="onKeydown"
         >
           <slot :close="requestClose" :modal="mobileSheetActive" />

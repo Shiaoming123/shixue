@@ -274,6 +274,7 @@ defineExpose({ focus })
         :open="activeCandidateId === candidate.id"
         align="start"
         mobile-sheet
+        :mobile-sheet-label="`编辑${candidateLabel(candidate)}`"
         @update:open="setEditorOpen(candidate, $event)"
       >
         <template #trigger="{ triggerProps }">
@@ -290,9 +291,9 @@ defineExpose({ focus })
         <section
           :id="`quick-add-editor-${candidate.id}`"
           class="candidate-editor"
-          role="dialog"
-          :aria-modal="modal ? 'true' : 'false'"
-          :aria-labelledby="`quick-add-editor-title-${candidate.id}`"
+          :role="modal ? undefined : 'dialog'"
+          :aria-modal="modal ? undefined : 'false'"
+          :aria-labelledby="modal ? undefined : `quick-add-editor-title-${candidate.id}`"
         >
           <h2 :id="`quick-add-editor-title-${candidate.id}`" class="visually-hidden">编辑{{ candidateLabel(candidate) }}</h2>
           <template v-if="candidate.kind === 'schedule' || candidate.kind === 'deadline'">

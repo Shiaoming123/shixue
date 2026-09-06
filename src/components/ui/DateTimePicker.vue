@@ -64,14 +64,14 @@ function applyDateTime() {
 
 <template>
   <span class="date-time-picker">
-    <Popover :open="open" align="start" mobile-sheet @update:open="setOpen">
+    <Popover :open="open" align="start" mobile-sheet :mobile-sheet-label="label" @update:open="setOpen">
       <template #trigger="{ triggerProps }">
         <button v-bind="triggerProps" ref="trigger" type="button" class="date-trigger" :class="{ placeholder: !modelValue }" :aria-label="label" :aria-required="required || undefined" :disabled="disabled">
           <span>{{ displayValue }}</span><i aria-hidden="true" />
         </button>
       </template>
       <template #default="{ modal }">
-        <div ref="panel" class="date-panel" role="dialog" :aria-modal="modal || undefined" :aria-label="label">
+        <div ref="panel" class="date-panel" :role="modal ? undefined : 'dialog'" :aria-modal="modal ? undefined : 'false'" :aria-label="modal ? undefined : label">
           <DatePicker :model-value="draftDate" :label="label" @update:model-value="selectDate" />
           <template v-if="mode === 'datetime'">
             <label class="time-field">

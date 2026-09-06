@@ -25,7 +25,7 @@ const dateOpen = ref(false)
     </div>
     <div class="calendar-toolbar__actions">
       <Button variant="ghost" size="sm" title="上一段时间" aria-label="上一段时间" @click="emit('previous')"><ChevronLeft :size="17" /></Button>
-      <Popover v-model:open="dateOpen" mobile-sheet>
+      <Popover v-model:open="dateOpen" mobile-sheet mobile-sheet-label="选择日历日期">
         <template #trigger="{ triggerProps }">
           <Button variant="secondary" size="sm" v-bind="triggerProps" title="选择日期"><CalendarDays :size="16" />{{ anchorLabel }}</Button>
         </template>
