@@ -87,9 +87,11 @@ execution, routing of current live writes through that service, and the shared
 themed-control foundation. Recurrence occurrence v1 is also shipped: its
 date-only/timed schedule boundary, ephemeral preview handles, occurrence
 materialization, commands, and UI integration are part of the checked
-protocol. This statement does not claim that every future v3 collection has
-business behaviour: offline natural-language quick add, multiple reminders,
-calendar views, and Agent behaviour remain planned.
+protocol. Offline natural-language quick add and multiple reminders are also
+shipped in the shared TypeScript layer: parsing, reminder rules, delivery
+ledger, capability commands, and the Windows lifecycle integration are checked.
+This does not claim reliable iOS background delivery; the iOS system scheduler
+adapter, calendar views, and Agent behaviour remain planned.
 The command envelope reserves `source: agent`, but there is no shipped Agent
 planner or autonomous execution policy. A future Agent must use the same
 query/preview/execute boundary and cannot bypass validation or write storage
