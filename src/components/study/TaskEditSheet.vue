@@ -164,6 +164,16 @@ function cloneReminderRule(rule: TaskReminderRule): TaskReminderRule {
   return { ...rule, trigger: { ...rule.trigger } }
 }
 
+function cloneReminderCommand(command: ReminderSetValue): ReminderSetValue {
+  return { ...command, trigger: { ...command.trigger } }
+}
+
+function cloneTaskEditValue(value: TaskEditValue): TaskEditValue {
+  const snapshot = { ...value }
+  if (value.acceptanceCriteria) snapshot.acceptanceCriteria = [...value.acceptanceCriteria]
+  return snapshot
+}
+
 function cloneRecurrenceRule(rule: RecurrenceRule): RecurrenceRule {
   return {
     cadence: rule.cadence.kind === 'weekly' ? { ...rule.cadence, weekdays: [...rule.cadence.weekdays] } : { ...rule.cadence },
@@ -196,11 +206,11 @@ function save() {
   const value = draftValue()
   if (!value) return
   emit('save', value, {
-    baseTask: baseTask.value ?? value,
+    baseTask: cloneTaskEditValue(baseTask.value ?? value),
     baseReminderRules: baseReminderRules.value.map(cloneReminderRule),
     baseRecurrenceRule: baseRecurrenceRule.value ? cloneRecurrenceRule(baseRecurrenceRule.value) : null,
-    reminderCommands: [...reminderCommands.value],
-    ...(recurrenceDirty.value && recurrenceRule.value ? { recurrenceRule: recurrenceRule.value } : {}),
+    reminderCommands: reminderCommands.value.map(cloneReminderCommand),
+    ...(recurrenceDirty.value && recurrenceRule.value ? { recurrenceRule: cloneRecurrenceRule(recurrenceRule.value) } : {}),
   })
 }
 

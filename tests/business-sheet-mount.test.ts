@@ -118,6 +118,10 @@ test('mounted TaskEditSheet stages child reminder and recurrence events until ou
     baseRecurrenceRule: null,
     reminderCommands: [addition], recurrenceRule: recurrence,
   })
+  assert.doesNotThrow(
+    () => structuredClone(events[0][2]),
+    'the TaskEdit payload must cross the capability/storage structured-clone boundary without Vue proxies',
+  )
   app.unmount()
 })
 
