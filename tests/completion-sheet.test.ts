@@ -4,7 +4,6 @@ import test from 'node:test'
 import { parse, compileScript } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import * as Vue from 'vue'
-import { useModalOverlay, hasActiveOverlay } from '../src/components/ui/use-overlay.ts'
 
 class ElementStub extends EventTarget {
   tabIndex = 0
@@ -42,12 +41,7 @@ function mountSheet() {
     return () => Vue.h('div')
   } })
   app.mount(new ElementStub())
-  const panel = new ElementStub()
-  panel.children = [new ElementStub(), new ElementStub()]
-  state.panel.value = panel
-  const openingControl = doc.activeElement
-  doc.body.children = [...(openingControl ? [openingControl] : []), panel]
-  return { props, state, events, panel, unmount: async () => {
+  return { props, state, events, unmount: async () => {
     app.unmount()
     await Vue.nextTick()
     await Promise.resolve()
@@ -83,30 +77,9 @@ test('same-title next occurrence starts fresh, while a failed save retains the c
   assert.equal(sheet.state.learned.value, '后台更新')
 })
 
-test('CompletionSheet uses the shared modal keyboard boundary and restores the opening control', async (t) => {
-  const trigger = new ElementStub()
-  trigger.focus()
-  const sheet = mountSheet()
-  t.after(() => sheet.unmount())
-  sheet.props.open = true
-  await Vue.nextTick(); await Vue.nextTick()
-  const [first, last] = sheet.panel.children
-  assert.equal(doc.activeElement, first)
-  assert.equal(hasActiveOverlay(), true)
-  const key = (value: string, shiftKey = false) => {
-    const event = Object.assign(new Event('keydown', { cancelable: true }), { key: value, shiftKey })
-    doc.dispatchEvent(event)
-    return event
-  }
-  assert.equal(key('Tab', true).defaultPrevented, true)
-  assert.equal(doc.activeElement, last)
-  assert.equal(key('Tab').defaultPrevented, true)
-  assert.equal(doc.activeElement, first)
-  key('Escape')
-  await Vue.nextTick(); await Vue.nextTick()
-  assert.equal(sheet.props.open, false)
-  assert.equal(hasActiveOverlay(), false)
-  assert.equal(doc.activeElement, trigger)
-  assert.equal(trigger.getAttribute('inert'), null)
-  assert.equal(trigger.getAttribute('aria-hidden'), null)
+test('CompletionSheet delegates its modal boundary to the shared Sheet primitive', () => {
+  const source = readFileSync(new URL('../src/components/study/CompletionSheet.vue', import.meta.url), 'utf8')
+  assert.match(source, /import Sheet from '..\/ui\/Sheet\.vue'/)
+  assert.match(source, /<Sheet\b[^>]*:open="open"[^>]*label="把时间变成证据"/)
+  assert.doesNotMatch(source, /useModalOverlay|<Teleport\b|data-overlay-layer/)
 })

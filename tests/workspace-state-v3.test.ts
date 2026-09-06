@@ -277,7 +277,7 @@ test('rejects an id reused by different root entity kinds', () => {
 
 test('accepts a link from a source completion task to a distinct visible review task', () => {
   const state = validWorkspaceState()
-  state.tasks.push({ ...state.tasks[0], id: 'task-2', title: 'Review rent' })
+  state.tasks.push({ ...state.tasks[0], id: 'task-2', title: 'Review rent', mode: 'learning', learning: { acceptanceCriteria: [], blockedReason: null } })
   state.taskEvents.push({ ...state.taskEvents[0], id: 'event-2', sequence: 2, taskId: 'task-2' })
   state.completionRecords.push({
     id: 'record-1',
@@ -292,7 +292,7 @@ test('accepts a link from a source completion task to a distinct visible review 
     mastery: null,
     completedAt: '2026-09-04T09:00:00+08:00',
     reviewStage: 0,
-    nextReviewOn: null,
+    nextReviewOn: '2026-09-05',
     lastReviewResult: null,
     lastReviewedAt: null,
     createdAt: '2026-09-04T09:00:00+08:00',
@@ -311,7 +311,14 @@ test('accepts a link from a source completion task to a distinct visible review 
     updatedAt: '2026-09-04T09:00:00+08:00',
   })
 
-  assert.deepEqual(parseWorkspaceState(state), state)
+  const parsed = parseWorkspaceState(state)
+  assert.deepEqual(parsed, {
+    ...state,
+    reviewTaskLinks: [{ ...state.reviewTaskLinks[0], completion: null }],
+  })
+  const inconsistent = structuredClone(state)
+  inconsistent.reviewTaskLinks[0]!.completion = { result: 'clear', reviewedOn: '2026-09-05' }
+  assert.throws(() => parseWorkspaceState(inconsistent), /cannot have a completion outcome/)
 })
 
 test('rejects a review link with an unknown visible review task', () => {
@@ -333,7 +340,7 @@ test('rejects a review link with an unknown visible review task', () => {
 
 test('rejects a review occurrence that does not belong to its visible review task', () => {
   const state = validWorkspaceState()
-  state.tasks.push({ ...state.tasks[0], id: 'task-2', title: 'Review rent' })
+  state.tasks.push({ ...state.tasks[0], id: 'task-2', title: 'Review rent', mode: 'learning', learning: { acceptanceCriteria: [], blockedReason: null } })
   state.taskEvents.push({ ...state.taskEvents[0], id: 'event-2', sequence: 2, taskId: 'task-2' })
   state.completionRecords.push({
     id: 'record-1', taskId: 'task-1', topicId: null, sessionIds: [], taskTitleSnapshot: 'Pay rent',

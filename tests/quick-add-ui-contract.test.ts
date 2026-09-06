@@ -92,9 +92,9 @@ test('Tasks and Today expose the same composer while App only handles the create
 test('Today grouping uses projection reasons so an overdue deadline outranks a current plan', () => {
   const tasks = studySource('TasksView.vue')
   const app = appSource()
-  assert.match(tasks, /task\.reasons\.includes\('overdue'\)/)
+  assert.match(tasks, /\['overdue', 'planned', 'due', 'recurring'\]/)
   assert.doesNotMatch(tasks, /plannedOn\s*\?\?\s*task\.dueOn/)
-  assert.match(app, /reasons:\s*projection\.reasons/)
+  assert.match(app, /reasons:\s*item\.reasons/)
 })
 
 function candidate(

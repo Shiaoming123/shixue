@@ -210,6 +210,7 @@ test('pending reviews create one visible deterministic task and link, while comp
     completionRecordId: 'completion-pending',
     reviewTaskId: 'task:review:completion-pending', occurrenceId: null,
     reviewStage: 0, dueOn: '2026-09-06', completedAt: null,
+    completion: null,
     createdAt: MIGRATED_AT, updatedAt: MIGRATED_AT,
   }])
   assert.notEqual(next.reviewTaskLinks[0].reviewTaskId, next.completionRecords[0].taskId)

@@ -24,7 +24,9 @@ test('learning occurrence completion saves evidence atomically without completin
   const result = await service.execute(complete)
   assert.deepEqual(await service.execute(complete), result)
   const after = await store.load()
-  assert.deepEqual(after.tasks, before.tasks)
+  assert.deepEqual(after.tasks.filter(({ id }) => before.tasks.some((task) => task.id === id)), before.tasks)
+  const reviewLink = after.reviewTaskLinks.find(({ completionRecordId }) => completionRecordId === 'proof:one')!
+  assert.equal(after.tasks.find(({ id }) => id === reviewLink.reviewTaskId)?.status, 'planned')
   assert.equal(after.occurrences.find(({ id }) => id === occurrence.id)!.status, 'completed')
   assert.equal(after.occurrences.filter(({ status }) => status === 'pending').length, 1)
   assert.equal(after.completionRecords.filter(({ id }) => id === 'proof:one').length, 1)
@@ -34,4 +36,6 @@ test('learning occurrence completion saves evidence atomically without completin
   const undone = await store.load()
   assert.equal(undone.occurrences.find(({ id }) => id === occurrence.id)!.status, 'pending')
   assert.ok(undone.completionRecords.find(({ id }) => id === 'proof:one')!.deletedAt)
+  assert.equal(undone.reviewTaskLinks.some(({ id }) => id === reviewLink.id), false)
+  assert.ok(undone.tasks.find(({ id }) => id === reviewLink.reviewTaskId)?.deletedAt)
 })

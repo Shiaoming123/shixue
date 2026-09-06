@@ -12,6 +12,12 @@ import { inspectEnvironment, prepareCargoEnvironment } from '../scripts/release-
 import { getNpmInvocation, runNpmCommand } from '../scripts/release-kit/npm-command.mjs'
 import { createReleaseProvenance } from '../scripts/release-kit/provenance.mjs'
 import { isRunnableTestFile } from '../scripts/run-tests.mjs'
+import {
+  REQUIRED_RELEASE_COMMANDS,
+  REQUIRED_RELEASE_SUITES,
+  parseNodeTestSummary,
+  validateReleaseGateResults,
+} from '../scripts/release-check.mjs'
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -409,4 +415,45 @@ test('release check does not ignore an unknown mode after a valid mode', () => {
 
   assert.equal(result.status, 1)
   assert.match(result.stderr, /Unknown release check mode: preview/)
+})
+
+test('release candidate inventory names every planning foundation suite and build gate', () => {
+  const ids = REQUIRED_RELEASE_SUITES.map((suite) => suite.id)
+  assert.deepEqual(ids, [
+    'migration-state', 'capability-service', 'review-links', 'workspace-navigation',
+    'workspace-projections', 'recurrence', 'quick-add', 'reminders', 'calendar', 'shared-shell',
+  ])
+  assert.equal(REQUIRED_RELEASE_SUITES.flatMap((suite) => suite.files).includes('tests/quick-add-shortcut-lifecycle.browser.test.mjs'), true)
+  assert.deepEqual(REQUIRED_RELEASE_COMMANDS.map((check) => check.id), [
+    'check-protocol', 'check-csp', 'check-modules-desktop', 'check-modules-web',
+    'check-modules-mobile', 'typecheck', 'build-desktop', 'build-web', 'check-layout', 'check-docs',
+  ])
+})
+
+test('parses file pass fail and skipped totals from the Node test report', () => {
+  assert.deepEqual(parseNodeTestSummary('# tests 7\n# pass 6\n# fail 0\n# skipped 1\n'), {
+    pass: 6, fail: 0, skipped: 1,
+  })
+})
+
+test('strict release gates fail closed for missing, unexecuted, failed, or skipped evidence', () => {
+  const inventory = [{ id: 'suite', files: ['tests/a.test.ts', 'tests/b.test.ts'] }]
+  const commands = [{ id: 'build', command: ['run', 'build'] }]
+  const base = {
+    suites: [
+      { file: 'tests/a.test.ts', status: 'PASS', pass: 2, fail: 0, skipped: 0 },
+      { file: 'tests/b.test.ts', status: 'PASS', pass: 1, fail: 0, skipped: 0 },
+    ],
+    commands: [{ id: 'build', status: 'PASS' }],
+  }
+  assert.deepEqual(validateReleaseGateResults(inventory, commands, base), [])
+
+  for (const status of ['MISSING', 'NOT_RUN', 'FAIL']) {
+    const result = structuredClone(base)
+    result.suites[1].status = status
+    assert.notDeepEqual(validateReleaseGateResults(inventory, commands, result), [])
+  }
+  const skipped = structuredClone(base)
+  skipped.suites[0].skipped = 1
+  assert.match(validateReleaseGateResults(inventory, commands, skipped).join('\n'), /skipped/i)
 })

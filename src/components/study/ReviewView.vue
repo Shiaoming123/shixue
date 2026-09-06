@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Brain, CheckCircle2, ChevronRight, FileCheck2, RotateCcw, Search, Sparkles } from '@lucide/vue'
 import Listbox from '../ui/Listbox.vue'
 
-export interface ReviewViewItem { id: string; topic: string; learned: string; evidence: string; ageLabel: string }
+export interface ReviewViewItem { id: string; linkId: string; topic: string; learned: string; evidence: string; ageLabel: string }
 export interface CompletionRecordViewItem {
   id: string
   taskId: string
@@ -36,7 +36,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   reveal: []
-  rate: [result: 'clear' | 'fuzzy' | 'relearn']
+  rate: [linkId: string, result: 'clear' | 'fuzzy' | 'relearn']
   createTask: [recordId: string]
   openTask: [taskId: string]
 }>()
@@ -78,9 +78,9 @@ const filteredRecords = computed(() => {
           <div class="evidence"><small>当时留下的证据</small><p>{{ item.evidence }}</p></div>
           <p class="prompt">现在回忆得怎么样？</p>
           <div class="rating-actions">
-            <button class="relearn" @click="emit('rate', 'relearn')"><RotateCcw :size="17" />需要重学</button>
-            <button class="fuzzy" @click="emit('rate', 'fuzzy')"><Sparkles :size="17" />有点模糊</button>
-            <button class="clear" @click="emit('rate', 'clear')"><CheckCircle2 :size="17" />记得清楚</button>
+            <button class="relearn" @click="emit('rate', item.linkId, 'relearn')"><RotateCcw :size="17" />需要重学</button>
+            <button class="fuzzy" @click="emit('rate', item.linkId, 'fuzzy')"><Sparkles :size="17" />有点模糊</button>
+            <button class="clear" @click="emit('rate', item.linkId, 'clear')"><CheckCircle2 :size="17" />记得清楚</button>
           </div>
         </template>
       </article>

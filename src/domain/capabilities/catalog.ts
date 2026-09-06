@@ -31,6 +31,8 @@ export const COMMAND_CATALOG: readonly CommandDescriptor[] = [
   { type: 'task.reorder', risk: 'low', scope: 'batch', reversibility: 'irreversible', requiresPreview: false },
   { type: 'task.toggle_completion', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
   { type: 'completion.review', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
+  { type: 'review.schedule', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
+  { type: 'review.complete', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
   { type: 'completion.create_next_action', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
   { type: 'workspace.reset', risk: 'high', scope: 'workspace', reversibility: 'irreversible', requiresPreview: true },
   { type: 'workspace.import', risk: 'high', scope: 'workspace', reversibility: 'irreversible', requiresPreview: true },

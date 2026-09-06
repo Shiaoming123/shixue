@@ -9,8 +9,6 @@
       "core:window:allow-hide",
       "core:window:allow-show",
       "core:window:allow-set-focus",
-      "global-shortcut:allow-register",
-      "global-shortcut:allow-unregister",
       "notification:default",
       "autostart:default",
       "opener:default",

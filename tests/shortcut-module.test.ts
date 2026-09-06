@@ -1,65 +1,33 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { sortModules } from '../src/modules/topology.ts'
 import { createShortcutModule } from '../src/modules/shortcut/index.ts'
-import type { ModuleContext } from '../src/modules/types.ts'
 
-test('desktop setup registers quick capture once and activation focuses the main window before dispatch', async () => {
-  const registered: string[] = []
-  const actions: string[] = []
-  let handler: ((event: { state: string }) => void | Promise<void>) | undefined
+test('shortcut setup controls native registration without exposing the plugin callback channel', async () => {
+  const module = await import('../src/modules/shortcut/index.ts')
+  const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 
-  const module = createShortcutModule(async () => ({
-    register: async (shortcut, nextHandler) => {
-      registered.push(shortcut)
-      handler = nextHandler
-    },
-    unregister: async () => {},
-    getMainWindow: () => ({
-      show: async () => { actions.push('show') },
-      unminimize: async () => { actions.push('unminimize') },
-      setFocus: async () => { actions.push('focus') },
-    }),
-    dispatchEvent: (event) => {
-      assert.equal(event instanceof CustomEvent, true)
-      actions.push(event.type)
-    },
+  assert.equal(module.default.id, 'shortcut')
+  assert.deepEqual(module.default.dependencies, ['tray'])
+  assert.throws(
+    () => sortModules([module.default]),
+    /Module "shortcut" requires disabled or missing module "tray"/,
+  )
+  assert.match(main, /\.catch\([\s\S]*\.finally\(\(\) => \{[\s\S]*app\.mount\("#app"\)/)
+
+  const transitions: boolean[] = []
+  const configured = createShortcutModule(async () => ({
+    setEnabled: async (enabled) => { transitions.push(enabled) },
   }))
-
-  await Promise.all([
-    module.setup?.({} as ModuleContext),
-    module.setup?.({} as ModuleContext),
-  ])
-  await handler?.({ state: 'Released' })
-  assert.deepEqual(actions, [])
-  await handler?.({ state: 'Pressed' })
-
-  assert.deepEqual(registered, ['Ctrl+Alt+A'])
-  assert.deepEqual(actions, [
-    'show',
-    'unminimize',
-    'focus',
-    'shixue:quick-add',
-  ])
+  await configured.setup?.({} as never)
+  await configured.teardown?.({} as never)
+  assert.deepEqual(transitions, [true, false])
 })
 
-test('teardown unregisters quick capture and allows a later setup to register it again', async () => {
-  const registered: string[] = []
-  const unregistered: string[] = []
+test('shortcut setup surfaces native registration failures', async () => {
   const module = createShortcutModule(async () => ({
-    register: async (shortcut) => { registered.push(shortcut) },
-    unregister: async (shortcut) => { unregistered.push(shortcut) },
-    getMainWindow: () => ({
-      show: async () => {},
-      unminimize: async () => {},
-      setFocus: async () => {},
-    }),
-    dispatchEvent: () => {},
+    setEnabled: async () => { throw new Error('shortcut conflict') },
   }))
-
-  await module.setup?.({} as ModuleContext)
-  await module.teardown?.({} as ModuleContext)
-  await module.setup?.({} as ModuleContext)
-
-  assert.deepEqual(registered, ['Ctrl+Alt+A', 'Ctrl+Alt+A'])
-  assert.deepEqual(unregistered, ['Ctrl+Alt+A'])
+  await assert.rejects(module.setup?.({} as never), /shortcut conflict/)
 })

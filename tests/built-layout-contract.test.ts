@@ -37,7 +37,7 @@ function cssAtBoundary(compactMax: number, mediumMin: number): string {
     }
     @media (min-width: ${mediumMin}px) and (max-width: 1279px) {
       .sidebar[data-v-sidebar] { width: 72px; min-width: 72px; }
-      .detail-drawer[data-v-detail] { position: fixed; }
+      .sheet-panel--right[data-v-sheet] { position: fixed; }
     }
   `
 }

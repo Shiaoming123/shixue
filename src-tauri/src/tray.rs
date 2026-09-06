@@ -12,6 +12,9 @@ pub const MAIN_WINDOW_LABEL: &str = "main";
 /// 托盘菜单点击后向前端广播的事件名。
 pub const CHECK_UPDATE_EVENT: &str = "tray://check-update";
 
+/// The shared native event consumed by the frontend Quick Add bridge.
+pub const QUICK_ADD_EVENT: &str = "shixue:quick-add";
+
 pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
     let toggle = MenuItem::with_id(app, "toggle", "显示 / 隐藏窗口", true, None::<&str>)?;
     let quick_add = MenuItem::with_id(app, "quick_add", "快速新增", true, None::<&str>)?;
@@ -37,17 +40,7 @@ pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::er
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "toggle" => toggle_window(app),
-            "quick_add" => {
-                if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-                    let result = window
-                        .show()
-                        .and_then(|_| window.unminimize())
-                        .and_then(|_| window.set_focus());
-                    if result.is_ok() {
-                        let _ = app.emit("shixue:quick-add", ());
-                    }
-                }
-            }
+            "quick_add" => show_quick_add(app),
             "check_update" => {
                 let _ = app.emit(CHECK_UPDATE_EVENT, ());
             }
@@ -67,6 +60,18 @@ pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::er
         .build(app)?;
 
     Ok(())
+}
+
+pub fn show_quick_add<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let result = window
+            .show()
+            .and_then(|_| window.unminimize())
+            .and_then(|_| window.set_focus());
+        if result.is_ok() {
+            let _ = app.emit(QUICK_ADD_EVENT, ());
+        }
+    }
 }
 
 fn toggle_window<R: Runtime>(app: &AppHandle<R>) {

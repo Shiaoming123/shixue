@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { CheckCircle2, X } from '@lucide/vue'
-import { useModalOverlay } from '../ui/use-overlay'
+import Sheet from '../ui/Sheet.vue'
 
 export interface CompletionPayload {
   learned: string
@@ -30,8 +30,6 @@ const blocker = ref('')
 const nextAction = ref('')
 const mastery = ref<1 | 2 | 3 | 4 | 5>(3)
 const loadedContext = ref<string | null>(null)
-const panel = ref<HTMLElement | null>(null)
-const { layerId } = useModalOverlay(() => props.open, panel, () => emit('close'))
 
 watch([() => props.open, () => props.contextId], ([open, contextId]) => {
   if (!open) return
@@ -59,8 +57,8 @@ function submit() {
 </script>
 
 <template>
-  <div v-if="open" class="backdrop" @click.self="emit('close')">
-    <section ref="panel" class="sheet" :data-overlay-layer="layerId" role="dialog" aria-modal="true" aria-labelledby="completion-title" tabindex="-1">
+  <Sheet :open="open" label="把时间变成证据" size="lg" @close="emit('close')">
+    <section class="sheet-content">
       <header>
         <div>
           <p>完成学习</p>
@@ -100,38 +98,11 @@ function submit() {
         <button class="save" :disabled="!ready || busy" @click="submit"><CheckCircle2 :size="18" />{{ busy ? '正在保存…' : '保存学习记录' }}</button>
       </footer>
     </section>
-  </div>
+  </Sheet>
 </template>
 
 <style scoped>
-.backdrop {
-  position: fixed;
-  z-index: var(--z-modal);
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 24px;
-  background: color-mix(in srgb, var(--text) 22%, transparent);
-  backdrop-filter: saturate(120%) blur(12px);
-}
-
-.sheet {
-  width: min(100%, 660px);
-  max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 28px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-2xl);
-  background: var(--material-regular);
-  box-shadow: var(--shadow-lg);
-  animation: sheet-in var(--motion-slow) var(--ease-spring);
-}
-
-@keyframes sheet-in {
-  from { transform: translateY(22px) scale(0.985); opacity: 0; }
-}
+.sheet-content { width: 100%; }
 
 header {
   display: flex;
@@ -280,38 +251,7 @@ footer > span {
   cursor: default;
 }
 
-@media (min-width: 820px) {
-  .backdrop {
-    align-items: center;
-  }
-}
-
 @media (max-width: 819px) {
-  .backdrop {
-    padding: 0;
-  }
-
-  .sheet {
-    position: relative;
-    max-height: 94dvh;
-    border-width: 1px 0 0;
-    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
-    padding: 34px 20px calc(24px + env(safe-area-inset-bottom, 0px));
-    animation-name: sheet-up;
-  }
-
-  .sheet::before {
-    content: '';
-    position: absolute;
-    top: 9px;
-    left: 50%;
-    width: 36px;
-    height: 5px;
-    transform: translateX(-50%);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--muted) 32%, transparent);
-  }
-
   footer {
     align-items: stretch;
     flex-direction: column;
@@ -321,6 +261,4 @@ footer > span {
     justify-content: center;
   }
 }
-
-@keyframes sheet-up { from { transform: translateY(36px); opacity: .75; } }
 </style>

@@ -162,7 +162,7 @@ async function main() {
       await quickAdd.getByRole('button', { name: '添加', exact: true }).click()
 
       await page.reload({ waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('button', { name: /^最近 7 天/ }).click()
       await page.getByRole('searchbox', { name: '搜索任务' }).fill(quickAddTitle)
       const quickAddRow = page.locator('.task-row').filter({ hasText: quickAddTitle })
       await quickAddRow.getByText(quickAddTitle, { exact: true }).waitFor({ state: 'visible' })
@@ -188,7 +188,7 @@ async function main() {
       await quickAddEditDialog.getByRole('button', { name: '保存', exact: true }).click()
       await quickAddEditDialog.waitFor({ state: 'hidden' })
       await page.reload({ waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('button', { name: /^最近 7 天/ }).click()
       await page.getByRole('searchbox', { name: '搜索任务' }).fill(quickAddTitle)
       const editedQuickAddRow = page.locator('.task-row').filter({ hasText: quickAddTitle })
       await editedQuickAddRow.locator('.task-main').click()
@@ -213,7 +213,7 @@ async function main() {
         throw new Error(`Timed deadline quick add failed: ${await timedDeadlineComposer.locator('.quick-add-message').textContent()}`)
       }
       await page.reload({ waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('button', { name: /^最近 7 天/ }).click()
       await page.getByRole('searchbox', { name: '搜索任务' }).fill(timedDeadlineLookup)
       await page.locator('.task-row').filter({ hasText: timedDeadlineLookup }).locator('.task-main').click()
       const timedDeadlineDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
@@ -227,7 +227,7 @@ async function main() {
       await timedDeadlineEdit.getByRole('button', { name: '保存', exact: true }).click()
       await timedDeadlineEdit.waitFor({ state: 'hidden' })
       await page.reload({ waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('button', { name: /^最近 7 天/ }).click()
       await page.getByRole('searchbox', { name: '搜索任务' }).fill(timedDeadlineLookup)
       await page.locator('.task-row').filter({ hasText: timedDeadlineLookup }).locator('.task-main').click()
       const editedDeadlineDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
@@ -285,12 +285,12 @@ async function main() {
         { width: 810, height: 844, hasBottomNav: true, modalPicker: true },
         { width: 819, height: 844, hasBottomNav: true, modalPicker: true },
         { width: 820, height: 844, hasBottomNav: false, modalPicker: false },
+        { width: 390, height: 844, hasBottomNav: true, modalPicker: true },
         { width: 320, height: 700, hasBottomNav: true, modalPicker: true },
         { width: 359, height: 700, hasBottomNav: true, modalPicker: true },
         { width: 360, height: 700, hasBottomNav: true, modalPicker: true },
         { width: 369, height: 700, hasBottomNav: true, modalPicker: true },
         { width: 370, height: 700, hasBottomNav: true, modalPicker: true },
-        { width: 390, height: 844, hasBottomNav: true, modalPicker: true },
       ]) {
         console.log(`Responsive smoke viewport: ${viewport.width}x${viewport.height}`)
         await page.setViewportSize(viewport)
@@ -299,6 +299,23 @@ async function main() {
         await mobileNav.waitFor({ state: viewport.hasBottomNav ? 'visible' : 'hidden' })
         if (viewport.hasBottomNav) {
           await mobileNav.getByRole('button', { name: '收件箱', exact: true }).click()
+          if (viewport.width === 390) {
+            await mobileNav.getByRole('button', { name: '清单', exact: true }).click()
+            await page.getByRole('heading', { name: '全部任务', exact: true }).waitFor({ state: 'visible' })
+            const listsMoreTrigger = page.getByRole('button', { name: '更多清单', exact: true })
+            await listsMoreTrigger.click()
+            const listsMoreSheet = page.getByRole('dialog', { name: '清单更多导航', exact: true })
+            await listsMoreSheet.getByRole('menuitem', { name: '最近 7 天', exact: true }).click()
+            await page.getByRole('heading', { name: '最近 7 天', exact: true }).waitFor({ state: 'visible' })
+            await mobileNav.getByRole('button', { name: '清单', exact: true }).click()
+            await page.getByRole('button', { name: '更多清单', exact: true }).click()
+            await page.getByRole('dialog', { name: '清单更多导航', exact: true }).getByRole('menuitem', { name: '已完成', exact: true }).click()
+            await page.getByRole('heading', { name: '已完成', exact: true }).waitFor({ state: 'visible' })
+            await mobileNav.getByRole('button', { name: '学习', exact: true }).click()
+            await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '回顾', exact: true }).click()
+            await page.getByRole('heading', { name: '确认自己是否真的记住', exact: true }).waitFor({ state: 'visible' })
+            await mobileNav.getByRole('button', { name: '收件箱', exact: true }).click()
+          }
         } else {
           const sidebar = page.locator('.sidebar')
           await sidebar.getByRole('button', { name: /^收件箱/ }).click()
@@ -377,7 +394,7 @@ async function main() {
           })
         }
         if (verifiesMinimumGeometry) {
-          const sheetPanel = scheduleSheet.locator('..')
+          const sheetPanel = scheduleSheet
           const geometry = await sheetPanel.evaluate((element) => ({
             scrollWidth: element.scrollWidth,
             clientWidth: element.clientWidth,
@@ -471,7 +488,7 @@ async function main() {
       }
       await page
         .getByRole('navigation', { name: '移动端主导航' })
-        .getByRole('button', { name: '主题', exact: true })
+        .getByRole('button', { name: '学习', exact: true })
         .click()
       await page.getByRole('heading', { name: '清单与主题' }).waitFor({ state: 'visible' })
 

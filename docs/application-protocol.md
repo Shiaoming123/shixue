@@ -27,7 +27,8 @@ The protocol deliberately summarizes rather than replaces implementation facts:
 `npm run check:protocol` reads the JSON and cross-checks the product name,
 module policy, Workspace export format/version, legacy Study input format,
 capability protocol version, default local-first/sync boundary, acceptance
-commands, maturity labels, and current delivery evidence. Data-port and
+commands, maturity labels, shipped implementation evidence, and current
+delivery evidence. Data-port and
 capability facts are compared with constants exported by the implementation;
 they are not inferred by comparing duplicated JSON fields. The checker does not
 alter configuration, load modules, contact a network endpoint, or read secrets.
@@ -38,15 +39,22 @@ alter configuration, load modules, contact a network endpoint, or read secrets.
 
 - `local-smoke`: an explicit local smoke command exists; it is not signing or
   distribution proof.
-- `template-only`: code/configuration exists but an adopter must configure and
-  verify their own delivery path.
+- `local-installed-acceptance`: an exact local package hash passed automated
+  package smoke and installed-app acceptance. It is not signing, hosted
+  distribution, or public-release proof.
+- `configured-unverified`: a real endpoint, updater public key, updater artifact
+  setting, and release workflow are configured, but an installed-client update
+  has not been exercised end to end (`NOT_RUN`).
 - `local-debug`: a generated native project has completed a local debug build
   and emulator run; it is not a signed artifact, real-device result, store
   submission, or hosted delivery channel.
 - `unverified`: no platform delivery claim has been demonstrated here.
 
-The current protocol intentionally says nothing stronger about signing, hosted
-updates, deployed Web hosting, real-device execution, or store submission.
+The current protocol marks `desktopPackage` as `local-installed-acceptance`.
+The exact unsigned v0.3.0 local candidate passed package smoke and installed-app
+acceptance; its versioned acceptance ledger records the artifact hashes, checks,
+and remaining `NOT_RUN` rows. This does not raise signing, hosted updates,
+deployed Web hosting, real-device execution, or store submission status.
 Native mobile delivery remains `unverified`. Runtime maturity is a separate
 statement: desktop is the primary stable runtime path; Web and mobile are Beta
 adaptations with documented capability degradation.
@@ -76,10 +84,28 @@ application capability.
 
 The shipped foundation comprises WorkspaceStateV3 parsing, Study v1/v2
 migration and v3 export, capability protocol v1 with transactional command
-execution, routing of current live writes through that service, and the shared
-themed-control foundation. This statement does not claim that every future v3
-collection has business behaviour: recurrence, offline natural-language quick
-add, multiple reminders, calendar views, and Agent behaviour remain planned.
+execution, routing of current live writes through that service, the shared
+themed-control foundation, recurrence and occurrences, offline natural-language
+quick add, multiple reminders, and `calendar-planning-v1`.
+
+`calendar-planning-v1` is backed by machine-checkable source and test pointers:
+
+| Evidence id | Implemented boundary | Behavioural evidence |
+| --- | --- | --- |
+| `navigation` | `src/lib/workspace-view.ts` | `tests/workspace-navigation.test.ts` |
+| `today-upcoming` | `src/domain/views/today.ts`, `src/domain/views/upcoming.ts` | `tests/workspace-projections.test.ts` |
+| `review-link` | `src/domain/learning/review-task-link.ts` | `tests/review-task-link.test.ts` |
+| `responsive-shell` | `src/lib/responsive-shell.ts` | `tests/responsive-shell.test.ts`, `tests/business-sheet-mount.test.ts` |
+
+These entries claim the local application behaviour covered by those sources
+and tests. They do not claim an external calendar provider, hosted service,
+native-device validation, or any release channel.
+
+The conditional acceptance commands include `smoke:calendar` for the five fixed
+Web viewports and `benchmark:task-query` for deterministic Today, Upcoming, and
+calendar projection counts. These checks do not change native delivery status.
+
+Agent behaviour remains planned.
 The command envelope reserves `source: agent`, but there is no shipped Agent
 planner or autonomous execution policy. A future Agent must use the same
 query/preview/execute boundary and cannot bypass validation or write storage

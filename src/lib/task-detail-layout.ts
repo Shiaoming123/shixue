@@ -1,5 +1,5 @@
-const SPLIT_DETAIL_MIN_WIDTH = 1280
+import { resolveShell } from './responsive-shell.ts'
 
 export function shouldAutoSelectTask(viewportWidth: number): boolean {
-  return viewportWidth >= SPLIT_DETAIL_MIN_WIDTH
+  return resolveShell(viewportWidth).detail === 'aside'
 }
