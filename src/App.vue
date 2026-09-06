@@ -932,7 +932,10 @@ async function executeOccurrence(id: string, type: 'recurrence.complete' | 'recu
   const occurrence = workspace?.occurrences.find((item) => item.id === id)
   if (!workspace || !occurrence) return
   try {
-    await capabilityService.execute({ protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `recurrence:${crypto.randomUUID()}`, source: 'human-ui', expectedWorkspaceRevision: workspace.revision, command: { type, occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision } })
+    const command = type === 'recurrence.complete'
+      ? { type, occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, reviewedOn: today.value }
+      : { type, occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision }
+    await capabilityService.execute({ protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `recurrence:${crypto.randomUUID()}`, source: 'human-ui', expectedWorkspaceRevision: workspace.revision, command })
     await refreshState(); notify(type === 'recurrence.complete' ? '本次已完成。' : '本次已跳过。')
   } catch (error) { reportStorageError(error) }
 }

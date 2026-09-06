@@ -46,23 +46,32 @@ function completeReview(
   const record = state.completionRecords[recordIndex]!
   const reviewTask = state.tasks.find(({ id, deletedAt }) => id === link.reviewTaskId && deletedAt === null)
   if (!reviewTask) throw new DomainCommandError('TASK_NOT_FOUND', `Review task not found: ${link.reviewTaskId}.`, { taskId: link.reviewTaskId })
-  if (link.completedAt !== null) return { affected: [], changes: [], events: [], compensation: null, data: { linkId: link.id, completed: false } }
+  const occurrence = link.occurrenceId === null ? null : state.occurrences.find(({ id }) => id === link.occurrenceId)
+  if (link.occurrenceId !== null && (!occurrence || occurrence.status !== 'pending')) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Review task link requires a pending occurrence.', { linkId: link.id, occurrenceId: link.occurrenceId })
+  }
+  if (link.completedAt !== null) {
+    if (link.completion?.result !== command.result || link.completion.reviewedOn !== command.reviewedOn) {
+      throw new DomainCommandError('VALIDATION_ERROR', 'Completed review link does not match this review outcome.', { linkId: link.id })
+    }
+    return { affected: [], changes: [], events: [], compensation: null, data: { completionRecordId: record.id, linkId: link.id, result: command.result, reviewedOn: command.reviewedOn, completed: false } }
+  }
   if (link.reviewStage !== record.reviewStage || link.dueOn !== record.nextReviewOn) {
     throw new DomainCommandError('VALIDATION_ERROR', 'Review link no longer matches the active review stage.', { linkId: link.id })
   }
   if (command.expectedReviewTaskRevision !== undefined && reviewTask.revision !== command.expectedReviewTaskRevision) {
     throw new DomainCommandError('ENTITY_REVISION_CONFLICT', 'Review task revision conflict.', { taskId: reviewTask.id })
   }
-  if (link.occurrenceId !== null) {
-    const occurrence = state.occurrences.find(({ id }) => id === link.occurrenceId)
-    if (!occurrence) throw new DomainCommandError('VALIDATION_ERROR', `Review occurrence not found: ${link.occurrenceId}.`, { occurrenceId: link.occurrenceId })
+  if (occurrence) {
     if (command.expectedOccurrenceRevision !== undefined && occurrence.revision !== command.expectedOccurrenceRevision) {
       throw new DomainCommandError('ENTITY_REVISION_CONFLICT', 'Review occurrence revision conflict.', { occurrenceId: occurrence.id })
     }
     if (occurrence.status === 'pending') { occurrence.status = 'completed'; occurrence.completedAt = context.now; occurrence.revision += 1 }
   }
-  state.completionRecords[recordIndex] = applyReviewResult(record, command.result, command.reviewedOn, context.now)
+  const effectiveReviewedOn = command.result === 'fuzzy' && link.dueOn > command.reviewedOn ? link.dueOn : command.reviewedOn
+  state.completionRecords[recordIndex] = applyReviewResult(record, command.result, effectiveReviewedOn, context.now)
   link.completedAt = context.now
+  link.completion = { result: command.result, reviewedOn: command.reviewedOn }
   link.updatedAt = context.now
   const events: TaskEvent[] = []
   if (reviewTask.status !== 'completed' && reviewTask.status !== 'cancelled') {
@@ -96,6 +105,6 @@ function completeReview(
     affected,
     changes: affected.map((entity) => ({ entity, operation: 'update' as const, fields: ['review'] })),
     events, compensation: null,
-    data: structuredClone({ record: updated, link, nextLinkId: next?.link.id ?? null }) as never,
+    data: structuredClone({ completionRecordId: updated.id, linkId: link.id, result: command.result, reviewedOn: command.reviewedOn, record: updated, link, nextLinkId: next?.link.id ?? null }) as never,
   }
 }

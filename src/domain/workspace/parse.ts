@@ -376,12 +376,24 @@ function parseCompletionRecord(raw: unknown, index: number): CompletionRecord {
 
 function parseReviewTaskLink(raw: unknown, index: number): ReviewTaskLink {
   const value = requireRecord(raw, `Review task link ${index}`)
+  const completion = value.completion === undefined || value.completion === null
+    ? null
+    : parseReviewTaskCompletion(value.completion)
   return {
     id: requireText(value.id, 'Review task link id'), completionRecordId: requireText(value.completionRecordId, 'Review task link completionRecordId'),
     reviewTaskId: requireText(value.reviewTaskId, 'Review task link reviewTaskId'), occurrenceId: parseNullableText(value.occurrenceId, 'Review task link occurrenceId'),
     reviewStage: requireRangeInteger(value.reviewStage, 0, 3, 'Review task link reviewStage') as ReviewTaskLink['reviewStage'],
     dueOn: requireDateOnly(value.dueOn, 'Review task link dueOn'), completedAt: parseNullableIsoDateTime(value.completedAt, 'Review task link completedAt'),
+    completion,
     createdAt: requireIsoDateTime(value.createdAt, 'Review task link createdAt'), updatedAt: requireIsoDateTime(value.updatedAt, 'Review task link updatedAt'),
+  }
+}
+
+function parseReviewTaskCompletion(raw: unknown): NonNullable<ReviewTaskLink['completion']> {
+  const value = requireRecord(raw, 'Review task link completion')
+  return {
+    result: parseEnum(value.result, ['clear', 'fuzzy', 'relearn'], 'Review task link completion result'),
+    reviewedOn: requireDateOnly(value.reviewedOn, 'Review task link completion reviewedOn'),
   }
 }
 
@@ -499,10 +511,16 @@ function assertReferences(state: WorkspaceStateV3): void {
     if (reviewTargets.has(target)) throw new Error(`Review task target ${target} has duplicate links.`)
     reviewTargets.add(target)
     if (link.completedAt === null) {
+      if (link.completion !== null) throw new Error(`Pending review task link ${link.id} cannot have a completion outcome.`)
       if (record.deletedAt !== null || reviewTask.deletedAt !== null) throw new Error(`Pending review task link ${link.id} references deleted evidence.`)
       if (record.nextReviewOn !== link.dueOn || record.reviewStage !== link.reviewStage) throw new Error(`Pending review task link ${link.id} does not match its active review.`)
       if (pendingRecordIds.has(record.id)) throw new Error(`Completion record ${record.id} has duplicate pending review links.`)
       pendingRecordIds.add(record.id)
+    }
+  }
+  for (const record of state.completionRecords) {
+    if (record.deletedAt === null && record.nextReviewOn !== null && !pendingRecordIds.has(record.id)) {
+      throw new Error(`Completion record ${record.id} requires one matching pending review link.`)
     }
   }
 }

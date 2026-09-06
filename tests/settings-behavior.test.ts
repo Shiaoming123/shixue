@@ -324,6 +324,21 @@ test('general recurring reminder completes exactly its occurrence, and snooze ch
   assert.deepEqual(workspace, before)
 })
 
+test('occurrence completion from task surfaces passes the injected local review date', async () => {
+  const commands: any[] = []
+  const workspace = { revision: 9, occurrences: [{ id: 'occurrence', revision: 4 }] }
+  const api = handlers('App.vue', ['executeOccurrence'], {
+    recurrenceWorkspace: ref(workspace), today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' },
+    CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: { execute: async (envelope: unknown) => { commands.push(envelope) } },
+    refreshState: async () => {}, notify() {}, reportStorageError(error: unknown) { throw error },
+  })
+  await api.executeOccurrence('occurrence', 'recurrence.complete')
+  assert.deepEqual(commands[0].command, {
+    type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 4, reviewedOn: '2026-09-06',
+  })
+})
+
 test('repeated learning completion sends evidence with occurrence and task revisions, never closes the parent task', async () => {
   const commands: unknown[] = []
   let polled = 0

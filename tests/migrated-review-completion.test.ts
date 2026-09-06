@@ -35,7 +35,7 @@ test('reviewing legacy evidence retires its migrated task without creating recur
   assert.equal(next.reviewTaskLinks.length, initial.reviewTaskLinks.length + 1)
   assert.equal(result.events.some(({ taskId, type }) => taskId === link.reviewTaskId && type === 'completed'), true)
   assert.equal(next.tasks.find(({ id }) => id === initial.reviewTaskLinks[1]!.reviewTaskId)?.status, 'planned')
-  await execute({ type: 'completion.review', recordId: link.completionRecordId, result: 'clear', reviewedOn: '2026-09-08' })
+  await execute({ type: 'completion.review', recordId: link.completionRecordId, result: 'clear', reviewedOn: '2026-09-05' })
   const later = await store.load()
   assert.deepEqual(later.tasks.find(({ id }) => id === link.reviewTaskId), next.tasks.find(({ id }) => id === link.reviewTaskId))
   assert.deepEqual(later.taskEvents, next.taskEvents)

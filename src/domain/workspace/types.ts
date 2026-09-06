@@ -171,6 +171,7 @@ export interface ReviewTaskLink {
   reviewStage: 0 | 1 | 2 | 3
   dueOn: string
   completedAt: string | null
+  completion: { result: 'clear' | 'fuzzy' | 'relearn'; reviewedOn: string } | null
   createdAt: string
   updatedAt: string
 }

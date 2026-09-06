@@ -95,6 +95,7 @@ function migrateStudyV2(study: StudyState, migratedAt: string): WorkspaceStateV3
     reviewStage: record.reviewStage,
     dueOn: record.nextReviewOn as string,
     completedAt: null,
+    completion: null,
     createdAt: migratedAt,
     updatedAt: migratedAt,
   }))

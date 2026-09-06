@@ -1,4 +1,5 @@
 import type { CompletionRecord, ReviewTaskLink, Task, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { ReviewResult } from '../../storage/study/types.ts'
 import { DomainCommandError, type CapabilityCommandContext } from '../capabilities/types.ts'
 
 export interface EnsuredReviewTask {
@@ -56,6 +57,7 @@ export function ensureReviewTask(
     reviewStage: record.reviewStage,
     dueOn,
     completedAt: null,
+    completion: null,
     createdAt: context.now,
     updatedAt: context.now,
   }
@@ -84,6 +86,31 @@ export function pendingReviewLinkForRecord(state: WorkspaceStateV3, recordId: st
   return state.reviewTaskLinks.find((link) =>
     link.completionRecordId === record.id && link.completedAt === null &&
     link.reviewStage === record.reviewStage && link.dueOn === record.nextReviewOn) ?? null
+}
+
+export function resolveLegacyReviewLink(
+  state: WorkspaceStateV3,
+  recordId: string,
+  result: ReviewResult,
+  reviewedOn: string,
+): ReviewTaskLink | null {
+  const links = state.reviewTaskLinks.filter((link) => link.completionRecordId === recordId)
+  const replays = links.filter((link) => link.completion?.result === result && link.completion.reviewedOn === reviewedOn)
+  if (replays.length > 1) throw new DomainCommandError('VALIDATION_ERROR', 'Legacy review replay is ambiguous.', { recordId })
+  if (replays.length === 1) return replays[0]!
+  if (links.some((link) => link.completedAt !== null && link.completion === null)) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Legacy review history has no completion outcome; use an exact review link.', { recordId })
+  }
+  const record = state.completionRecords.find(({ id, deletedAt }) => id === recordId && deletedAt === null)
+  if (!record) return null
+  if (!record.nextReviewOn) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Completion record has no active linked review.', { recordId })
+  }
+  const current = state.reviewTaskLinks.filter((link) =>
+    link.completionRecordId === record.id && link.completedAt === null &&
+    link.reviewStage === record.reviewStage && link.dueOn === record.nextReviewOn)
+  if (current.length !== 1) throw new DomainCommandError('VALIDATION_ERROR', 'Legacy review target is ambiguous.', { recordId })
+  return current[0]!
 }
 
 export function pendingReviewLinkForTarget(

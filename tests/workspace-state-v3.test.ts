@@ -311,7 +311,14 @@ test('accepts a link from a source completion task to a distinct visible review 
     updatedAt: '2026-09-04T09:00:00+08:00',
   })
 
-  assert.deepEqual(parseWorkspaceState(state), state)
+  const parsed = parseWorkspaceState(state)
+  assert.deepEqual(parsed, {
+    ...state,
+    reviewTaskLinks: [{ ...state.reviewTaskLinks[0], completion: null }],
+  })
+  const inconsistent = structuredClone(state)
+  inconsistent.reviewTaskLinks[0]!.completion = { result: 'clear', reviewedOn: '2026-09-05' }
+  assert.throws(() => parseWorkspaceState(inconsistent), /cannot have a completion outcome/)
 })
 
 test('rejects a review link with an unknown visible review task', () => {

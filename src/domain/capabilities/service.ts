@@ -10,7 +10,7 @@ import { applyLiveCompatibilityCommand } from './live-commands.ts'
 import { applyRecurrenceCommand } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
 import { applyReviewCommand } from './review-commands.ts'
-import { ensureReviewTask, pendingReviewLinkForTarget } from '../learning/review-task-link.ts'
+import { ensureReviewTask, pendingReviewLinkForTarget, resolveLegacyReviewLink } from '../learning/review-task-link.ts'
 import {
   CAPABILITY_PROTOCOL_VERSION,
   COMMAND_RECEIPT_LIMIT,
@@ -253,7 +253,7 @@ function reviewCommandForGenericTarget(
   command: CapabilityCommand,
 ): ReviewCapabilityCommand | null {
   if (command.type === 'completion.review') {
-    const link = state.reviewTaskLinks.find(({ completionRecordId }) => completionRecordId === command.recordId)
+    const link = resolveLegacyReviewLink(state, command.recordId, command.result, command.reviewedOn)
     return link ? { type: 'review.complete', linkId: link.id, result: command.result, reviewedOn: command.reviewedOn } : null
   }
   if (command.type === 'task.complete' || command.type === 'task.toggle_completion') {

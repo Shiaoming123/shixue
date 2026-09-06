@@ -3,6 +3,7 @@ import test from 'node:test'
 import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
 import type { CapabilityCommand } from '../src/domain/capabilities/types.ts'
 import { parseWorkspaceState } from '../src/domain/workspace/parse.ts'
+import { resolveLegacyReviewLink } from '../src/domain/learning/review-task-link.ts'
 import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { createSeedStudyState } from '../src/storage/study/types.ts'
 
@@ -53,7 +54,9 @@ test('review.complete consumes one exact link once and creates the next review w
   const second = await store.load()
   assert.equal(second.completionRecords.length, recordCount)
   assert.equal(second.completionRecords.find(({ id }) => id === link.completionRecordId)?.reviewStage, 1)
-  assert.equal(second.reviewTaskLinks.find(({ id }) => id === link.id)?.completedAt, NOW)
+  assert.deepEqual(second.reviewTaskLinks.find(({ id }) => id === link.id)?.completion, {
+    result: 'clear', reviewedOn: '2026-09-06',
+  })
   assert.equal(second.reviewTaskLinks.filter(({ completionRecordId, completedAt }) =>
     completionRecordId === link.completionRecordId && completedAt === null).length, 1)
   assert.deepEqual(second.reviewTaskLinks, first.reviewTaskLinks)
@@ -177,4 +180,117 @@ test('recurrence completion resolves the exact linked occurrence without creatin
   assert.equal(next.occurrences.find(({ id }) => id === 'occurrence:review-exact')?.status, 'completed')
   assert.equal(next.reviewTaskLinks.find(({ id }) => id === link.id)?.completedAt, NOW)
   assert.equal(next.completionRecords.length, seed.completionRecords.length)
+})
+
+test('legacy review replay is independent of link order and does not advance the next stage', async () => {
+  const { store, execute } = await setup()
+  const link = (await store.load()).reviewTaskLinks[0]!
+  const command = { type: 'completion.review', recordId: link.completionRecordId, result: 'clear', reviewedOn: '2026-09-06' } as const
+  await execute(command, 'legacy-order:first')
+  const first = await store.load()
+  const reordered = { ...structuredClone(first), reviewTaskLinks: [...first.reviewTaskLinks].reverse(), commandReceipts: [] }
+  await store.save(reordered, first.updatedAt)
+  await execute(command, 'legacy-order:second')
+  const second = await store.load()
+  assert.equal(second.completionRecords.find(({ id }) => id === link.completionRecordId)?.reviewStage, 1)
+  assert.equal(second.reviewTaskLinks.filter(({ completionRecordId, completedAt }) => completionRecordId === link.completionRecordId && completedAt === null).length, 1)
+  assert.deepEqual(second.taskEvents, first.taskEvents)
+})
+
+test('exact completed review accepts only the persisted semantic outcome', async () => {
+  const { store, execute } = await setup()
+  const link = (await store.load()).reviewTaskLinks[0]!
+  await execute({ type: 'review.complete', linkId: link.id, result: 'clear', reviewedOn: '2026-09-06' })
+  const before = await store.load()
+  await assert.rejects(
+    execute({ type: 'review.complete', linkId: link.id, result: 'fuzzy', reviewedOn: '2026-09-06' }),
+    /does not match this review outcome/,
+  )
+  assert.deepEqual(await store.load(), before)
+})
+
+test('legacy review refuses completed history that predates persisted outcomes', async () => {
+  const { store, execute } = await setup()
+  const link = (await store.load()).reviewTaskLinks[0]!
+  await execute({ type: 'review.complete', linkId: link.id, result: 'clear', reviewedOn: '2026-09-06' })
+  const state = await store.load()
+  delete (state.reviewTaskLinks.find(({ id }) => id === link.id)! as Partial<typeof link>).completion
+  const parsed = parseWorkspaceState(state)
+  assert.equal(parsed.reviewTaskLinks.find(({ id }) => id === link.id)?.completion, null)
+  assert.throws(
+    () => resolveLegacyReviewLink(parsed, link.completionRecordId, 'clear', '2026-09-06'),
+    /has no completion outcome/,
+  )
+})
+
+test('legacy review cannot restart a relearn record with no active link', async () => {
+  const { store, execute } = await setup()
+  const link = (await store.load()).reviewTaskLinks[0]!
+  await execute({ type: 'review.complete', linkId: link.id, result: 'relearn', reviewedOn: '2026-09-06' })
+  const before = await store.load()
+  await assert.rejects(
+    execute({ type: 'completion.review', recordId: link.completionRecordId, result: 'clear', reviewedOn: '2026-09-07' }),
+    /no active linked review/,
+  )
+  assert.deepEqual(await store.load(), before)
+})
+
+test('legacy review resolution fails loud when the current semantic target is ambiguous', async () => {
+  const { store } = await setup()
+  const state = await store.load()
+  const link = state.reviewTaskLinks[0]!
+  state.reviewTaskLinks.push({ ...structuredClone(link), id: 'review-link:ambiguous' })
+  assert.throws(
+    () => resolveLegacyReviewLink(state, link.completionRecordId, 'clear', '2026-09-06'),
+    /ambiguous/,
+  )
+})
+
+for (const status of ['skipped', 'completed'] as const) {
+  test(`exact occurrence review rejects a ${status} occurrence before any review write`, async () => {
+    const base = createInMemoryWorkspaceStore(createSeedStudyState(NOW))
+    const seed = await base.load()
+    const link = seed.reviewTaskLinks[0]!
+    const reviewTask = seed.tasks.find(({ id }) => id === link.reviewTaskId)!
+    reviewTask.recurrenceSeriesId = `series:review-${status}`
+    seed.recurrenceSeries.push({
+      id: `series:review-${status}`, taskId: reviewTask.id, revision: 1,
+      cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule',
+      anchorAt: null, anchorOn: link.dueOn, end: { kind: 'never' }, timezone: 'Asia/Shanghai',
+      createdThrough: link.dueOn, createdCount: 1,
+    })
+    seed.occurrences.push({
+      id: `occurrence:review-${status}`, seriesId: `series:review-${status}`, ordinal: 1,
+      scheduledAt: null, scheduledOn: link.dueOn, status, override: null,
+      completedAt: status === 'completed' ? NOW : null, revision: 1,
+    })
+    link.occurrenceId = `occurrence:review-${status}`
+    const store = createInMemoryWorkspaceStore(seed)
+    let sequence = 0
+    const service = createTaskCapabilityService(store, () => NOW, (kind) => `${kind}:review-${status}:${++sequence}`)
+    await assert.rejects(service.execute({
+      protocolVersion: 1, idempotencyKey: `review-${status}`, source: 'human-ui', expectedWorkspaceRevision: seed.revision,
+      command: { type: 'review.complete', linkId: link.id, result: 'clear', reviewedOn: '2026-09-06' },
+    }), /pending occurrence/)
+    assert.deepEqual(await store.load(), seed)
+  })
+}
+
+test('an early fuzzy review schedules strictly after both the old due date and review date', async () => {
+  const { store, execute } = await setup()
+  const link = (await store.load()).reviewTaskLinks[0]!
+  await execute({ type: 'review.complete', linkId: link.id, result: 'fuzzy', reviewedOn: '2026-09-05' })
+  const next = await store.load()
+  const record = next.completionRecords.find(({ id }) => id === link.completionRecordId)!
+  assert.equal(record.nextReviewOn, '2026-09-07')
+  assert.equal(next.reviewTaskLinks.some(({ completionRecordId, reviewStage, dueOn, completedAt }) =>
+    completionRecordId === record.id && reviewStage === record.reviewStage && dueOn === '2026-09-07' && completedAt === null), true)
+})
+
+test('workspace validation requires exactly one current pending link when a review date exists', async () => {
+  const { store } = await setup()
+  const state = await store.load()
+  const recordId = state.reviewTaskLinks[0]!.completionRecordId
+  for (const link of state.reviewTaskLinks) if (link.completionRecordId === recordId) link.completedAt = NOW
+  assert.throws(() => parseWorkspaceState(state), /requires one matching pending review link/)
 })
