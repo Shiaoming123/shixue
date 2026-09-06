@@ -20,6 +20,7 @@ import { type RecurrenceRule } from './components/study/RecurrenceEditor.vue'
 import TasksView, { type OccurrenceViewItem, type TaskViewItem, type TaskViewStatus } from './components/study/TasksView.vue'
 import TopicsView, { type TopicViewItem } from './components/study/TopicsView.vue'
 import Listbox from './components/ui/Listbox.vue'
+import Popover from './components/ui/Popover.vue'
 import OverlayHost from './components/ui/OverlayHost.vue'
 import ToastRegion from './components/ui/ToastRegion.vue'
 import Button from './components/ui/Button.vue'
@@ -34,7 +35,16 @@ import type { CalendarView } from './domain/calendar/range'
 import { offsetForInstant } from './domain/calendar/target'
 import { loadSidebarPreferences, saveSidebarPreferences, type SidebarPreferences } from './lib/sidebar-preferences'
 import { shouldAutoSelectTask } from './lib/task-detail-layout'
-import { desktopWorkspaceNavigation, type ShellDestination } from './lib/workspace-view'
+import {
+  desktopWorkspaceNavigation,
+  learningWorkspaceNavigation,
+  mobileMoreWorkspaceNavigation,
+  renderPageForDestination,
+  resolveTaskTopicFilterTransition,
+  shouldResetTaskPriority,
+  type ShellDestination,
+  type WorkspaceView,
+} from './lib/workspace-view'
 import { workspaceDestinationFromSmartView } from './lib/sidebar-navigation'
 import { detectRuntimeInfo, hasRuntimeCapability } from './lib/platform'
 import {
@@ -83,15 +93,7 @@ import type { WorkspaceStateV3, ReminderRule } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
 const destination = ref<ShellDestination>({ kind: 'today' })
-type RenderPage = 'today' | 'tasks' | 'calendar' | 'topics' | 'review' | 'settings'
-const page = computed<RenderPage>(() => {
-  if (destination.value.kind === 'settings') return 'settings'
-  if (destination.value.kind === 'today') return 'today'
-  if (destination.value.kind === 'calendar') return 'calendar'
-  if (destination.value.kind === 'lists') return 'topics'
-  if (destination.value.kind === 'learning') return destination.value.section
-  return 'tasks'
-})
+const page = computed(() => renderPageForDestination(destination.value))
 const state = ref<StudyState>(createSeedStudyState())
 const loading = ref(true)
 const showFocus = ref(false)
@@ -119,6 +121,7 @@ const taskTopicFilter = ref('all')
 const taskPriorityFilter = ref<StudyTaskPriority | 'all'>('all')
 const taskSort = ref<StudyTaskQuerySort>('manual')
 const taskActionOpen = ref(false)
+const listsMoreOpen = ref(false)
 const taskActionMode = ref<TaskActionMode>('plan')
 const taskActionTaskId = ref('')
 const taskEditorOpen = ref(false)
@@ -691,23 +694,22 @@ function localDeviceId() {
   const id = crypto.randomUUID(); localStorage.setItem(key, id); return id
 }
 
-function setDestination(next: ShellDestination) {
+function setDestination(next: ShellDestination, options: { topicFilter?: string; preservePriority?: boolean } = {}) {
   destination.value = next
+  listsMoreOpen.value = false
   showFocus.value = false
   reviewRevealed.value = false
   selectedOccurrenceId.value = ''
-  if (next.kind === 'inbox' || next.kind === 'today' || next.kind === 'upcoming' || next.kind === 'completed') {
-    taskTopicFilter.value = 'all'
-    taskPriorityFilter.value = 'all'
-  } else if (next.kind === 'list') {
-    taskTopicFilter.value = next.listId
-    taskPriorityFilter.value = 'all'
-  }
-  if (next.kind === 'inbox' || next.kind === 'today' || next.kind === 'upcoming' || next.kind === 'list' || next.kind === 'completed') {
-    selectedTaskId.value = automaticTaskSelection()
-  }
+  const taskDestination = next.kind === 'inbox' || next.kind === 'today' || next.kind === 'upcoming' || next.kind === 'lists' || next.kind === 'list' || next.kind === 'completed'
+  if (options.topicFilter !== undefined) taskTopicFilter.value = options.topicFilter
+  else if (taskDestination) taskTopicFilter.value = next.kind === 'list' ? next.listId : 'all'
+  if (shouldResetTaskPriority(next, options.preservePriority)) taskPriorityFilter.value = 'all'
+  if (taskDestination) selectedTaskId.value = automaticTaskSelection()
 }
 function selectSmartView(view: StudyTaskSmartView) { setDestination(workspaceDestinationFromSmartView(view)) }
+function isLearningDestinationActive(view: WorkspaceView) {
+  return view.kind === 'learning' && destination.value.kind === 'learning' && view.section === destination.value.section
+}
 function openTopicEditor(topic?: StudyTopic) { topicEditorOpen.value = true; selectedTopicId.value = topic?.id ?? ''; topicTitle.value = topic?.title ?? ''; topicGoal.value = topic?.goal ?? ''; topicMinutes.value = topic?.weeklyTargetMinutes ?? 120; topicGroupId.value = topic?.groupId ?? '' }
 function openGroupEditor(group?: StudyListGroup) { groupEditorOpen.value = true; selectedGroupId.value = group?.id ?? ''; groupTitle.value = group?.title ?? '' }
 function openTask(taskId: string) { if (page.value !== 'tasks' && page.value !== 'today') setDestination({ kind: 'inbox' }); selectedOccurrenceId.value = ''; selectedTaskId.value = taskId; showFocus.value = false }
@@ -725,7 +727,10 @@ function alignTaskSelection() {
 }
 function automaticTaskSelection() { return shouldAutoSelectTask(window.innerWidth) ? taskViews.value[0]?.id ?? '' : '' }
 function setTaskSearch(value: string) { taskSearch.value = value; alignTaskSelection() }
-function setTaskTopicFilter(value: string) { taskTopicFilter.value = value; alignTaskSelection() }
+function setTaskTopicFilter(value: string) {
+  const transition = resolveTaskTopicFilterTransition(value)
+  setDestination(transition.destination, { topicFilter: transition.topicFilter, preservePriority: transition.preservePriority })
+}
 function setTaskPriorityFilter(value: StudyTaskPriority | 'all') { taskPriorityFilter.value = value; alignTaskSelection() }
 function setTaskSort(value: StudyTaskQuerySort) { taskSort.value = value; alignTaskSelection() }
 
@@ -1099,7 +1104,7 @@ async function archiveGroup() {
 async function archiveTopic(id: string) {
   const topic = state.value.topics.find((item) => item.id === id)
   if (!topic) return
-  try { await saveStudyTopic({ ...topic, archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); await refreshState(); selectedTopicId.value = state.value.topics.find((item) => !item.archivedAt)?.id ?? ''; if (taskTopicFilter.value === id) taskTopicFilter.value = 'all'; notify('清单已归档。') } catch (error) { reportStorageError(error) }
+  try { await saveStudyTopic({ ...topic, archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); await refreshState(); selectedTopicId.value = state.value.topics.find((item) => !item.archivedAt)?.id ?? ''; if (taskTopicFilter.value === id) setDestination({ kind: 'lists' }, { topicFilter: 'all', preservePriority: true }); notify('清单已归档。') } catch (error) { reportStorageError(error) }
 }
 
 async function exportData() {
@@ -1146,7 +1151,6 @@ async function resetDemo(complete: (success: boolean) => void) {
     await refreshState()
     selectedTaskId.value = ''
     taskSearch.value = ''
-    taskTopicFilter.value = 'all'
     taskSort.value = 'manual'
     setDestination({ kind: 'inbox' })
     taskPriorityFilter.value = 'all'
@@ -1247,17 +1251,23 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
       <main :class="{ 'focus-main': showFocus, 'tasks-main': (page === 'tasks' || page === 'today') && !showFocus, 'calendar-main': page === 'calendar' && !showFocus }">
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
         <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" @back="showFocus = false" @toggle="toggleFocus" @finish="completionOpen = true" @update:scratchpad="updateScratchpad" />
-        <div v-else-if="page === 'tasks' || page === 'today'" class="tasks-layout">
+        <template v-else-if="page === 'tasks' || page === 'today'">
+          <div v-if="destination.kind === 'lists'" class="lists-more">
+            <Popover v-model:open="listsMoreOpen" kind="menu" align="end" mobile-sheet mobile-sheet-label="清单更多导航">
+              <template #trigger="{ triggerProps }"><Button v-bind="triggerProps">更多清单</Button></template>
+              <nav class="lists-more-menu" aria-label="清单更多导航" role="menu">
+                <Button v-for="item in mobileMoreWorkspaceNavigation" :key="item.preferenceKey" role="menuitem" @click="setDestination(item.view)">{{ item.label }}</Button>
+              </nav>
+            </Popover>
+          </div>
+          <div class="tasks-layout">
           <div class="tasks-scroll"><TasksView ref="tasksView" :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :quick-add-catalog-revision="recurrenceWorkspace?.revision" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
           <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
-        </div>
+          </div>
+        </template>
         <SettingsView v-else-if="page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export="exportData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-appearance="setAppearance" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
-        <div v-else-if="destination.kind === 'lists'" class="route-workspace">
-          <nav class="route-shortcuts" aria-label="清单更多导航"><Button @click="setDestination({ kind: 'upcoming' })">最近 7 天</Button><Button @click="setDestination({ kind: 'completed' })">已完成</Button></nav>
-          <TopicsView :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
-        </div>
         <div v-else-if="destination.kind === 'learning'" class="route-workspace">
-          <nav class="route-shortcuts" aria-label="学习导航"><Button :aria-pressed="destination.section === 'topics'" @click="setDestination({ kind: 'learning', section: 'topics' })">主题</Button><Button :aria-pressed="destination.section === 'review'" @click="setDestination({ kind: 'learning', section: 'review' })">回顾</Button></nav>
+          <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
           <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
           <ReviewView v-else :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
         </div>
@@ -1294,14 +1304,17 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 .calendar-main { overflow: hidden; }
 .route-workspace { min-height: 100%; display: flex; flex-direction: column; }
 .route-workspace > :last-child { min-height: 0; flex: 1; }
-.route-shortcuts { display: none; }
+.learning-navigation { display: flex; gap: 8px; padding: 16px 24px 0; }
+.learning-navigation > * { min-height: 44px; }
+.lists-more { display: none; }
+.lists-more-menu { min-width: 180px; display: grid; gap: 6px; padding: 8px; }
 .shell { width: 100%; height: 100vh; height: 100dvh; display: flex; overflow: hidden; background: var(--bg); }.workspace { min-width: 0; flex: 1; height: 100%; overflow: hidden; } main { width: 100%; height: 100%; overflow-y: auto; overscroll-behavior-y: contain; scroll-behavior: smooth; scrollbar-gutter: stable; }.tasks-main { overflow: hidden; }.today-layout { min-height: 100%; display: flex; justify-content: center; }.today-layout > :first-child { flex: 1 1 auto; }.tasks-layout { height: 100%; display: flex; }.tasks-scroll { min-width: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }.focus-main { background: radial-gradient(circle at 50% -25%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 42%), var(--bg); }.mobile-header { display: none; }.loading { min-height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
 .editor-backdrop { position: fixed; z-index: var(--z-modal); inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--text) 22%, transparent); backdrop-filter: saturate(120%) blur(12px); }.editor-sheet { width: min(100%, 470px); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 28px; border: 1px solid var(--hairline); border-radius: var(--radius-2xl); background: var(--material-regular); box-shadow: var(--shadow-lg); animation: editor-in var(--motion-slow) var(--ease-spring); }.editor-sheet.compact-editor { width: min(100%, 420px); }.editor-sheet > p { margin: 0 0 5px; color: var(--accent); font-size: 11px; font-weight: 600; }.editor-sheet h2 { margin: 0 0 22px; font-size: 23px; font-weight: 650; letter-spacing: -.025em; }.editor-sheet label { display: block; margin-top: 16px; }.editor-sheet label > span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }.editor-sheet input, .editor-sheet textarea { width: 100%; min-height: 46px; padding: 11px 13px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font-size: 13px; transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); }.editor-sheet input:focus, .editor-sheet textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }.editor-sheet textarea { min-height: 88px; resize: vertical; }.duration-input { display: flex; align-items: center; gap: 9px; }.duration-input input { width: 110px; }.duration-input span { color: var(--muted); font-size: 12px; }.editor-sheet footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); }.editor-sheet footer button { min-height: 46px; padding: 0 18px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 600; }.footer-spacer { flex: 1; }.cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); }.save { border: 0; background: var(--accent); color: var(--accent-text); box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent); }
 .error-banner { position: fixed; z-index: var(--z-toast); left: 232px; right: 16px; top: 14px; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 10px 8px 14px; border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border)); border-radius: var(--radius-lg); background: var(--material-regular); color: var(--danger); font-size: 11px; box-shadow: var(--shadow-md); backdrop-filter: saturate(130%) blur(18px); }.error-banner button { min-height: 30px; border: 0; background: transparent; color: var(--danger); font-weight: 600; }
 @keyframes editor-in { from { transform: translateY(18px) scale(.985); opacity: 0; } }
 @media (max-width: 819px) {
-  .route-shortcuts { display: flex; gap: 8px; padding: 10px 16px 0; }
-  .route-shortcuts > * { min-height: 44px; }
+  .learning-navigation { padding: 10px 16px 0; }
+  .lists-more { position: fixed; z-index: var(--z-sticky); top: calc(72px + env(safe-area-inset-top, 0px)); right: 16px; display: block; }
   .shell { flex-direction: column; }.workspace { width: 100%; }.mobile-header { height: calc(64px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px; border-bottom: 1px solid var(--hairline); background: var(--material-thin); backdrop-filter: saturate(170%) blur(24px); -webkit-backdrop-filter: saturate(170%) blur(24px); }.mobile-header > div { display: flex; align-items: center; gap: 8px; }.mobile-header img { width: 34px; height: 34px; }.mobile-header strong { font-size: 18px; font-weight: 650; letter-spacing: .04em; }.mobile-header button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.mobile-header button:active { background: var(--control-fill); } main { height: calc(100% - 64px - env(safe-area-inset-top, 0px)); scrollbar-gutter: auto; } main.focus-main { height: 100%; }.tasks-layout { display: block; }.editor-backdrop { align-items: flex-end; padding: 0; }.editor-sheet { position: relative; max-height: 94dvh; border-width: 1px 0 0; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; padding: 32px 20px calc(22px + env(safe-area-inset-bottom, 0px)); animation-name: sheet-up; }.editor-sheet::before { content: ''; position: absolute; top: 9px; left: 50%; width: 36px; height: 5px; transform: translateX(-50%); border-radius: 999px; background: color-mix(in srgb, var(--muted) 32%, transparent); }.error-banner { left: 12px; right: 12px; top: calc(70px + env(safe-area-inset-top, 0px)); }
 }
 @keyframes sheet-up { from { transform: translateY(36px); opacity: .75; } }

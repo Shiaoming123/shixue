@@ -285,12 +285,12 @@ async function main() {
         { width: 810, height: 844, hasBottomNav: true, modalPicker: true },
         { width: 819, height: 844, hasBottomNav: true, modalPicker: true },
         { width: 820, height: 844, hasBottomNav: false, modalPicker: false },
+        { width: 390, height: 844, hasBottomNav: true, modalPicker: true },
         { width: 320, height: 700, hasBottomNav: true, modalPicker: true },
         { width: 359, height: 700, hasBottomNav: true, modalPicker: true },
         { width: 360, height: 700, hasBottomNav: true, modalPicker: true },
         { width: 369, height: 700, hasBottomNav: true, modalPicker: true },
         { width: 370, height: 700, hasBottomNav: true, modalPicker: true },
-        { width: 390, height: 844, hasBottomNav: true, modalPicker: true },
       ]) {
         console.log(`Responsive smoke viewport: ${viewport.width}x${viewport.height}`)
         await page.setViewportSize(viewport)
@@ -299,6 +299,23 @@ async function main() {
         await mobileNav.waitFor({ state: viewport.hasBottomNav ? 'visible' : 'hidden' })
         if (viewport.hasBottomNav) {
           await mobileNav.getByRole('button', { name: '收件箱', exact: true }).click()
+          if (viewport.width === 390) {
+            await mobileNav.getByRole('button', { name: '清单', exact: true }).click()
+            await page.getByRole('heading', { name: '全部任务', exact: true }).waitFor({ state: 'visible' })
+            const listsMoreTrigger = page.getByRole('button', { name: '更多清单', exact: true })
+            await listsMoreTrigger.click()
+            const listsMoreSheet = page.getByRole('dialog', { name: '清单更多导航', exact: true })
+            await listsMoreSheet.getByRole('menuitem', { name: '最近 7 天', exact: true }).click()
+            await page.getByRole('heading', { name: '最近 7 天', exact: true }).waitFor({ state: 'visible' })
+            await mobileNav.getByRole('button', { name: '清单', exact: true }).click()
+            await page.getByRole('button', { name: '更多清单', exact: true }).click()
+            await page.getByRole('dialog', { name: '清单更多导航', exact: true }).getByRole('menuitem', { name: '已完成', exact: true }).click()
+            await page.getByRole('heading', { name: '已完成', exact: true }).waitFor({ state: 'visible' })
+            await mobileNav.getByRole('button', { name: '学习', exact: true }).click()
+            await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '回顾', exact: true }).click()
+            await page.getByRole('heading', { name: '确认自己是否真的记住', exact: true }).waitFor({ state: 'visible' })
+            await mobileNav.getByRole('button', { name: '收件箱', exact: true }).click()
+          }
         } else {
           const sidebar = page.locator('.sidebar')
           await sidebar.getByRole('button', { name: /^收件箱/ }).click()

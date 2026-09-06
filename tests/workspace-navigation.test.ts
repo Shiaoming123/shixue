@@ -6,10 +6,13 @@ import {
   learningWorkspaceNavigation,
   mobileMoreWorkspaceNavigation,
   mobileWorkspaceNavigation,
+  renderPageForDestination,
   resolveShellDestination,
+  resolveTaskTopicFilterTransition,
   resolveWorkspaceView,
   serializeShellDestination,
   serializeWorkspaceView,
+  shouldResetTaskPriority,
   type WorkspaceView,
 } from '../src/lib/workspace-view.ts'
 
@@ -34,6 +37,30 @@ test('workspace routes safely round-trip every canonical view', () => {
   assert.deepEqual(resolveShellDestination(serializeShellDestination({ kind: 'settings' })), { kind: 'settings' })
 })
 
+test('task topic filters become explicit typed navigation transitions', () => {
+  assert.deepEqual(resolveTaskTopicFilterTransition('all'), {
+    destination: { kind: 'lists' },
+    preservePriority: true,
+    topicFilter: 'all',
+  })
+  assert.deepEqual(resolveTaskTopicFilterTransition('unassigned'), {
+    destination: { kind: 'lists' },
+    preservePriority: true,
+    topicFilter: 'unassigned',
+  })
+  assert.deepEqual(resolveTaskTopicFilterTransition('list:course / review'), {
+    destination: { kind: 'list', listId: 'list:course / review' },
+    preservePriority: true,
+    topicFilter: 'list:course / review',
+  })
+  assert.equal(shouldResetTaskPriority({ kind: 'lists' }), true)
+  assert.equal(shouldResetTaskPriority({ kind: 'list', listId: 'list:a' }), false)
+  assert.equal(shouldResetTaskPriority({ kind: 'upcoming' }, true), false)
+  assert.equal(renderPageForDestination({ kind: 'lists' }), 'tasks')
+  assert.equal(renderPageForDestination({ kind: 'list', listId: 'list:a' }), 'tasks')
+  assert.equal(renderPageForDestination({ kind: 'learning', section: 'topics' }), 'topics')
+})
+
 test('shell controls emit one typed destination and App owns the canonical setter', () => {
   const sidebar = readFileSync(new URL('../src/components/study/AppSidebar.vue', import.meta.url), 'utf8')
   const bottomTabs = readFileSync(new URL('../src/components/study/BottomTabs.vue', import.meta.url), 'utf8')
@@ -44,7 +71,10 @@ test('shell controls emit one typed destination and App owns the canonical sette
   assert.match(bottomTabs, /navigate: \[destination: WorkspaceView\]/)
   assert.doesNotMatch(bottomTabs, /'smart-view'/)
   assert.match(app, /const destination = ref<ShellDestination>\(\{ kind: 'today' \}\)/)
-  assert.match(app, /function setDestination\(next: ShellDestination\)/)
+  assert.match(app, /function setDestination\(next: ShellDestination,/)
+  assert.match(app, /v-for="item in mobileMoreWorkspaceNavigation"/)
+  assert.match(app, /v-for="item in learningWorkspaceNavigation"/)
+  assert.match(app, /resolveTaskTopicFilterTransition\(value\)/)
   assert.doesNotMatch(app, /const page = ref|const activeSmartView = ref/)
 })
 

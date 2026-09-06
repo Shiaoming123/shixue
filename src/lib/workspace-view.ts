@@ -11,11 +11,40 @@ export type WorkspaceView =
   | { kind: 'learning'; section: LearningSection }
 
 export type ShellDestination = WorkspaceView | { kind: 'settings' }
+export type WorkspaceRenderPage = 'today' | 'tasks' | 'calendar' | 'topics' | 'review' | 'settings'
+
+export function renderPageForDestination(destination: ShellDestination): WorkspaceRenderPage {
+  if (destination.kind === 'settings') return 'settings'
+  if (destination.kind === 'today') return 'today'
+  if (destination.kind === 'calendar') return 'calendar'
+  if (destination.kind === 'learning') return destination.section
+  return 'tasks'
+}
 
 export interface WorkspaceNavigationDescriptor {
   label: string
   preferenceKey: string
   view: WorkspaceView
+}
+
+export interface TaskTopicFilterTransition {
+  destination: Extract<WorkspaceView, { kind: 'lists' | 'list' }>
+  preservePriority: true
+  topicFilter: string
+}
+
+export function resolveTaskTopicFilterTransition(topicFilter: string): TaskTopicFilterTransition {
+  return topicFilter === 'all' || topicFilter === 'unassigned'
+    ? { destination: { kind: 'lists' }, preservePriority: true, topicFilter }
+    : { destination: { kind: 'list', listId: topicFilter }, preservePriority: true, topicFilter }
+}
+
+export function shouldResetTaskPriority(destination: ShellDestination, preservePriority = false): boolean {
+  return !preservePriority
+    && destination.kind !== 'settings'
+    && destination.kind !== 'calendar'
+    && destination.kind !== 'learning'
+    && destination.kind !== 'list'
 }
 
 export const desktopWorkspaceNavigation: readonly WorkspaceNavigationDescriptor[] = [
