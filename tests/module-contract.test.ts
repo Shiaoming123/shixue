@@ -9,6 +9,7 @@ import { moduleContracts, moduleIds } from '../src/modules/contract.ts'
 import { selectCompatibleModules } from '../src/modules/compatibility.ts'
 import { defaultModuleConfig, moduleRegistry } from '../src/modules/config.ts'
 import type { RuntimeInfo } from '../src/lib/platform.ts'
+import { runtimeInfoForNativePlatform } from '../src/lib/platform.ts'
 
 const runtimeProfiles: RuntimeInfo[] = [
   { platform: 'web', capabilities: ['web-storage'] },
@@ -27,7 +28,7 @@ const runtimeProfiles: RuntimeInfo[] = [
   },
   {
     platform: 'mobile',
-    capabilities: ['native-sql', 'native-clipboard', 'native-notification'],
+    capabilities: ['native-sql', 'native-notification'],
   },
 ]
 
@@ -124,4 +125,18 @@ test('autostart remains unavailable outside desktop even when the standard deskt
     desktop: ['autostart'],
     mobile: [],
   })
+})
+
+test('desktop runtime exposes autostart when desktop defaults and permissions enable it', () => {
+  assert.equal(runtimeInfoForNativePlatform('macos').capabilities.includes('autostart'), true)
+})
+
+test('application shell consumes the host-selected runtime provided before module routing', () => {
+  const root = new URL('../', import.meta.url)
+  const mainSource = readFileSync(new URL('src/main.ts', root), 'utf8')
+  const appSource = readFileSync(new URL('src/App.vue', root), 'utf8')
+
+  assert.match(mainSource, /app\.provide\(RUNTIME_INFO_KEY, runtime\)/)
+  assert.match(appSource, /inject\(RUNTIME_INFO_KEY/)
+  assert.doesNotMatch(appSource, /detectRuntimeInfo/)
 })

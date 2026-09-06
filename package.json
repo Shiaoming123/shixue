@@ -33,6 +33,7 @@
     "mobile:ios:prepare": "node scripts/prepare-ios-build.mjs",
     "rust:verify": "node scripts/rust-verify.mjs",
     "smoke:web-persistence": "node scripts/smoke-web-persistence.mjs",
+    "smoke:ios-launch": "node scripts/smoke-ios-launch.mjs",
     "smoke:calendar": "node scripts/smoke-calendar.mjs",
     "benchmark:task-query": "node --experimental-strip-types scripts/benchmark-study-task-query.mjs",
     "smoke:windows-package": "node scripts/smoke-windows-package.mjs",

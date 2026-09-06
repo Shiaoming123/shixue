@@ -19,6 +19,7 @@ const packageJson = {
     'check:protocol': 'node scripts/check-app-protocol.mjs',
     'rust:verify': 'node scripts/rust-verify.mjs',
     'smoke:web-persistence': 'node scripts/smoke-web-persistence.mjs',
+    'smoke:ios-launch': 'node scripts/smoke-ios-launch.mjs',
     'smoke:windows-package': 'node scripts/smoke-windows-package.mjs',
     'check:android-artifact': 'node scripts/check-android-artifact.mjs',
   },
@@ -81,19 +82,19 @@ function validProtocol() {
       signing: 'unverified',
       updater: 'template-only',
       webDeployment: 'unverified',
-      mobileNative: 'unverified',
+      mobileNative: 'local-debug',
     },
     nativeEvidence: {
       ios: {
-        maturity: 'compile-ready',
+        maturity: 'simulator-verified',
         nativeBuild: 'pass',
-        simulatorRun: 'fail',
+        simulatorRun: 'pass',
         deviceRun: 'not-run',
       },
     },
     acceptance: {
       required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
-      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:windows-package', 'check:android-artifact'],
+      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:ios-launch', 'smoke:windows-package', 'check:android-artifact'],
     },
     evolution: {
       additive: 'Add fields in a new schema version.',
@@ -138,16 +139,16 @@ test('rejects a declared acceptance command that is not executable', () => {
   assert.match(validate(protocol).errors.join('\n'), /acceptance\.required references missing package script "missing:command"/)
 })
 
-test('rejects a mobile delivery claim that does not match recorded local evidence', () => {
+test('rejects a mobile delivery claim stronger than the recorded local debug evidence', () => {
   const protocol = validProtocol()
-  protocol.delivery.mobileNative = 'local-debug'
+  protocol.delivery.mobileNative = 'signed'
 
   assert.match(validate(protocol).errors.join('\n'), /delivery must retain the currently evidenced release boundary/)
 })
 
-test('rejects iOS evidence that would turn a native build into a simulator claim', () => {
+test('rejects iOS evidence that regresses the recorded simulator result', () => {
   const protocol = validProtocol()
-  protocol.nativeEvidence.ios.simulatorRun = 'pass'
+  protocol.nativeEvidence.ios.simulatorRun = 'fail'
 
   assert.match(validate(protocol).errors.join('\n'), /nativeEvidence must retain the recorded iOS evidence boundary/)
 })

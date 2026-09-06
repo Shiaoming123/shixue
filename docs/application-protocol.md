@@ -18,7 +18,7 @@ The protocol deliberately summarizes rather than replaces implementation facts:
 | --- | --- | --- |
 | Enabled modules | `src/modules/config.ts` | Declare the matching product policy |
 | Dependencies, platforms, capabilities, native requirements | `src/modules/contract.ts` | Point readers to the compatibility boundary |
-| Runtime selection | `src/modules/loader.ts` and `src/lib/platform.ts` | State target and fallback expectations |
+| Runtime selection | `src/main.ts`, `src/modules/loader.ts`, and `src/lib/platform.ts` | State target and fallback expectations |
 | Workspace import/export | `src/storage/workspace/data-port.ts` | State the current public format/version and legacy Study migration inputs |
 | Capability commands | `src/domain/capabilities/types.ts` | State the independent command protocol version and direct-write boundary |
 | Sync | `src/sync/` and `docs/sync.md` | State whether a provider is enabled by default |
@@ -48,13 +48,29 @@ alter configuration, load modules, contact a network endpoint, or read secrets.
 
 The current protocol intentionally says nothing stronger about signing, hosted
 updates, deployed Web hosting, real-device execution, or store submission.
-Native mobile delivery remains `unverified`: `local-debug` requires both a
-debug build and a successful emulator run. Runtime maturity is a separate
-statement. The current iOS record is `compile-ready` (native build passed),
-with simulator launch recorded as `fail` and device execution as `not-run`;
-that record does not imply a usable simulator session, SQLite persistence, or
-UI verification. Desktop is the primary stable runtime path; Web and mobile
+Native mobile delivery is `local-debug`: an unsigned debug build and a bounded
+Simulator run both passed. Runtime maturity is a separate statement. The
+current iOS record is `simulator-verified`, with native build and Simulator run
+recorded as `pass` and device execution as `not-run`; that record does not imply
+SQLite restart persistence, visual acceptance, signing, real-device execution,
+or store readiness. Desktop is the primary stable runtime path; Web and mobile
 are Beta adaptations with documented capability degradation.
+
+On a Tauri host, `src/main.ts` resolves the native target once and provides the
+typed `RuntimeInfo` to both module loading and the Vue shell. User-Agent data
+may still select presentation hints, but it never selects native capabilities.
+The iOS runtime contract is limited to `native-sql` and
+`native-notification`; desktop-only modules, including autostart, remain
+excluded by platform and capability checks.
+
+The iOS launch smoke command is `npm run smoke:ios-launch -- --device <UDID>
+--app <absolute .app path>`. It is local diagnostic evidence only: it records
+install/launch commands, Simulator logs, process termination, and separate
+WebView, native-host, Vue, workspace, and frontend markers. It does not prove
+signing, device execution, SQLite persistence, or visual acceptance. The
+runner keys native marker-file evidence to a unique launch id, checks the host
+Simulator process, and succeeds only after all markers are observed and the
+process survives the stability window.
 
 ## Workspace data evolution
 
@@ -117,6 +133,7 @@ npm run check:modules
 npm run check:modules -- web
 npm run check:modules -- mobile
 npm run verify
+npm run smoke:ios-launch -- --device <UDID> --app <absolute .app path>
 ```
 
 Run `npm run rust:verify` for Rust/Tauri changes. Web and Windows smoke checks
