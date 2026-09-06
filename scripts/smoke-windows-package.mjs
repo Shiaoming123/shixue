@@ -229,6 +229,19 @@ async function removeWindowsInstallerRegistryKey(key) {
   if (deleteCode !== 0) throw new Error(`Could not remove Windows installer registry key: ${key}`)
 }
 
+export async function assertWindowsInstallerRegistryKeyAbsent(
+  key,
+  { query = (args) => runRegistryCommand(args) } = {},
+) {
+  if (!key?.startsWith('HKCU\\Software\\')) {
+    throw new Error(`Refusing to inspect an unexpected Windows installer registry key: ${key}`)
+  }
+  const queryCode = await query(['query', key])
+  if (queryCode === 1) return
+  if (queryCode === 0) throw new Error(`NSIS product registry key remains after uninstall: ${key}`)
+  throw new Error(`Could not inspect Windows installer registry key: ${key}`)
+}
+
 async function main() {
   if (process.platform !== 'win32') {
     throw new Error('Windows package smoke only runs on Windows.')
@@ -326,7 +339,8 @@ async function main() {
     if (!uninstallerStat.isFile()) throw new Error(`Installed uninstaller is missing: ${uninstallerPath}`)
     await runCommand(uninstallerPath, createNsisUninstallArgs())
     await waitForFileRemoval(executablePath)
-    updateSmokeStage(report, 'silent-uninstall', 'PASS', 'The candidate uninstaller completed and removed the installed executable.')
+    await assertWindowsInstallerRegistryKeyAbsent(installerRegistryKey)
+    updateSmokeStage(report, 'silent-uninstall', 'PASS', 'The candidate uninstaller removed the installed executable and product registry metadata.')
 
     activeStage = 'cleanup'
     await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath, {

@@ -54,7 +54,8 @@
       },
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["SimpChinese"]
+        "languages": ["SimpChinese"],
+        "installerHooks": "installer-hooks.nsh"
       }
     },
     "icon": [

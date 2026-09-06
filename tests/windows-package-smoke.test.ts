@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { resolve } from 'node:path'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import * as windowsSmoke from '../scripts/smoke-windows-package.mjs'
 import {
   assertSmokePath,
   appendManualWindowsStages,
@@ -165,4 +166,32 @@ test('retries a temporary Windows directory lock before cleanup succeeds', async
     },
   })
   assert.equal(attempts, 2)
+})
+
+test('configures an NSIS post-uninstall hook that removes only product metadata outside update mode', async () => {
+  const config = JSON.parse(await readFile(resolve('src-tauri', 'tauri.conf.json'), 'utf8'))
+  assert.equal(config.bundle.windows.nsis.installerHooks, 'installer-hooks.nsh')
+
+  const hooks = await readFile(resolve('src-tauri', config.bundle.windows.nsis.installerHooks), 'utf8')
+  assert.match(hooks, /!macro NSIS_HOOK_POSTUNINSTALL/)
+  assert.match(hooks, /\$UpdateMode <> 1/)
+  assert.match(hooks, /DeleteRegKey SHCTX "\$\{MANUPRODUCTKEY\}"/)
+  assert.match(hooks, /DeleteRegKey \/ifempty SHCTX "\$\{MANUKEY\}"/)
+})
+
+test('rejects a successful uninstall while the NSIS product metadata key remains', async () => {
+  const key = 'HKCU\\Software\\Shiaoming123\\拾学'
+  await windowsSmoke.assertWindowsInstallerRegistryKeyAbsent(key, { query: async () => 1 })
+  await assert.rejects(
+    windowsSmoke.assertWindowsInstallerRegistryKeyAbsent(key, { query: async () => 0 }),
+    /product registry key remains after uninstall/i,
+  )
+  await assert.rejects(
+    windowsSmoke.assertWindowsInstallerRegistryKeyAbsent(key, { query: async () => 2 }),
+    /could not inspect Windows installer registry key/i,
+  )
+  await assert.rejects(
+    windowsSmoke.assertWindowsInstallerRegistryKeyAbsent('HKLM\\Software\\Shiaoming123\\拾学', { query: async () => 1 }),
+    /unexpected Windows installer registry key/i,
+  )
 })
