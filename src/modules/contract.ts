@@ -115,7 +115,7 @@ export const moduleContracts: Record<ModuleId, ModuleContract> = {
   shortcut: {
     id: 'shortcut',
     name: '全局快捷键',
-    dependencies: [],
+    dependencies: ['tray'],
     platforms: ['desktop'],
     requiredCapabilities: ['global-shortcut'],
     nativeBuild: {
