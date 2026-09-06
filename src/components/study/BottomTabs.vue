@@ -1,32 +1,27 @@
 <script setup lang="ts">
-import { BookOpen, CalendarDays, CalendarRange, History, Inbox } from '@lucide/vue'
-import type { StudyPage, StudySmartView } from './AppSidebar.vue'
+import { BookOpen, CalendarDays, CalendarRange, Inbox, ListTodo } from '@lucide/vue'
+import { mobileWorkspaceNavigation, type ShellDestination, type WorkspaceView } from '../../lib/workspace-view'
 
-defineProps<{ active: StudyPage }>()
+const props = defineProps<{ active: ShellDestination }>()
 
 const emit = defineEmits<{
-  navigate: [page: StudyPage]
-  'smart-view': [view: StudySmartView]
+  navigate: [destination: WorkspaceView]
 }>()
 
-type MobileNavItem = {
-  key: StudyPage
-  label: string
-  icon: typeof CalendarDays
-  smartView?: StudySmartView
+const icons: Partial<Record<WorkspaceView['kind'], typeof CalendarDays>> = {
+  inbox: Inbox,
+  today: CalendarDays,
+  calendar: CalendarRange,
+  lists: ListTodo,
+  learning: BookOpen,
 }
 
-const items: MobileNavItem[] = [
-  { key: 'today', label: '今天', icon: CalendarDays, smartView: 'today' },
-  { key: 'tasks', label: '收件箱', icon: Inbox, smartView: 'inbox' },
-  { key: 'calendar', label: '日历', icon: CalendarRange },
-  { key: 'topics', label: '主题', icon: BookOpen },
-  { key: 'review', label: '回顾', icon: History },
-]
+const items = mobileWorkspaceNavigation.map((item) => ({ ...item, icon: icons[item.view.kind]! }))
 
-function activate(item: MobileNavItem) {
-  if (item.smartView) emit('smart-view', item.smartView)
-  emit('navigate', item.key)
+function isActive(view: WorkspaceView) {
+  if (view.kind === 'lists') return props.active.kind === 'lists' || props.active.kind === 'list'
+  if (view.kind === 'learning') return props.active.kind === 'learning'
+  return props.active.kind === view.kind
 }
 </script>
 
@@ -34,13 +29,13 @@ function activate(item: MobileNavItem) {
   <nav class="tabbar" aria-label="移动端主导航">
     <button
       v-for="item in items"
-      :key="item.key"
+      :key="item.preferenceKey"
       class="tab"
-      :class="{ active: active === item.key }"
-      :aria-current="active === item.key ? 'page' : undefined"
+      :class="{ active: isActive(item.view) }"
+      :aria-current="isActive(item.view) ? 'page' : undefined"
       :aria-label="item.label"
       :title="item.label"
-      @click="activate(item)"
+      @click="emit('navigate', item.view)"
     >
       <span class="icon-wrap" aria-hidden="true">
         <component :is="item.icon" :size="21" :stroke-width="1.8" />

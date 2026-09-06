@@ -5,55 +5,47 @@ import {
   ListTodo, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Settings,
 } from '@lucide/vue'
 import { moveSidebarItem, type SidebarDisplayMode } from '../../lib/sidebar-preferences'
-import { currentSidebarDestination, type StudyPage, type StudySmartView } from '../../lib/sidebar-navigation'
+import {
+  desktopWorkspaceNavigation,
+  learningWorkspaceNavigation,
+  type ShellDestination,
+  type WorkspaceNavigationDescriptor,
+  type WorkspaceView,
+} from '../../lib/workspace-view'
+import type { StudySmartView } from '../../lib/sidebar-navigation'
 
-export type { StudyPage, StudySmartView } from '../../lib/sidebar-navigation'
 export type StudySmartViewCounts = Partial<Record<StudySmartView, number>>
 
 const props = defineProps<{
-  active: StudyPage
-  activeSmartView?: StudySmartView
+  active: ShellDestination
   counts?: StudySmartViewCounts
   groups?: Array<{ id: string; title: string }>
   lists?: Array<{ id: string; groupId: string | null; title: string; count: number }>
-  activeListId?: string
   displayMode: SidebarDisplayMode
   order: string[]
 }>()
 
 const emit = defineEmits<{
-  navigate: [page: StudyPage]
+  navigate: [destination: ShellDestination]
   'update:displayMode': [mode: SidebarDisplayMode]
   reorder: [order: string[]]
-  'smart-view': [view: StudySmartView]
-  'select-list': [id: string]
   'create-list': []
   'create-group': []
   'edit-group': [id: string]
 }>()
 
-const fallbackSmartView = ref<StudySmartView>('inbox')
 const draggedKey = ref('')
 const dropTargetKey = ref('')
 const reorderMessage = ref('')
 
-const smartItems = [
-  { orderKey: 'smart:inbox', smartView: 'inbox' as const, label: '收件箱', icon: Inbox },
-  { orderKey: 'smart:today', smartView: 'today' as const, label: '今天', icon: CalendarDays },
-  { orderKey: 'smart:next7', smartView: 'next7' as const, label: '最近 7 天', icon: CalendarRange },
-  { orderKey: 'page:calendar', page: 'calendar' as const, label: '日历', icon: CalendarClock },
-  { orderKey: 'smart:all', smartView: 'all' as const, label: '全部', icon: ListTodo },
-  { orderKey: 'smart:completed', smartView: 'completed' as const, label: '已完成', icon: CircleCheckBig },
-]
-const learningItems = [
-  { key: 'topics' as const, label: '主题', icon: BookOpen },
-  { key: 'review' as const, label: '回顾', icon: History },
-]
-
-const smartKeys = smartItems.map(({ orderKey }) => orderKey)
-const learningKeys = learningItems.map(({ key }) => pageKey(key))
-const orderedSmartItems = computed(() => sortItems(smartItems, ({ orderKey }) => orderKey))
-const orderedLearningItems = computed(() => sortItems(learningItems, ({ key }) => pageKey(key)))
+const icons: Record<WorkspaceView['kind'], typeof Inbox> = {
+  inbox: Inbox, today: CalendarDays, upcoming: CalendarRange, calendar: CalendarClock,
+  lists: ListTodo, list: Folder, completed: CircleCheckBig, learning: BookOpen,
+}
+const primaryItems = desktopWorkspaceNavigation.map((item) => ({ ...item, icon: icons[item.view.kind] }))
+const reviewItem = { ...learningWorkspaceNavigation[1], icon: History }
+const primaryKeys = primaryItems.map(({ preferenceKey }) => preferenceKey)
+const orderedPrimaryItems = computed(() => sortItems(primaryItems, ({ preferenceKey }) => preferenceKey))
 const orderedListSections = computed(() => {
   const lists = props.lists ?? []
   return [
@@ -65,11 +57,6 @@ const orderedListSections = computed(() => {
   ].filter((section) => section.id || section.lists.length)
 })
 
-const currentDestination = computed(() => currentSidebarDestination(
-  props.active, props.activeSmartView ?? fallbackSmartView.value, props.activeListId,
-))
-
-function pageKey(key: 'topics' | 'review') { return `page:${key}` }
 function listKey(id: string) { return `list:${id}` }
 function listKeys(lists: Array<{ id: string }>) { return lists.map(({ id }) => listKey(id)) }
 
@@ -78,22 +65,24 @@ function sortItems<T>(items: T[], keyFor: (item: T) => string): T[] {
   return [...items].sort((left, right) => (rank.get(keyFor(left)) ?? Number.MAX_SAFE_INTEGER) - (rank.get(keyFor(right)) ?? Number.MAX_SAFE_INTEGER))
 }
 
-function selectSmartView(view: StudySmartView) {
-  fallbackSmartView.value = view
-  emit('smart-view', view)
-  emit('navigate', view === 'today' ? 'today' : 'tasks')
+function destinationKey(destination: ShellDestination) {
+  if (destination.kind === 'settings') return 'page:settings'
+  if (destination.kind === 'list') return listKey(destination.listId)
+  if (destination.kind === 'learning') return destination.section === 'review' ? 'page:review' : 'page:topics'
+  return desktopWorkspaceNavigation.find(({ view }) => view.kind === destination.kind)?.preferenceKey ?? 'smart:inbox'
 }
-function selectSmartItem(item: (typeof smartItems)[number]) {
-  if (item.smartView) selectSmartView(item.smartView)
-  else emit('navigate', item.page)
+const currentDestination = computed(() => destinationKey(props.active))
+function smartViewFor(view: WorkspaceView): StudySmartView | undefined {
+  return ({ inbox: 'inbox', today: 'today', upcoming: 'next7', lists: 'all', completed: 'completed' } as Partial<Record<WorkspaceView['kind'], StudySmartView>>)[view.kind]
 }
 function displayCount(view: StudySmartView) { return Math.min(Math.max(0, props.counts?.[view] ?? 0), 999) }
 function smartLabel(view: StudySmartView, label: string) {
   const count = props.counts?.[view]
   return typeof count === 'number' ? `${label}，${Math.max(0, count)} 项` : label
 }
-function primaryLabel(item: (typeof smartItems)[number]) {
-  return item.smartView ? smartLabel(item.smartView, item.label) : item.label
+function primaryLabel(item: WorkspaceNavigationDescriptor) {
+  const smartView = smartViewFor(item.view)
+  return smartView ? smartLabel(smartView, item.label) : item.label
 }
 
 function startDrag(event: DragEvent, key: string) {
@@ -146,10 +135,10 @@ function commitMove(source: string, target: string, keys: string[]) {
       <section class="nav-section" aria-labelledby="smart-list-heading">
         <h2 id="smart-list-heading">智能清单</h2>
         <TransitionGroup name="nav-order" tag="div" class="nav-list">
-          <button v-for="item in orderedSmartItems" :key="item.orderKey" class="nav-item" :class="{ active: currentDestination === item.orderKey, dragging: draggedKey === item.orderKey, 'drop-target': dropTargetKey === item.orderKey }" :aria-current="currentDestination === item.orderKey ? 'page' : undefined" :aria-label="primaryLabel(item)" aria-describedby="sidebar-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" :title="`${item.label} · 拖动排序`" draggable="true" @click="selectSmartItem(item)" @dragstart="startDrag($event, item.orderKey)" @dragover.prevent="markDropTarget(item.orderKey, smartKeys)" @drop="dropItem($event, item.orderKey, smartKeys)" @dragend="clearDrag" @keydown="moveByKeyboard($event, item.orderKey, smartKeys)">
+          <button v-for="item in orderedPrimaryItems" :key="item.preferenceKey" class="nav-item" :class="{ active: currentDestination === item.preferenceKey, dragging: draggedKey === item.preferenceKey, 'drop-target': dropTargetKey === item.preferenceKey }" :aria-current="currentDestination === item.preferenceKey ? 'page' : undefined" :aria-label="primaryLabel(item)" aria-describedby="sidebar-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" :title="`${item.label} · 拖动排序`" draggable="true" @click="emit('navigate', item.view)" @dragstart="startDrag($event, item.preferenceKey)" @dragover.prevent="markDropTarget(item.preferenceKey, primaryKeys)" @drop="dropItem($event, item.preferenceKey, primaryKeys)" @dragend="clearDrag" @keydown="moveByKeyboard($event, item.preferenceKey, primaryKeys)">
             <component :is="item.icon" class="nav-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
             <span class="nav-label">{{ item.label }}</span>
-            <span v-if="item.smartView" class="nav-count" aria-hidden="true">{{ displayCount(item.smartView) }}</span>
+            <span v-if="smartViewFor(item.view)" class="nav-count" aria-hidden="true">{{ displayCount(smartViewFor(item.view)!) }}</span>
           </button>
         </TransitionGroup>
       </section>
@@ -159,7 +148,7 @@ function commitMove(source: string, target: string, keys: string[]) {
         <div v-for="section in orderedListSections" :key="section.id || 'ungrouped'" class="list-group">
           <div v-if="section.id" class="group-heading"><span>{{ section.title }}</span><button type="button" title="编辑分组" :aria-label="`编辑分组 ${section.title}`" @click="emit('edit-group', section.id)"><Pencil :size="12" /></button></div>
           <TransitionGroup name="nav-order" tag="div" class="nav-list">
-            <button v-for="list in section.lists" :key="list.id" class="nav-item" :class="{ active: currentDestination === listKey(list.id), dragging: draggedKey === listKey(list.id), 'drop-target': dropTargetKey === listKey(list.id) }" :aria-current="currentDestination === listKey(list.id) ? 'page' : undefined" :aria-label="`${list.title}，${list.count} 项`" aria-describedby="sidebar-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" :title="`${list.title} · 拖动排序`" draggable="true" @click="emit('select-list', list.id)" @dragstart="startDrag($event, listKey(list.id))" @dragover.prevent="markDropTarget(listKey(list.id), listKeys(section.lists))" @drop="dropItem($event, listKey(list.id), listKeys(section.lists))" @dragend="clearDrag" @keydown="moveByKeyboard($event, listKey(list.id), listKeys(section.lists))">
+            <button v-for="list in section.lists" :key="list.id" class="nav-item" :class="{ active: currentDestination === listKey(list.id), dragging: draggedKey === listKey(list.id), 'drop-target': dropTargetKey === listKey(list.id) }" :aria-current="currentDestination === listKey(list.id) ? 'page' : undefined" :aria-label="`${list.title}，${list.count} 项`" aria-describedby="sidebar-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" :title="`${list.title} · 拖动排序`" draggable="true" @click="emit('navigate', { kind: 'list', listId: list.id })" @dragstart="startDrag($event, listKey(list.id))" @dragover.prevent="markDropTarget(listKey(list.id), listKeys(section.lists))" @drop="dropItem($event, listKey(list.id), listKeys(section.lists))" @dragend="clearDrag" @keydown="moveByKeyboard($event, listKey(list.id), listKeys(section.lists))">
               <Folder class="nav-icon" :size="17" :stroke-width="1.8" aria-hidden="true" />
               <span class="nav-label">{{ list.title }}</span><span class="nav-count" aria-hidden="true">{{ list.count }}</span>
             </button>
@@ -169,16 +158,16 @@ function commitMove(source: string, target: string, keys: string[]) {
 
       <section class="nav-section learning-section" aria-labelledby="learning-heading">
         <h2 id="learning-heading">学习</h2>
-        <TransitionGroup name="nav-order" tag="div" class="nav-list">
-          <button v-for="item in orderedLearningItems" :key="item.key" class="nav-item" :class="{ active: currentDestination === pageKey(item.key), dragging: draggedKey === pageKey(item.key), 'drop-target': dropTargetKey === pageKey(item.key) }" :aria-current="currentDestination === pageKey(item.key) ? 'page' : undefined" :aria-label="item.label" aria-describedby="sidebar-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" :title="`${item.label} · 拖动排序`" draggable="true" @click="emit('navigate', item.key)" @dragstart="startDrag($event, pageKey(item.key))" @dragover.prevent="markDropTarget(pageKey(item.key), learningKeys)" @drop="dropItem($event, pageKey(item.key), learningKeys)" @dragend="clearDrag" @keydown="moveByKeyboard($event, pageKey(item.key), learningKeys)">
-            <component :is="item.icon" class="nav-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
-            <span class="nav-label">{{ item.label }}</span>
+        <div class="nav-list">
+          <button class="nav-item" :class="{ active: currentDestination === reviewItem.preferenceKey }" :aria-current="currentDestination === reviewItem.preferenceKey ? 'page' : undefined" :aria-label="reviewItem.label" :title="reviewItem.label" @click="emit('navigate', reviewItem.view)">
+            <component :is="reviewItem.icon" class="nav-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
+            <span class="nav-label">{{ reviewItem.label }}</span>
           </button>
-        </TransitionGroup>
+        </div>
       </section>
     </nav>
 
-    <button class="nav-item settings" :class="{ active: currentDestination === 'page:settings' }" :aria-current="currentDestination === 'page:settings' ? 'page' : undefined" aria-label="设置" title="设置" @click="emit('navigate', 'settings')">
+    <button class="nav-item settings" :class="{ active: currentDestination === 'page:settings' }" :aria-current="currentDestination === 'page:settings' ? 'page' : undefined" aria-label="设置" title="设置" @click="emit('navigate', { kind: 'settings' })">
       <Settings class="nav-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
       <span class="nav-label">设置</span>
     </button>

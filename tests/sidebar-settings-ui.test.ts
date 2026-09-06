@@ -19,7 +19,8 @@ test('settings is a first-class page instead of a modal sheet', () => {
 
   const navigation = readFileSync(new URL('../src/lib/sidebar-navigation.ts', import.meta.url), 'utf8')
   assert.match(navigation, /StudyPage = [^\n]*'settings'/)
-  assert.match(sidebar, /export type \{ StudyPage, StudySmartView \} from '..\/..\/lib\/sidebar-navigation'/)
+  assert.match(sidebar, /active: ShellDestination/)
+  assert.match(sidebar, /navigate: \[destination: ShellDestination\]/)
   assert.match(app, /<SettingsView\b/)
   assert.match(app, /page === 'settings'/)
   assert.doesNotMatch(app, /SettingsSheet|settingsOpen/)

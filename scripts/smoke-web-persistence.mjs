@@ -162,7 +162,7 @@ async function main() {
       await quickAdd.getByRole('button', { name: '添加', exact: true }).click()
 
       await page.reload({ waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('button', { name: /^最近 7 天/ }).click()
       await page.getByRole('searchbox', { name: '搜索任务' }).fill(quickAddTitle)
       const quickAddRow = page.locator('.task-row').filter({ hasText: quickAddTitle })
       await quickAddRow.getByText(quickAddTitle, { exact: true }).waitFor({ state: 'visible' })
@@ -188,7 +188,7 @@ async function main() {
       await quickAddEditDialog.getByRole('button', { name: '保存', exact: true }).click()
       await quickAddEditDialog.waitFor({ state: 'hidden' })
       await page.reload({ waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('button', { name: /^最近 7 天/ }).click()
       await page.getByRole('searchbox', { name: '搜索任务' }).fill(quickAddTitle)
       const editedQuickAddRow = page.locator('.task-row').filter({ hasText: quickAddTitle })
       await editedQuickAddRow.locator('.task-main').click()
@@ -213,7 +213,7 @@ async function main() {
         throw new Error(`Timed deadline quick add failed: ${await timedDeadlineComposer.locator('.quick-add-message').textContent()}`)
       }
       await page.reload({ waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('button', { name: /^最近 7 天/ }).click()
       await page.getByRole('searchbox', { name: '搜索任务' }).fill(timedDeadlineLookup)
       await page.locator('.task-row').filter({ hasText: timedDeadlineLookup }).locator('.task-main').click()
       const timedDeadlineDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
@@ -227,7 +227,7 @@ async function main() {
       await timedDeadlineEdit.getByRole('button', { name: '保存', exact: true }).click()
       await timedDeadlineEdit.waitFor({ state: 'hidden' })
       await page.reload({ waitUntil: 'networkidle' })
-      await page.getByRole('button', { name: /^全部/ }).click()
+      await page.getByRole('button', { name: /^最近 7 天/ }).click()
       await page.getByRole('searchbox', { name: '搜索任务' }).fill(timedDeadlineLookup)
       await page.locator('.task-row').filter({ hasText: timedDeadlineLookup }).locator('.task-main').click()
       const editedDeadlineDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
@@ -471,7 +471,7 @@ async function main() {
       }
       await page
         .getByRole('navigation', { name: '移动端主导航' })
-        .getByRole('button', { name: '主题', exact: true })
+        .getByRole('button', { name: '学习', exact: true })
         .click()
       await page.getByRole('heading', { name: '清单与主题' }).waitFor({ state: 'visible' })
 
