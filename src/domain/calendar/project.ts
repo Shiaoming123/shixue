@@ -1,4 +1,4 @@
-import { createTimeZoneFormatter } from '../recurrence/timezone.ts'
+import { createTimeZoneFormatter, zonedDateTimeToInstant } from '../recurrence/timezone.ts'
 import type { Task, TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
 import type { CalendarRange } from './range.ts'
 
@@ -13,10 +13,17 @@ export interface CalendarItem {
   displayMinute: number | null
 }
 
+interface ZonedProjectionContext {
+  displayForInstant: ReturnType<typeof createTimeZoneFormatter>
+  rangeStartMs: number
+  rangeEndExclusiveMs: number
+}
+
 export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRange): CalendarItem[] {
   if (range.start >= range.end) throw new Error('Calendar range must start before it ends.')
 
   const seriesById = new Map(state.recurrenceSeries.map((series) => [series.id, series]))
+  const contextByTimezone = new Map<string, ZonedProjectionContext>()
   const occurrencesByTask = new Map<string, TaskOccurrence[]>()
   for (const occurrence of state.occurrences) {
     const taskId = seriesById.get(occurrence.seriesId)?.taskId
@@ -30,8 +37,18 @@ export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRan
   for (const task of state.tasks) {
     if (task.deletedAt !== null || task.status === 'cancelled') continue
     const series = task.recurrenceSeriesId === null ? undefined : seriesById.get(task.recurrenceSeriesId)
-    const seriesFormatter = series ? createTimeZoneFormatter(series.timezone) : undefined
-    const displayForInstant = seriesFormatter ? (value: string) => seriesFormatter(new Date(value)) : wallClockForTimestamp
+    let seriesContext = series ? contextByTimezone.get(series.timezone) : undefined
+    if (series && !seriesContext) {
+      seriesContext = {
+        displayForInstant: createTimeZoneFormatter(series.timezone),
+        rangeStartMs: zonedDateTimeToInstant(range.start, '00:00', series.timezone).getTime(),
+        rangeEndExclusiveMs: zonedDateTimeToInstant(range.end, '00:00', series.timezone).getTime(),
+      }
+      contextByTimezone.set(series.timezone, seriesContext)
+    }
+    const displayForInstant = seriesContext
+      ? (value: string) => seriesContext.displayForInstant(new Date(value))
+      : wallClockForTimestamp
 
     const deadline = deadlineItem(task, range, wallClockForTimestamp)
     if (deadline) items.push(deadline)
@@ -39,7 +56,7 @@ export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRan
     const occurrences = occurrencesByTask.get(task.id)
     if (occurrences?.length) {
       for (const occurrence of occurrences) {
-        const item = occurrenceItem(task, occurrence, range, displayForInstant)
+        const item = occurrenceItem(task, occurrence, range, displayForInstant, seriesContext)
         if (item) items.push(item)
       }
     } else if (task.recurrenceSeriesId === null) {
@@ -47,7 +64,10 @@ export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRan
       if (item) items.push(item)
     }
   }
-  return items.sort(compareItems)
+  return items.map((item) => {
+    const start = Date.parse(item.start)
+    return { item, start, duration: item.end === null ? 0 : Date.parse(item.end) - start }
+  }).sort(compareItems).map(({ item }) => item)
 }
 
 function occurrenceItem(
@@ -55,12 +75,17 @@ function occurrenceItem(
   occurrence: TaskOccurrence,
   range: CalendarRange,
   displayForInstant: (value: string) => { date: string; time: string },
+  context: ZonedProjectionContext | undefined,
 ): CalendarItem | null {
   if (occurrence.status === 'cancelled') return null
   const schedule = occurrence.override ?? {
     scheduledAt: occurrence.scheduledAt,
     scheduledOn: occurrence.scheduledOn,
     estimateMinutes: task.schedule.estimateMinutes,
+  }
+  if (schedule.scheduledOn === null && schedule.scheduledAt !== null && schedule.estimateMinutes !== null && context) {
+    const scheduledMs = Date.parse(schedule.scheduledAt)
+    if (!Number.isNaN(scheduledMs) && (scheduledMs < context.rangeStartMs || scheduledMs >= context.rangeEndExclusiveMs)) return null
   }
   return scheduledItem(
     `occurrence:${occurrence.id}`,
@@ -115,7 +140,8 @@ function wallClockForTimestamp(value: string): { date: string; time: string } {
 }
 
 function minuteForTime(value: string): number {
-  const [hour, minute] = value.split(':').map(Number)
+  const hour = (value.charCodeAt(0) - 48) * 10 + value.charCodeAt(1) - 48
+  const minute = (value.charCodeAt(3) - 48) * 10 + value.charCodeAt(4) - 48
   return (hour === 24 ? 0 : hour) * 60 + minute
 }
 
@@ -123,15 +149,11 @@ function inRange(date: string, range: CalendarRange): boolean {
   return date >= range.start && date < range.end
 }
 
-function compareItems(left: CalendarItem, right: CalendarItem): number {
-  const byStart = Date.parse(left.start) - Date.parse(right.start)
+function compareItems(
+  left: { item: CalendarItem; start: number; duration: number },
+  right: { item: CalendarItem; start: number; duration: number },
+): number {
+  const byStart = left.start - right.start
   if (byStart !== 0) return byStart
-  const leftDuration = duration(left)
-  const rightDuration = duration(right)
-  return rightDuration - leftDuration || left.key.localeCompare(right.key)
-}
-
-function duration(item: CalendarItem): number {
-  if (item.end === null) return 0
-  return Date.parse(item.end) - Date.parse(item.start)
+  return right.duration - left.duration || left.item.key.localeCompare(right.item.key)
 }

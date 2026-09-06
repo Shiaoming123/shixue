@@ -101,6 +101,30 @@ test('an occurrence override can change a timed occurrence into an all-day item'
   }])
 })
 
+test('all-day occurrence overrides do not parse an unused timed value', () => {
+  const state = fixture({
+    recurrenceSeriesId: 'series:1',
+    occurrences: [occurrence({
+      override: { scheduledAt: 'invalid', scheduledOn: '2026-09-04', estimateMinutes: null },
+    })],
+  })
+
+  assert.deepEqual(projectCalendarItems(state, dayRange), [{
+    key: 'occurrence:occ:1', taskId: 'task:1', occurrenceId: 'occ:1',
+    kind: 'all-day', start: '2026-09-04', end: null, displayDate: '2026-09-04', displayMinute: null,
+  }])
+})
+
+test('invalid recurring timestamps remain visible as projection errors', () => {
+  const state = fixture({
+    schedule: { startAt: null, startOn: null, estimateMinutes: 30 },
+    recurrenceSeriesId: 'series:1',
+    occurrences: [occurrence({ scheduledAt: 'invalid' })],
+  })
+
+  assert.throws(() => projectCalendarItems(state, dayRange), /Invalid time value/)
+})
+
 test('sorts timed items by their instant, duration, then stable key across ISO offsets', () => {
   const state = fixture()
   state.tasks = [
