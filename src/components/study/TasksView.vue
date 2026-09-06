@@ -1,21 +1,26 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from '@lucide/vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, MoreHorizontal, Pencil, Search, Trash2, X } from '@lucide/vue'
 import type { StudyTaskPriority } from '../../storage/study/types'
-import type { StudyTaskQuerySort, StudyTaskSmartView } from '../../lib/study-task-query'
+import type { StudyTaskQuerySort, StudyTaskSmartView, TaskProjectionReason } from '../../lib/study-task-query'
+import { isQuickAddEditableTarget } from '../../lib/quick-add-shortcut-state'
 import type { TaskOccurrence } from '../../domain/workspace/types'
+import type { EntityRef } from '../../domain/capabilities/types'
 import Checkbox from '../ui/Checkbox.vue'
 import Dialog from '../ui/Dialog.vue'
 import Listbox from '../ui/Listbox.vue'
 import OccurrenceRow from './OccurrenceRow.vue'
+import QuickAddComposer from './QuickAddComposer.vue'
 
 export type TaskViewStatus = 'inbox' | 'backlog' | 'planned' | 'in_progress' | 'blocked' | 'completed' | 'cancelled'
 export interface TaskViewItem {
   id: string; title: string; notes: string; topic: string; topicId: string | null
+  tags: string[]
   status: TaskViewStatus; plannedOn: string | null; dueOn: string | null; reminderAt: string | null
   priority: StudyTaskPriority; plannedLabel: string; dueLabel: string; reminderLabel: string
   estimateMinutes: number | null; acceptanceCriteria: string[]
   checklist: Array<{ id: string; text: string; checked: boolean }>; blockedReason: string
+  reasons: TaskProjectionReason[]
 }
 export interface OccurrenceViewItem { id: string; title: string; scheduledLabel: string; deadlineLabel: string; reasons: string[]; occurrence: TaskOccurrence }
 
@@ -23,9 +28,10 @@ const props = defineProps<{
   tasks: TaskViewItem[]; occurrences: OccurrenceViewItem[]; topics: Array<{ id: string; title: string }>; title: string; subtitle: string
   selectedId?: string; smartView: StudyTaskSmartView; search: string; topicFilter: string
   priorityFilter: StudyTaskPriority | 'all'; sort: StudyTaskQuerySort
+  quickAddDestinationListId: string; quickAddDefaultStartOn?: string; quickAddDefaultEstimateMinutes?: number | null; quickAddRemoveRecognizedText?: boolean; quickAddCatalogRevision?: number
 }>()
 const emit = defineEmits<{
-  capture: [title: string]; open: [id: string]; toggleComplete: [id: string]; edit: [id: string]; delete: [id: string]
+  created: [entity: EntityRef]; open: [id: string]; toggleComplete: [id: string]; edit: [id: string]; delete: [id: string]
   bulkDelete: [ids: string[]]; bulkComplete: [ids: string[]]; bulkMoveToToday: [ids: string[]]
   smartViewChange: [value: StudyTaskSmartView]
   searchChange: [value: string]; topicFilterChange: [value: string]
@@ -34,8 +40,7 @@ const emit = defineEmits<{
   occurrenceOpen: [id: string]
 }>()
 
-const draft = ref('')
-const captureInput = ref<HTMLInputElement>()
+const quickAddComposer = ref<InstanceType<typeof QuickAddComposer> | null>(null)
 const searchInput = ref<HTMLInputElement>()
 const toolbarOpen = ref(false)
 const batchMode = ref(false)
@@ -73,9 +78,8 @@ const sortOptions = [
 ]
 const sections = computed(() => {
   if (props.smartView !== 'today') return [{ key: 'all', label: '', tasks: props.tasks }]
-  const today = new Date().toLocaleDateString('sv-SE')
-  const overdue = props.tasks.filter((task) => dateFor(task) && dateFor(task)! < today)
-  const current = props.tasks.filter((task) => !dateFor(task) || dateFor(task)! >= today)
+  const overdue = props.tasks.filter((task) => task.reasons.includes('overdue'))
+  const current = props.tasks.filter((task) => !task.reasons.includes('overdue'))
   return [{ key: 'overdue', label: overdue.length ? '已过期' : '', tasks: overdue }, { key: 'today', label: current.length ? '今天' : '', tasks: current }].filter(({ tasks }) => tasks.length)
 })
 
@@ -85,8 +89,6 @@ watch(() => props.tasks.map(({ id }) => id).join('|'), () => {
   selectedIds.value = selectedIds.value.filter((id) => available.has(id))
 })
 
-function capture() { const title = draft.value.trim(); if (!title) return; emit('capture', title); draft.value = '' }
-function dateFor(task: TaskViewItem) { return task.plannedOn ?? task.dueOn }
 function toggleSelection(id: string) { selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter((value) => value !== id) : [...selectedIds.value, id] }
 function clearSelection() { selectedIds.value = []; confirmDeleteIds.value = [] }
 function finishBatch(action: 'complete' | 'today' | 'delete') {
@@ -96,19 +98,27 @@ function finishBatch(action: 'complete' | 'today' | 'delete') {
   if (action === 'delete') emit('bulkDelete', ids)
   batchMode.value = false; clearSelection()
 }
-function isTyping(target: EventTarget | null) { return target instanceof HTMLElement && target.matches('input, textarea, select, [contenteditable="true"]') }
+function isTyping(target: EventTarget | null) { return target instanceof HTMLElement && isQuickAddEditableTarget(target) }
 function handleShortcut(event: KeyboardEvent) {
   if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTyping(event.target)) return
   if (event.key === '/') { event.preventDefault(); searchInput.value?.focus(); return }
-  if (event.key.toLowerCase() === 'n') { event.preventDefault(); captureInput.value?.focus(); return }
+  if (event.key.toLowerCase() === 'n') { event.preventDefault(); quickAddComposer.value?.focus(); return }
   const index = props.tasks.findIndex(({ id }) => id === props.selectedId)
   if (event.key === 'j' || event.key === 'ArrowDown') { event.preventDefault(); const task = props.tasks[Math.min(props.tasks.length - 1, Math.max(0, index + 1))]; if (task) emit('open', task.id) }
   if (event.key === 'k' || event.key === 'ArrowUp') { event.preventDefault(); const task = props.tasks[Math.max(0, index < 0 ? 0 : index - 1)]; if (task) emit('open', task.id) }
   if (event.key.toLowerCase() === 'e' && props.selectedId) emit('edit', props.selectedId)
   if (event.key.toLowerCase() === 'c' && props.selectedId) emit('toggleComplete', props.selectedId)
 }
+async function activateQuickAdd() {
+  confirmDeleteIds.value = []
+  // Dialog restores its trigger on a nested tick after the close reaches it.
+  await nextTick()
+  await nextTick()
+  quickAddComposer.value?.focus()
+}
 onMounted(() => window.addEventListener('keydown', handleShortcut))
 onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
+defineExpose({ activateQuickAdd })
 </script>
 
 <template>
@@ -121,7 +131,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
         <button type="button" title="更多" aria-label="更多"><MoreHorizontal :size="19" /></button>
       </div>
     </header>
-    <form class="capture" @submit.prevent="capture"><Plus :size="19" /><input ref="captureInput" v-model="draft" aria-label="新建任务" :placeholder="smartView === 'today' ? '添加到今天' : '添加任务'" /><button type="submit" :disabled="!draft.trim()" title="添加" aria-label="添加"><Check :size="17" /></button></form>
+    <QuickAddComposer
+      ref="quickAddComposer"
+      :destination-list-id="quickAddDestinationListId"
+      :default-start-on="quickAddDefaultStartOn"
+      :default-estimate-minutes="quickAddDefaultEstimateMinutes"
+      :quick-add-remove-recognized-text="quickAddRemoveRecognizedText"
+      :catalog-revision="quickAddCatalogRevision"
+      @created="emit('created', $event)"
+    />
     <label class="search-field"><Search :size="16" /><input ref="searchInput" v-model="searchModel" type="search" aria-label="搜索任务" placeholder="搜索" /><button v-if="searchModel" type="button" title="清除" aria-label="清除搜索" @click="searchModel = ''"><X :size="14" /></button><kbd v-else>/</kbd></label>
     <div v-if="toolbarOpen" class="filters">
       <Listbox v-model="topicModel" :options="topicOptions" label="清单" variant="compact" />
@@ -159,6 +177,6 @@ onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
 .task-row { position: relative; min-height: 64px; display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: stretch; border-bottom: 1px solid var(--hairline); transition: background var(--motion-fast) var(--ease); }.task-row:first-of-type { border-top: 1px solid var(--hairline); }.task-row:hover, .task-row.selected { background: color-mix(in srgb, var(--press-fill) 72%, transparent); }.task-row.selected { box-shadow: inset 3px 0 var(--accent); }.complete-button, .select-button { display: grid; place-items: center; border: 0; background: transparent; }.complete-button span { width: 22px; height: 22px; display: grid; place-items: center; border: 1.5px solid color-mix(in srgb, var(--muted) 78%, transparent); border-radius: 50%; color: transparent; }.complete-button span.high { border-color: var(--danger); }.complete-button span.medium { border-color: var(--warning); }.complete-button span.low { border-color: var(--accent); }.complete-button span.checked { border-color: var(--success); background: var(--success); color: var(--accent-text); }
 .task-main { min-width: 0; min-height: 63px; display: grid; grid-template-columns: minmax(0, 1fr) 22px 20px; align-items: center; gap: 6px; padding: 8px 8px 8px 0; border: 0; background: transparent; color: var(--text); text-align: left; }.task-copy { min-width: 0; }.task-copy strong { display: block; overflow: hidden; font-size: var(--text-base); font-weight: 550; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }.task-copy small { min-height: 18px; display: flex; align-items: center; gap: 12px; margin-top: 5px; overflow: hidden; color: var(--muted); font-size: var(--text-xs); white-space: nowrap; }.task-copy small span { display: inline-flex; align-items: center; gap: 4px; }.task-row.completed .task-copy strong { color: var(--muted); text-decoration: line-through; }.priority.high { color: var(--danger); }.priority.medium { color: var(--warning); }.priority.low { color: var(--accent); }.chevron { color: color-mix(in srgb, var(--muted) 55%, transparent); }.row-actions { position: absolute; right: 7px; top: 50%; display: flex; transform: translateY(-50%); gap: 2px; padding-left: 18px; background: linear-gradient(90deg, transparent, var(--surface) 25%); opacity: 0; pointer-events: none; }.task-row:is(:hover, :focus-within) .row-actions { opacity: 1; pointer-events: auto; }.row-actions button { width: 34px; height: 34px; background: var(--control-fill); }.danger { color: var(--danger) !important; }
 .empty-state { min-height: 320px; display: grid; place-content: center; justify-items: center; gap: 12px; color: color-mix(in srgb, var(--muted) 72%, transparent); }.empty-state strong { color: var(--muted); font-size: var(--text-base); font-weight: 550; }.confirm-button { min-height: 38px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font-size: var(--text-sm); }
-@media (max-width: 799px) { .tasks-view { width: 100%; padding: 18px 16px calc(106px + env(safe-area-inset-bottom, 0px)); }.page-header h1 { display: none; }.mobile-smart-view { display: block; max-width: 190px; }.capture { margin-top: 16px; }.task-sections { margin-top: 15px; }.task-row { min-height: 68px; }.task-main { min-height: 67px; grid-template-columns: minmax(0, 1fr) 22px; }.chevron { display: none; }.task-copy strong { white-space: normal; }.task-copy small { gap: 9px; }.task-copy small span:nth-child(2) { display: none; }.row-actions { display: none !important; }.filters { grid-template-columns: 1fr; }.complete-button span { width: 24px; height: 24px; } }
+@media (max-width: 819px) { .tasks-view { width: 100%; padding: 18px 16px calc(106px + env(safe-area-inset-bottom, 0px)); }.page-header h1 { display: none; }.mobile-smart-view { display: block; max-width: 190px; }.capture { margin-top: 16px; }.task-sections { margin-top: 15px; }.task-row { min-height: 68px; }.task-main { min-height: 67px; grid-template-columns: minmax(0, 1fr) 22px; }.chevron { display: none; }.task-copy strong { white-space: normal; }.task-copy small { gap: 9px; }.task-copy small span:nth-child(2) { display: none; }.row-actions { display: none !important; }.filters { grid-template-columns: 1fr; }.complete-button span { width: 24px; height: 24px; } }
 @media (hover: none) { .row-actions { display: none !important; } }
 </style>

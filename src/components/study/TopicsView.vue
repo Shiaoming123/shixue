@@ -339,7 +339,7 @@ h3 {
   font-size: 12px;
 }
 
-@media (max-width: 799px) {
+@media (max-width: 819px) {
   .topics-view {
     padding: 28px 20px 126px;
   }

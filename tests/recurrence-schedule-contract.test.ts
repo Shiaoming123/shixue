@@ -71,7 +71,7 @@ test('date-only materialization and projection remain date-only across timezones
     assert.equal(occurrence?.scheduledOn, timezone === 'Asia/Shanghai' ? '2026-09-06' : '2026-09-05')
     assert.equal(occurrence?.scheduledAt, null)
 
-    const [row] = projectTaskItems(result.state, { from: occurrence!.scheduledOn!, to: occurrence!.scheduledOn! })
+    const [row] = projectTaskItems(result.state, { from: occurrence!.scheduledOn!, to: occurrence!.scheduledOn! }, timezone)
     assert.equal(row?.scheduledOn, occurrence?.scheduledOn)
     assert.equal(row?.scheduledAt, null)
   }

@@ -135,7 +135,7 @@ onUnmounted(clearTimer)
   transform: translate(-50%, 8px) scale(0.98);
 }
 
-@media (max-width: 799px) {
+@media (max-width: 819px) {
   .toast-region { bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
   .toast-region.raised { bottom: calc(148px + env(safe-area-inset-bottom, 0px)); }
 }

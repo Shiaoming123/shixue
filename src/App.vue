@@ -21,13 +21,13 @@ import OverlayHost from './components/ui/OverlayHost.vue'
 import ToastRegion from './components/ui/ToastRegion.vue'
 import { projectTaskItems, queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView, type TaskProjectionReason } from './lib/study-task-query'
 import { selectStudyReminders, selectTaskReminderTriggers } from './lib/study-reminders'
+import { loadPlanningPreferences, savePlanningPreferences, type PlanningPreferences } from './lib/planning-preferences'
 import { detectRuntimeInfo, hasRuntimeCapability } from './lib/platform'
 import {
   addTaskChecklistItem,
   archiveStudyListGroup,
   bulkDeleteStudyTasks,
   bulkRescheduleStudyTasks,
-  captureStudyTask,
   completeStudyTask,
   createTaskFromNextAction,
   deleteStudyTask,
@@ -61,7 +61,7 @@ import {
 import { createSeedStudyState } from './storage/study/types'
 import { getWorkspaceStore } from './storage/workspace/registry'
 import { createTaskCapabilityService } from './domain/capabilities/service'
-import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview } from './domain/capabilities/types'
+import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef } from './domain/capabilities/types'
 import type { WorkspaceStateV3 } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
@@ -114,7 +114,10 @@ const toastAction = ref<{ label: string; run: () => Promise<void> } | null>(null
 const toastVersion = ref(0)
 const storageError = ref('')
 const remindersEnabled = ref(false)
+const planningPreferences = ref(loadPlanningPreferences())
+const tasksView = ref<InstanceType<typeof TasksView> | null>(null)
 const runtime = detectRuntimeInfo()
+const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const capabilityService = createTaskCapabilityService(getWorkspaceStore(), () => new Date().toISOString(), (kind) => `${kind}:${crypto.randomUUID()}`)
 const remindersAvailable = hasRuntimeCapability(runtime, 'native-notification')
 const cloudConfig = import.meta.env.VITE_STUDY_SUPABASE_URL?.trim() && import.meta.env.VITE_STUDY_SUPABASE_PUBLISHABLE_KEY?.trim() ? {
@@ -138,6 +141,7 @@ const dateLabel = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long
 const activeSession = computed(() => state.value.sessions.find((session) => !session.deletedAt && (session.state === 'running' || session.state === 'paused')))
 const activeTask = computed(() => state.value.tasks.find((task) => task.id === activeSession.value?.taskId && !task.deletedAt))
 const selectedTask = computed(() => state.value.tasks.find((task) => task.id === selectedTaskId.value && !task.deletedAt))
+const selectedWorkspaceTask = computed(() => recurrenceWorkspace.value?.tasks.find((task) => task.id === selectedTaskId.value && !task.deletedAt))
 const selectedOccurrence = computed(() => recurrenceWorkspace.value?.occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId.value) ?? null)
 const selectedRecurrence = computed(() => {
   const workspace = recurrenceWorkspace.value
@@ -166,11 +170,14 @@ const filteredTaskViews = computed<TaskViewItem[]>(() => queryStudyTasks(liveTas
   smartView: activeSmartView.value === 'today' ? 'all' : activeSmartView.value,
   today: today.value,
 }).filter((task) => taskPriorityFilter.value === 'all' || task.priority === taskPriorityFilter.value).map(toTaskView))
-const todayProjections = computed(() => recurrenceWorkspace.value ? projectTaskItems(recurrenceWorkspace.value, { from: today.value, to: today.value }) : [])
+const todayProjections = computed(() => recurrenceWorkspace.value ? projectTaskItems(recurrenceWorkspace.value, { from: today.value, to: today.value }, timezone) : [])
 const taskViews = computed<TaskViewItem[]>(() => {
   if (activeSmartView.value !== 'today' || !recurrenceWorkspace.value) return filteredTaskViews.value
   const eligible = new Map(filteredTaskViews.value.map((task) => [task.id, task]))
-  return todayProjections.value.filter((projection) => projection.occurrenceId === null).map((projection) => eligible.get(projection.taskId)).filter((task): task is TaskViewItem => task !== undefined)
+  return todayProjections.value.filter((projection) => projection.occurrenceId === null).map((projection) => {
+    const task = eligible.get(projection.taskId)
+    return task ? { ...task, reasons: projection.reasons } : undefined
+  }).filter((task): task is TaskViewItem => task !== undefined)
 })
 const occurrenceViews = computed<OccurrenceViewItem[]>(() => {
   const workspace = recurrenceWorkspace.value
@@ -204,6 +211,9 @@ const smartViewCounts = computed<StudySmartViewCounts>(() => ({
 }))
 const smartViewTitle = computed(() => ({ inbox: '收件箱', today: '今天', next7: '最近 7 天', all: '全部任务', completed: '已完成' })[activeSmartView.value])
 const smartViewSubtitle = computed(() => `${taskViews.value.length + occurrenceViews.value.length} 项 · ${dateLabel.value}`)
+const quickAddDestinationListId = computed(() => taskTopicFilter.value !== 'all' && taskTopicFilter.value !== 'unassigned'
+  ? taskTopicFilter.value
+  : 'list:system:learning')
 const activeListGroups = computed(() => (state.value.listGroups ?? []).filter(({ archivedAt }) => !archivedAt).sort((left, right) => left.position - right.position))
 const topicGroupOptions = computed(() => [
   { value: '', label: '无分组' },
@@ -239,12 +249,12 @@ const weeklyBlocker = computed(() => weeklyRecords.value.find((record) => record
 const weeklyNext = computed(() => liveTasks.value.find((task) => task.status === 'in_progress' || task.status === 'planned')?.title || '从收件箱选择一个下一步')
 
 onMounted(async () => {
-  window.addEventListener('shixue:quick-capture', handleQuickCapture)
+  window.addEventListener('shixue:quick-add', handleQuickAdd)
   window.addEventListener('shixue:module-error', handleModuleError)
   appearanceDark.value = localStorage.getItem('meow-study-appearance') === 'dark'
   remindersEnabled.value = localStorage.getItem('meow-study-reminders') === 'enabled'
   applyTheme('study', appearanceDark.value)
-  compactMedia = window.matchMedia('(max-width: 799px)')
+  compactMedia = window.matchMedia('(max-width: 819px)')
   compact.value = compactMedia.matches
   compactMedia.addEventListener('change', onCompactChange)
   try {
@@ -270,17 +280,23 @@ onUnmounted(() => {
   if (cloudDebounceTimer) clearTimeout(cloudDebounceTimer)
   if (scratchSaveTimer) clearTimeout(scratchSaveTimer)
   compactMedia?.removeEventListener('change', onCompactChange)
-  window.removeEventListener('shixue:quick-capture', handleQuickCapture)
+  window.removeEventListener('shixue:quick-add', handleQuickAdd)
   window.removeEventListener('shixue:module-error', handleModuleError)
 })
 
-function handleQuickCapture() {
+function handleQuickAdd() {
   settingsOpen.value = false
+  completionOpen.value = false
+  taskActionOpen.value = false
   taskEditorOpen.value = false
-  page.value = 'tasks'
-  activeSmartView.value = 'inbox'
-  showFocus.value = false
-  requestAnimationFrame(() => document.querySelector<HTMLInputElement>('input[aria-label="记录学习想法"]')?.focus())
+  recurrenceScopeOpen.value = false
+  occurrenceRescheduleOpen.value = false
+  topicEditorOpen.value = false
+  groupEditorOpen.value = false
+  selectSmartView('inbox')
+  selectedTaskId.value = ''
+  selectedOccurrenceId.value = ''
+  requestAnimationFrame(() => tasksView.value?.activateQuickAdd())
 }
 function handleModuleError() {
   storageError.value = '部分系统能力未能启动。任务数据与核心界面仍可使用。'
@@ -408,12 +424,9 @@ function setTaskTopicFilter(value: string) { taskTopicFilter.value = value; alig
 function setTaskPriorityFilter(value: StudyTaskPriority | 'all') { taskPriorityFilter.value = value; alignTaskSelection() }
 function setTaskSort(value: StudyTaskQuerySort) { taskSort.value = value; alignTaskSelection() }
 
-async function captureTask(title: string) {
-  const now = new Date().toISOString()
+async function quickAddCreated(entity: EntityRef) {
   try {
-    let task = await captureStudyTask({ title, notes: '' }, { taskId: crypto.randomUUID(), eventId: crypto.randomUUID(), now })
-    if (activeSmartView.value === 'today') task = await planStudyTask(task.id, { plannedOn: today.value }, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now })
-    await refreshState(); selectedTaskId.value = task.id; notify(activeSmartView.value === 'today' ? '已加入今天。' : '已加入收件箱。')
+    await refreshState(); selectedTaskId.value = entity.id; selectedOccurrenceId.value = ''; notify(activeSmartView.value === 'today' ? '已加入今天。' : '已加入收件箱。')
   } catch (error) { reportStorageError(error) }
 }
 
@@ -514,7 +527,7 @@ async function requestRecurrenceEdit(rule: RecurrenceRule) {
         command: {
           type: 'recurrence.create', taskId: task.id, expectedTaskRevision: task.revision,
           cadence: portableRule.cadence, basis: portableRule.basis, anchorOn: selectedTask.value?.plannedOn ?? today.value,
-          end: portableRule.end, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          end: portableRule.end, timezone,
         },
       })
       await refreshState(); taskEditorOpen.value = false; notify('已创建重复规则。')
@@ -842,11 +855,25 @@ async function resetDemo() {
   } catch (error) { reportStorageError(error) }
 }
 function setAppearance(mode: 'light' | 'dark') { appearanceDark.value = mode === 'dark'; localStorage.setItem('meow-study-appearance', mode); applyTheme('study', appearanceDark.value) }
+function updatePlanningPreferences(patch: Partial<PlanningPreferences>) {
+  try {
+    planningPreferences.value = savePlanningPreferences(patch)
+  } catch {
+    notify('快速新增设置未能保存，请重试。')
+  }
+}
 
 function topicTitleFor(topicId: string | null) { return topicId ? topicMap.value.get(topicId)?.title ?? '未知主题' : '未归类' }
 function projectionReasonLabel(reason: TaskProjectionReason) { return ({ overdue: '已过期', planned: '已计划', due: '今日截止', repeating: '重复' } as const)[reason] }
 function taskStatus(task: StudyTask): TaskViewStatus { return task.status === 'planned' && !task.plannedOn ? 'backlog' : task.status }
-function toTaskView(task: StudyTask): TaskViewItem { return { id: task.id, title: task.title, notes: task.notes, topic: topicTitleFor(task.topicId), topicId: task.topicId, status: taskStatus(task), plannedOn: task.plannedOn, dueOn: task.dueOn, reminderAt: task.reminderAt, priority: task.priority, plannedLabel: task.plannedOn ? formatPlanDate(task.plannedOn) : '', dueLabel: task.dueOn ? formatPlanDate(task.dueOn) : '', reminderLabel: formatReminder(task.reminderAt), estimateMinutes: task.estimateMinutes, acceptanceCriteria: task.acceptanceCriteria, checklist: task.checklist.map((item) => ({ id: item.id, text: item.text, checked: item.checked })), blockedReason: task.blockedReason ?? '' } }
+function toTaskView(task: StudyTask): TaskViewItem {
+  const workspace = recurrenceWorkspace.value
+  const workspaceTask = workspace?.tasks.find(({ id }) => id === task.id)
+  const planned = workspaceTask?.schedule.startAt ?? workspaceTask?.schedule.startOn ?? task.plannedOn
+  const deadline = workspaceTask?.deadline.dueAt ?? workspaceTask?.deadline.dueOn ?? task.dueOn
+  const tagTitles = new Map(workspace?.tags.filter(({ archivedAt }) => archivedAt === null).map(({ id, title }) => [id, title]) ?? [])
+  return { id: task.id, title: task.title, notes: task.notes, topic: topicTitleFor(task.topicId), topicId: task.topicId, tags: workspaceTask?.tagIds.map((id) => tagTitles.get(id)).filter((title): title is string => Boolean(title)) ?? [], status: taskStatus(task), plannedOn: task.plannedOn, dueOn: task.dueOn, reminderAt: task.reminderAt, priority: task.priority, plannedLabel: planned ? formatPlanDate(planned) : '', dueLabel: deadline ? formatPlanDate(deadline) : '', reminderLabel: formatReminder(task.reminderAt), estimateMinutes: task.estimateMinutes, acceptanceCriteria: task.acceptanceCriteria, checklist: task.checklist.map((item) => ({ id: item.id, text: item.text, checked: item.checked })), blockedReason: task.blockedReason ?? '', reasons: [] }
+}
 function toEventView(event: TaskEvent): TaskEventViewItem {
   const labels: Record<TaskEvent['type'], string> = { captured: '加入收件箱', migrated: '从旧版记录迁移', planned: '安排任务', started: '开始学习', paused: '暂停学习', resumed: '继续学习', blocked: '标记受阻', completed: '完成学习', reopened: '重开任务', cancelled: '取消任务', rescheduled: '调整计划日期', deleted: '移入回收状态' }
   const tones: Record<TaskEvent['type'], TaskEventViewItem['tone']> = { captured: 'accent', migrated: 'muted', planned: 'accent', started: 'accent', paused: 'muted', resumed: 'accent', blocked: 'warning', completed: 'success', reopened: 'accent', cancelled: 'danger', rescheduled: 'muted', deleted: 'danger' }
@@ -854,7 +881,15 @@ function toEventView(event: TaskEvent): TaskEventViewItem {
 }
 function statusDetail(event: TaskEvent) { return event.toStatus ? `状态变为${({ inbox: '收件箱', planned: '已计划', in_progress: '进行中', blocked: '已阻塞', completed: '已完成', cancelled: '已取消' } as const)[event.toStatus]}` : '保留此次变化' }
 function recordMinutes(record: CompletionRecord) { return Math.max(1, Math.round(state.value.sessions.filter((session) => record.sessionIds.includes(session.id)).reduce((sum, session) => sum + session.elapsedSeconds, 0) / 60)) }
-function formatPlanDate(value: string | null) { if (!value) return '待安排'; if (value === today.value) return '今天'; const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); if (value === tomorrow.toLocaleDateString('sv-SE')) return '明天'; return formatShortDate(value) }
+function formatPlanDate(value: string | null) {
+  if (!value) return '待安排'
+  const precise = value.length !== 10
+  const date = new Date(precise ? value : `${value}T00:00:00`)
+  const dateKey = date.toLocaleDateString('sv-SE')
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
+  const day = dateKey === today.value ? '今天' : dateKey === tomorrow.toLocaleDateString('sv-SE') ? '明天' : formatShortDate(value)
+  return precise ? `${day} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` : day
+}
 function formatShortDate(value: string | null | undefined) { if (!value) return '今天'; const date = new Date(value.length === 10 ? `${value}T00:00:00` : value); return `${date.getMonth() + 1} 月 ${date.getDate()} 日` }
 function formatAge(value: string) { const diff = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 86_400_000)); return diff === 0 ? '今天' : `${diff} 天前` }
 function formatEventTime(value: string) { const date = new Date(value); return `${date.getMonth() + 1} 月 ${date.getDate()} 日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` }
@@ -880,8 +915,8 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
         <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" @back="showFocus = false" @toggle="toggleFocus" @finish="completionOpen = true" @update:scratchpad="updateScratchpad" />
         <div v-else-if="page === 'tasks' || page === 'today'" class="tasks-layout">
-          <div class="tasks-scroll"><TasksView :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @capture="captureTask" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
-          <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTask?.dueOn ? formatPlanDate(selectedTask.dueOn) : ''" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
+          <div class="tasks-scroll"><TasksView ref="tasksView" :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :quick-add-catalog-revision="recurrenceWorkspace?.revision" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
+          <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
         </div>
         <TopicsView v-else-if="page === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
         <ReviewView v-else-if="page === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
@@ -891,10 +926,10 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 
     <CompletionSheet :open="completionOpen" :task-title="activeTask?.title ?? ''" :scratchpad="activeSession?.scratchpad ?? ''" @close="completionOpen = false" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
-    <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" :recurrence-rule="selectedRecurrenceRule" @close="taskEditorOpen = false" @save="saveTaskEdit" @recurrence-save="requestRecurrenceEdit" />
+    <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" @close="taskEditorOpen = false" @save="saveTaskEdit" @recurrence-save="requestRecurrenceEdit" />
     <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @edit-occurrence="editSingleOccurrence" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />
     <OccurrenceRescheduleSheet :open="occurrenceRescheduleOpen" :title="selectedTask?.title ?? ''" :model-value="occurrenceRescheduleValue" :timed="occurrenceRescheduleTimed" @close="occurrenceRescheduleOpen = false" @submit="rescheduleOccurrence" />
-    <SettingsSheet :open="settingsOpen" :dark="appearanceDark" :reminders-available="remindersAvailable" :reminders-enabled="remindersEnabled" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @close="settingsOpen = false" @export="exportData" @import="importData" @reset-demo="resetDemo" @set-appearance="setAppearance" @set-reminders="setReminders" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
+    <SettingsSheet :open="settingsOpen" :dark="appearanceDark" :reminders-available="remindersAvailable" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @close="settingsOpen = false" @export="exportData" @import="importData" @reset-demo="resetDemo" @set-appearance="setAppearance" @set-reminders="setReminders" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
 
     <div v-if="topicEditorOpen" class="editor-backdrop" @click.self="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" required placeholder="清单名称" /></label><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></div>
     <div v-if="groupEditorOpen" class="editor-backdrop" @click.self="groupEditorOpen = false"><form class="editor-sheet compact-editor" @submit.prevent="saveGroup"><h2>{{ selectedGroupId ? '编辑分组' : '新建分组' }}</h2><label><span>名称</span><input v-model="groupTitle" required placeholder="分组名称" /></label><footer><button v-if="selectedGroupId" type="button" class="cancel danger" @click="archiveGroup">归档</button><span class="footer-spacer"></span><button type="button" class="cancel" @click="groupEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></div>
@@ -908,7 +943,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 .editor-backdrop { position: fixed; z-index: var(--z-modal); inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--text) 22%, transparent); backdrop-filter: saturate(120%) blur(12px); }.editor-sheet { width: min(100%, 470px); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 28px; border: 1px solid var(--hairline); border-radius: var(--radius-2xl); background: var(--material-regular); box-shadow: var(--shadow-lg); animation: editor-in var(--motion-slow) var(--ease-spring); }.editor-sheet.compact-editor { width: min(100%, 420px); }.editor-sheet > p { margin: 0 0 5px; color: var(--accent); font-size: 11px; font-weight: 600; }.editor-sheet h2 { margin: 0 0 22px; font-size: 23px; font-weight: 650; letter-spacing: -.025em; }.editor-sheet label { display: block; margin-top: 16px; }.editor-sheet label > span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }.editor-sheet input, .editor-sheet textarea { width: 100%; min-height: 46px; padding: 11px 13px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font-size: 13px; transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); }.editor-sheet input:focus, .editor-sheet textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }.editor-sheet textarea { min-height: 88px; resize: vertical; }.duration-input { display: flex; align-items: center; gap: 9px; }.duration-input input { width: 110px; }.duration-input span { color: var(--muted); font-size: 12px; }.editor-sheet footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); }.editor-sheet footer button { min-height: 46px; padding: 0 18px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 600; }.footer-spacer { flex: 1; }.cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); }.save { border: 0; background: var(--accent); color: var(--accent-text); box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent); }
 .error-banner { position: fixed; z-index: var(--z-toast); left: 232px; right: 16px; top: 14px; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 10px 8px 14px; border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border)); border-radius: var(--radius-lg); background: var(--material-regular); color: var(--danger); font-size: 11px; box-shadow: var(--shadow-md); backdrop-filter: saturate(130%) blur(18px); }.error-banner button { min-height: 30px; border: 0; background: transparent; color: var(--danger); font-weight: 600; }
 @keyframes editor-in { from { transform: translateY(18px) scale(.985); opacity: 0; } }
-@media (max-width: 799px) {
+@media (max-width: 819px) {
   .shell { flex-direction: column; }.workspace { width: 100%; }.mobile-header { height: calc(64px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px; border-bottom: 1px solid var(--hairline); background: var(--material-thin); backdrop-filter: saturate(170%) blur(24px); -webkit-backdrop-filter: saturate(170%) blur(24px); }.mobile-header > div { display: flex; align-items: center; gap: 8px; }.mobile-header img { width: 34px; height: 34px; }.mobile-header strong { font-size: 18px; font-weight: 650; letter-spacing: .04em; }.mobile-header button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.mobile-header button:active { background: var(--control-fill); } main { height: calc(100% - 64px - env(safe-area-inset-top, 0px)); scrollbar-gutter: auto; } main.focus-main { height: 100%; }.tasks-layout { display: block; }.editor-backdrop { align-items: flex-end; padding: 0; }.editor-sheet { position: relative; max-height: 94dvh; border-width: 1px 0 0; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; padding: 32px 20px calc(22px + env(safe-area-inset-bottom, 0px)); animation-name: sheet-up; }.editor-sheet::before { content: ''; position: absolute; top: 9px; left: 50%; width: 36px; height: 5px; transform: translateX(-50%); border-radius: 999px; background: color-mix(in srgb, var(--muted) 32%, transparent); }.error-banner { left: 12px; right: 12px; top: calc(70px + env(safe-area-inset-top, 0px)); }
 }
 @keyframes sheet-up { from { transform: translateY(36px); opacity: .75; } }

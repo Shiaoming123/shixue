@@ -5,6 +5,7 @@ import {
 } from '../domain/capabilities/types.ts'
 import { SYSTEM_LEARNING_LIST_ID } from '../domain/workspace/migrate.ts'
 import type { Task, WorkspaceStateV3 } from '../domain/workspace/types.ts'
+import { parseZonedDateTime } from '../domain/recurrence/timezone.ts'
 import { createWorkspaceExport, parseWorkspaceExport } from '../storage/workspace/data-port.ts'
 import { getWorkspaceStore } from '../storage/workspace/registry.ts'
 import type {
@@ -64,7 +65,7 @@ export type StudyTaskMetadataUpdate = Partial<Pick<StudyTask,
   | 'priority'
   | 'estimateMinutes'
   | 'acceptanceCriteria'
->>
+>> & { plannedAt?: string | null; dueAt?: string | null }
 
 export type StudyTaskCreationInput = Pick<StudyTask, 'title'> &
   Partial<Pick<StudyTask,
@@ -149,7 +150,6 @@ export async function captureStudyTask(
   options: TaskCommandOptions & { taskId?: string } = {},
 ): Promise<StudyTask> {
   const now = commandTime(options.now)
-  assertStudyDateOrder(input.plannedOn ?? null, input.dueOn ?? null)
   const taskId = makeId('task', options.taskId)
   await executeCommand({
     type: 'task.create',
@@ -175,8 +175,6 @@ export async function updateStudyTask(
   input: StudyTaskMetadataUpdate,
   options: StudyWriteOptions = {},
 ): Promise<StudyTask> {
-  const current = requireTask(await loadStudyState(), taskId)
-  assertStudyDateOrder(input.plannedOn ?? current.plannedOn, input.dueOn ?? current.dueOn)
   const now = commandTime(options.now)
   await executeCommand({
     type: 'task.update',
@@ -258,8 +256,6 @@ export async function planStudyTask(
   input: StudyTaskMetadataUpdate,
   options: TaskCommandOptions = {},
 ): Promise<StudyTask> {
-  const current = requireTask(await loadStudyState(), taskId)
-  assertStudyDateOrder(input.plannedOn ?? current.plannedOn, input.dueOn ?? current.dueOn)
   const now = commandTime(options.now)
   await executeCommand({
     type: 'task.plan',
@@ -493,7 +489,10 @@ export async function resetStudyState(now = new Date().toISOString()): Promise<S
   return loadStudyState()
 }
 
-export function projectWorkspaceState(workspace: WorkspaceStateV3): StudyState {
+export function projectWorkspaceState(
+  workspace: WorkspaceStateV3,
+  timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+): StudyState {
   const reminders = new Map<string, string>()
   for (const rule of workspace.reminderRules) {
     if (rule.enabled && rule.occurrenceId === null && rule.trigger.kind === 'absolute' && !reminders.has(rule.taskId)) {
@@ -516,7 +515,7 @@ export function projectWorkspaceState(workspace: WorkspaceStateV3): StudyState {
         updatedAt: list.updatedAt,
         archivedAt: list.archivedAt,
       })),
-    tasks: workspace.tasks.map((task) => projectTask(task, reminders.get(task.id) ?? null)),
+    tasks: workspace.tasks.map((task) => projectTask(task, reminders.get(task.id) ?? null, timezone)),
     sessions: structuredClone(workspace.studySessions),
     taskEvents: structuredClone(workspace.taskEvents),
     completionRecords: structuredClone(workspace.completionRecords),
@@ -548,8 +547,20 @@ function taskPatch(input: StudyTaskMetadataUpdate) {
   if (input.topicId !== undefined) patch.listId = listIdForTopic(input.topicId)
   if (input.title !== undefined) patch.title = input.title
   if (input.notes !== undefined) patch.notes = input.notes
-  if (input.plannedOn !== undefined) patch.startOn = input.plannedOn
-  if (input.dueOn !== undefined) patch.dueOn = input.dueOn
+  if (input.plannedAt !== undefined) {
+    patch.startAt = input.plannedAt
+    patch.startOn = null
+  } else if (input.plannedOn !== undefined) {
+    patch.startAt = null
+    patch.startOn = input.plannedOn
+  }
+  if (input.dueAt !== undefined) {
+    patch.dueAt = input.dueAt
+    patch.dueOn = null
+  } else if (input.dueOn !== undefined) {
+    patch.dueAt = null
+    patch.dueOn = input.dueOn
+  }
   if (input.reminderAt !== undefined) patch.reminderAt = input.reminderAt
   if (input.priority !== undefined) patch.priority = input.priority
   if (input.estimateMinutes !== undefined) patch.estimateMinutes = input.estimateMinutes
@@ -557,7 +568,7 @@ function taskPatch(input: StudyTaskMetadataUpdate) {
   return patch
 }
 
-function projectTask(task: Task, reminderAt: string | null): StudyTask {
+function projectTask(task: Task, reminderAt: string | null, timezone: string): StudyTask {
   return {
     id: task.id,
     revision: task.revision,
@@ -565,8 +576,8 @@ function projectTask(task: Task, reminderAt: string | null): StudyTask {
     title: task.title,
     notes: task.notes,
     status: task.status,
-    plannedOn: task.schedule.startOn ?? task.schedule.startAt?.slice(0, 10) ?? null,
-    dueOn: task.deadline.dueOn ?? task.deadline.dueAt?.slice(0, 10) ?? null,
+    plannedOn: task.schedule.startOn ?? localDatePart(task.schedule.startAt, timezone),
+    dueOn: task.deadline.dueOn ?? localDatePart(task.deadline.dueAt, timezone),
     reminderAt,
     priority: task.priority,
     estimateMinutes: task.schedule.estimateMinutes,
@@ -577,6 +588,10 @@ function projectTask(task: Task, reminderAt: string | null): StudyTask {
     updatedAt: task.updatedAt,
     deletedAt: task.deletedAt,
   }
+}
+
+function localDatePart(value: string | null, timezone: string): string | null {
+  return value ? parseZonedDateTime(value, timezone).date : null
 }
 
 function listIdForTopic(topicId: string | null): string {
@@ -612,10 +627,6 @@ function sameSessionLifecycle(current: StudySession, candidate: StudySession): b
     current.elapsedSeconds === candidate.elapsedSeconds &&
     current.createdAt === candidate.createdAt &&
     current.deletedAt === candidate.deletedAt
-}
-
-function assertStudyDateOrder(plannedOn: string | null, dueOn: string | null): void {
-  if (plannedOn && dueOn && dueOn < plannedOn) throw new Error('Study task dueOn cannot precede plannedOn.')
 }
 
 function assertUniqueTargets(targets: readonly BulkTaskTarget[], message: string): void {

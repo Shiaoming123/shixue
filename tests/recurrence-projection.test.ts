@@ -18,7 +18,7 @@ test('one occurrence with planned and due-today reasons renders once', () => {
     ],
   })
 
-  const rows = projectTaskItems(workspace, todayRange)
+  const rows = projectTaskItems(workspace, todayRange, 'Asia/Shanghai')
 
   assert.equal(rows.length, 1)
   assert.equal(rows.filter((row) => row.occurrenceId === 'occ:today').length, 1)
@@ -40,10 +40,71 @@ test('range projection keeps task reasons stable and excludes unrelated dates', 
     occurrences: [],
   })
 
-  assert.deepEqual(projectTaskItems(workspace, todayRange).map(({ key, reasons }) => [key, reasons]), [
+  assert.deepEqual(projectTaskItems(workspace, todayRange, 'Asia/Shanghai').map(({ key, reasons }) => [key, reasons]), [
     ['task:task:once', ['planned']],
     ['task:task:overdue', ['overdue']],
   ])
+})
+
+test('precise task instants use the injected device timezone for local-day projection', () => {
+  const workspace = fixture({
+    tasks: [task({
+      id: 'task:boundary',
+      recurrenceSeriesId: null,
+      schedule: { startAt: '2026-09-05T16:30:00.000Z', startOn: null, estimateMinutes: null },
+      deadline: { dueAt: '2026-09-05T16:30:00.000Z', dueOn: null },
+    })],
+    recurrenceSeries: [],
+    occurrences: [],
+  })
+
+  assert.deepEqual(projectTaskItems(workspace, { from: '2026-09-05', to: '2026-09-05' }, 'Asia/Shanghai'), [])
+  const [dueToday] = projectTaskItems(workspace, { from: '2026-09-06', to: '2026-09-06' }, 'Asia/Shanghai')
+  assert.equal(dueToday?.scheduledOn, '2026-09-06')
+  assert.equal(dueToday?.dueOn, '2026-09-06')
+  assert.deepEqual(dueToday?.reasons, ['planned', 'due'])
+  assert.deepEqual(
+    projectTaskItems(workspace, { from: '2026-09-07', to: '2026-09-07' }, 'Asia/Shanghai')[0]?.reasons,
+    ['overdue'],
+  )
+})
+
+test('precise occurrence range boundaries follow 23-hour and 25-hour DST days', () => {
+  for (const scenario of [
+    {
+      date: '2026-03-08',
+      instants: [
+        ['occ:before', '2026-03-08T04:59:59.000Z'],
+        ['occ:start', '2026-03-08T05:00:00.000Z'],
+        ['occ:end', '2026-03-09T03:59:59.000Z'],
+        ['occ:after', '2026-03-09T04:00:00.000Z'],
+      ],
+    },
+    {
+      date: '2026-11-01',
+      instants: [
+        ['occ:before', '2026-11-01T03:59:59.000Z'],
+        ['occ:start', '2026-11-01T04:00:00.000Z'],
+        ['occ:end', '2026-11-02T04:59:59.000Z'],
+        ['occ:after', '2026-11-02T05:00:00.000Z'],
+      ],
+    },
+  ] as const) {
+    const occurrences = scenario.instants.map(([id, scheduledAt], index) => occurrence({ id, ordinal: index + 1, scheduledAt }))
+    const rows = projectTaskItems(
+      fixture({ occurrences }),
+      { from: scenario.date, to: scenario.date },
+      'America/New_York',
+    )
+
+    assert.deepEqual(rows.map(({ occurrenceId }) => occurrenceId), ['occ:before', 'occ:start', 'occ:end'])
+    assert.deepEqual(rows.map(({ scheduledOn }) => scheduledOn), [
+      scenario.date === '2026-03-08' ? '2026-03-07' : '2026-10-31',
+      scenario.date,
+      scenario.date,
+    ])
+    assert.deepEqual(rows.map(({ reasons }) => reasons), [['overdue'], ['repeating'], ['repeating']])
+  }
 })
 
 test('completed occurrence remains projected as history without advancing task dates', () => {
@@ -59,7 +120,7 @@ test('completed occurrence remains projected as history without advancing task d
   })
   const workspace = fixture({ task: parent, occurrences: [completed] })
 
-  const [row] = projectTaskItems(workspace, todayRange)
+  const [row] = projectTaskItems(workspace, todayRange, 'Asia/Shanghai')
 
   assert.equal(row?.occurrence?.status, 'completed')
   assert.equal(row?.scheduledAt, completed.scheduledAt)
@@ -70,11 +131,23 @@ test('completed occurrence remains projected as history without advancing task d
 test('Today retains the next occurrence when only its independent parent deadline is today', () => {
   const parent = task({ deadline: { dueAt: null, dueOn: '2026-09-05' } })
   const future = occurrence({ scheduledAt: null, scheduledOn: '2026-09-08' })
-  const [row] = projectTaskItems(fixture({ task: parent, occurrences: [future] }), todayRange)
+  const [row] = projectTaskItems(fixture({ task: parent, occurrences: [future] }), todayRange, 'Asia/Shanghai')
 
   assert.equal(row?.occurrenceId, future.id)
   assert.equal(row?.scheduledOn, '2026-09-08')
   assert.equal(row?.dueOn, '2026-09-05')
+  assert.deepEqual(row?.reasons, ['due'])
+})
+
+test('deadline fallback selects the earliest pending occurrence without relying on input order', () => {
+  const parent = task({ deadline: { dueAt: null, dueOn: '2026-09-05' } })
+  const later = occurrence({ id: 'occ:later', ordinal: 2, scheduledAt: null, scheduledOn: '2026-09-10' })
+  const earlier = occurrence({ id: 'occ:earlier', ordinal: 1, scheduledAt: null, scheduledOn: '2026-09-08' })
+
+  const [row] = projectTaskItems(fixture({ task: parent, occurrences: [later, earlier] }), todayRange, 'Asia/Shanghai')
+
+  assert.equal(row?.occurrenceId, earlier.id)
+  assert.equal(row?.scheduledOn, '2026-09-08')
   assert.deepEqual(row?.reasons, ['due'])
 })
 
@@ -89,7 +162,7 @@ test('Today retains a pending deadline row when a completed occurrence is alread
   })
   const future = occurrence({ id: 'occ:future', ordinal: 2, scheduledAt: null, scheduledOn: '2026-09-08' })
 
-  const rows = projectTaskItems(fixture({ task: parent, occurrences: [completed, future] }), todayRange)
+  const rows = projectTaskItems(fixture({ task: parent, occurrences: [completed, future] }), todayRange, 'Asia/Shanghai')
   const pending = rows.find(({ occurrenceId }) => occurrenceId === future.id)
 
   assert.equal(pending?.occurrence?.status, 'pending')
@@ -107,7 +180,7 @@ test('Today falls back to the parent deadline row when no pending occurrence rem
     completedAt: '2026-09-05T09:30:00+08:00',
   })
 
-  const rows = projectTaskItems(fixture({ task: parent, occurrences: [completed] }), todayRange)
+  const rows = projectTaskItems(fixture({ task: parent, occurrences: [completed] }), todayRange, 'Asia/Shanghai')
   const fallback = rows.find(({ key }) => key === `task:${parent.id}`)
 
   assert.equal(fallback?.occurrenceId, null)
@@ -131,7 +204,7 @@ test('the live Today route uses occurrence projection and opens occurrence detai
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const tasks = readFileSync(new URL('../src/components/study/TasksView.vue', import.meta.url), 'utf8')
 
-  assert.match(app, /projectTaskItems\(recurrenceWorkspace\.value, \{ from: today\.value, to: today\.value \}\)/)
+  assert.match(app, /projectTaskItems\(recurrenceWorkspace\.value, \{ from: today\.value, to: today\.value \}, timezone\)/)
   assert.match(app, /@occurrence-open="openOccurrence"/)
   assert.match(app, /:occurrence-id="selectedOccurrence\?\.id"/)
   assert.match(app, /@occurrence-complete="executeOccurrence\(\$event, 'recurrence\.complete'\)"/)
