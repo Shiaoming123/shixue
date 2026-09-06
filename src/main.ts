@@ -8,24 +8,25 @@ import {
   RUNTIME_INFO_KEY,
   runtimeInfoForNativePlatform,
 } from "./lib/platform";
+import { reportSmokePhase } from "./lib/smoke";
 import "@fontsource-variable/manrope/wght.css";
 import "@fontsource-variable/noto-sans-sc/wght.css";
 import "./assets/themes/global.css";
 
-console.info("[shixue:smoke] webview-created");
 document.documentElement.dataset.uiPlatform = detectUiPlatform(navigator);
 document.documentElement.dataset.input = window.matchMedia("(pointer: coarse)").matches
   ? "coarse"
   : "fine";
 
 async function bootstrap(): Promise<void> {
+  await reportSmokePhase('webview-created');
   const nativePlatform = await detectNativePlatform();
   const runtime = nativePlatform
     ? runtimeInfoForNativePlatform(nativePlatform)
     : detectRuntimeInfo();
 
   if (nativePlatform) document.documentElement.dataset.uiPlatform = nativePlatform;
-  console.info("[shixue:smoke] native-host-ready");
+  await reportSmokePhase('native-host-ready');
 
   // 模块化装配：按 modules.config 的开关加载各能力模块。
   // core 模块（设计系统 + 主题初始化）在 loader 里执行。
@@ -42,7 +43,7 @@ async function bootstrap(): Promise<void> {
     });
 
   app.mount("#app");
-  console.info("[shixue:smoke] vue-mounted");
+  await reportSmokePhase('vue-mounted');
   if (moduleSetupFailed) {
     queueMicrotask(() => window.dispatchEvent(new CustomEvent("shixue:module-error")));
   }

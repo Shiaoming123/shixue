@@ -11,7 +11,7 @@
 - Vue 界面已有窄屏布局、安全区和移动端导航基础；这些只证明前端适配，不证明 iOS 工程可编译或可运行。
 - Rust 入口已有 `tauri::mobile_entry_point`，托盘、单实例、更新器、全局快捷键和提醒调度器按桌面目标隔离。
 - 通知插件可在移动端装配，但当前前端轮询不能保证应用挂起或终止后的投递；原生后台提醒仍未实现。
-- Android 已有调试构建证据；iOS 已在 macOS/Xcode 26.6 上执行 `tauri ios init` 并完成 Apple Silicon Simulator 无签名 Debug 原生编译。最新模拟器启动在 Wry WebView 初始化、前端与 SQLite 运行前以 `SIGTRAP` 失败，因此没有模拟器成功、真机、签名或商店证据。
+- Android 已有调试构建证据；iOS 已在 macOS/Xcode 26.6 上完成 Apple Silicon Simulator 无签名 Debug 原生编译，并在 iPhone 17 Pro / iOS Simulator 26.5 上通过有界启动 smoke。这不是 SQLite 重启持久化、真机、签名或商店证据。
 
 iOS 基础分支已同步 `origin/main@140c012`，包含 PR2、PR3、PR4 和 PR5。PR6（导航/集成/发布）尚未实现；它可以与 iOS 运行阻断排查并行，但不得从未合并的功能分支复制生成工程或领域规则。
 
@@ -94,12 +94,12 @@ Tauri CLI 2.11.4 不会覆盖上一次生成的 Simulator `.app`，连续构建�
 | macOS 工具链 | PASS | Xcode 26.6 (17F113)、CocoaPods 1.17.0、Rust iOS 三个 targets、`npm run mobile:doctor` ready |
 | 工程生成 | PASS | `npm run tauri -- ios init`；生成且忽略 `src-tauri/gen/apple/`，scheme `meow-study_iOS`，minimum iOS 14.0 |
 | 前端门槛 | PASS | `npm run typecheck`、`npm run build` |
-| 原生 Simulator 编译 | PASS | `npm run mobile:ios:prepare -- aarch64-sim` 后执行 `CARGO_TARGET_DIR=/Users/wuling/Library/Caches/shixue/cargo-target npm run tauri -- ios build --debug --target aarch64-sim --no-sign --ci`，产出 `build/arm64-sim/拾学.app` |
-| iPhone 17 Pro / iOS Simulator 26.5 启动 | FAIL | `npm run smoke:ios-launch -- --device <UDID> --app <绝对路径>/拾学.app` 的 install/launch 成功并返回 pid；进程在任一 `webview-created`、`native-host-ready`、`vue-mounted`、`workspace-ready`、`frontend-ready` marker 前以 `SIGTRAP` 退出，完整日志写入 `src-tauri/target/ios-launch/launch-<timestamp>.json` |
+| 原生 Simulator 编译 | PASS | `npm run mobile:ios:prepare -- aarch64-sim` 后执行 `CARGO_TARGET_DIR=/Users/wuling/Library/Caches/shixue/cargo-target npm run tauri -- ios build --debug --target aarch64-sim --no-sign --ci`，产出 `build/arm64-sim/Shixue.app`；图标显示名仍由 `Info.ios.plist` 保持为“拾学” |
+| iPhone 17 Pro / iOS Simulator 26.5 启动 | PASS | `npm run smoke:ios-launch -- --device <UDID> --app <绝对路径>/Shixue.app` 的 install/launch 成功；`webview-created`、`native-host-ready`、`vue-mounted`、`workspace-ready`、`frontend-ready` 全部出现，且进程通过稳定存活窗口，机器可读证据写入 `src-tauri/target/ios-launch/launch-<timestamp>.json` |
 | 锁定依赖与最新兼容发布组合 | PASS（同一组合） | `Cargo.lock` 为 Tauri 2.11.5、`tauri-runtime-wry` 2.11.4、Wry 0.55.1；这是当前 Tauri 2.11.5 的最新兼容解析。独立 Wry 0.56.1 不能作为 Tauri runtime 的无约束替换 |
 | 同 Simulator 的最小 Tauri/Wry 复现 | PASS（WebView） | 临时最小应用使用同一 Tauri/Wry 解析、同一 iPhone 17 Pro / iOS 26.5 和同一 `aarch64-sim`；启动后日志出现 WebContent 页面 load completed 与 DidFirstMeaningfulPaint，未出现 `SIGTRAP`。它不包含拾学的插件、Vue 或 SQLite，不能替代主应用验收 |
 | 旧 iOS Simulator runtime | NOT_RUN | 本机仅安装 iOS 26.5；没有可合法执行的旧 runtime 对照组 |
-| WorkspaceStateV3 SQLite 写入与重启读取 | NOT_RUN | 应用未到达前端/SQLite 写入路径；仅发现沙盒数据库文件不构成迁移或持久化验收 |
+| WorkspaceStateV3 SQLite 写入与重启读取 | NOT_RUN | 启动 smoke 只证明工作区初始读取完成；尚未执行“写入唯一任务→彻底终止→重启→读回”验收 |
 | safe area、viewport-fit、系统字体、44pt 触控、Blob 下载/HTML 文件输入 | NOT_RUN | 源码含相应设计和 viewport 声明，但尚无 WKWebView 运行证据 |
 | 真机、TestFlight、App Store | NOT_RUN | 未请求或使用签名材料、Apple Developer 身份或发布权限 |
 
@@ -108,9 +108,9 @@ sidecar 干扰。每次原生 Simulator 构建先运行 `npm run mobile:ios:prep
 `CARGO_TARGET_DIR` 指向本机 APFS 缓存目录；这两步是可重复编译所需的环境
 准备，不是运行成功的证据。
 
-`smoke:ios-launch` 安装精确的 `.app`，启动固定 Bundle ID，轮询进程并收集 Simulator 日志；只有五个 readiness marker 全部出现且进程稳定存活才返回成功。`webview-created` 表示 WebView 中第一段前端入口开始执行，不等于 native `WKWebView` 分配本身已被独立观测。
+`smoke:ios-launch` 安装精确的 `.app`，用唯一 run id 启动固定 Bundle ID，从应用沙盒读取 Rust 写入的原生 marker 文件，并在宿主侧检查 Simulator 进程；只有五个 readiness marker 全部出现且进程稳定存活才返回成功。`webview-created` 表示 WebView 中第一段前端入口开始执行，不等于 native `WKWebView` 分配本身已被独立观测。
 
-当前故障在这些 marker、应用业务代码、`runtime_platform` command、SQLite 以及 capability service 执行之前发生。最小复现证明同一 Simulator 与兼容 Wry 组合可以完成 WebView 页面加载，因此现有证据支持“拾学主应用集成边界阻断”，尚不足以归因到单一插件或给出上游修复。I1 不通过复制 Swift/Rust 状态机或绕过 capability service 规避它；恢复运行后，首个验收仍是 V3 任务写入、彻底终止、重启读取，再继续视觉与文件输入验证。
+根因已缩小到 iOS 26.5 Simulator 上当前 Wry 0.55.1/CoreFoundation 组合对非 ASCII 原生 executable/product name 的启动路径：只将最小应用的 product name 改为“拾学”即复现同一 `NSBundle::bundleWithIdentifier` `SIGTRAP`。iOS 平台配置因此使用 ASCII 原生名 `Shixue`，再通过 `CFBundleDisplayName` 保留用户可见品牌“拾学”。启动已恢复，下一个独立验收仍是 V3 任务写入、彻底终止、重启读取，再继续视觉与文件输入验证。
 
 ### I2：共享功能持续接入
 

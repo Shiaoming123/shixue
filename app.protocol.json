@@ -86,13 +86,13 @@
     "signing": "unverified",
     "updater": "template-only",
     "webDeployment": "unverified",
-    "mobileNative": "unverified"
+    "mobileNative": "local-debug"
   },
   "nativeEvidence": {
     "ios": {
-      "maturity": "compile-ready",
+      "maturity": "simulator-verified",
       "nativeBuild": "pass",
-      "simulatorRun": "fail",
+      "simulatorRun": "pass",
       "deviceRun": "not-run"
     }
   },

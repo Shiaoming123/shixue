@@ -24,12 +24,20 @@ export async function prepareIosSimulatorBuild(root, target = 'aarch64-sim') {
     throw new Error(`Unsupported iOS simulator target: ${target}`)
   }
 
+  const tauriDirectory = join(root, 'src-tauri')
   const tauriConfig = JSON.parse(
-    await readFile(join(root, 'src-tauri', 'tauri.conf.json'), 'utf8'),
+    await readFile(join(tauriDirectory, 'tauri.conf.json'), 'utf8'),
   )
-  const productName = tauriConfig.productName
+  const iosConfigPath = join(tauriDirectory, 'tauri.ios.conf.json')
+  const iosConfig = await exists(iosConfigPath)
+    ? JSON.parse(await readFile(iosConfigPath, 'utf8'))
+    : {}
+  const productName = iosConfig.productName ?? tauriConfig.productName
   if (typeof productName !== 'string' || !productName || basename(productName) !== productName) {
-    throw new Error('tauri.conf.json must contain a path-safe productName')
+    throw new Error('Tauri config must contain a path-safe iOS productName')
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/.test(productName)) {
+    throw new Error('iOS productName must use an ASCII native executable name')
   }
 
   const removedAppleDouble = await removeAppleDoubleFiles(root)

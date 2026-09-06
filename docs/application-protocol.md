@@ -48,12 +48,12 @@ alter configuration, load modules, contact a network endpoint, or read secrets.
 
 The current protocol intentionally says nothing stronger about signing, hosted
 updates, deployed Web hosting, real-device execution, or store submission.
-Native mobile delivery remains `unverified`: `local-debug` requires both a
-debug build and a successful emulator run. Runtime maturity is a separate
-statement. The current iOS record is `compile-ready` (native build passed),
-with simulator launch recorded as `fail` and device execution as `not-run`;
-that record does not imply a usable simulator session, SQLite persistence, or
-UI verification. Desktop is the primary stable runtime path; Web and mobile
+Native mobile delivery is `local-debug`: an unsigned debug build and a bounded
+Simulator run both passed. Runtime maturity is a separate statement. The
+current iOS record is `simulator-verified`, with native build and Simulator run
+recorded as `pass` and device execution as `not-run`; that record does not imply
+SQLite restart persistence, visual acceptance, signing, real-device execution,
+or store readiness. Desktop is the primary stable runtime path; Web and mobile
 are Beta adaptations with documented capability degradation.
 
 On a Tauri host, `src/main.ts` resolves the native target once and provides the
@@ -68,8 +68,9 @@ The iOS launch smoke command is `npm run smoke:ios-launch -- --device <UDID>
 install/launch commands, Simulator logs, process termination, and separate
 WebView, native-host, Vue, workspace, and frontend markers. It does not prove
 signing, device execution, SQLite persistence, or visual acceptance. The
-current iOS simulator result remains `fail` until all markers are observed and
-the process survives the stability window.
+runner keys native marker-file evidence to a unique launch id, checks the host
+Simulator process, and succeeds only after all markers are observed and the
+process survives the stability window.
 
 ## Workspace data evolution
 

@@ -43,7 +43,7 @@ test('native runtime platform is exposed to the WebView before module routing', 
   const entry = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
 
   assert.match(entry, /fn runtime_platform\(\)/)
-  assert.match(entry, /generate_handler!\[\s*greet,\s*runtime_platform,\s*read_legacy_reminder_deliveries\s*\]/)
+  assert.match(entry, /generate_handler!\[\s*greet,\s*runtime_platform,\s*report_ios_smoke_phase,\s*read_legacy_reminder_deliveries\s*\]/)
 })
 
 test('does not enable Tauri desktop defaults for the shared mobile dependency', () => {

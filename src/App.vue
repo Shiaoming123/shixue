@@ -35,6 +35,7 @@ import { offsetForInstant } from './domain/calendar/target'
 import { loadSidebarPreferences, saveSidebarPreferences, type SidebarPreferences } from './lib/sidebar-preferences'
 import { shouldAutoSelectTask } from './lib/task-detail-layout'
 import { hasRuntimeCapability, RUNTIME_INFO_KEY, runtimeInfoForNativePlatform } from './lib/platform'
+import { reportSmokePhase } from './lib/smoke'
 import { inject } from 'vue'
 import {
   addTaskChecklistItem,
@@ -334,9 +335,9 @@ onMounted(async () => {
     selectedTopicId.value = state.value.topics.find((topic) => !topic.archivedAt)?.id ?? ''
     showFocus.value = Boolean(activeSession.value)
     workspaceReady = true
-    console.info('[shixue:smoke] workspace-ready')
+    await reportSmokePhase('workspace-ready')
   } catch (error) { reportStorageError(error) } finally { loading.value = false }
-  if (workspaceReady) console.info('[shixue:smoke] frontend-ready')
+  if (workspaceReady) await reportSmokePhase('frontend-ready')
   if (cloudAvailable) void refreshCloudSession()
   await initializeDeviceCapabilities()
   await initializeReminders()

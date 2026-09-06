@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -7,20 +8,20 @@ export const IOS_BUNDLE_ID = 'com.shiaoming123.shixue'
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const defaultOutputRoot = resolve(projectRoot, 'src-tauri', 'target', 'ios-launch')
 const readinessMarkers = {
-  nativeHostReady: '[shixue:smoke] native-host-ready',
-  webviewCreated: '[shixue:smoke] webview-created',
-  vueMounted: '[shixue:smoke] vue-mounted',
-  workspaceReady: '[shixue:smoke] workspace-ready',
-  frontendReady: '[shixue:smoke] frontend-ready',
+  nativeHostReady: 'native-host-ready',
+  webviewCreated: 'webview-created',
+  vueMounted: 'vue-mounted',
+  workspaceReady: 'workspace-ready',
+  frontendReady: 'frontend-ready',
 }
 
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds))
 }
 
-function runXcrun(_command, args, options = {}) {
+function runProcess(command, args, options = {}) {
   return new Promise((resolveCommand) => {
-    execFile('xcrun', args, { cwd: projectRoot, encoding: 'utf8', ...options }, (error, stdout = '', stderr = '') => {
+    execFile(command, args, { cwd: projectRoot, encoding: 'utf8', ...options }, (error, stdout = '', stderr = '') => {
       resolveCommand({
         status: error?.code === undefined ? 0 : Number.isInteger(error.code) ? error.code : 1,
         stdout,
@@ -49,9 +50,9 @@ function processIsAlive(result, pid) {
   return new RegExp(`^\\s*${pid}\\b`, 'm').test(resultText(result))
 }
 
-function applyMarkers(phases, text) {
+function applyMarkers(phases, text, runId) {
   for (const [phase, marker] of Object.entries(readinessMarkers)) {
-    if (text.includes(marker)) phases[phase] = true
+    if (text.includes(`[shixue:smoke] ${runId} ${marker}`)) phases[phase] = true
   }
 }
 
@@ -62,7 +63,9 @@ function hasReadiness(phases) {
 export async function runIosLaunchSmoke({
   device,
   app,
-  runCommand = runXcrun,
+  runCommand = runProcess,
+  readEvidence = readFile,
+  runId = randomUUID(),
   sleep = delay,
   now = () => Date.now(),
   timeoutMs = 30_000,
@@ -84,6 +87,7 @@ export async function runIosLaunchSmoke({
   }
   const report = {
     schemaVersion: 1,
+    runId,
     bundleId: IOS_BUNDLE_ID,
     device,
     app,
@@ -94,18 +98,34 @@ export async function runIosLaunchSmoke({
     termination: undefined,
     error: undefined,
   }
-  const invoke = async (args) => {
-    commands.push({ command: 'xcrun', args: [...args] })
-    return runCommand('xcrun', args, { cwd: projectRoot })
+  const invoke = async (command, args, options = {}) => {
+    commands.push({ command, args: [...args] })
+    return runCommand(command, args, { cwd: projectRoot, ...options })
   }
+  const invokeXcrun = (args, options) => invoke('xcrun', args, options)
 
-  const install = await invoke(['simctl', 'install', device, app])
+  const install = await invokeXcrun(['simctl', 'install', device, app])
   if (install.status !== 0) {
     report.error = `simctl install failed: ${resultText(install).trim()}`
     return report
   }
 
-  const launch = await invoke(['simctl', 'launch', device, IOS_BUNDLE_ID])
+  const container = await invokeXcrun(['simctl', 'get_app_container', device, IOS_BUNDLE_ID, 'data'])
+  if (container.status !== 0) {
+    report.error = `simctl get_app_container failed: ${resultText(container).trim()}`
+    return report
+  }
+  const dataContainer = container.stdout.trim()
+  if (!isAbsolute(dataContainer)) {
+    report.error = `simctl get_app_container returned an invalid data path: ${dataContainer || '<empty>'}`
+    return report
+  }
+  const markerPath = resolve(dataContainer, 'tmp', 'shixue-ios-launch-smoke.log')
+
+  const launch = await invokeXcrun(
+    ['simctl', 'launch', '--terminate-running-process', device, IOS_BUNDLE_ID],
+    { env: { ...process.env, SIMCTL_CHILD_SHIXUE_IOS_SMOKE_RUN_ID: runId } },
+  )
   if (launch.status !== 0) {
     report.error = `simctl launch failed: ${resultText(launch).trim()}`
     return report
@@ -119,19 +139,30 @@ export async function runIosLaunchSmoke({
   const deadline = now() + timeoutMs
   let readySince
   while (now() <= deadline) {
-    const processState = await invoke(['simctl', 'spawn', device, 'ps', '-p', pid, '-o', 'pid=,stat=,comm='])
-    const logs = await invoke([
-      'simctl', 'spawn', device, 'log', 'show', '--last', logWindow, '--style', 'compact',
-      '--predicate', 'eventMessage CONTAINS[c] "shixue:smoke" OR eventMessage CONTAINS[c] "SIGTRAP" OR process == "拾学" OR process == "meow-study"',
-    ])
-    report.logs = resultText(logs).trim()
-    applyMarkers(phases, resultText(logs))
+    const processState = await invoke('/bin/ps', ['-p', pid, '-o', 'pid=,stat=,comm='])
+    try {
+      const evidence = await readEvidence(markerPath, 'utf8')
+      report.logs = evidence
+        .split('\n')
+        .filter((line) => line.includes(`[shixue:smoke] ${runId} `))
+        .join('\n')
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        report.error = `Could not read iOS smoke evidence: ${error instanceof Error ? error.message : String(error)}`
+        return report
+      }
+    }
+    applyMarkers(phases, report.logs, runId)
 
     if (!processIsAlive(processState, pid)) {
+      const logs = await invokeXcrun([
+        'simctl', 'spawn', device, 'log', 'show', '--last', logWindow, '--style', 'compact',
+        '--predicate', 'eventMessage CONTAINS[c] "SIGTRAP" OR process == "Shixue" OR process == "拾学" OR process == "meow-study"',
+      ])
       report.termination = {
         status: processState.status,
-        signal: processState.signal ?? extractSignal(`${resultText(processState)}\n${report.logs}`),
-        output: resultText(processState).trim(),
+        signal: processState.signal ?? extractSignal(`${resultText(processState)}\n${resultText(logs)}`),
+        output: `${resultText(processState)}\n${resultText(logs)}`.trim(),
       }
       return report
     }
