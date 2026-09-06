@@ -10,6 +10,7 @@ import { applyLiveCompatibilityCommand } from './live-commands.ts'
 import { applyRecurrenceCommand } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
 import { applyReviewCommand } from './review-commands.ts'
+import { applyTagCommand } from './tag-commands.ts'
 import { ensureReviewTask, pendingReviewLinkForTarget, resolveLegacyReviewLink } from '../learning/review-task-link.ts'
 import {
   CAPABILITY_PROTOCOL_VERSION,
@@ -35,6 +36,7 @@ import {
   type ReviewCapabilityCommand,
   type QueryResult,
   type TaskCapabilityCommand,
+  type TagCapabilityCommand,
   type TaskCapabilityService,
   type UndoApplyCommand,
   type WorkspaceImportCommand,
@@ -234,6 +236,7 @@ function applyCapabilityCommand(
   if (command.type.startsWith('reminder.')) return applyReminderCommand(state, command as ReminderCapabilityCommand, context)
   if (isCalendarCommand(command)) return applyCalendarCommand(state, command, context)
   if (isReviewCommand(command)) return applyReviewCommand(state, command, context)
+  if (isTagCommand(command)) return applyTagCommand(state, command, context)
   let application: CommandApplication
   if (isCoreTaskCommand(command)) application = applyTaskCommand(state, command, context)
   else if (isRecurrenceCommand(command)) application = applyRecurrenceCommand(state, command, context)
@@ -380,7 +383,19 @@ function applyUndo(
 
   const events: TaskEvent[] = []
   const restored: EntityRef[] = []
-  if (token.compensation.type === 'task.remove_created') {
+  if (token.compensation.type === 'tag.remove_created') {
+    const { tagId } = token.compensation
+    const index = state.tags.findIndex(({ id }) => id === tagId)
+    if (index < 0) throw new DomainCommandError('TAG_NOT_FOUND', `Tag not found for undo: ${tagId}.`, { tagId })
+    const [removed] = state.tags.splice(index, 1)
+    restored.push({ type: 'tag', id: removed!.id })
+  } else if (token.compensation.type === 'tag.restore') {
+    const { tag } = token.compensation
+    const index = state.tags.findIndex(({ id }) => id === tag.id)
+    if (index < 0) throw new DomainCommandError('TAG_NOT_FOUND', `Tag not found for undo: ${tag.id}.`, { tagId: tag.id })
+    state.tags[index] = { ...structuredClone(tag), updatedAt: context.now }
+    restored.push({ type: 'tag', id: tag.id })
+  } else if (token.compensation.type === 'task.remove_created') {
     const recurrenceSeriesIds = new Set(token.compensation.recurrenceSeriesIds ?? [])
     const occurrenceIds = new Set(token.compensation.occurrenceIds ?? [])
     const tasks = token.compensation.taskIds.map((taskId) => {
@@ -531,7 +546,11 @@ function previewAffected(
   if (command.type === 'workspace.import' || command.type === 'workspace.reset') {
     return [{ type: 'workspace', id: 'workspace', revision: state.revision }]
   }
-  if (command.type === 'undo.apply') return command.token.compensation.type === 'task.remove_created'
+  if (command.type === 'undo.apply') return command.token.compensation.type === 'tag.remove_created'
+    ? [{ type: 'tag', id: command.token.compensation.tagId }]
+    : command.token.compensation.type === 'tag.restore'
+      ? [{ type: 'tag', id: command.token.compensation.tag.id }]
+      : command.token.compensation.type === 'task.remove_created'
     ? command.token.compensation.taskIds.map((id) => ({ type: 'task', id }))
     : command.token.compensation.type === 'task.restore'
       ? command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task', id, revision }))
@@ -550,6 +569,8 @@ function previewAffected(
   if (command.type === 'list.upsert') return [{ type: 'list', id: command.list.id }]
   if (command.type === 'list_group.upsert') return [{ type: 'list_group', id: command.group.id }]
   if (command.type === 'list_group.archive') return [{ type: 'list_group', id: command.groupId }]
+  if (command.type === 'tag.create') return [{ type: 'tag', id: command.tagId ?? 'pending' }]
+  if (command.type === 'tag.rename' || command.type === 'tag.archive') return [{ type: 'tag', id: command.tagId }]
   if (
     command.type === 'session.pause' ||
     command.type === 'session.resume' ||
@@ -586,6 +607,10 @@ function isCoreTaskCommand(command: CapabilityCommand): command is TaskCapabilit
     command.type === 'task.batch_reschedule' ||
     command.type === 'task.batch_cancel' ||
     command.type === 'task.batch_delete'
+}
+
+function isTagCommand(command: CapabilityCommand): command is TagCapabilityCommand {
+  return command.type === 'tag.create' || command.type === 'tag.rename' || command.type === 'tag.archive'
 }
 
 function isReviewCommand(command: CapabilityCommand): command is ReviewCapabilityCommand {
