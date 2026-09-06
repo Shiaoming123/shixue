@@ -1,6 +1,24 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { sendStudyReminderNotification, sendTaskReminderNotification } from '../src/modules/notification/index.ts'
+import { ensureNotificationPermission, queryNotificationPermission, sendStudyReminderNotification, sendTaskReminderNotification } from '../src/modules/notification/index.ts'
+
+test('query and background send cannot prompt; only explicit first reminder or test may request permission', async () => {
+  let requests = 0
+  const load = async () => ({
+    isPermissionGranted: async () => false,
+    requestPermission: async () => { requests++; return 'granted' },
+    sendNotification: () => assert.fail('ungranted send must stop'),
+  })
+  assert.equal(await queryNotificationPermission(load), 'not-granted')
+  assert.equal(await sendTaskReminderNotification('Private task', load), false)
+  assert.equal(await sendStudyReminderNotification({ dueTaskCount: 1, dueReviewCount: 0 }, load), false)
+  assert.equal(requests, 0)
+  assert.equal(await ensureNotificationPermission('first-reminder', load), 'granted')
+  assert.equal(await ensureNotificationPermission('test', load), 'granted')
+  assert.equal(requests, 2)
+  await assert.rejects(() => ensureNotificationPermission('startup' as never, load), /只能/)
+  assert.equal(requests, 2)
+})
 
 test('permission denial and native notification failures are non-fatal to callers', async () => {
   const denied = await sendStudyReminderNotification(

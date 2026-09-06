@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { AlertCircle, ArrowDown, ArrowRight, ArrowUp, Check, CheckCircle2, ChevronRight, Clock3, GripVertical, Inbox, ListTodo, SlidersHorizontal } from '@lucide/vue'
+import type { EntityRef } from '../../domain/capabilities/types'
+import QuickAddComposer from './QuickAddComposer.vue'
 
 export interface TodayTaskItem {
   id: string
@@ -27,6 +29,9 @@ const props = defineProps<{
   weeklyCompleted: number
   weeklyTarget: number
   weeklyMinutes: number
+  quickAddDestinationListId: string
+  quickAddDefaultStartOn: string
+  quickAddRemoveRecognizedText?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -42,6 +47,7 @@ const emit = defineEmits<{
   occurrenceSkip: [id: string]
   occurrenceReschedule: [id: string]
   reorder: [taskIds: string[]]
+  created: [entity: EntityRef]
 }>()
 
 const ordering = ref(false)
@@ -108,6 +114,13 @@ function reasonLabel(reason: NonNullable<TodayTaskItem['reasons']>[number]) {
         <button class="inbox-link" aria-label="打开任务收件箱" @click="emit('openInbox')"><Inbox :size="18" />收件箱 <span>{{ inboxCount }}</span></button>
       </div>
     </header>
+
+    <QuickAddComposer
+      :destination-list-id="quickAddDestinationListId"
+      :default-start-on="quickAddDefaultStartOn"
+      :quick-add-remove-recognized-text="quickAddRemoveRecognizedText"
+      @created="emit('created', $event)"
+    />
 
     <section v-if="overdueTasks.length" class="overdue-section">
       <header><span><AlertCircle :size="17" />逾期 {{ overdueTasks.length }} 项</span><small>先决定今天做不做</small></header>
@@ -234,7 +247,7 @@ h1 { max-width: 560px; margin: 0; font-size: clamp(31px, 3.2vw, 42px); line-heig
 .completed-section { margin-top: 18px; border-top: 1px solid var(--border); }.completed-section button { width: 100%; min-height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 5px; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--text); }.completed-section span { display: flex; align-items: center; gap: 10px; font-size: 13px; }.completed-section span svg { color: var(--success); }
 .weekly-line { display: flex; align-items: center; justify-content: space-between; margin-top: 24px; color: var(--muted); font-size: 12px; }.weekly-line span { display: flex; align-items: center; gap: 7px; }.weekly-line strong { color: var(--accent); }
 .queue > button { padding-inline: 8px; border-radius: var(--radius-md); }.queue > button:hover { background: color-mix(in srgb, var(--control-fill) 70%, transparent); }
-@media (max-width: 799px) {
+@media (max-width: 819px) {
   .today-view { padding: 26px 20px 126px; }.today-header { align-items: flex-start; margin-bottom: 22px; }.today-header p { margin-bottom: 13px; font-size: 13px; }.today-header h1 { font-size: 29px; }.header-actions { align-items: flex-end; flex-direction: column-reverse; }.order-toggle { width: 42px; padding: 0; justify-content: center; font-size: 0; }.inbox-link { position: relative; width: 42px; padding: 0; justify-content: center; font-size: 0; }.inbox-link span { position: absolute; top: -6px; right: -5px; }
   .overdue-section { margin-top: 0; }.overdue-section > header { padding: 0 13px; }.overdue-row { align-items: stretch; flex-direction: column; padding: 12px 13px; }.overdue-actions button { min-height: 38px; flex: 1; }.overdue-main strong { white-space: normal; }.overdue-actions { width: 100%; }
   .order-panel li { grid-template-columns: minmax(0, 1fr) auto; }.drag-handle { display: none; }.order-panel header span { display: none; }.order-panel .order { display: none; }.move-buttons button { width: 40px; height: 40px; }

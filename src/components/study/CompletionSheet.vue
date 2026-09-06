@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { CheckCircle2, X } from '@lucide/vue'
+import { useModalOverlay } from '../ui/use-overlay'
 
 export interface CompletionPayload {
   learned: string
@@ -12,8 +13,10 @@ export interface CompletionPayload {
 
 const props = defineProps<{
   open: boolean
+  contextId: string
   taskTitle: string
   scratchpad: string
+  busy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -26,12 +29,14 @@ const evidence = ref('')
 const blocker = ref('')
 const nextAction = ref('')
 const mastery = ref<1 | 2 | 3 | 4 | 5>(3)
-const loadedTask = ref('')
+const loadedContext = ref<string | null>(null)
+const panel = ref<HTMLElement | null>(null)
+const { layerId } = useModalOverlay(() => props.open, panel, () => emit('close'))
 
-watch([() => props.open, () => props.taskTitle], ([open]) => {
+watch([() => props.open, () => props.contextId], ([open, contextId]) => {
   if (!open) return
-  if (loadedTask.value === props.taskTitle) return
-  loadedTask.value = props.taskTitle
+  if (loadedContext.value === contextId) return
+  loadedContext.value = contextId
   learned.value = props.scratchpad.trim()
   evidence.value = ''
   blocker.value = ''
@@ -42,7 +47,7 @@ watch([() => props.open, () => props.taskTitle], ([open]) => {
 const ready = computed(() => learned.value.trim() && evidence.value.trim() && nextAction.value.trim())
 
 function submit() {
-  if (!ready.value) return
+  if (!ready.value || props.busy) return
   emit('save', {
     learned: learned.value.trim(),
     evidence: evidence.value.trim(),
@@ -55,13 +60,13 @@ function submit() {
 
 <template>
   <div v-if="open" class="backdrop" @click.self="emit('close')">
-    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="completion-title">
+    <section ref="panel" class="sheet" :data-overlay-layer="layerId" role="dialog" aria-modal="true" aria-labelledby="completion-title" tabindex="-1">
       <header>
         <div>
           <p>完成学习</p>
           <h2 id="completion-title">把时间变成证据</h2>
         </div>
-        <button class="close" title="关闭" @click="emit('close')"><X :size="20" /></button>
+        <button class="close" title="关闭" aria-label="关闭" @click="emit('close')"><X :size="20" /></button>
       </header>
 
       <p class="task">{{ taskTitle }}</p>
@@ -92,7 +97,7 @@ function submit() {
 
       <footer>
         <span>记录后将在 1 天后首次复习</span>
-        <button class="save" :disabled="!ready" @click="submit"><CheckCircle2 :size="18" />保存学习记录</button>
+        <button class="save" :disabled="!ready || busy" @click="submit"><CheckCircle2 :size="18" />{{ busy ? '正在保存…' : '保存学习记录' }}</button>
       </footer>
     </section>
   </div>
@@ -275,13 +280,13 @@ footer > span {
   cursor: default;
 }
 
-@media (min-width: 800px) {
+@media (min-width: 820px) {
   .backdrop {
     align-items: center;
   }
 }
 
-@media (max-width: 799px) {
+@media (max-width: 819px) {
   .backdrop {
     padding: 0;
   }

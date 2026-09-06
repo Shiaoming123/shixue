@@ -21,7 +21,7 @@ const notification: Module = {
 
 export default notification
 
-interface NotificationBindings {
+export interface NotificationBindings {
   isPermissionGranted(): Promise<boolean>
   requestPermission(): Promise<string>
   sendNotification(
@@ -29,12 +29,33 @@ interface NotificationBindings {
   ): void | Promise<void>
 }
 
-type LoadNotificationBindings = () => Promise<NotificationBindings>
+export type LoadNotificationBindings = () => Promise<NotificationBindings>
 
 async function loadNotificationBindings(): Promise<NotificationBindings> {
   const { isPermissionGranted, requestPermission, sendNotification } =
     await import('@tauri-apps/plugin-notification')
   return { isPermissionGranted, requestPermission, sendNotification }
+}
+
+export type NotificationPermissionStatus = 'granted' | 'not-granted' | 'unavailable'
+
+export async function queryNotificationPermission(
+  loadBindings: LoadNotificationBindings = loadNotificationBindings,
+): Promise<NotificationPermissionStatus> {
+  try { return await (await loadBindings()).isPermissionGranted() ? 'granted' : 'not-granted' }
+  catch { return 'unavailable' }
+}
+
+export async function ensureNotificationPermission(
+  reason: 'first-reminder' | 'test',
+  loadBindings: LoadNotificationBindings = loadNotificationBindings,
+): Promise<NotificationPermissionStatus> {
+  if (reason !== 'first-reminder' && reason !== 'test') throw new Error('只能在设置提醒或测试通知时请求权限。')
+  try {
+    const bindings = await loadBindings()
+    if (await bindings.isPermissionGranted()) return 'granted'
+    return await bindings.requestPermission() === 'granted' ? 'granted' : 'not-granted'
+  } catch { return 'unavailable' }
 }
 
 export async function sendStudyReminderNotification(
@@ -45,10 +66,7 @@ export async function sendStudyReminderNotification(
 
   try {
     const bindings = await loadBindings()
-    const alreadyGranted = await bindings.isPermissionGranted()
-    const granted =
-      alreadyGranted || (await bindings.requestPermission()) === 'granted'
-    if (!granted) return false
+    if (!await bindings.isPermissionGranted()) return false
 
     await bindings.sendNotification(
       createStudyReminderNotificationCopy(counts),
@@ -65,8 +83,7 @@ export async function sendTaskReminderNotification(
 ): Promise<boolean> {
   try {
     const bindings = await loadBindings()
-    const granted = await bindings.isPermissionGranted() || (await bindings.requestPermission()) === 'granted'
-    if (!granted) return false
+    if (!await bindings.isPermissionGranted()) return false
     await bindings.sendNotification({ title: '拾学', body: title })
     return true
   } catch {

@@ -54,7 +54,7 @@ function createTask(
     tagIds: [...(command.tagIds ?? [])],
     title: command.title,
     notes: command.notes ?? '',
-    status: 'inbox',
+    status: command.startAt || command.startOn ? 'planned' : 'inbox',
     schedule: {
       startAt: command.startAt ?? null,
       startOn: command.startOn ?? null,
@@ -78,7 +78,7 @@ function createTask(
   if (command.reminderAt !== undefined) {
     setLegacyReminder(state, task.id, command.reminderAt, context, command.reminderRuleId)
   }
-  const event = appendEvent(state, task, 'captured', null, 'inbox', context, undefined, undefined, command.eventId)
+  const event = appendEvent(state, task, 'captured', null, task.status, context, undefined, undefined, command.eventId)
   const affected = [
     taskRef(task),
     ...(recurrence ? [
@@ -425,13 +425,14 @@ function setLegacyReminder(
   reminderRuleId?: string,
 ): void {
   const matches = state.reminderRules.filter((rule) =>
-    rule.taskId === taskId && rule.occurrenceId === null && rule.trigger.kind === 'absolute')
+    rule.taskId === taskId && rule.occurrenceId === null && rule.trigger.kind === 'absolute' && rule.owner !== 'user')
+  const explicit = reminderRuleId ? matches.find(({ id }) => id === reminderRuleId) : undefined
+  if (!explicit && matches.length > 1) throw new DomainCommandError('VALIDATION_ERROR', 'Legacy reminder ownership is ambiguous.')
+  const existing = explicit ?? matches[0]
   if (reminderAt === null) {
-    const ids = new Set(matches.map(({ id }) => id))
-    state.reminderRules = state.reminderRules.filter(({ id }) => !ids.has(id))
+    if (existing) { existing.enabled = false; existing.revision += 1 }
     return
   }
-  const existing = matches[0]
   if (existing) {
     existing.trigger = { kind: 'absolute', at: reminderAt }
     existing.enabled = true
@@ -440,6 +441,7 @@ function setLegacyReminder(
   }
   const rule: ReminderRule = {
     id: reminderRuleId ?? context.id('reminder'),
+    owner: 'legacy',
     taskId,
     occurrenceId: null,
     trigger: { kind: 'absolute', at: reminderAt },

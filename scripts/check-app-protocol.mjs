@@ -36,10 +36,10 @@ const EXPECTED_SHIPPED_FOUNDATION = [
   'live-write-capability-routing',
   'themed-control-foundation',
   'recurrence-occurrence-v1',
+  'offline-natural-language-v1',
+  'multi-reminder-v1',
 ]
 const EXPECTED_PLANNED_FEATURES = [
-  'offline-natural-language',
-  'multi-reminder',
   'calendar',
   'agent-behavior',
 ]
@@ -196,10 +196,10 @@ function validateImplementationStatus(implementation, errors) {
     return
   }
   if (!sameStrings(implementation.shippedFoundation, EXPECTED_SHIPPED_FOUNDATION)) {
-    errors.push('implementation.shippedFoundation must match the currently implemented Task 1-4 foundation.')
+    errors.push('implementation.shippedFoundation must match the currently implemented planning foundation.')
   }
   if (!sameStrings(implementation.planned, EXPECTED_PLANNED_FEATURES)) {
-    errors.push('implementation.planned must retain recurrence, NLP, multi-reminder, calendar, and Agent behaviour as planned.')
+    errors.push('implementation.planned must retain calendar and Agent behaviour as planned.')
   }
 }
 

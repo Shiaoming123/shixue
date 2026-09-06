@@ -32,6 +32,7 @@ export const COMMAND_CATALOG: readonly CommandDescriptor[] = [
   { type: 'completion.create_next_action', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
   { type: 'workspace.reset', risk: 'high', scope: 'workspace', reversibility: 'irreversible', requiresPreview: true },
   { type: 'workspace.import', risk: 'high', scope: 'workspace', reversibility: 'irreversible', requiresPreview: true },
+  ...(['reminder.set', 'reminder.snooze', 'reminder.dismiss', 'reminder.claim', 'reminder.ack', 'reminder.migrate', 'reminder.recover', 'reminder.retry', 'reminder.reconcile'] as const).map((type) => ({ type, risk: 'low' as const, scope: 'single' as const, reversibility: 'irreversible' as const, requiresPreview: false })),
   { type: 'undo.apply', risk: 'medium', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
 ]
 

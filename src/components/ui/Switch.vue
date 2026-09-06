@@ -86,6 +86,7 @@ const emit = defineEmits<{ 'update:modelValue': [checked: boolean] }>()
   padding: 2px;
   border-radius: var(--radius-full);
   background: var(--border);
+  outline: 1px solid var(--muted);
   transition: background var(--motion-fast) var(--ease);
 }
 
@@ -101,6 +102,7 @@ const emit = defineEmits<{ 'update:modelValue': [checked: boolean] }>()
 
 .ui-native-underlay:checked ~ .switch-track {
   background: var(--accent);
+  outline-color: var(--accent);
 }
 
 .ui-native-underlay:checked ~ .switch-track i {

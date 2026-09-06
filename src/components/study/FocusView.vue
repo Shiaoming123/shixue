@@ -213,7 +213,7 @@ textarea:focus {
   box-shadow: 0 5px 13px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-@media (max-width: 799px) {
+@media (max-width: 819px) {
   .focus-view {
     padding: 22px 20px 118px;
   }

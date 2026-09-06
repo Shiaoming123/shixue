@@ -14,11 +14,15 @@ pub const CHECK_UPDATE_EVENT: &str = "tray://check-update";
 
 pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
     let toggle = MenuItem::with_id(app, "toggle", "显示 / 隐藏窗口", true, None::<&str>)?;
+    let quick_add = MenuItem::with_id(app, "quick_add", "快速新增", true, None::<&str>)?;
     let check_update = MenuItem::with_id(app, "check_update", "检查更新…", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&toggle, &check_update, &separator, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&toggle, &quick_add, &check_update, &separator, &quit],
+    )?;
 
     let icon = app
         .default_window_icon()
@@ -33,6 +37,17 @@ pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::er
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "toggle" => toggle_window(app),
+            "quick_add" => {
+                if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                    let result = window
+                        .show()
+                        .and_then(|_| window.unminimize())
+                        .and_then(|_| window.set_focus());
+                    if result.is_ok() {
+                        let _ = app.emit("shixue:quick-add", ());
+                    }
+                }
+            }
             "check_update" => {
                 let _ = app.emit(CHECK_UPDATE_EVENT, ());
             }

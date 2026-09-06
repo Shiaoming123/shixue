@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import Icon from '../Icon.vue'
 import Popover from './Popover.vue'
+import { focusNextToTrigger } from './use-overlay'
 
 export interface ListboxOption {
   value: string
@@ -16,11 +17,13 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   disabled?: boolean
   required?: boolean
+  inline?: boolean
   variant?: 'default' | 'compact' | 'title'
 }>(), {
   placeholder: '请选择',
   disabled: false,
   required: false,
+  inline: false,
   variant: 'default',
 })
 
@@ -54,6 +57,8 @@ async function setOpen(value: boolean) {
   if (!value) return
   activeIndex.value = initialIndex()
   await nextTick()
+  await nextTick()
+  if (!open.value) return
   list.value?.focus({ preventScroll: true })
   scrollActiveIntoView()
 }
@@ -114,7 +119,12 @@ function onTriggerKeydown(event: KeyboardEvent) {
 }
 
 function onListKeydown(event: KeyboardEvent) {
-  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+  if (event.key === 'Tab') {
+    event.preventDefault()
+    event.stopPropagation()
+    close()
+    nextTick(() => focusNextToTrigger(trigger.value, event.shiftKey))
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault()
     move(event.key === 'ArrowDown' ? 1 : -1)
   } else if (event.key === 'Home' || event.key === 'End') {
@@ -137,7 +147,7 @@ watch(() => props.options.length, () => {
 
 <template>
   <span class="listbox" :class="[`listbox--${variant}`, { 'listbox--disabled': disabled }]">
-    <Popover :open="open" kind="menu" match-trigger-width @update:open="setOpen">
+    <Popover :open="open" kind="menu" match-trigger-width :inline="inline" @update:open="setOpen">
       <template #trigger="{ triggerProps }">
         <button
           v-bind="triggerProps"

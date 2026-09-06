@@ -29,6 +29,13 @@
     ]
   },
   {
+    "identifier": "autostart-desktop",
+    "description": "Autostart access is only available on desktop runtimes.",
+    "windows": ["main"],
+    "platforms": ["linux", "macOS", "windows"],
+    "permissions": ["autostart:default"]
+  },
+  {
     "identifier": "updater-desktop",
     "description": "Updater access is only available on desktop runtimes.",
     "windows": ["main"],

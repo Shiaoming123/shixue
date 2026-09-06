@@ -50,6 +50,48 @@ async function executeNext(
   })
 }
 
+test('task.plan preserves an explicit precise schedule after its deadline', async () => {
+  const service = fixture()
+  await executeNext(service, 'create-conflict', {
+    type: 'task.create', taskId: 'conflict', listId: 'list:system:learning', title: 'Explicit conflict',
+    dueOn: '2026-09-06',
+  })
+
+  await executeNext(service, 'plan-conflict', {
+    type: 'task.plan', taskId: 'conflict', patch: { startAt: '2026-09-07T06:00:00.000Z' },
+  })
+
+  const snapshot = await service.query({ type: 'workspace.snapshot' })
+  const task = snapshot.tasks.find(({ id }) => id === 'conflict')
+  assert.equal(task?.schedule.startAt, '2026-09-07T06:00:00.000Z')
+  assert.equal(task?.deadline.dueOn, '2026-09-06')
+})
+
+test('task capability rejects invalid schedule shapes without saving', async (context) => {
+  const commands: Array<[string, CommandEnvelope['command']]> = [
+    ['dual representation', {
+      type: 'task.create', taskId: 'dual', listId: 'list:system:learning', title: 'Dual schedule',
+      startAt: '2026-09-07T06:00:00.000Z', startOn: '2026-09-07',
+    }],
+    ['invalid date', {
+      type: 'task.create', taskId: 'invalid-date', listId: 'list:system:learning', title: 'Invalid date',
+      startOn: '2026-02-30',
+    }],
+  ]
+
+  for (const [label, command] of commands) {
+    await context.test(label, async () => {
+      const service = fixture()
+      const before = await service.query({ type: 'workspace.snapshot' })
+      await assert.rejects(
+        executeNext(service, `invalid-${label}`, command),
+        (error) => error instanceof DomainCommandError && error.code === 'VALIDATION_ERROR',
+      )
+      assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+    })
+  }
+})
+
 test('does not save when one target in a batch is invalid', async () => {
   const service = fixture()
   const initial = await service.query({ type: 'workspace.snapshot' })
@@ -281,6 +323,7 @@ test('catalog exposes fixed risk, scope, reversibility, and preview metadata for
     { type: 'completion.create_next_action', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'workspace.reset', risk: 'high', scope: 'workspace', reversibility: 'irreversible', requiresPreview: true },
     { type: 'workspace.import', risk: 'high', scope: 'workspace', reversibility: 'irreversible', requiresPreview: true },
+    ...(['reminder.set', 'reminder.snooze', 'reminder.dismiss', 'reminder.claim', 'reminder.ack', 'reminder.migrate', 'reminder.recover', 'reminder.retry', 'reminder.reconcile'] as const).map((type) => ({ type, risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false })),
     { type: 'undo.apply', risk: 'medium', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
   ])
 })

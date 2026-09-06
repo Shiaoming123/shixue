@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { nextAfterCompletion, nextFixedOccurrence } from '../src/domain/recurrence/calculate.ts'
+import { assertIanaTimezone } from '../src/domain/recurrence/timezone.ts'
 import type { RecurrenceSeries } from '../src/domain/workspace/types.ts'
 
 function series(overrides: Partial<RecurrenceSeries>): RecurrenceSeries {
@@ -119,6 +120,15 @@ test('invalid IANA timezone fails closed with a stable validation message', () =
     () => nextFixedOccurrence(series({ timezone: 'Mars/Olympus_Mons' }), '2026-09-04T00:00:00Z'),
     /Invalid IANA timezone/,
   )
+})
+
+test('missing or non-string IANA timezone values fail closed at runtime', () => {
+  for (const value of [undefined, null, '', '   ', 0, false, {}]) {
+    assert.throws(
+      () => assertIanaTimezone(value as unknown as string),
+      /Invalid IANA timezone/,
+    )
+  }
 })
 
 test('end-after-count stops once the configured number of occurrences is exhausted', () => {

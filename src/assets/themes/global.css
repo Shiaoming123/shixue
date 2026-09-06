@@ -125,7 +125,7 @@ body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  min-width: 320px;
+  min-width: 0;
   min-height: 100%;
   overscroll-behavior: none;
 }
@@ -225,7 +225,28 @@ time,
 
 @media (prefers-contrast: more) {
   :root {
-    --border: color-mix(in srgb, var(--text) 35%, transparent);
+    --border: color-mix(in srgb, var(--text) 60%, var(--surface)) !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :root {
+    --bg: Canvas !important;
+    --surface: Canvas !important;
+    --surface-alt: Canvas !important;
+    --text: CanvasText !important;
+    --muted: CanvasText !important;
+    --border: CanvasText !important;
+    --accent: Highlight !important;
+    --accent-text: HighlightText !important;
+    --danger: CanvasText !important;
+    --danger-text: Canvas !important;
+    --material-thin: Canvas;
+    --material-regular: Canvas;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: CanvasText;
   }
 }
 
@@ -234,6 +255,25 @@ time,
     --material-thin: var(--surface);
     --material-regular: var(--surface);
   }
+
+  :root *,
+  :root *::before,
+  :root *::after {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+:root[data-reduced-glass='on'] {
+  --material-thin: var(--surface);
+  --material-regular: var(--surface);
+}
+
+:root[data-reduced-glass='on'] *,
+:root[data-reduced-glass='on'] *::before,
+:root[data-reduced-glass='on'] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 :root[data-ui-platform='ios'] {

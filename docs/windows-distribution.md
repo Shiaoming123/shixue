@@ -14,6 +14,8 @@
 
 Portable 表示“应用本体是一个 EXE，不需要安装”，不表示数据写在 EXE 旁边。拾学仍把 SQLite、设置和日志放在系统用户数据目录，因此覆盖 Portable EXE 不会主动删除学习数据。
 
+启动新 Portable 前，应先从托盘退出仍在运行的旧版本。拾学采用单实例运行；旧进程尚未退出时，双击新 EXE 只会唤回旧窗口。可在任务管理器的“命令行”列或 PowerShell `Get-CimInstance Win32_Process` 输出中核对实际可执行文件路径。
+
 Windows 10/11 通常已经包含 WebView2 Runtime；精简系统或旧环境若无法启动，需要先安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 
 ## 为什么 Windows 会提示风险
@@ -65,5 +67,9 @@ signtool verify /pa /all /v .\Shixue_*.msi
 ## 当前边界
 
 - Portable、NSIS、MSI、SHA-256 与安装启动 smoke：已实现；updater 签名用于安装包更新产物，不覆盖 Portable EXE。
+- `npm run smoke:windows-package` 会输出 `src-tauri/target/windows-package-smoke-report.json`。其中构建、静默安装、启动后存活 2 秒属于自动验证；首次提醒权限、单任务双提醒、稍后提醒、完成、隐藏/恢复/退出托盘、退出后不再投递及 Windows 200% 显示缩放均需人工实机观察，脚本会保持为 `NOT_RUN`，不会把进程存活当作功能通过。
+- 当前原生通知只提交通知正文，Windows 原生通知操作按钮为 `UNSUPPORTED`；Complete / Snooze / Open 由应用内提醒卡承接。只有实机观察到系统通知后，才可把“接受提交”升级为“观察到投递”。
 - Authenticode 证书采购、CI 代码签名和干净设备上的签名验证：尚未实现。
 - SmartScreen 信誉不是单次构建可以证明的结果；即使签名有效，也需要真实分发积累。
+
+本 PR4 工作树已生成 Portable、NSIS、MSI 三种未签名本地制品，并运行自动 package smoke：NSIS 构建、隔离静默安装和安装后进程存活探针为 `PASS`。通知显示、单任务双提醒、稍后与完成、托盘隐藏/恢复/退出、退出后静默和 Windows 200% 系统缩放尚未人工观察，仍为 `NOT_RUN`；原生通知操作按钮为 `UNSUPPORTED`，由应用内提醒卡回退。
