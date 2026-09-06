@@ -220,8 +220,9 @@ function projectOccurrence(
   attachDeadline = false,
 ): TaskProjection | null {
   if (occurrence.status === 'cancelled') return null
-  const scheduledAt = occurrence.override ? occurrence.override.scheduledAt : occurrence.scheduledAt
-  const explicitOccurrenceOn = occurrence.override ? occurrence.override.scheduledOn : occurrence.scheduledOn
+  const schedule = resolvedOccurrenceSchedule(occurrence)
+  const scheduledAt = schedule.scheduledAt
+  const explicitOccurrenceOn = schedule.scheduledOn
   const active = occurrence.status === 'pending'
   let occurrenceOn = explicitOccurrenceOn
   let inWindow = occurrenceOn !== null && inRange(occurrenceOn, range)
@@ -262,9 +263,13 @@ function projectOccurrence(
 }
 
 function resolvedOccurrenceOn(occurrence: TaskOccurrence, datePart: LocalDateResolver): string {
-  const scheduledOn = occurrence.override ? occurrence.override.scheduledOn : occurrence.scheduledOn
-  const scheduledAt = occurrence.override ? occurrence.override.scheduledAt : occurrence.scheduledAt
-  return scheduledOn ?? datePart(scheduledAt) ?? '9999-12-31'
+  const schedule = resolvedOccurrenceSchedule(occurrence)
+  return schedule.scheduledOn ?? datePart(schedule.scheduledAt) ?? '9999-12-31'
+}
+
+function resolvedOccurrenceSchedule(occurrence: TaskOccurrence): Pick<TaskOccurrence, 'scheduledAt' | 'scheduledOn'> {
+  const override = occurrence.override
+  return override && (override.scheduledAt !== null || override.scheduledOn !== null) ? override : occurrence
 }
 
 function canonicalDeadlineOccurrence(

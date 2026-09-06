@@ -116,6 +116,71 @@ test('occurrence overrides replace the whole schedule across date-only and timed
   ])
 })
 
+test('estimate-only occurrence override preserves its original schedule in Today', () => {
+  const state = workspace({
+    tasks: [task({ id: 'series', recurrenceSeriesId: 'series:estimate' })],
+    recurrenceSeries: [series('series:estimate', 'series')],
+    occurrences: [occurrence({
+      id: 'occ:estimate', seriesId: 'series:estimate', scheduledOn: '2026-09-05',
+      override: { scheduledAt: null, scheduledOn: null, estimateMinutes: 45 },
+    })],
+  })
+
+  const rows = selectToday(state, '2026-09-05', 'Asia/Shanghai').flatMap(({ items }) => items)
+
+  assert.deepEqual(rows.map(({ key, scheduledAt, scheduledOn }) => [key, scheduledAt, scheduledOn]), [
+    ['occurrence:occ:estimate', null, '2026-09-05'],
+  ])
+})
+
+test('future split with an estimate-only override keeps the successor occurrence schedule projected', async () => {
+  let nextId = 0
+  const service = createTaskCapabilityService(
+    createInMemoryWorkspaceStore(),
+    () => '2026-09-05T00:00:00.000Z',
+    (kind) => `${kind}:future-estimate:${++nextId}`,
+  )
+  let snapshot = await service.query({ type: 'workspace.snapshot' })
+  await service.execute({
+    protocolVersion: 1, idempotencyKey: 'create-future-task', source: 'human-ui', expectedWorkspaceRevision: snapshot.revision,
+    command: { type: 'task.create', taskId: 'series', listId: 'list:system:learning', title: 'Future estimate' },
+  })
+  snapshot = await service.query({ type: 'workspace.snapshot' })
+  await service.execute({
+    protocolVersion: 1, idempotencyKey: 'create-future-series', source: 'human-ui', expectedWorkspaceRevision: snapshot.revision,
+    command: {
+      type: 'recurrence.create', taskId: 'series', expectedTaskRevision: 1, seriesId: 'series:future',
+      cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', anchorAt: '2026-09-07T09:00:00.000Z', end: { kind: 'never' }, timezone: 'UTC',
+    },
+  })
+  snapshot = await service.query({ type: 'workspace.snapshot' })
+  const envelope = {
+    protocolVersion: 1 as const,
+    idempotencyKey: 'future-estimate-only',
+    source: 'human-ui' as const,
+    expectedWorkspaceRevision: snapshot.revision,
+    command: {
+      type: 'recurrence.update' as const,
+      occurrenceId: 'occurrence:series:future:1',
+      expectedOccurrenceRevision: 1,
+      scope: 'future' as const,
+      patch: { estimateMinutes: 45 },
+    },
+  }
+  const preview = await service.preview(envelope)
+  await service.execute({
+    ...envelope,
+    explicitConfirmation: { previewReceiptId: preview.previewReceiptId!, confirmedAt: '2026-09-05T00:00:00.000Z' },
+  })
+  const after = await service.query({ type: 'workspace.snapshot' })
+  const successor = after.occurrences.find(({ seriesId }) => seriesId === 'series:future:split:1')!
+
+  assert.deepEqual(successor.override, { scheduledAt: null, scheduledOn: null, estimateMinutes: 45 })
+  assert.deepEqual(selectUpcoming(after, '2026-09-07', 1, 'UTC').flatMap(({ items }) => items).map(({ key, scheduledAt, scheduledOn }) => [key, scheduledAt, scheduledOn]), [
+    [`occurrence:${successor.id}`, '2026-09-07T09:00:00.000Z', '2026-09-07'],
+  ])
+})
+
 test('one parent deadline attaches to one stable same-day occurrence without regrouping later occurrences', () => {
   const state = workspace({
     tasks: [task({ id: 'series', recurrenceSeriesId: 'series:deadline', deadline: { dueAt: null, dueOn: '2026-09-08' } })],
