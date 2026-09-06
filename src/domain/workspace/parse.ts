@@ -506,7 +506,16 @@ function assertReferences(state: WorkspaceStateV3): void {
     if (!reviewTask) throw new Error(`Review task link ${link.id} has unknown reviewTaskId.`)
     if (reviewTask.id === record.taskId) throw new Error(`Review task link ${link.id} cannot link evidence to its source task.`)
     if (reviewTask.mode !== 'learning') throw new Error(`Review task link ${link.id} requires a learning task.`)
-    if (link.occurrenceId) assertOccurrenceTask(occurrences.get(link.occurrenceId), series, link.reviewTaskId, `Review task link ${link.id}`)
+    if (link.occurrenceId) {
+      const occurrence = occurrences.get(link.occurrenceId)
+      assertOccurrenceTask(occurrence, series, link.reviewTaskId, `Review task link ${link.id}`)
+      if (link.completedAt === null && occurrence?.status !== 'pending') {
+        throw new Error(`Pending review task link ${link.id} requires a pending occurrence.`)
+      }
+      if (link.completedAt !== null && occurrence?.status !== 'completed') {
+        throw new Error(`Completed review task link ${link.id} requires a completed occurrence.`)
+      }
+    }
     const target = link.occurrenceId ?? link.reviewTaskId
     if (reviewTargets.has(target)) throw new Error(`Review task target ${target} has duplicate links.`)
     reviewTargets.add(target)

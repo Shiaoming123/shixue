@@ -275,6 +275,14 @@ function reviewCommandForGenericTarget(
       expectedOccurrenceRevision: command.expectedOccurrenceRevision,
     } : null
   }
+  if (command.type === 'recurrence.skip') {
+    const occurrence = state.occurrences.find(({ id }) => id === command.occurrenceId)
+    const taskId = occurrence && state.recurrenceSeries.find(({ id }) => id === occurrence.seriesId)?.taskId
+    const link = taskId ? pendingReviewLinkForTarget(state, taskId, command.occurrenceId) : null
+    if (link?.completedAt === null) {
+      throw new DomainCommandError('VALIDATION_ERROR', 'A linked review occurrence cannot be skipped.', { linkId: link.id, occurrenceId: command.occurrenceId })
+    }
+  }
   return null
 }
 

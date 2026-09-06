@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { applyReviewCommand } from '../src/domain/capabilities/review-commands.ts'
 import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
 import type { CapabilityCommand } from '../src/domain/capabilities/types.ts'
 import { parseWorkspaceState } from '../src/domain/workspace/parse.ts'
@@ -180,6 +181,62 @@ test('recurrence completion resolves the exact linked occurrence without creatin
   assert.equal(next.occurrences.find(({ id }) => id === 'occurrence:review-exact')?.status, 'completed')
   assert.equal(next.reviewTaskLinks.find(({ id }) => id === link.id)?.completedAt, NOW)
   assert.equal(next.completionRecords.length, seed.completionRecords.length)
+
+  const completedMismatch = structuredClone(next)
+  const mismatchedOccurrence = completedMismatch.occurrences.find(({ id }) => id === 'occurrence:review-exact')!
+  mismatchedOccurrence.status = 'pending'
+  mismatchedOccurrence.completedAt = null
+  assert.throws(() => parseWorkspaceState(completedMismatch), /completed review task link.*completed occurrence/i)
+
+  await store.save({ ...next, commandReceipts: [] }, next.updatedAt)
+  for (const [key, command] of [
+    ['review-occurrence:direct-replay', { type: 'review.complete', linkId: link.id, result: 'clear', reviewedOn: '2026-09-06' }],
+    ['review-occurrence:legacy-replay', { type: 'completion.review', recordId: link.completionRecordId, result: 'clear', reviewedOn: '2026-09-06' }],
+  ] as const) {
+    const before = await store.load()
+    await service.execute({ protocolVersion: 1, idempotencyKey: key, source: 'human-ui', expectedWorkspaceRevision: before.revision, command })
+    const replayed = await store.load()
+    assert.equal(replayed.completionRecords.find(({ id }) => id === link.completionRecordId)?.reviewStage, 1)
+    assert.deepEqual(replayed.taskEvents, before.taskEvents)
+  }
+  const beforeMismatch = await store.load()
+  await assert.rejects(service.execute({
+    protocolVersion: 1, idempotencyKey: 'review-occurrence:mismatch', source: 'human-ui', expectedWorkspaceRevision: beforeMismatch.revision,
+    command: { type: 'review.complete', linkId: link.id, result: 'fuzzy', reviewedOn: '2026-09-06' },
+  }), /does not match this review outcome/)
+  assert.deepEqual(await store.load(), beforeMismatch)
+})
+
+test('review occurrence links reject status drift and cannot be skipped', async () => {
+  const base = createInMemoryWorkspaceStore(createSeedStudyState(NOW))
+  const seed = await base.load()
+  const link = seed.reviewTaskLinks[0]!
+  const reviewTask = seed.tasks.find(({ id }) => id === link.reviewTaskId)!
+  reviewTask.recurrenceSeriesId = 'series:review-skip'
+  seed.recurrenceSeries.push({
+    id: 'series:review-skip', taskId: reviewTask.id, revision: 1,
+    cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule',
+    anchorAt: null, anchorOn: link.dueOn, end: { kind: 'never' }, timezone: 'Asia/Shanghai',
+    createdThrough: link.dueOn, createdCount: 1,
+  })
+  seed.occurrences.push({
+    id: 'occurrence:review-skip', seriesId: 'series:review-skip', ordinal: 1,
+    scheduledAt: null, scheduledOn: link.dueOn, status: 'pending', override: null,
+    completedAt: null, revision: 1,
+  })
+  link.occurrenceId = 'occurrence:review-skip'
+  const invalid = structuredClone(seed)
+  const invalidOccurrence = invalid.occurrences.find(({ id }) => id === 'occurrence:review-skip')!
+  invalidOccurrence.status = 'skipped'
+  assert.throws(() => parseWorkspaceState(invalid), /pending review task link.*pending occurrence/i)
+
+  const store = createInMemoryWorkspaceStore(seed)
+  const service = createTaskCapabilityService(store, () => NOW, (kind) => `${kind}:review-skip`)
+  await assert.rejects(service.execute({
+    protocolVersion: 1, idempotencyKey: 'review-occurrence:skip', source: 'human-ui', expectedWorkspaceRevision: seed.revision,
+    command: { type: 'recurrence.skip', occurrenceId: 'occurrence:review-skip', expectedOccurrenceRevision: 1 },
+  }), /linked review occurrence cannot be skipped/)
+  assert.deepEqual(await store.load(), seed)
 })
 
 test('legacy review replay is independent of link order and does not advance the next stage', async () => {
@@ -265,14 +322,13 @@ for (const status of ['skipped', 'completed'] as const) {
       completedAt: status === 'completed' ? NOW : null, revision: 1,
     })
     link.occurrenceId = `occurrence:review-${status}`
-    const store = createInMemoryWorkspaceStore(seed)
-    let sequence = 0
-    const service = createTaskCapabilityService(store, () => NOW, (kind) => `${kind}:review-${status}:${++sequence}`)
-    await assert.rejects(service.execute({
-      protocolVersion: 1, idempotencyKey: `review-${status}`, source: 'human-ui', expectedWorkspaceRevision: seed.revision,
-      command: { type: 'review.complete', linkId: link.id, result: 'clear', reviewedOn: '2026-09-06' },
-    }), /pending occurrence/)
-    assert.deepEqual(await store.load(), seed)
+    const before = structuredClone(seed)
+    assert.throws(() => applyReviewCommand(
+      seed,
+      { type: 'review.complete', linkId: link.id, result: 'clear', reviewedOn: '2026-09-06' },
+      { now: NOW, id: (kind) => `${kind}:review-${status}` },
+    ), /pending occurrence/)
+    assert.deepEqual(seed, before)
   })
 }
 
