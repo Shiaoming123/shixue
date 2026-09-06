@@ -203,8 +203,12 @@ git commit -m "feat: add month and agenda calendar views"
 ### Task 5: Complete visual and performance acceptance
 
 **Files:**
+- Modify: `.gitignore`
 - Create: `scripts/smoke-calendar.mjs`
+- Modify: `scripts/benchmark-study-task-query.mjs`
+- Modify: `scripts/benchmark-fixtures/study-task-query-scale.ts`
 - Modify: `package.json`
+- Modify: `src/domain/calendar/project.ts`
 - Modify: `src/components/ui/Popover.vue`
 - Modify: `src/components/ui/DateTimePicker.vue`
 - Modify: `src/components/calendar/CalendarToolbar.vue`
@@ -213,6 +217,8 @@ git commit -m "feat: add month and agenda calendar views"
 - Modify: `src/components/calendar/UnscheduledTray.vue`
 - Modify: `src/components/study/QuickAddComposer.vue`
 - Modify: `src/components/study/TasksView.vue`
+- Test: `tests/calendar-projection.test.ts`
+- Test: `tests/study-task-query-performance.test.ts`
 - Test: `tests/popover-mobile-sheet-contract.test.ts`
 - Modify: `VISUAL_QA.md`
 - Modify: `docs/superpowers/plans/2026-09-04-calendar-workspace.md`
@@ -228,7 +234,7 @@ Seed overlapping tasks, deadline-only task, repeating occurrence and unscheduled
 
 - [ ] **Step 2: Add 10k/50k projection benchmark assertion**
 
-Fail when Today/7-day exceeds 100ms or calendar range exceeds 150ms in a production Node run on the recorded host; print counts and elapsed time only, never task contents.
+Fail when Today/7-day exceeds 100ms or calendar range exceeds 150ms in a production Node run on the recorded host. Require the deterministic, non-zero projected counts Today=3000, 7-day=6000 and calendar=41960; run one untimed warm-up followed by 7 timed samples, and print `logicalCpuCount` with counts and elapsed time only, never task contents.
 
 Run: `npm run benchmark:task-query`
 
@@ -245,7 +251,7 @@ Run: `npm test; npm run typecheck; npm run build; npm run build:web; npm run ben
 Complete an independent spec and code-quality review before any push. Resolve every Critical or Important finding and rerun the affected gates.
 
 ```powershell
-git add scripts/smoke-calendar.mjs package.json src/components/ui/Popover.vue src/components/ui/DateTimePicker.vue src/components/calendar/CalendarToolbar.vue src/components/calendar/CalendarItem.vue src/components/calendar/MonthGrid.vue src/components/calendar/UnscheduledTray.vue src/components/study/QuickAddComposer.vue src/components/study/TasksView.vue tests/popover-mobile-sheet-contract.test.ts VISUAL_QA.md docs/superpowers/plans/2026-09-04-calendar-workspace.md docs/design/fidelity-ledger.md docs/todofy-benchmark.md
+git add .gitignore scripts/smoke-calendar.mjs scripts/benchmark-study-task-query.mjs scripts/benchmark-fixtures/study-task-query-scale.ts package.json src/domain/calendar/project.ts src/components/ui/Popover.vue src/components/ui/DateTimePicker.vue src/components/calendar/CalendarToolbar.vue src/components/calendar/CalendarItem.vue src/components/calendar/MonthGrid.vue src/components/calendar/UnscheduledTray.vue src/components/study/QuickAddComposer.vue src/components/study/TasksView.vue tests/calendar-projection.test.ts tests/study-task-query-performance.test.ts tests/popover-mobile-sheet-contract.test.ts VISUAL_QA.md docs/superpowers/plans/2026-09-04-calendar-workspace.md docs/design/fidelity-ledger.md docs/todofy-benchmark.md
 git commit -m "test: verify calendar planning workflow"
 git push -u origin feat/calendar-workspace
 ```
