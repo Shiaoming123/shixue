@@ -89,7 +89,7 @@ function validProtocol() {
       planned: ['agent-behavior'],
     },
     delivery: {
-      desktopPackage: 'current-candidate-unverified',
+      desktopPackage: 'local-installed-acceptance',
       signing: 'unverified',
       updater: 'configured-unverified',
       webDeployment: 'unverified',
@@ -207,7 +207,7 @@ test('rejects an evidence pointer whose declared file is missing', () => {
   assert.match(result.errors.join('\n'), /tests\/review-task-link\.test\.ts does not exist/)
 })
 
-test('accepts only the current-candidate package and configured-unverified updater delivery states', () => {
+test('accepts only the local installed-package and configured-unverified updater delivery states', () => {
   const protocol = validProtocol()
   assert.deepEqual(validate(protocol).errors, [])
 

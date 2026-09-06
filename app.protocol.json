@@ -104,7 +104,7 @@
     ]
   },
   "delivery": {
-    "desktopPackage": "current-candidate-unverified",
+    "desktopPackage": "local-installed-acceptance",
     "signing": "unverified",
     "updater": "configured-unverified",
     "webDeployment": "unverified",

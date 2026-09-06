@@ -39,6 +39,9 @@ alter configuration, load modules, contact a network endpoint, or read secrets.
 
 - `local-smoke`: an explicit local smoke command exists; it is not signing or
   distribution proof.
+- `local-installed-acceptance`: an exact local package hash passed automated
+  package smoke and installed-app acceptance. It is not signing, hosted
+  distribution, or public-release proof.
 - `configured-unverified`: a real endpoint, updater public key, updater artifact
   setting, and release workflow are configured, but an installed-client update
   has not been exercised end to end (`NOT_RUN`).
@@ -47,12 +50,11 @@ alter configuration, load modules, contact a network endpoint, or read secrets.
   submission, or hosted delivery channel.
 - `unverified`: no platform delivery claim has been demonstrated here.
 
-The current protocol marks `desktopPackage` as `current-candidate-unverified`:
-the current source candidate has no package/install acceptance evidence yet.
-Historical package smoke belongs in its versioned README or release acceptance
-ledger and does not raise this candidate's status. The protocol intentionally
-says nothing stronger about signing, hosted updates, deployed Web hosting,
-real-device execution, or store submission.
+The current protocol marks `desktopPackage` as `local-installed-acceptance`.
+The exact unsigned v0.3.0 local candidate passed package smoke and installed-app
+acceptance; its versioned acceptance ledger records the artifact hashes, checks,
+and remaining `NOT_RUN` rows. This does not raise signing, hosted updates,
+deployed Web hosting, real-device execution, or store submission status.
 Native mobile delivery remains `unverified`. Runtime maturity is a separate
 statement: desktop is the primary stable runtime path; Web and mobile are Beta
 adaptations with documented capability degradation.

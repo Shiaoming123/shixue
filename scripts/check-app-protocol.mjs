@@ -15,7 +15,7 @@ import { CAPABILITY_PROTOCOL_VERSION } from '../src/domain/capabilities/types.ts
 
 const EXPECTED_MATURITY = { desktop: 'stable', web: 'beta', mobile: 'beta' }
 const EXPECTED_DELIVERY = {
-  desktopPackage: 'current-candidate-unverified',
+  desktopPackage: 'local-installed-acceptance',
   signing: 'unverified',
   updater: 'configured-unverified',
   webDeployment: 'unverified',
