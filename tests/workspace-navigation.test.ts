@@ -7,6 +7,7 @@ import {
   mobileMoreWorkspaceNavigation,
   mobileWorkspaceNavigation,
   renderPageForDestination,
+  resolveArchivedListTransition,
   resolveShellDestination,
   resolveTaskTopicFilterTransition,
   resolveWorkspaceView,
@@ -59,6 +60,21 @@ test('task topic filters become explicit typed navigation transitions', () => {
   assert.equal(renderPageForDestination({ kind: 'lists' }), 'tasks')
   assert.equal(renderPageForDestination({ kind: 'list', listId: 'list:a' }), 'tasks')
   assert.equal(renderPageForDestination({ kind: 'learning', section: 'topics' }), 'topics')
+})
+
+test('archiving a list only leaves the active list destination', () => {
+  assert.deepEqual(
+    resolveArchivedListTransition({ kind: 'list', listId: 'list:a' }, 'list:a', 'list:a'),
+    { destination: { kind: 'lists' }, preservePriority: true, topicFilter: 'all' },
+  )
+  assert.deepEqual(
+    resolveArchivedListTransition({ kind: 'learning', section: 'topics' }, 'list:a', 'list:a'),
+    { destination: { kind: 'learning', section: 'topics' }, preservePriority: true, topicFilter: 'all' },
+  )
+  assert.equal(
+    resolveArchivedListTransition({ kind: 'list', listId: 'list:b' }, 'list:a', 'list:b'),
+    null,
+  )
 })
 
 test('shell controls emit one typed destination and App owns the canonical setter', () => {

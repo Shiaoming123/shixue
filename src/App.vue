@@ -40,6 +40,7 @@ import {
   learningWorkspaceNavigation,
   mobileMoreWorkspaceNavigation,
   renderPageForDestination,
+  resolveArchivedListTransition,
   resolveTaskTopicFilterTransition,
   shouldResetTaskPriority,
   type ShellDestination,
@@ -1104,7 +1105,7 @@ async function archiveGroup() {
 async function archiveTopic(id: string) {
   const topic = state.value.topics.find((item) => item.id === id)
   if (!topic) return
-  try { await saveStudyTopic({ ...topic, archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); await refreshState(); selectedTopicId.value = state.value.topics.find((item) => !item.archivedAt)?.id ?? ''; if (taskTopicFilter.value === id) setDestination({ kind: 'lists' }, { topicFilter: 'all', preservePriority: true }); notify('清单已归档。') } catch (error) { reportStorageError(error) }
+  try { await saveStudyTopic({ ...topic, archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); await refreshState(); selectedTopicId.value = state.value.topics.find((item) => !item.archivedAt)?.id ?? ''; const transition = resolveArchivedListTransition(destination.value, id, taskTopicFilter.value); if (transition) setDestination(transition.destination, { topicFilter: transition.topicFilter, preservePriority: transition.preservePriority }); notify('清单已归档。') } catch (error) { reportStorageError(error) }
 }
 
 async function exportData() {

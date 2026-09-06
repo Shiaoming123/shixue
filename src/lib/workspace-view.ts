@@ -39,6 +39,26 @@ export function resolveTaskTopicFilterTransition(topicFilter: string): TaskTopic
     : { destination: { kind: 'list', listId: topicFilter }, preservePriority: true, topicFilter }
 }
 
+export interface ArchivedListTransition {
+  destination: ShellDestination
+  preservePriority: true
+  topicFilter: 'all'
+}
+
+export function resolveArchivedListTransition(
+  destination: ShellDestination,
+  archivedListId: string,
+  topicFilter: string,
+): ArchivedListTransition | null {
+  const activeListArchived = destination.kind === 'list' && destination.listId === archivedListId
+  if (!activeListArchived && topicFilter !== archivedListId) return null
+  return {
+    destination: activeListArchived ? { kind: 'lists' } : destination,
+    preservePriority: true,
+    topicFilter: 'all',
+  }
+}
+
 export function shouldResetTaskPriority(destination: ShellDestination, preservePriority = false): boolean {
   return !preservePriority
     && destination.kind !== 'settings'
