@@ -210,6 +210,31 @@ test('requires exact trimmed titles to be unique among active tags', () => {
   assert.doesNotThrow(() => parseWorkspaceState(archived))
 })
 
+test('defaults legacy completion tag snapshots and validates explicit tag references', () => {
+  const legacy = validWorkspaceState()
+  legacy.completionRecords.push({
+    id: 'record-1', taskId: 'task-1', topicId: null, sessionIds: [], taskTitleSnapshot: 'Pay rent',
+    learned: 'Paid on time', evidence: 'Bank receipt', blocker: '', nextAction: 'Review next month', mastery: null,
+    completedAt: legacy.updatedAt, reviewStage: 0, nextReviewOn: null, lastReviewResult: null,
+    lastReviewedAt: null, createdAt: legacy.updatedAt, updatedAt: legacy.updatedAt, deletedAt: null,
+  })
+  assert.deepEqual(parseWorkspaceState(legacy).completionRecords[0]?.tagIdsSnapshot, [])
+
+  const explicit = structuredClone(legacy) as typeof legacy & {
+    completionRecords: Array<(typeof legacy.completionRecords)[number] & { tagIdsSnapshot?: string[] }>
+  }
+  explicit.completionRecords[0]!.tagIdsSnapshot = ['tag-1']
+  assert.deepEqual(parseWorkspaceState(explicit).completionRecords[0]?.tagIdsSnapshot, ['tag-1'])
+
+  const duplicate = structuredClone(explicit)
+  duplicate.completionRecords[0]!.tagIdsSnapshot = ['tag-1', 'tag-1']
+  assert.throws(() => parseWorkspaceState(duplicate), /duplicate tagIdsSnapshot/)
+
+  const unknown = structuredClone(explicit)
+  unknown.completionRecords[0]!.tagIdsSnapshot = ['missing']
+  assert.throws(() => parseWorkspaceState(unknown), /unknown tagId/)
+})
+
 test('rejects invalid recurrence, reminder, and occurrence links without generating records', () => {
   const state = validWorkspaceState()
   state.recurrenceSeries.push({
@@ -299,6 +324,7 @@ test('accepts a link from a source completion task to a distinct visible review 
     taskId: 'task-1',
     topicId: null,
     sessionIds: [],
+    tagIdsSnapshot: [],
     taskTitleSnapshot: 'Pay rent',
     learned: 'Paid on time',
     evidence: 'Bank receipt',

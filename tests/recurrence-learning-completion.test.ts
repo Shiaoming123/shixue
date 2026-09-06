@@ -9,7 +9,8 @@ test('learning occurrence completion saves evidence atomically without completin
   const service = createTaskCapabilityService(store, () => '2026-09-05T12:00:00Z', () => crypto.randomUUID())
   const envelope = async (command: CapabilityCommand) => ({ protocolVersion: 1 as const, source: 'human-ui' as const, idempotencyKey: crypto.randomUUID(), expectedWorkspaceRevision: (await store.load()).revision, command })
   const execute = async (command: CapabilityCommand) => service.execute(await envelope(command))
-  await execute({ type: 'task.create', mode: 'learning', taskId: 'learning', listId: 'list:system:learning', title: 'Practice', startAt: '2026-09-05T10:00:00Z' })
+  await execute({ type: 'tag.create', tagId: 'tag:practice', title: 'practice' })
+  await execute({ type: 'task.create', mode: 'learning', taskId: 'learning', listId: 'list:system:learning', tagIds: ['tag:practice'], title: 'Practice', startAt: '2026-09-05T10:00:00Z' })
   await execute({ type: 'recurrence.create', taskId: 'learning', seriesId: 'learning:series', cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', anchorAt: '2026-09-05T10:00:00Z', end: { kind: 'after', count: 2 }, timezone: 'UTC' })
   const before = await store.load()
   const occurrence = before.occurrences.find(({ seriesId }) => seriesId === 'learning:series')!
@@ -31,6 +32,7 @@ test('learning occurrence completion saves evidence atomically without completin
   assert.equal(after.occurrences.filter(({ status }) => status === 'pending').length, 1)
   assert.equal(after.completionRecords.filter(({ id }) => id === 'proof:one').length, 1)
   assert.equal(after.completionRecords.find(({ id }) => id === 'proof:one')!.evidence, 'Worked example')
+  assert.deepEqual(after.completionRecords.find(({ id }) => id === 'proof:one')!.tagIdsSnapshot, ['tag:practice'])
   assert.ok(after.taskEvents.some((event) => event.occurrenceId === occurrence.id && event.completionRecordId === 'proof:one'))
   await execute({ type: 'undo.apply', token: result.undoToken! })
   const undone = await store.load()

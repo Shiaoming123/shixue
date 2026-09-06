@@ -226,7 +226,7 @@ function completeTask(
   const record = task.mode === 'learning' ? {
     id: command.recordId ?? context.id('completion'), taskId: task.id,
     topicId: task.listId === 'list:system:learning' ? null : task.listId,
-    sessionIds: sessions.current.map(({ id }) => id), taskTitleSnapshot: task.title,
+    sessionIds: sessions.current.map(({ id }) => id), tagIdsSnapshot: [...task.tagIds], taskTitleSnapshot: task.title,
     learned: command.learned!, evidence: command.evidence!, blocker: command.blocker ?? '',
     nextAction: command.nextAction!, mastery: command.mastery ?? null, completedAt: context.now,
     reviewStage: 0 as const, nextReviewOn: addCalendarDays(context.now.slice(0, 10), 1),
