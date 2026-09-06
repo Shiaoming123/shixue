@@ -10,6 +10,8 @@ export interface PlanningPreferences {
 }
 
 const STORAGE_KEY = 'shixue:planning-preferences:v1'
+const LAST_DESKTOP_VIEW_KEY = 'shixue:calendar-last-desktop-view:v1'
+type CalendarView = PlanningPreferences['defaultCalendarView']
 
 const DEFAULTS: PlanningPreferences = {
   weekStartsOn: 1,
@@ -50,6 +52,24 @@ export function savePlanningPreferences(
   const next = parseStoredPreferences({ ...loadPlanningPreferences(), ...patch })
   globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   return { ...next }
+}
+
+export function loadLastDesktopCalendarView(): CalendarView | null {
+  try {
+    const stored = globalThis.localStorage?.getItem(LAST_DESKTOP_VIEW_KEY) ?? null
+    if (stored === null) return null
+    const value: unknown = JSON.parse(stored)
+    if (!isPlainObject(value) || value.version !== 1 || !isCalendarView(value.mode)) return null
+    return value.mode
+  } catch {
+    return null
+  }
+}
+
+export function saveLastDesktopCalendarView(mode: CalendarView): CalendarView {
+  if (!isCalendarView(mode)) throw new TypeError('Invalid desktop calendar view')
+  globalThis.localStorage.setItem(LAST_DESKTOP_VIEW_KEY, JSON.stringify({ version: 1, mode }))
+  return mode
 }
 
 function parseStoredPreferences(value: unknown): PlanningPreferences {
@@ -93,4 +113,8 @@ function isValidField(key: keyof PlanningPreferences, value: unknown): boolean {
 
 function isPositiveMinutes(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 1440
+}
+
+function isCalendarView(value: unknown): value is CalendarView {
+  return value === 'day' || value === 'week' || value === 'month' || value === 'agenda'
 }

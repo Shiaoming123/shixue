@@ -13,7 +13,7 @@ export function createStudyTaskQueryScaleFixture(): WorkspaceStateV3 {
     tasks.push({
       id: taskId, revision: 1, mode: 'general', listId: 'list:scale', sectionId: null, tagIds: [],
       title: `Scale task ${seriesIndex}`, notes: '', status: 'planned',
-      schedule: { startAt: null, startOn: null, estimateMinutes: null },
+      schedule: { startAt: null, startOn: null, estimateMinutes: 30 },
       deadline: { dueAt: null, dueOn: null }, priority: 'none', checklist: [], learning: null,
       recurrenceSeriesId: seriesId, createdAt: '2026-09-01T00:00:00.000Z',
       updatedAt: '2026-09-01T00:00:00.000Z', deletedAt: null,
@@ -31,6 +31,19 @@ export function createStudyTaskQueryScaleFixture(): WorkspaceStateV3 {
         override: null, completedAt: null, revision: 1,
       })
     }
+  }
+
+  for (let taskIndex = 1_000; taskIndex < 10_000; taskIndex += 1) {
+    const scheduled = taskIndex < 4_000
+    const due = taskIndex >= 4_000 && taskIndex < 7_000
+    tasks.push({
+      id: `task:scale:${taskIndex}`, revision: 1, mode: 'general', listId: 'list:scale', sectionId: null, tagIds: [],
+      title: `Scale task ${taskIndex}`, notes: '', status: scheduled || due ? 'planned' : 'inbox',
+      schedule: { startAt: null, startOn: scheduled ? '2026-09-05' : null, estimateMinutes: null },
+      deadline: { dueAt: null, dueOn: due ? '2026-09-07' : null }, priority: 'none', checklist: [], learning: null,
+      recurrenceSeriesId: null, createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z', deletedAt: null,
+    })
   }
 
   return {

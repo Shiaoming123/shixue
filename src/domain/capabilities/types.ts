@@ -1,4 +1,5 @@
 import type { ReminderCapabilityCommand } from './reminder-commands.ts'
+import type { CalendarCapabilityCommand } from './calendar-commands.ts'
 import type {
   CompletionRecord,
   JsonValue,
@@ -192,6 +193,7 @@ export interface TaskRescheduleCommand {
   expectedRevision?: number
   startAt?: string | null
   startOn?: string | null
+  estimateMinutes?: number
   reason?: string
   eventId?: string
 }
@@ -469,6 +471,7 @@ export type LiveCompatibilityCommand =
   | WorkspaceResetCommand
 
 export type CapabilityCommand =
+  | CalendarCapabilityCommand
   | ReminderCapabilityCommand
   | TaskCapabilityCommand
   | RecurrenceCapabilityCommand

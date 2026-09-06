@@ -4,6 +4,7 @@ import { Settings } from '@lucide/vue'
 import { applyTheme } from './assets/themes'
 import AppSidebar, { type StudyPage, type StudySmartView, type StudySmartViewCounts } from './components/study/AppSidebar.vue'
 import BottomTabs from './components/study/BottomTabs.vue'
+import CalendarWorkspace from './components/calendar/CalendarWorkspace.vue'
 import CompletionSheet, { type CompletionPayload } from './components/study/CompletionSheet.vue'
 import FocusView from './components/study/FocusView.vue'
 import ReviewView, { type CompletionRecordViewItem, type ReviewViewItem } from './components/study/ReviewView.vue'
@@ -28,7 +29,9 @@ import { defaultModuleConfig } from './modules/config'
 import { installWindowLifecycle, type WindowCloseBehavior } from './lib/window-lifecycle'
 import { createReminderRuntime, readNativeLegacyReminderRows, submitNativeReminder } from './lib/reminder-runtime'
 import type { NotificationPermissionStatus } from './modules/notification'
-import { loadPlanningPreferences, savePlanningPreferences, type PlanningPreferences } from './lib/planning-preferences'
+import { loadLastDesktopCalendarView, loadPlanningPreferences, saveLastDesktopCalendarView, savePlanningPreferences, type PlanningPreferences } from './lib/planning-preferences'
+import type { CalendarView } from './domain/calendar/range'
+import { offsetForInstant } from './domain/calendar/target'
 import { loadSidebarPreferences, saveSidebarPreferences, type SidebarPreferences } from './lib/sidebar-preferences'
 import { shouldAutoSelectTask } from './lib/task-detail-layout'
 import { detectRuntimeInfo, hasRuntimeCapability } from './lib/platform'
@@ -72,6 +75,8 @@ import { createSeedStudyState } from './storage/study/types'
 import { getWorkspaceStore } from './storage/workspace/registry'
 import { createTaskCapabilityService } from './domain/capabilities/service'
 import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef } from './domain/capabilities/types'
+import type { CalendarCapabilityCommand } from './domain/capabilities/calendar-commands'
+import { createCalendarUndoAction, runCalendarCommand } from './lib/calendar-command-handler'
 import type { WorkspaceStateV3, ReminderRule } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
@@ -118,13 +123,19 @@ const reviewMode = ref<'review' | 'records'>('review')
 const appearanceDark = ref(false)
 const compact = ref(false)
 const clock = ref(Date.now())
+const calendarTargetOffset = computed(() => offsetForInstant(new Date(clock.value)))
 const toast = ref('')
-const toastAction = ref<{ label: string; run: () => Promise<void> } | null>(null)
+const toastAction = ref<{ label: string; run: () => Promise<void>; successMessage?: string } | null>(null)
 const toastVersion = ref(0)
 const storageError = ref('')
 const remindersEnabled = ref(false)
 const planningPreferences = ref(loadPlanningPreferences())
-const defaultSidebarMenuKeys = ['smart:inbox', 'smart:today', 'smart:next7', 'smart:all', 'smart:completed', 'page:topics', 'page:review']
+const calendarStartsCompact = typeof window !== 'undefined' && window.innerWidth <= 819
+const desktopCalendarMode = ref<CalendarView>(calendarStartsCompact
+  ? planningPreferences.value.defaultCalendarView
+  : loadLastDesktopCalendarView() ?? planningPreferences.value.defaultCalendarView)
+let desktopCalendarModeLoaded = !calendarStartsCompact
+const defaultSidebarMenuKeys = ['smart:inbox', 'smart:today', 'smart:next7', 'page:calendar', 'smart:all', 'smart:completed', 'page:topics', 'page:review']
 const sidebarPreferences = ref(loadSidebarPreferences(defaultSidebarMenuKeys))
 const tasksView = ref<InstanceType<typeof TasksView> | null>(null)
 const runtime = detectRuntimeInfo()
@@ -533,13 +544,52 @@ function handleModuleError() {
   storageError.value = '部分系统能力未能启动。任务数据与核心界面仍可使用。'
 }
 
-function onCompactChange(event: MediaQueryListEvent) { compact.value = event.matches; if (event.matches && page.value === 'tasks') selectedTaskId.value = '' }
+function onCompactChange(event: MediaQueryListEvent) {
+  compact.value = event.matches
+  if (event.matches && page.value === 'tasks') selectedTaskId.value = ''
+  if (!event.matches && !desktopCalendarModeLoaded) {
+    desktopCalendarMode.value = loadLastDesktopCalendarView() ?? planningPreferences.value.defaultCalendarView
+    desktopCalendarModeLoaded = true
+  }
+}
 async function refreshState() {
   const workspace = await getWorkspaceStore().load()
   const projected = projectWorkspaceState(workspace)
   recurrenceWorkspace.value = workspace
   state.value = projected
   scheduleCloudSync()
+}
+
+async function executeCalendarCommand(command: CalendarCapabilityCommand, source: CommandEnvelope['source']) {
+  await runCalendarCommand({
+    preflight: async () => (await capabilityService.query({ type: 'workspace.snapshot' })).revision,
+    execute: (expectedWorkspaceRevision) => capabilityService.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+      idempotencyKey: `calendar-ui:${crypto.randomUUID()}`,
+      source,
+      expectedWorkspaceRevision,
+      command,
+    }),
+    refresh: refreshState,
+    notify,
+    successAction: calendarUndoAction,
+  })
+}
+
+function calendarUndoAction(result: Awaited<ReturnType<typeof capabilityService.execute>>) {
+  return result.undoToken ? createCalendarUndoAction({
+    token: result.undoToken,
+    preflight: async () => (await capabilityService.query({ type: 'workspace.snapshot' })).revision,
+    execute: (expectedWorkspaceRevision, token) => capabilityService.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+      idempotencyKey: `calendar-undo:${crypto.randomUUID()}`,
+      source: 'human-ui',
+      expectedWorkspaceRevision,
+      command: { type: 'undo.apply', token },
+    }),
+    refresh: refreshState,
+    notify,
+  }) : undefined
 }
 
 function scheduleCloudSync() {
@@ -1101,6 +1151,16 @@ function updatePlanningPreferences(patch: Partial<PlanningPreferences>) {
     notify('设置未能保存，请重试。')
   }
 }
+function persistDesktopCalendarMode(mode: CalendarView) {
+  if (desktopCalendarMode.value === mode && desktopCalendarModeLoaded) return
+  desktopCalendarMode.value = mode
+  desktopCalendarModeLoaded = true
+  try {
+    saveLastDesktopCalendarView(mode)
+  } catch {
+    notify('日历视图未能保存，本次选择仍可继续使用。')
+  }
+}
 function applyReducedGlass(value: PlanningPreferences['reducedGlassOverride']) {
   if (value === 'on') document.documentElement.dataset.reducedGlass = 'on'
   else delete document.documentElement.dataset.reducedGlass
@@ -1149,13 +1209,13 @@ function formatShortDate(value: string | null | undefined) { if (!value) return 
 function formatAge(value: string) { const diff = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 86_400_000)); return diff === 0 ? '今天' : `${diff} 天前` }
 function formatEventTime(value: string) { const date = new Date(value); return `${date.getMonth() + 1} 月 ${date.getDate()} 日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` }
 function formatReminder(value: string | null) { if (!value) return ''; const date = new Date(value); const day = date.toLocaleDateString('sv-SE') === today.value ? '今天' : `${date.getMonth() + 1}/${date.getDate()}`; return `${day} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` }
-function notify(message: string, action?: { label: string; run: () => Promise<void> }) { toast.value = message; toastAction.value = action ?? null; toastVersion.value += 1 }
+function notify(message: string, action?: { label: string; run: () => Promise<void>; successMessage?: string }) { toast.value = message; toastAction.value = action ?? null; toastVersion.value += 1 }
 function dismissToast() { toast.value = ''; toastAction.value = null }
 async function runToastAction() {
   const action = toastAction.value
   if (!action) return
   dismissToast()
-  try { await action.run(); notify('已撤销。') } catch (error) { reportStorageError(error) }
+  try { await action.run(); if (action.successMessage !== '') notify(action.successMessage ?? '已撤销。') } catch (error) { reportStorageError(error) }
 }
 function reportStorageError(error: unknown) { storageError.value = error instanceof Error ? error.message : String(error); notify('这次更改还没写入本地，内容仍保留在页面中。') }
 </script>
@@ -1166,7 +1226,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
     <AppSidebar v-if="!showFocus" :active="page" :active-smart-view="activeSmartView" :counts="smartViewCounts" :groups="activeListGroups" :lists="listNavItems" :active-list-id="taskTopicFilter === 'all' || taskTopicFilter === 'unassigned' ? undefined : taskTopicFilter" :display-mode="sidebarPreferences.displayMode" :order="sidebarPreferences.order" @navigate="navigate" @update:display-mode="updateSidebarPreferences({ displayMode: $event })" @reorder="updateSidebarPreferences({ order: $event })" @smart-view="selectSmartView" @select-list="selectList" @create-list="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" />
     <div class="workspace">
       <header v-if="!showFocus" class="mobile-header"><div><img src="/shixue-mark.svg" alt="" /><strong>拾学</strong></div><button title="设置" :aria-current="page === 'settings' ? 'page' : undefined" @click="navigate('settings')"><Settings :size="22" /></button></header>
-      <main :class="{ 'focus-main': showFocus, 'tasks-main': (page === 'tasks' || page === 'today') && !showFocus }">
+      <main :class="{ 'focus-main': showFocus, 'tasks-main': (page === 'tasks' || page === 'today') && !showFocus, 'calendar-main': page === 'calendar' && !showFocus }">
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
         <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" @back="showFocus = false" @toggle="toggleFocus" @finish="completionOpen = true" @update:scratchpad="updateScratchpad" />
         <div v-else-if="page === 'tasks' || page === 'today'" class="tasks-layout">
@@ -1176,6 +1236,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
         <SettingsView v-else-if="page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export="exportData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-appearance="setAppearance" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
         <TopicsView v-else-if="page === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
         <ReviewView v-else-if="page === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
+        <CalendarWorkspace v-if="!loading && page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :target-offset="calendarTargetOffset" :execute-command="executeCalendarCommand" @desktop-mode-selected="persistDesktopCalendarMode" />
       </main>
       <BottomTabs v-if="!showFocus" :active="page" @navigate="navigate" @smart-view="selectSmartView" />
     </div>
@@ -1205,6 +1266,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 </template>
 
 <style scoped>
+.calendar-main { overflow: hidden; }
 .shell { width: 100%; height: 100vh; height: 100dvh; display: flex; overflow: hidden; background: var(--bg); }.workspace { min-width: 0; flex: 1; height: 100%; overflow: hidden; } main { width: 100%; height: 100%; overflow-y: auto; overscroll-behavior-y: contain; scroll-behavior: smooth; scrollbar-gutter: stable; }.tasks-main { overflow: hidden; }.today-layout { min-height: 100%; display: flex; justify-content: center; }.today-layout > :first-child { flex: 1 1 auto; }.tasks-layout { height: 100%; display: flex; }.tasks-scroll { min-width: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }.focus-main { background: radial-gradient(circle at 50% -25%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 42%), var(--bg); }.mobile-header { display: none; }.loading { min-height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
 .editor-backdrop { position: fixed; z-index: var(--z-modal); inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--text) 22%, transparent); backdrop-filter: saturate(120%) blur(12px); }.editor-sheet { width: min(100%, 470px); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 28px; border: 1px solid var(--hairline); border-radius: var(--radius-2xl); background: var(--material-regular); box-shadow: var(--shadow-lg); animation: editor-in var(--motion-slow) var(--ease-spring); }.editor-sheet.compact-editor { width: min(100%, 420px); }.editor-sheet > p { margin: 0 0 5px; color: var(--accent); font-size: 11px; font-weight: 600; }.editor-sheet h2 { margin: 0 0 22px; font-size: 23px; font-weight: 650; letter-spacing: -.025em; }.editor-sheet label { display: block; margin-top: 16px; }.editor-sheet label > span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }.editor-sheet input, .editor-sheet textarea { width: 100%; min-height: 46px; padding: 11px 13px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font-size: 13px; transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); }.editor-sheet input:focus, .editor-sheet textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }.editor-sheet textarea { min-height: 88px; resize: vertical; }.duration-input { display: flex; align-items: center; gap: 9px; }.duration-input input { width: 110px; }.duration-input span { color: var(--muted); font-size: 12px; }.editor-sheet footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); }.editor-sheet footer button { min-height: 46px; padding: 0 18px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 600; }.footer-spacer { flex: 1; }.cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); }.save { border: 0; background: var(--accent); color: var(--accent-text); box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent); }
 .error-banner { position: fixed; z-index: var(--z-toast); left: 232px; right: 16px; top: 14px; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 10px 8px 14px; border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border)); border-radius: var(--radius-lg); background: var(--material-regular); color: var(--danger); font-size: 11px; box-shadow: var(--shadow-md); backdrop-filter: saturate(130%) blur(18px); }.error-banner button { min-height: 30px; border: 0; background: transparent; color: var(--danger); font-weight: 600; }

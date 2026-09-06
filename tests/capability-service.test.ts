@@ -67,6 +67,20 @@ test('task.plan preserves an explicit precise schedule after its deadline', asyn
   assert.equal(task?.deadline.dueOn, '2026-09-06')
 })
 
+test('task.reschedule rejects durations outside the public five-minute invariant without saving', async () => {
+  const service = fixture()
+  await executeNext(service, 'create-duration-boundary', {
+    type: 'task.create', taskId: 'duration-boundary', listId: 'list:system:learning', title: 'Duration boundary',
+  })
+  for (const estimateMinutes of [0, 31, 1445]) {
+    const before = await service.query({ type: 'workspace.snapshot' })
+    await assert.rejects(executeNext(service, `reject-duration-${estimateMinutes}`, {
+      type: 'task.reschedule', taskId: 'duration-boundary', startAt: '2026-09-06T10:00:00.000Z', estimateMinutes,
+    }), (error) => error instanceof DomainCommandError && error.code === 'VALIDATION_ERROR')
+    assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+  }
+})
+
 test('task capability rejects invalid schedule shapes without saving', async (context) => {
   const commands: Array<[string, CommandEnvelope['command']]> = [
     ['dual representation', {
@@ -292,6 +306,8 @@ test('rejects stale workspace and entity revisions without changing the workspac
 
 test('catalog exposes fixed risk, scope, reversibility, and preview metadata for every core command', () => {
   assert.deepEqual(COMMAND_CATALOG, [
+    { type: 'calendar.move', risk: 'high', scope: 'series', reversibility: 'reversible', requiresPreview: true },
+    { type: 'calendar.resize', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'task.create', risk: 'low', scope: 'single', reversibility: 'compensating', requiresPreview: false },
     { type: 'task.update', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'task.delete', risk: 'high', scope: 'single', reversibility: 'compensating', requiresPreview: true },

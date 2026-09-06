@@ -1,4 +1,4 @@
-export type StudyPage = 'today' | 'tasks' | 'topics' | 'review' | 'settings'
+export type StudyPage = 'today' | 'tasks' | 'calendar' | 'topics' | 'review' | 'settings'
 export type StudySmartView = 'inbox' | 'today' | 'next7' | 'all' | 'completed'
 
 export function currentSidebarDestination(
