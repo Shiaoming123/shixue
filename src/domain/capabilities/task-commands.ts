@@ -286,6 +286,7 @@ function rescheduleTask(
   task.status = 'planned'
   task.schedule.startAt = command.startAt ?? null
   task.schedule.startOn = command.startOn ?? null
+  if (command.estimateMinutes !== undefined) task.schedule.estimateMinutes = command.estimateMinutes
   if (task.learning) task.learning.blockedReason = null
   task.revision += 1
   task.updatedAt = context.now

@@ -193,6 +193,7 @@ export interface TaskRescheduleCommand {
   expectedRevision?: number
   startAt?: string | null
   startOn?: string | null
+  estimateMinutes?: number
   reason?: string
   eventId?: string
 }

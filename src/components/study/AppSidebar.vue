@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  BookOpen, CalendarDays, CalendarRange, CircleCheckBig, Folder, History, Inbox,
+  BookOpen, CalendarClock, CalendarDays, CalendarRange, CircleCheckBig, Folder, History, Inbox,
   ListTodo, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Settings,
 } from '@lucide/vue'
 import { moveSidebarItem, type SidebarDisplayMode } from '../../lib/sidebar-preferences'
@@ -38,20 +38,21 @@ const dropTargetKey = ref('')
 const reorderMessage = ref('')
 
 const smartItems = [
-  { key: 'inbox' as const, label: '收件箱', icon: Inbox },
-  { key: 'today' as const, label: '今天', icon: CalendarDays },
-  { key: 'next7' as const, label: '最近 7 天', icon: CalendarRange },
-  { key: 'all' as const, label: '全部', icon: ListTodo },
-  { key: 'completed' as const, label: '已完成', icon: CircleCheckBig },
+  { orderKey: 'smart:inbox', smartView: 'inbox' as const, label: '收件箱', icon: Inbox },
+  { orderKey: 'smart:today', smartView: 'today' as const, label: '今天', icon: CalendarDays },
+  { orderKey: 'smart:next7', smartView: 'next7' as const, label: '最近 7 天', icon: CalendarRange },
+  { orderKey: 'page:calendar', page: 'calendar' as const, label: '日历', icon: CalendarClock },
+  { orderKey: 'smart:all', smartView: 'all' as const, label: '全部', icon: ListTodo },
+  { orderKey: 'smart:completed', smartView: 'completed' as const, label: '已完成', icon: CircleCheckBig },
 ]
 const learningItems = [
   { key: 'topics' as const, label: '主题', icon: BookOpen },
   { key: 'review' as const, label: '回顾', icon: History },
 ]
 
-const smartKeys = smartItems.map(({ key }) => smartKey(key))
+const smartKeys = smartItems.map(({ orderKey }) => orderKey)
 const learningKeys = learningItems.map(({ key }) => pageKey(key))
-const orderedSmartItems = computed(() => sortItems(smartItems, ({ key }) => smartKey(key)))
+const orderedSmartItems = computed(() => sortItems(smartItems, ({ orderKey }) => orderKey))
 const orderedLearningItems = computed(() => sortItems(learningItems, ({ key }) => pageKey(key)))
 const orderedListSections = computed(() => {
   const lists = props.lists ?? []
@@ -68,7 +69,6 @@ const currentDestination = computed(() => currentSidebarDestination(
   props.active, props.activeSmartView ?? fallbackSmartView.value, props.activeListId,
 ))
 
-function smartKey(key: StudySmartView) { return `smart:${key}` }
 function pageKey(key: 'topics' | 'review') { return `page:${key}` }
 function listKey(id: string) { return `list:${id}` }
 function listKeys(lists: Array<{ id: string }>) { return lists.map(({ id }) => listKey(id)) }
@@ -83,10 +83,17 @@ function selectSmartView(view: StudySmartView) {
   emit('smart-view', view)
   emit('navigate', view === 'today' ? 'today' : 'tasks')
 }
+function selectSmartItem(item: (typeof smartItems)[number]) {
+  if (item.smartView) selectSmartView(item.smartView)
+  else emit('navigate', item.page)
+}
 function displayCount(view: StudySmartView) { return Math.min(Math.max(0, props.counts?.[view] ?? 0), 999) }
 function smartLabel(view: StudySmartView, label: string) {
   const count = props.counts?.[view]
   return typeof count === 'number' ? `${label}，${Math.max(0, count)} 项` : label
+}
+function primaryLabel(item: (typeof smartItems)[number]) {
+  return item.smartView ? smartLabel(item.smartView, item.label) : item.label
 }
 
 function startDrag(event: DragEvent, key: string) {
@@ -139,10 +146,10 @@ function commitMove(source: string, target: string, keys: string[]) {
       <section class="nav-section" aria-labelledby="smart-list-heading">
         <h2 id="smart-list-heading">智能清单</h2>
         <TransitionGroup name="nav-order" tag="div" class="nav-list">
-          <button v-for="item in orderedSmartItems" :key="item.key" class="nav-item" :class="{ active: currentDestination === smartKey(item.key), dragging: draggedKey === smartKey(item.key), 'drop-target': dropTargetKey === smartKey(item.key) }" :aria-current="currentDestination === smartKey(item.key) ? 'page' : undefined" :aria-label="smartLabel(item.key, item.label)" aria-describedby="sidebar-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" :title="`${item.label} · 拖动排序`" draggable="true" @click="selectSmartView(item.key)" @dragstart="startDrag($event, smartKey(item.key))" @dragover.prevent="markDropTarget(smartKey(item.key), smartKeys)" @drop="dropItem($event, smartKey(item.key), smartKeys)" @dragend="clearDrag" @keydown="moveByKeyboard($event, smartKey(item.key), smartKeys)">
+          <button v-for="item in orderedSmartItems" :key="item.orderKey" class="nav-item" :class="{ active: currentDestination === item.orderKey, dragging: draggedKey === item.orderKey, 'drop-target': dropTargetKey === item.orderKey }" :aria-current="currentDestination === item.orderKey ? 'page' : undefined" :aria-label="primaryLabel(item)" aria-describedby="sidebar-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" :title="`${item.label} · 拖动排序`" draggable="true" @click="selectSmartItem(item)" @dragstart="startDrag($event, item.orderKey)" @dragover.prevent="markDropTarget(item.orderKey, smartKeys)" @drop="dropItem($event, item.orderKey, smartKeys)" @dragend="clearDrag" @keydown="moveByKeyboard($event, item.orderKey, smartKeys)">
             <component :is="item.icon" class="nav-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
             <span class="nav-label">{{ item.label }}</span>
-            <span class="nav-count" aria-hidden="true">{{ displayCount(item.key) }}</span>
+            <span v-if="item.smartView" class="nav-count" aria-hidden="true">{{ displayCount(item.smartView) }}</span>
           </button>
         </TransitionGroup>
       </section>

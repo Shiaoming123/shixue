@@ -17,6 +17,7 @@ export interface CalendarMoveCommand {
   occurrenceId?: string
   startAt?: string | null
   startOn?: string | null
+  estimateMinutes?: number
   scope?: CalendarMoveScope
 }
 
@@ -56,12 +57,22 @@ export function applyCalendarCommand(
   }
   assertMoveScopeTarget(command.occurrenceId, command.scope)
   assertMoveTarget(command.startAt ?? null, command.startOn ?? null)
+  if (command.estimateMinutes !== undefined) {
+    assertDuration(command.estimateMinutes)
+    if (!command.startAt) {
+      throw new DomainCommandError('VALIDATION_ERROR', 'Calendar move duration requires a timed target.')
+    }
+    if (command.occurrenceId !== undefined && command.scope !== undefined && command.scope !== 'occurrence') {
+      throw new DomainCommandError('VALIDATION_ERROR', 'Calendar move duration supports occurrence scope only.')
+    }
+  }
   if (command.occurrenceId === undefined) {
     return applyTaskCommand(state, {
       type: 'task.reschedule',
       taskId: command.taskId,
       startAt: command.startAt ?? null,
       startOn: command.startOn ?? null,
+      ...(command.estimateMinutes === undefined ? {} : { estimateMinutes: command.estimateMinutes }),
     }, context)
   }
   const occurrence = requireOccurrenceTask(state, command.taskId, command.occurrenceId)
@@ -77,7 +88,7 @@ export function applyCalendarCommand(
         scheduledAt: command.startAt,
         scheduledOn: command.startOn,
         ...(scope === 'occurrence'
-          ? { estimateMinutes: occurrence.override?.estimateMinutes ?? state.tasks.find(({ id }) => id === command.taskId)!.schedule.estimateMinutes }
+          ? { estimateMinutes: command.estimateMinutes ?? occurrence.override?.estimateMinutes ?? state.tasks.find(({ id }) => id === command.taskId)!.schedule.estimateMinutes }
           : {}),
       }
   return applyRecurrenceCommand(state, {

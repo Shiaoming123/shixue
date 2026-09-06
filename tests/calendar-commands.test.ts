@@ -113,6 +113,47 @@ test('moving a task converts between timed and all-day schedules', async () => {
   )
 })
 
+test('timed placement atomically stores start and duration while existing moves preserve duration', async () => {
+  const service = fixture()
+  await executeNext(service, 'create-unscheduled-task', {
+    type: 'task.create', taskId: 'task:drop', listId: 'list:system:learning', title: 'Drop me',
+  })
+  const before = await service.query({ type: 'workspace.snapshot' })
+
+  await executeNext(service, 'drop-task-with-duration', {
+    type: 'calendar.move', taskId: 'task:drop', startAt: '2026-09-06T10:15:00+08:00',
+    estimateMinutes: 30, scope: 'task',
+  } as CommandEnvelope['command'])
+  const after = await service.query({ type: 'workspace.snapshot' })
+  assert.equal(after.revision, before.revision + 1)
+  assert.deepEqual(after.tasks.find(({ id }) => id === 'task:drop')?.schedule, {
+    startAt: '2026-09-06T10:15:00+08:00', startOn: null, estimateMinutes: 30,
+  })
+
+  await executeNext(service, 'move-existing-without-duration', {
+    type: 'calendar.move', taskId: 'task:drop', startAt: '2026-09-06T11:00:00+08:00', scope: 'task',
+  } as CommandEnvelope['command'])
+  assert.equal((await service.query({ type: 'task.get', taskId: 'task:drop' }))?.schedule.estimateMinutes, 30)
+})
+
+test('atomic timed placement rejects invalid or date-only duration without saving', async () => {
+  const service = fixture()
+  await executeNext(service, 'create-invalid-placement-task', {
+    type: 'task.create', taskId: 'task:invalid-drop', listId: 'list:system:learning', title: 'Invalid drop',
+  })
+  for (const command of [
+    { type: 'calendar.move', taskId: 'task:invalid-drop', startAt: '2026-09-06T10:00:00+08:00', estimateMinutes: 31 },
+    { type: 'calendar.move', taskId: 'task:invalid-drop', startOn: '2026-09-06', estimateMinutes: 30 },
+  ] as const) {
+    const before = await service.query({ type: 'workspace.snapshot' })
+    await assert.rejects(
+      executeNext(service, `reject-placement-${command.startAt ?? command.startOn}`, command as CommandEnvelope['command']),
+      (error) => error instanceof DomainCommandError && error.code === 'VALIDATION_ERROR',
+    )
+    assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+  }
+})
+
 test('resizing a task accepts five-minute boundaries and rejects invalid durations without saving', async () => {
   const service = fixture()
   await executeNext(service, 'create-resizable-task', {
