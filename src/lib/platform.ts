@@ -1,3 +1,5 @@
+import type { InjectionKey } from 'vue'
+
 /**
  * 平台检测 —— 用于桌面专属能力的运行时降级。
  *
@@ -69,6 +71,9 @@ export interface RuntimeInfo {
   capabilities: readonly RuntimeCapability[]
 }
 
+/** Runtime selected by the native host and shared with the Vue shell. */
+export const RUNTIME_INFO_KEY: InjectionKey<RuntimeInfo> = Symbol('shixue.runtime-info')
+
 const MOBILE_RUNTIME_INFO: RuntimeInfo = {
   platform: 'mobile',
   capabilities: ['native-sql', 'native-notification'],
@@ -82,6 +87,7 @@ const DESKTOP_RUNTIME_INFO: RuntimeInfo = {
     'native-updater',
     'global-shortcut',
     'native-notification',
+    'autostart',
   ],
 }
 

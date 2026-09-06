@@ -18,7 +18,7 @@ The protocol deliberately summarizes rather than replaces implementation facts:
 | --- | --- | --- |
 | Enabled modules | `src/modules/config.ts` | Declare the matching product policy |
 | Dependencies, platforms, capabilities, native requirements | `src/modules/contract.ts` | Point readers to the compatibility boundary |
-| Runtime selection | `src/modules/loader.ts` and `src/lib/platform.ts` | State target and fallback expectations |
+| Runtime selection | `src/main.ts`, `src/modules/loader.ts`, and `src/lib/platform.ts` | State target and fallback expectations |
 | Workspace import/export | `src/storage/workspace/data-port.ts` | State the current public format/version and legacy Study migration inputs |
 | Capability commands | `src/domain/capabilities/types.ts` | State the independent command protocol version and direct-write boundary |
 | Sync | `src/sync/` and `docs/sync.md` | State whether a provider is enabled by default |
@@ -55,6 +55,13 @@ with simulator launch recorded as `fail` and device execution as `not-run`;
 that record does not imply a usable simulator session, SQLite persistence, or
 UI verification. Desktop is the primary stable runtime path; Web and mobile
 are Beta adaptations with documented capability degradation.
+
+On a Tauri host, `src/main.ts` resolves the native target once and provides the
+typed `RuntimeInfo` to both module loading and the Vue shell. User-Agent data
+may still select presentation hints, but it never selects native capabilities.
+The iOS runtime contract is limited to `native-sql` and
+`native-notification`; desktop-only modules, including autostart, remain
+excluded by platform and capability checks.
 
 ## Workspace data evolution
 

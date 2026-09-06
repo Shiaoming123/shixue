@@ -5,6 +5,7 @@ import {
   detectNativePlatform,
   detectRuntimeInfo,
   detectUiPlatform,
+  RUNTIME_INFO_KEY,
   runtimeInfoForNativePlatform,
 } from "./lib/platform";
 import "@fontsource-variable/manrope/wght.css";
@@ -27,6 +28,7 @@ async function bootstrap(): Promise<void> {
   // 模块化装配：按 modules.config 的开关加载各能力模块。
   // core 模块（设计系统 + 主题初始化）在 loader 里执行。
   const app = createApp(App);
+  app.provide(RUNTIME_INFO_KEY, runtime);
   let moduleSetupFailed = false;
 
   // Storage adapters must be selected before App loads its state. A native

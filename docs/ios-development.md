@@ -67,7 +67,7 @@ npm run tauri -- ios init
 3. 确认 `tray`、`single-instance`、`updater`、`global-shortcut`、桌面提醒调度器及 `autostart` 不进入 iOS 目标。`autostart` 的 Rust 注册和依赖都应受 `desktop + feature` 双重条件约束。
 4. 让 iOS 使用现有 SQLite `WorkspaceStore`，启动时只经 V3 解析/迁移入口读写。
 5. 验证首次启动、写入一条任务、结束并重新启动后数据仍存在。
-6. 用可靠、可注入的原生平台来源替换仅凭 User-Agent 判断桌面/移动端的关键能力路由，尤其验证 iPad；能力清单必须同时满足“平台支持、Cargo feature 已编译、capability 已授权”，不能只靠静态声明。
+6. 用可靠、可注入的原生平台来源替换仅凭 User-Agent 判断桌面/移动端的关键能力路由，尤其验证 iPad；`main.ts` 解析一次 host `RuntimeInfo`，并将同一个对象注入 Vue 壳和模块 loader。User-Agent 只用于表现层提示；能力清单必须同时满足“平台支持、Cargo feature 已编译、capability 已授权”，不能只靠静态声明。
 7. 校准当前移动端 `native-clipboard` 声明：默认 Cargo feature 和 capability 未启用时不得报告可用；云同步仍保持桌面限定，直至 iOS 安全凭据存储有明确方案。
 8. 检查 `viewport-fit=cover` 与 `env(safe-area-inset-*)` 在 WKWebView 中实际生效；记录 Blob 下载、文件选择式导入在 iOS 上是已验证、需原生分享/文件适配，还是明确不可用。
 9. 记录实际生成的 Xcode scheme、最低系统版本和使用的模拟器型号，后续 CI 不依赖开发机默认值。
