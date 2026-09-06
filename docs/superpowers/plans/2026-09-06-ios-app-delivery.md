@@ -4,7 +4,7 @@
 
 **Goal:** Move Shixue from a reproducible iOS Simulator compile to a simulator-verified, device-verified, TestFlight-ready application without duplicating the shared TypeScript domain or weakening its capability transaction boundary.
 
-**Architecture:** Keep `WorkspaceStateV3`, migrations, recurrence, quick-add parsing, reminder authority, future calendar projection, and every state transition in the shared TypeScript domain. Native iOS code is limited to host lifecycle, system notifications, document/share presentation, platform identity, and Apple packaging. Every native callback becomes an existing capability command; no Swift or Rust code writes workspace state directly.
+**Architecture:** Keep `WorkspaceStateV3`, migrations, recurrence, quick-add parsing, reminder authority, calendar projection, and every state transition in the shared TypeScript domain. Native iOS code is limited to host lifecycle, system notifications, document/share presentation, platform identity, and Apple packaging. Every native callback becomes an existing capability command; no Swift or Rust code writes workspace state directly.
 
 **Tech Stack:** Vue 3, TypeScript, Tauri 2, Wry/WKWebView, Rust, `tauri-plugin-sql`/SQLite, Xcode, CocoaPods, XCTest/XCUITest where a native lifecycle assertion cannot be expressed by the existing Node test runner.
 
@@ -12,7 +12,7 @@
 
 ## Verified baseline — 2026-09-06
 
-- Base integrated into `feat/ios-foundation`: `origin/main@2df5f55`, including PR #13 recurrence, PR #14 quick add, and PR #15 multi-reminder/Windows lifecycle.
+- Base integrated into `feat/ios-foundation`: `origin/main@140c012`, including PR #13 recurrence, PR #14 quick add, PR #15 multi-reminder/Windows lifecycle, and PR #16 calendar workspace.
 - Shared checks: `npm test`, `npm run typecheck`, `npm run build`, `npm run build:web`, protocol/CSP/docs/module checks, and Rust verification pass on the integrated branch.
 - Native compile: Xcode 26.6 (17F113), CocoaPods 1.17.0, scheme `meow-study_iOS`, iOS deployment target 14.0, and Apple Silicon `aarch64-sim` debug build pass.
 - Simulator used: iPhone 17 Pro, iOS Simulator 26.5. Installation succeeds, launch returns a PID, then the process exits with `SIGTRAP` in Wry 0.55.1 before Vue or SQLite starts.
@@ -21,7 +21,7 @@
 
 ## Non-goals and fixed boundaries
 
-- Do not implement PR5 calendar or PR6 release/navigation business scope inside the startup-fix or persistence PRs.
+- Do not reimplement PR5 calendar or implement PR6 release/navigation business scope inside the startup-fix or persistence PRs.
 - Do not copy TypeScript state machines into Swift or Rust.
 - Do not bypass capability `preview`/`execute`, CAS, idempotency, audit, or undo with direct SQLite writes.
 - Do not port tray polling, single-instance, updater, global shortcut, autostart, or the Windows reminder scheduler to iOS.
@@ -199,25 +199,31 @@ CARGO_TARGET_DIR=/Users/wuling/Library/Caches/shixue-ios-foundation/cargo-target
 
 **Acceptance gate:** Import and export have WKWebView evidence or a verified native adapter; `URL.createObjectURL` source presence alone is never recorded as support.
 
-### Task 6: Integrate PR5 calendar through shared projections
+### Task 6: Validate and adapt the merged PR5 calendar on iOS
 
 **Files:**
 
-- Create per the PR5 plan: `src/domain/calendar/*`
-- Create per the PR5 plan: `src/components/calendar/*`
-- Modify: `src/App.vue`
-- Modify: `src/lib/sidebar-navigation.ts`
-- Modify: `src/components/study/BottomTabs.vue`
-- Modify: `src/components/study/AppSidebar.vue`
-- Create/modify per the PR5 plan: `tests/calendar-*.test.ts`
+- Reuse without platform forks: `src/domain/calendar/*`
+- Modify only for presentation/input evidence: `src/components/calendar/*`
+- Modify only as required: `src/App.vue`
+- Modify only as required: `src/components/study/BottomTabs.vue`
+- Create: `tests/ios-calendar-contract.test.ts`
+- Modify: `VISUAL_QA.md`
 
 **Steps:**
 
-1. Implement and merge the shared calendar range/layout projection and capability commands from `2026-09-04-calendar-workspace.md` before iOS-specific rendering changes.
-2. Add Calendar as the fifth or fewer iPhone primary destination only after the navigation information architecture is approved; otherwise expose it from an existing visible destination rather than silently exceeding five tabs.
-3. Default compact widths to agenda/day-oriented content; enable week/month density at regular iPad widths. Preserve terminology and selection state across both layouts.
-4. Make drag and pinch preview-only until a capability command is submitted. Provide visible Move, Resize, Previous/Next, Today, and View controls for every gesture.
-5. Exercise DST, timezone change, recurrence occurrence projection, overlapping items, and Dynamic Type with shared deterministic fixtures.
+1. Treat the merged projection, collision layout, move/resize commands, undo, and capability routing from `2026-09-04-calendar-workspace.md` as the shared source of truth. Do not fork them for iOS.
+2. Verify the existing five-item iPhone navigation with Calendar included; do not add another primary tab during adaptation.
+3. Verify compact agenda/day behaviour and regular-width week/month density on iPhone and iPad. Preserve terminology and selection state across width changes and background restoration.
+4. Confirm pointer drag remains preview-first and every drag/resize action has visible Move, Resize, Previous/Next, Today, and View alternatives usable by touch and VoiceOver.
+5. Exercise DST, timezone change, recurrence occurrence projection, overlapping items, Dynamic Type, keyboard appearance, safe areas, and split view with the merged deterministic fixtures.
+6. Run the existing calendar tests and the new iOS contract test before native simulator checks:
+
+```bash
+node --test --experimental-strip-types tests/calendar-projection.test.ts tests/calendar-layout.test.ts tests/calendar-commands.test.ts tests/calendar-responsive.test.ts tests/calendar-ui-contract.test.ts tests/ios-calendar-contract.test.ts
+npm run typecheck
+npm run build
+```
 
 **Acceptance gate:** Calendar state and mutations are shared TypeScript behavior; iOS contributes only adaptive presentation and input mapping. Calendar does not delay Tasks/Today persistence verification.
 
@@ -333,7 +339,7 @@ Task 3 V3 persistence ---- Task 4 UI/accessibility ---- Task 5 document transfer
                    Task 10 device -> TestFlight -> App Store
 ```
 
-Task 4 and Task 5 may start after stable startup while Task 3 is being exercised. Task 6 may develop its shared domain in parallel, but its iOS acceptance waits for Tasks 2-4. Task 7 depends on the merged PR4 reminder authority and stable persistence. Release work never backfills missing simulator or device evidence.
+Task 4 and Task 5 may start after stable startup while Task 3 is being exercised. Task 6 reuses the merged PR5 shared domain, but its iOS acceptance waits for Tasks 2-4. Task 7 depends on the merged PR4 reminder authority and stable persistence. Release work never backfills missing simulator or device evidence.
 
 ## Required checkpoint format
 

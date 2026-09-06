@@ -38,9 +38,9 @@ const EXPECTED_SHIPPED_FOUNDATION = [
   'recurrence-occurrence-v1',
   'offline-natural-language-v1',
   'multi-reminder-v1',
+  'calendar-workspace-v1',
 ]
 const EXPECTED_PLANNED_FEATURES = [
-  'calendar',
   'agent-behavior',
 ]
 
@@ -199,7 +199,7 @@ function validateImplementationStatus(implementation, errors) {
     errors.push('implementation.shippedFoundation must match the currently implemented planning foundation.')
   }
   if (!sameStrings(implementation.planned, EXPECTED_PLANNED_FEATURES)) {
-    errors.push('implementation.planned must retain calendar and Agent behaviour as planned.')
+    errors.push('implementation.planned must retain Agent behaviour as planned.')
   }
 }
 

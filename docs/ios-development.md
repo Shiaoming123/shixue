@@ -4,16 +4,16 @@
 
 ## 1. 当前基线
 
-截至 PR4（多提醒与 Windows 调度）合并：
+截至 PR5（日历工作区）合并：
 
 - `WorkspaceStateV3`、v1/v2 迁移、`WorkspaceStore` 与事务能力服务是跨端共享的数据和写入边界。
-- recurrence 规则、date-only/timed schedule、occurrence materialization、离线快速日期解析、多提醒账本和对应 capability commands 已进入共享 TypeScript 层；iOS 只复用，不另建原生规则实现。
+- recurrence 规则、date-only/timed schedule、occurrence materialization、离线快速日期解析、多提醒账本、日历投影/移动/缩放和对应 capability commands 已进入共享 TypeScript 层；iOS 只复用，不另建原生规则实现。
 - Vue 界面已有窄屏布局、安全区和移动端导航基础；这些只证明前端适配，不证明 iOS 工程可编译或可运行。
 - Rust 入口已有 `tauri::mobile_entry_point`，托盘、单实例、更新器、全局快捷键和提醒调度器按桌面目标隔离。
 - 通知插件可在移动端装配，但当前前端轮询不能保证应用挂起或终止后的投递；原生后台提醒仍未实现。
 - Android 已有调试构建证据；iOS 已在 macOS/Xcode 26.6 上执行 `tauri ios init` 并完成 Apple Silicon Simulator 无签名 Debug 原生编译。最新模拟器启动在 Wry WebView 初始化、前端与 SQLite 运行前以 `SIGTRAP` 失败，因此没有模拟器成功、真机、签名或商店证据。
 
-iOS 基础分支已同步 `origin/main@2df5f55`，包含 PR2、PR3 和 PR4。PR5（日历）与 PR6（导航/集成/发布）尚未实现；它们可以与 iOS 运行阻断排查并行，但不得从未合并的功能分支复制生成工程或领域规则。
+iOS 基础分支已同步 `origin/main@140c012`，包含 PR2、PR3、PR4 和 PR5。PR6（导航/集成/发布）尚未实现；它可以与 iOS 运行阻断排查并行，但不得从未合并的功能分支复制生成工程或领域规则。
 
 ## 2. 与整体路线的并行关系
 
@@ -23,10 +23,10 @@ iOS 基础分支已同步 `origin/main@2df5f55`，包含 PR2、PR3 和 PR4。PR5
 | PR2：重复任务 | 已合并；iOS 直接消费共享 recurrence/occurrence 合同 | 不在 Swift/Rust 复制规则；运行恢复后补 V3 重启持久化证据 |
 | PR3：快速添加 | 已合并共享解析器；待验证触摸输入、键盘弹出、日期选择和前后台恢复 | iOS 不实现桌面全局快捷键；用可见的 App 内入口替代 |
 | PR4：多提醒/Windows 调度 | 已合并共享规则、delivery 账本和命令；待实现 iOS 本地通知适配器 | Windows 托盘轮询与 iOS 系统调度分离，共用规则和能力命令 |
-| PR5：日历工作区 | 适配紧凑宽度、动态字体、手势与可见键盘替代 | 日历投影和命令共享，平台层只负责交互与呈现 |
+| PR5：日历工作区 | 已合并共享投影、命令和 Web 交互；待验证 iOS 紧凑宽度、动态字体、手势与可见操作替代 | 日历投影和命令共享，平台层只负责交互与呈现 |
 | PR6：导航/集成/Windows 发布 | 收口 iPhone/iPad 导航、场景恢复和跨端视觉一致性 | Windows 发布不阻塞 iOS 基础开发；iOS 发布另设证据链 |
 
-建议新增独立 `feat/ios-foundation` PR，只完成原生工程、编译、存储和平台降级。提醒、日历与发布能力分别跟随对应主路线进入后续小 PR，避免一个长期 iOS 大分支持续漂移。
+`feat/ios-foundation` PR 只完成原生工程、编译、存储和平台降级。提醒、日历 iOS 验证与发布能力分别进入后续小 PR，避免一个长期 iOS 大分支持续漂移。
 
 ## 3. iOS 分阶段交付
 
@@ -109,7 +109,7 @@ sidecar 干扰。每次原生 Simulator 构建先运行 `npm run mobile:ios:prep
 
 ### I2：共享功能持续接入
 
-PR2 的 recurrence/occurrence、PR3 的快速日期解析和 PR4 的提醒账本已保持平台无关；PR5 的日历投影和 capability command 必须延续同一边界。iOS 只提供以下适配：
+PR2 的 recurrence/occurrence、PR3 的快速日期解析、PR4 的提醒账本和 PR5 的日历投影/命令已保持平台无关。iOS 只提供以下适配：
 
 - 输入：触摸命中区不小于 44×44pt，支持动态字体、屏幕键盘和安全区。
 - 导航：iPhone 使用不超过五项的底部一级导航；更多入口进入明确的列表/更多页面。iPad 可转换为侧栏，但路由描述保持一致。

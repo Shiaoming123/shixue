@@ -91,7 +91,11 @@ protocol. Offline natural-language quick add and multiple reminders are also
 shipped in the shared TypeScript layer: parsing, reminder rules, delivery
 ledger, capability commands, and the Windows lifecycle integration are checked.
 This does not claim reliable iOS background delivery; the iOS system scheduler
-adapter, calendar views, and Agent behaviour remain planned.
+adapter remains planned. Calendar workspace v1 is shipped in the shared/Web
+layer with day, week, month, agenda, unscheduled items, preview-first pointer
+interactions, keyboard alternatives, and capability-routed mutations. Its Web
+evidence does not establish iOS Simulator behaviour. Agent behaviour remains
+planned.
 The command envelope reserves `source: agent`, but there is no shipped Agent
 planner or autonomous execution policy. A future Agent must use the same
 query/preview/execute boundary and cannot bypass validation or write storage

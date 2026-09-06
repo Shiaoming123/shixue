@@ -72,8 +72,9 @@ function validProtocol() {
         'recurrence-occurrence-v1',
         'offline-natural-language-v1',
         'multi-reminder-v1',
+        'calendar-workspace-v1',
       ],
-      planned: ['calendar', 'agent-behavior'],
+      planned: ['agent-behavior'],
     },
     delivery: {
       desktopPackage: 'unverified',
