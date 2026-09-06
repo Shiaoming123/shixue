@@ -7,15 +7,16 @@ import { createStudyTaskQueryScaleFixture } from './benchmark-fixtures/study-tas
 
 const samples = 7
 const state = createStudyTaskQueryScaleFixture()
+const logicalCpus = cpus()
 const [projectTaskItems, projectCalendarItems] = await Promise.all([
   loadReleaseProjection('src/lib/study-task-query.ts', 'projectTaskItems'),
   loadReleaseProjection('src/domain/calendar/project.ts', 'projectCalendarItems'),
 ])
 
 console.log(`Fixture: tasks=${state.tasks.length} series=${state.recurrenceSeries.length} occurrences=${state.occurrences.length}`)
-console.log(`Runtime: node=${process.versions.node} platform=${platform()} arch=${process.arch} release=${release()} cpu=${cpus()[0]?.model ?? 'unknown'}`)
-measure('Today', () => projectTaskItems(state, { from: '2026-09-05', to: '2026-09-05' }, 'Asia/Shanghai'), 100, 0)
-measure('7-day range', () => projectTaskItems(state, { from: '2026-09-05', to: '2026-09-11' }, 'Asia/Shanghai'), 100, 0)
+console.log(`Runtime: node=${process.versions.node} platform=${platform()} arch=${process.arch} release=${release()} cpu=${logicalCpus[0]?.model ?? 'unknown'} logicalCpuCount=${logicalCpus.length}`)
+measure('Today', () => projectTaskItems(state, { from: '2026-09-05', to: '2026-09-05' }, 'Asia/Shanghai'), 100, 3_000)
+measure('7-day range', () => projectTaskItems(state, { from: '2026-09-05', to: '2026-09-11' }, 'Asia/Shanghai'), 100, 6_000)
 measure('Calendar range', () => projectCalendarItems(state, { start: '2027-01-01', end: '2027-02-12' }), 150, 41_960)
 
 function measure(label, project, targetMs, expectedCount) {

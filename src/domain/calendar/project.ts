@@ -15,8 +15,8 @@ export interface CalendarItem {
 
 interface ZonedProjectionContext {
   displayForInstant: ReturnType<typeof createTimeZoneFormatter>
-  rangeStartMs: number
-  rangeEndExclusiveMs: number
+  rangeStartMs: number | null
+  rangeEndExclusiveMs: number | null
 }
 
 export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRange): CalendarItem[] {
@@ -39,11 +39,7 @@ export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRan
     const series = task.recurrenceSeriesId === null ? undefined : seriesById.get(task.recurrenceSeriesId)
     let seriesContext = series ? contextByTimezone.get(series.timezone) : undefined
     if (series && !seriesContext) {
-      seriesContext = {
-        displayForInstant: createTimeZoneFormatter(series.timezone),
-        rangeStartMs: zonedDateTimeToInstant(range.start, '00:00', series.timezone).getTime(),
-        rangeEndExclusiveMs: zonedDateTimeToInstant(range.end, '00:00', series.timezone).getTime(),
-      }
+      seriesContext = createZonedProjectionContext(range, series.timezone)
       contextByTimezone.set(series.timezone, seriesContext)
     }
     const displayForInstant = seriesContext
@@ -83,7 +79,10 @@ function occurrenceItem(
     scheduledOn: occurrence.scheduledOn,
     estimateMinutes: task.schedule.estimateMinutes,
   }
-  if (schedule.scheduledOn === null && schedule.scheduledAt !== null && schedule.estimateMinutes !== null && context) {
+  if (
+    schedule.scheduledOn === null && schedule.scheduledAt !== null && schedule.estimateMinutes !== null &&
+    context !== undefined && context.rangeStartMs !== null && context.rangeEndExclusiveMs !== null
+  ) {
     const scheduledMs = Date.parse(schedule.scheduledAt)
     if (!Number.isNaN(scheduledMs) && (scheduledMs < context.rangeStartMs || scheduledMs >= context.rangeEndExclusiveMs)) return null
   }
@@ -97,6 +96,19 @@ function occurrenceItem(
     displayForInstant,
     task.id,
   )
+}
+
+function createZonedProjectionContext(range: CalendarRange, timezone: string): ZonedProjectionContext {
+  const displayForInstant = createTimeZoneFormatter(timezone)
+  try {
+    return {
+      displayForInstant,
+      rangeStartMs: zonedDateTimeToInstant(range.start, '00:00', timezone).getTime(),
+      rangeEndExclusiveMs: zonedDateTimeToInstant(range.end, '00:00', timezone).getTime(),
+    }
+  } catch {
+    return { displayForInstant, rangeStartMs: null, rangeEndExclusiveMs: null }
+  }
 }
 
 function scheduledItem(

@@ -157,6 +157,22 @@ test('uses the recurrence timezone at DST boundaries instead of the process time
   assert.deepEqual(projectCalendarItems(state, { start: '2026-03-08', end: '2026-03-09' }), [])
 })
 
+test('falls back to display-date filtering when an IANA timezone skips a whole boundary day', () => {
+  const state = fixture({
+    schedule: { startAt: null, startOn: null, estimateMinutes: 30 },
+    recurrenceSeriesId: 'series:1',
+    seriesTimezone: 'Pacific/Apia',
+    occurrences: [occurrence({ scheduledAt: '2011-12-29T10:00:00.000Z' })],
+  })
+
+  assert.deepEqual(projectCalendarItems(state, { start: '2011-12-29', end: '2011-12-30' }), [{
+    key: 'occurrence:occ:1', taskId: 'task:1', occurrenceId: 'occ:1',
+    kind: 'timed', start: '2011-12-29T10:00:00.000Z', end: '2011-12-29T10:30:00.000Z',
+    displayDate: '2011-12-29', displayMinute: 0,
+  }])
+  assert.deepEqual(projectCalendarItems(state, { start: '2011-12-30', end: '2011-12-31' }), [])
+})
+
 test('an explicit timestamp offset owns its display day across device timezones', () => {
   const state = fixture({
     schedule: { startAt: '2026-09-04T00:30:00+14:00', startOn: null, estimateMinutes: 30 },
