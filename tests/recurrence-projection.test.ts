@@ -23,7 +23,7 @@ test('one occurrence with planned and due-today reasons renders once', () => {
   assert.equal(rows.length, 1)
   assert.equal(rows.filter((row) => row.occurrenceId === 'occ:today').length, 1)
   assert.equal(rows[0]?.key, 'occurrence:occ:today')
-  assert.deepEqual(rows[0]?.reasons, ['planned', 'due'])
+  assert.deepEqual(rows[0]?.reasons, ['planned', 'due', 'recurring'])
   assert.equal(rows[0]?.scheduledAt, '2026-09-05T09:00:00+08:00')
   assert.equal(rows[0]?.dueOn, '2026-09-05')
 })
@@ -103,7 +103,7 @@ test('precise occurrence range boundaries follow 23-hour and 25-hour DST days', 
       scenario.date,
       scenario.date,
     ])
-    assert.deepEqual(rows.map(({ reasons }) => reasons), [['overdue'], ['repeating'], ['repeating']])
+    assert.deepEqual(rows.map(({ reasons }) => reasons), [['overdue', 'recurring'], ['recurring'], ['recurring']])
   }
 })
 
@@ -136,7 +136,7 @@ test('Today retains the next occurrence when only its independent parent deadlin
   assert.equal(row?.occurrenceId, future.id)
   assert.equal(row?.scheduledOn, '2026-09-08')
   assert.equal(row?.dueOn, '2026-09-05')
-  assert.deepEqual(row?.reasons, ['due'])
+  assert.deepEqual(row?.reasons, ['due', 'recurring'])
 })
 
 test('deadline fallback selects the earliest pending occurrence without relying on input order', () => {
@@ -148,7 +148,7 @@ test('deadline fallback selects the earliest pending occurrence without relying 
 
   assert.equal(row?.occurrenceId, earlier.id)
   assert.equal(row?.scheduledOn, '2026-09-08')
-  assert.deepEqual(row?.reasons, ['due'])
+  assert.deepEqual(row?.reasons, ['due', 'recurring'])
 })
 
 test('Today retains a pending deadline row when a completed occurrence is already projected', () => {
@@ -167,7 +167,7 @@ test('Today retains a pending deadline row when a completed occurrence is alread
 
   assert.equal(pending?.occurrence?.status, 'pending')
   assert.equal(pending?.scheduledOn, '2026-09-08')
-  assert.deepEqual(pending?.reasons, ['due'])
+  assert.deepEqual(pending?.reasons, ['due', 'recurring'])
 })
 
 test('Today falls back to the parent deadline row when no pending occurrence remains', () => {
@@ -204,7 +204,7 @@ test('the live Today route uses occurrence projection and opens occurrence detai
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const tasks = readFileSync(new URL('../src/components/study/TasksView.vue', import.meta.url), 'utf8')
 
-  assert.match(app, /projectTaskItems\(recurrenceWorkspace\.value, \{ from: today\.value, to: today\.value \}, timezone\)/)
+  assert.match(app, /selectToday\(recurrenceWorkspace\.value, today\.value, timezone\)/)
   assert.match(app, /@occurrence-open="openOccurrence"/)
   assert.match(app, /:occurrence-id="selectedOccurrence\?\.id"/)
   assert.match(app, /@occurrence-complete="executeOccurrence\(\$event, 'recurrence\.complete'\)"/)

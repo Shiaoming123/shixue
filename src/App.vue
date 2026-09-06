@@ -25,7 +25,9 @@ import OverlayHost from './components/ui/OverlayHost.vue'
 import ToastRegion from './components/ui/ToastRegion.vue'
 import Button from './components/ui/Button.vue'
 import Dialog from './components/ui/Dialog.vue'
-import { projectTaskItems, queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView, type TaskProjectionReason } from './lib/study-task-query'
+import { queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView } from './lib/study-task-query'
+import { selectToday } from './domain/views/today'
+import { selectUpcoming } from './domain/views/upcoming'
 import { defaultModuleConfig } from './modules/config'
 import { installWindowLifecycle, type WindowCloseBehavior } from './lib/window-lifecycle'
 import { createReminderRuntime, readNativeLegacyReminderRows, submitNativeReminder } from './lib/reminder-runtime'
@@ -52,7 +54,6 @@ import {
   addTaskChecklistItem,
   archiveStudyListGroup,
   bulkDeleteStudyTasks,
-  bulkRescheduleStudyTasks,
   completeStudyTask,
   createTaskFromNextAction,
   deleteStudyTask,
@@ -246,45 +247,56 @@ const filteredTaskViews = computed<TaskViewItem[]>(() => queryStudyTasks(liveTas
   search: taskSearch.value,
   sort: taskSort.value,
   topicId: taskTopicFilter.value === 'all' ? undefined : taskTopicFilter.value === 'unassigned' ? null : taskTopicFilter.value,
-  smartView: activeSmartView.value === 'today' ? 'all' : activeSmartView.value,
+  smartView: activeSmartView.value === 'today' || activeSmartView.value === 'next7' ? 'all' : activeSmartView.value,
   today: today.value,
 }).filter((task) => taskPriorityFilter.value === 'all' || task.priority === taskPriorityFilter.value).map(toTaskView))
-const todayProjections = computed(() => recurrenceWorkspace.value ? projectTaskItems(recurrenceWorkspace.value, { from: today.value, to: today.value }, timezone) : [])
+const todayGroups = computed(() => recurrenceWorkspace.value ? selectToday(recurrenceWorkspace.value, today.value, timezone) : [])
+const upcomingGroups = computed(() => recurrenceWorkspace.value ? selectUpcoming(recurrenceWorkspace.value, today.value, 7, timezone) : [])
+const activeProjectionGroups = computed(() => activeSmartView.value === 'today' ? todayGroups.value : activeSmartView.value === 'next7' ? upcomingGroups.value : [])
+const activeProjectionItems = computed(() => activeProjectionGroups.value.flatMap((group) => group.items.map((item) => ({ item, group: 'kind' in group ? group.kind : group.date }))))
+const filteredProjectionItems = computed(() => {
+  // Selectors own date/occurrence membership; legacy query results only apply the user's text, list, priority and sort choices.
+  const eligibleOrder = new Map(filteredTaskViews.value.map((task, index) => [task.id, index]))
+  const items = activeProjectionItems.value.flatMap((entry, index) => eligibleOrder.has(entry.item.taskId) ? [{ ...entry, index }] : [])
+  if (taskSort.value !== 'manual') items.sort((left, right) => eligibleOrder.get(left.item.taskId)! - eligibleOrder.get(right.item.taskId)! || left.index - right.index)
+  return items
+})
 const taskViews = computed<TaskViewItem[]>(() => {
-  if (activeSmartView.value !== 'today' || !recurrenceWorkspace.value) return filteredTaskViews.value
+  if ((activeSmartView.value !== 'today' && activeSmartView.value !== 'next7') || !recurrenceWorkspace.value) return filteredTaskViews.value
   const eligible = new Map(filteredTaskViews.value.map((task) => [task.id, task]))
-  return todayProjections.value.filter((projection) => projection.occurrenceId === null).map((projection) => {
-    const task = eligible.get(projection.taskId)
-    return task ? { ...task, reasons: projection.reasons } : undefined
-  }).filter((task): task is TaskViewItem => task !== undefined)
+  return filteredProjectionItems.value.filter(({ item }) => item.occurrenceId === null).flatMap(({ item, group }) => {
+    const task = eligible.get(item.taskId)
+    return task ? [{ ...task, reasons: item.reasons, projectionGroup: group }] : []
+  })
 })
 const occurrenceViews = computed<OccurrenceViewItem[]>(() => {
   const workspace = recurrenceWorkspace.value
   if (!workspace) return []
   const tasks = new Map(liveTasks.value.map((task) => [task.id, task]))
   const visibleTaskIds = new Set(filteredTaskViews.value.map((task) => task.id))
-  if (activeSmartView.value === 'today') {
-    return todayProjections.value.filter((projection) => projection.occurrence?.status === 'pending' && visibleTaskIds.has(projection.taskId)).map((projection) => ({
-      id: projection.key,
-      title: tasks.get(projection.taskId)?.title ?? projection.task.title,
-      scheduledLabel: formatPlanDate(projection.scheduledOn ?? projection.scheduledAt),
-      deadlineLabel: projection.dueOn || projection.dueAt ? formatPlanDate(projection.dueOn ?? projection.dueAt) : '',
-      reasons: projection.reasons.map(projectionReasonLabel),
-      occurrence: projection.occurrence!,
+  if (activeSmartView.value === 'today' || activeSmartView.value === 'next7') {
+    return filteredProjectionItems.value.filter(({ item }) => item.occurrence?.status === 'pending').map(({ item, group }) => ({
+      id: item.key,
+      title: tasks.get(item.taskId)?.title ?? item.task.title,
+      scheduledLabel: formatPlanDate(item.scheduledOn ?? item.scheduledAt),
+      deadlineLabel: item.dueOn || item.dueAt ? formatPlanDate(item.dueOn ?? item.dueAt) : '',
+      reasons: item.reasons,
+      projectionGroup: group,
+      occurrence: item.occurrence!,
     }))
   }
   return workspace.occurrences.filter((occurrence) => occurrence.status === 'pending').map((occurrence) => {
     const series = workspace.recurrenceSeries.find((item) => item.id === occurrence.seriesId)
     const task = series ? tasks.get(series.taskId) : undefined
     const scheduled = occurrence.override?.scheduledOn ?? occurrence.override?.scheduledAt ?? occurrence.scheduledOn ?? occurrence.scheduledAt
-    return task && visibleTaskIds.has(task.id) ? { id: `occurrence:${occurrence.id}`, title: task.title, scheduledLabel: formatPlanDate(scheduled), deadlineLabel: task.dueOn ? formatPlanDate(task.dueOn) : '', reasons: ['重复'], occurrence } : null
+    return task && visibleTaskIds.has(task.id) ? { id: `occurrence:${occurrence.id}`, title: task.title, scheduledLabel: formatPlanDate(scheduled), deadlineLabel: task.dueOn ? formatPlanDate(task.dueOn) : '', reasons: ['recurring'], occurrence } : null
   }).filter((item): item is OccurrenceViewItem => item !== null)
 })
 
 const smartViewCounts = computed<StudySmartViewCounts>(() => ({
   inbox: selectStudyTaskSmartView(liveTasks.value, 'inbox', today.value).length,
-  today: recurrenceWorkspace.value ? todayProjections.value.filter((projection) => projection.occurrence?.status !== 'completed' && projection.occurrence?.status !== 'skipped').length : selectStudyTaskSmartView(liveTasks.value, 'today', today.value).length,
-  next7: selectStudyTaskSmartView(liveTasks.value, 'next7', today.value).length,
+  today: recurrenceWorkspace.value ? todayGroups.value.flatMap(({ items }) => items).length : selectStudyTaskSmartView(liveTasks.value, 'today', today.value).length,
+  next7: recurrenceWorkspace.value ? upcomingGroups.value.flatMap(({ items }) => items).length : selectStudyTaskSmartView(liveTasks.value, 'next7', today.value).length,
   all: selectStudyTaskSmartView(liveTasks.value, 'all', today.value).length,
   completed: selectStudyTaskSmartView(liveTasks.value, 'completed', today.value).length,
 }))
@@ -982,8 +994,24 @@ async function bulkDeleteTasks(taskIds: string[]) {
 
 async function bulkMoveTasksToToday(taskIds: string[]) {
   try {
-    await bulkRescheduleStudyTasks(bulkTargets(taskIds), today.value, { reason: '从任务列表批量移到今天', now: new Date().toISOString() })
-    await refreshState(); selectedTaskId.value = ''; setDestination({ kind: 'today' }); notify(`已把 ${taskIds.length} 项移到今天。`)
+    const workspace = await capabilityService.query({ type: 'workspace.snapshot' })
+    const tasks = workspace.tasks.filter((task) => taskIds.includes(task.id) && task.deletedAt === null && task.status !== 'completed' && task.status !== 'cancelled' && task.recurrenceSeriesId === null)
+    if (!tasks.length) { notify('所选逾期项需要逐项处理。'); return }
+    const command: Extract<CapabilityCommand, { type: 'task.batch_reschedule' }> = {
+      type: 'task.batch_reschedule', taskIds: tasks.map(({ id }) => id), startOn: today.value,
+      expectedRevisions: Object.fromEntries(tasks.map(({ id, revision }) => [id, revision])),
+      eventIds: Object.fromEntries(tasks.map(({ id }) => [id, crypto.randomUUID()])),
+      reason: '从逾期分组批量移到今天',
+    }
+    const envelope: CommandEnvelope<typeof command> = {
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `overdue-ui:${crypto.randomUUID()}`,
+      source: 'human-ui', expectedWorkspaceRevision: workspace.revision, command,
+    }
+    const preview = await capabilityService.preview(envelope)
+    if (!preview.accepted) throw new Error(preview.validationErrors[0]?.message ?? '批量调整未通过预演。')
+    const result = await capabilityService.execute(envelope)
+    await refreshState(); selectedTaskId.value = ''; setDestination({ kind: 'today' })
+    notify(`已把 ${tasks.length} 项移到今天。`, calendarUndoAction(result))
   } catch (error) { reportStorageError(error) }
 }
 
@@ -1202,7 +1230,6 @@ function resetSidebarOrder() {
 }
 
 function topicTitleFor(topicId: string | null) { return topicId ? topicMap.value.get(topicId)?.title ?? '未知主题' : '未归类' }
-function projectionReasonLabel(reason: TaskProjectionReason) { return ({ overdue: '已过期', planned: '已计划', due: '今日截止', repeating: '重复' } as const)[reason] }
 function taskStatus(task: StudyTask): TaskViewStatus { return task.status === 'planned' && !task.plannedOn ? 'backlog' : task.status }
 function toTaskView(task: StudyTask): TaskViewItem {
   const workspace = recurrenceWorkspace.value
@@ -1262,7 +1289,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
             </Popover>
           </div>
           <div class="tasks-layout">
-          <div class="tasks-scroll"><TasksView ref="tasksView" :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :quick-add-catalog-revision="recurrenceWorkspace?.revision" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
+          <div class="tasks-scroll"><TasksView ref="tasksView" :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :quick-add-catalog-revision="recurrenceWorkspace?.revision" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @defer="openTaskAction($event, 'defer')" @cancel="openTaskAction($event, 'cancel')" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @overdue-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
           <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
           </div>
         </template>

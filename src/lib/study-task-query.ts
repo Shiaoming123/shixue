@@ -26,7 +26,7 @@ export interface TaskProjectionRange {
   to: string
 }
 
-export type TaskProjectionReason = 'overdue' | 'planned' | 'due' | 'repeating'
+export type TaskProjectionReason = 'overdue' | 'planned' | 'due' | 'recurring'
 
 export interface TaskProjection {
   key: `task:${string}` | `occurrence:${string}`
@@ -262,7 +262,7 @@ function projectOccurrence(
   if (occurrenceOverdue || deadlineOverdue) reasons.push('overdue')
   if (inWindow && taskPlannedOn !== null && inRange(taskPlannedOn, range)) reasons.push('planned')
   if ((inWindow || includeDeadline) && deadlineInWindow) reasons.push('due')
-  if (inWindow && !reasons.includes('planned') && !reasons.includes('due')) reasons.push('repeating')
+  if (inWindow || occurrenceOverdue || includeDeadline) reasons.push('recurring')
 
   return {
     key: `occurrence:${occurrence.id}`,
@@ -290,7 +290,7 @@ function projectionReasons(
 ): TaskProjectionReason[] {
   const reasons: TaskProjectionReason[] = []
   const active = status !== 'completed' && status !== 'cancelled'
-  if (active && dueOn && dueOn < range.from) reasons.push('overdue')
+  if (active && ((scheduledOn !== null && scheduledOn < range.from) || (dueOn !== null && dueOn < range.from))) reasons.push('overdue')
   if (scheduledOn && inRange(scheduledOn, range)) reasons.push('planned')
   if (dueOn && inRange(dueOn, range)) reasons.push('due')
   return reasons
