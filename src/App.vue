@@ -174,7 +174,10 @@ const todayProjections = computed(() => recurrenceWorkspace.value ? projectTaskI
 const taskViews = computed<TaskViewItem[]>(() => {
   if (activeSmartView.value !== 'today' || !recurrenceWorkspace.value) return filteredTaskViews.value
   const eligible = new Map(filteredTaskViews.value.map((task) => [task.id, task]))
-  return todayProjections.value.filter((projection) => projection.occurrenceId === null).map((projection) => eligible.get(projection.taskId)).filter((task): task is TaskViewItem => task !== undefined)
+  return todayProjections.value.filter((projection) => projection.occurrenceId === null).map((projection) => {
+    const task = eligible.get(projection.taskId)
+    return task ? { ...task, reasons: projection.reasons } : undefined
+  }).filter((task): task is TaskViewItem => task !== undefined)
 })
 const occurrenceViews = computed<OccurrenceViewItem[]>(() => {
   const workspace = recurrenceWorkspace.value
@@ -869,7 +872,7 @@ function toTaskView(task: StudyTask): TaskViewItem {
   const planned = workspaceTask?.schedule.startAt ?? workspaceTask?.schedule.startOn ?? task.plannedOn
   const deadline = workspaceTask?.deadline.dueAt ?? workspaceTask?.deadline.dueOn ?? task.dueOn
   const tagTitles = new Map(workspace?.tags.filter(({ archivedAt }) => archivedAt === null).map(({ id, title }) => [id, title]) ?? [])
-  return { id: task.id, title: task.title, notes: task.notes, topic: topicTitleFor(task.topicId), topicId: task.topicId, tags: workspaceTask?.tagIds.map((id) => tagTitles.get(id)).filter((title): title is string => Boolean(title)) ?? [], status: taskStatus(task), plannedOn: task.plannedOn, dueOn: task.dueOn, reminderAt: task.reminderAt, priority: task.priority, plannedLabel: planned ? formatPlanDate(planned) : '', dueLabel: deadline ? formatPlanDate(deadline) : '', reminderLabel: formatReminder(task.reminderAt), estimateMinutes: task.estimateMinutes, acceptanceCriteria: task.acceptanceCriteria, checklist: task.checklist.map((item) => ({ id: item.id, text: item.text, checked: item.checked })), blockedReason: task.blockedReason ?? '' }
+  return { id: task.id, title: task.title, notes: task.notes, topic: topicTitleFor(task.topicId), topicId: task.topicId, tags: workspaceTask?.tagIds.map((id) => tagTitles.get(id)).filter((title): title is string => Boolean(title)) ?? [], status: taskStatus(task), plannedOn: task.plannedOn, dueOn: task.dueOn, reminderAt: task.reminderAt, priority: task.priority, plannedLabel: planned ? formatPlanDate(planned) : '', dueLabel: deadline ? formatPlanDate(deadline) : '', reminderLabel: formatReminder(task.reminderAt), estimateMinutes: task.estimateMinutes, acceptanceCriteria: task.acceptanceCriteria, checklist: task.checklist.map((item) => ({ id: item.id, text: item.text, checked: item.checked })), blockedReason: task.blockedReason ?? '', reasons: [] }
 }
 function toEventView(event: TaskEvent): TaskEventViewItem {
   const labels: Record<TaskEvent['type'], string> = { captured: '加入收件箱', migrated: '从旧版记录迁移', planned: '安排任务', started: '开始学习', paused: '暂停学习', resumed: '继续学习', blocked: '标记受阻', completed: '完成学习', reopened: '重开任务', cancelled: '取消任务', rescheduled: '调整计划日期', deleted: '移入回收状态' }

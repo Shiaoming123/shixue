@@ -221,6 +221,7 @@ function parseTime(source: string): string {
   let hour = Number(english[1])
   const minute = Number(english[2] ?? 0)
   const period = english[3]?.toLocaleLowerCase()
+  if (period && (hour < 1 || hour > 12)) throw new Error(`Invalid quick-add time: ${source}`)
   if (period === 'am' && hour === 12) hour = 0
   if (period === 'pm' && hour < 12) hour += 12
   return `${pad(hour)}:${pad(minute)}`

@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, MoreHorizontal, Pencil, Search, Trash2, X } from '@lucide/vue'
 import type { StudyTaskPriority } from '../../storage/study/types'
-import type { StudyTaskQuerySort, StudyTaskSmartView } from '../../lib/study-task-query'
+import type { StudyTaskQuerySort, StudyTaskSmartView, TaskProjectionReason } from '../../lib/study-task-query'
 import { isQuickAddEditableTarget } from '../../lib/quick-add-shortcut-state'
 import type { TaskOccurrence } from '../../domain/workspace/types'
 import type { EntityRef } from '../../domain/capabilities/types'
@@ -20,6 +20,7 @@ export interface TaskViewItem {
   priority: StudyTaskPriority; plannedLabel: string; dueLabel: string; reminderLabel: string
   estimateMinutes: number | null; acceptanceCriteria: string[]
   checklist: Array<{ id: string; text: string; checked: boolean }>; blockedReason: string
+  reasons: TaskProjectionReason[]
 }
 export interface OccurrenceViewItem { id: string; title: string; scheduledLabel: string; deadlineLabel: string; reasons: string[]; occurrence: TaskOccurrence }
 
@@ -77,9 +78,8 @@ const sortOptions = [
 ]
 const sections = computed(() => {
   if (props.smartView !== 'today') return [{ key: 'all', label: '', tasks: props.tasks }]
-  const today = new Date().toLocaleDateString('sv-SE')
-  const overdue = props.tasks.filter((task) => dateFor(task) && dateFor(task)! < today)
-  const current = props.tasks.filter((task) => !dateFor(task) || dateFor(task)! >= today)
+  const overdue = props.tasks.filter((task) => task.reasons.includes('overdue'))
+  const current = props.tasks.filter((task) => !task.reasons.includes('overdue'))
   return [{ key: 'overdue', label: overdue.length ? '已过期' : '', tasks: overdue }, { key: 'today', label: current.length ? '今天' : '', tasks: current }].filter(({ tasks }) => tasks.length)
 })
 
@@ -89,7 +89,6 @@ watch(() => props.tasks.map(({ id }) => id).join('|'), () => {
   selectedIds.value = selectedIds.value.filter((id) => available.has(id))
 })
 
-function dateFor(task: TaskViewItem) { return task.plannedOn ?? task.dueOn }
 function toggleSelection(id: string) { selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter((value) => value !== id) : [...selectedIds.value, id] }
 function clearSelection() { selectedIds.value = []; confirmDeleteIds.value = [] }
 function finishBatch(action: 'complete' | 'today' | 'delete') {

@@ -54,7 +54,7 @@ function createTask(
     tagIds: [...(command.tagIds ?? [])],
     title: command.title,
     notes: command.notes ?? '',
-    status: 'inbox',
+    status: command.startAt || command.startOn ? 'planned' : 'inbox',
     schedule: {
       startAt: command.startAt ?? null,
       startOn: command.startOn ?? null,
@@ -78,7 +78,7 @@ function createTask(
   if (command.reminderAt !== undefined) {
     setLegacyReminder(state, task.id, command.reminderAt, context, command.reminderRuleId)
   }
-  const event = appendEvent(state, task, 'captured', null, 'inbox', context, undefined, undefined, command.eventId)
+  const event = appendEvent(state, task, 'captured', null, task.status, context, undefined, undefined, command.eventId)
   const affected = [
     taskRef(task),
     ...(recurrence ? [

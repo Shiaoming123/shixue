@@ -90,6 +90,14 @@ test('Tasks and Today expose the same composer while App only handles the create
   assert.doesNotMatch(app, /captureStudyTask/)
 })
 
+test('Today grouping uses projection reasons so an overdue deadline outranks a current plan', () => {
+  const tasks = studySource('TasksView.vue')
+  const app = appSource()
+  assert.match(tasks, /task\.reasons\.includes\('overdue'\)/)
+  assert.doesNotMatch(tasks, /plannedOn\s*\?\?\s*task\.dueOn/)
+  assert.match(app, /reasons:\s*projection\.reasons/)
+})
+
 function candidate(
   kind: QuickAddCandidateKind,
   value: string,
@@ -193,6 +201,7 @@ test('a mapped recurring create is atomic and idempotent while an invalid recurr
   assert.deepEqual(await service.execute(envelope), created)
   const snapshot = await service.query({ type: 'workspace.snapshot' })
   assert.equal(snapshot.tasks.length, initial.tasks.length + 1)
+  assert.equal(snapshot.tasks.at(-1)?.status, 'planned')
   assert.equal(snapshot.recurrenceSeries.length, initial.recurrenceSeries.length + 1)
   assert.equal(snapshot.occurrences.filter(({ seriesId }) => seriesId === snapshot.recurrenceSeries.at(-1)?.id).length, 50)
   assert.equal(snapshot.commandReceipts.filter(({ idempotencyKey }) => idempotencyKey === 'quick-add-daily').length, 1)
