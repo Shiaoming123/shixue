@@ -62,12 +62,13 @@
 - [x] 当前源界面五个指定视口的基线截图
 - [x] 源码审查与复现问题清单
 - [x] PR4 必做问题修复、定向测试
-- [x] 完整 `npm run verify`：457/457 tests、0 skipped，通过 typecheck、桌面/Web build、layout、docs、protocol、CSP 与 desktop/web/mobile modules
+- [x] 完整 `npm run verify`：459/459 tests、0 skipped，通过 typecheck、桌面/Web build、layout、docs、protocol、CSP 与 desktop/web/mobile modules
 - [x] `npm run rust:verify`：11/11 Rust tests，通过 check、clippy、默认及 all-features 编译
-- [x] Windows 无签名本地制品：`Shixue_0.2.3_x64_Setup.exe`（9,399,119 bytes），SHA-256 `37fd6f9c17ddfbf0ff163f135486e1a65b540832d976ed284f1bbb7c1801600d`
-- [x] Windows 无签名本地制品：`Shixue_0.2.3_x64_Installer.msi`（11,337,728 bytes），SHA-256 `0f39fb866a3b4e26da673ee9fc05bd77099a7bb2344fdec6793b8757e7805dce`
-- [x] Windows 无签名本地制品：`Shixue_0.2.3_x64_Portable.exe`（22,780,928 bytes），SHA-256 `629c9909aa8d077f69d9fae727fd17596248d90b162e9d07e2fff56fb4d2a3d9`
-- [x] `npm run smoke:windows-package` 自动部分 `PASS`：NSIS 构建、隔离静默安装、安装后进程存活探针
+- [x] Windows 无签名本地制品：`Shixue_0.2.4_x64_Setup.exe`（9,398,235 bytes），SHA-256 `d0fca89be06d4d85e62c7af8920f1624f6d93fcc0537d495016882df4dd1426b`
+- [x] Windows 无签名本地制品：`Shixue_0.2.4_x64_Installer.msi`（11,337,728 bytes），SHA-256 `5f7fd5ee94aa2b4153d1d9f634c2bb5db49e51ec26ffbb66f268c3cbc78d7b88`
+- [x] Windows 无签名本地制品：`Shixue_0.2.4_x64_Portable.exe`（22,781,440 bytes），SHA-256 `b8d6413797e354e988bacbc31a4735001ad66c43e6832902f2965479aa21b2bc`
+- [x] `npm run smoke:windows-package` 自动部分 `PASS`：以隔离产品标识构建 NSIS、静默安装、安装后进程存活探针，并在结束后卸载且清除临时安装注册表项
+- [x] 从 `0.2.4` Portable 本体启动并核对进程路径；实际渲染的设置页包含外观、侧边栏、快捷新增、任务提醒、窗口与启动、本地数据等本轮界面
 - [x] 浏览器核心操作链、非法时间错误恢复、模态焦点/背景隔离；Edge console warnings/errors 为 0，fresh-browser smoke 的 page errors 为 0
 - [x] 浅色、深色、高对比、减少透明度、减少动效、强制颜色与指定视口截图验收；720×480 作为 Web 200% 等效布局压力检查，系统 200% 仍归入下方 Windows 人工项
 - [ ] Windows 人工原生验收：首次提醒权限、单任务双提醒、稍后、完成、隐藏/恢复/退出托盘、退出后静默和系统 200% 缩放均为 `NOT_RUN`

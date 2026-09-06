@@ -5,6 +5,7 @@ import {
   assertSmokePath,
   appendManualWindowsStages,
   cleanupWindowsSmokeInstallation,
+  createSmokeBundleConfig,
   createWindowsSmokeReport,
   createNsisInstallArgs,
   createNsisUninstallArgs,
@@ -50,6 +51,17 @@ test('keeps the NSIS destination argument last', () => {
   assert.deepEqual(createNsisUninstallArgs(), ['/S'])
 })
 
+test('uses a separate Windows identity for the package smoke app', () => {
+  assert.deepEqual(createSmokeBundleConfig({
+    productName: '拾学',
+    identifier: 'com.shiaoming123.shixue',
+  }), {
+    productName: '拾学 Package Smoke',
+    identifier: 'com.shiaoming123.shixue.package-smoke',
+    bundle: { createUpdaterArtifacts: false },
+  })
+})
+
 test('uninstalls the isolated NSIS app before removing its smoke root', async () => {
   const calls: string[] = []
   const targetRoot = resolve('D:/repo/src-tauri/target')
@@ -58,12 +70,15 @@ test('uninstalls the isolated NSIS app before removing its smoke root', async ()
 
   await cleanupWindowsSmokeInstallation(targetRoot, smokeRoot, installPath, {
     exists: async () => true,
+    registryKey: 'HKCU\\Software\\shiaoming123\\拾学 Package Smoke',
     uninstall: async (path: string, args: string[]) => { calls.push(`uninstall:${path}:${args.join(' ')}`) },
+    removeRegistry: async (key: string) => { calls.push(`registry:${key}`) },
     remove: async (_root: string, path: string) => { calls.push(`remove:${path}`) },
   })
 
   assert.deepEqual(calls, [
     `uninstall:${resolve(installPath, 'uninstall.exe')}:/S`,
+    'registry:HKCU\\Software\\shiaoming123\\拾学 Package Smoke',
     `remove:${smokeRoot}`,
   ])
 })

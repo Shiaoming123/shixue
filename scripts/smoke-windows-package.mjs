@@ -76,6 +76,17 @@ export function createNsisUninstallArgs() {
   return ['/S']
 }
 
+export function createSmokeBundleConfig(tauriConfig) {
+  if (!tauriConfig.productName?.trim() || !tauriConfig.identifier?.trim()) {
+    throw new Error('Windows package smoke requires a product name and identifier.')
+  }
+  return {
+    productName: `${tauriConfig.productName} Package Smoke`,
+    identifier: `${tauriConfig.identifier}.package-smoke`,
+    bundle: { createUpdaterArtifacts: false },
+  }
+}
+
 export function selectNsisInstaller(candidates, productName, version) {
   const matches = candidates.filter(
     (candidate) => candidate.startsWith(`${productName}_${version}_`) && candidate.endsWith('-setup.exe'),
@@ -155,6 +166,28 @@ async function terminateChild(child) {
   if (child.exitCode === null) await once(child, 'exit')
 }
 
+async function runRegistryCommand(args) {
+  return new Promise((resolveCommand, rejectCommand) => {
+    const child = spawn('reg.exe', args, { stdio: 'ignore', windowsHide: true })
+    child.once('error', rejectCommand)
+    child.once('exit', (code, signal) => {
+      if (signal) return rejectCommand(new Error(`reg.exe exited with ${signal}`))
+      resolveCommand(code)
+    })
+  })
+}
+
+async function removeWindowsInstallerRegistryKey(key) {
+  if (!key?.startsWith('HKCU\\Software\\')) {
+    throw new Error(`Refusing to remove an unexpected Windows installer registry key: ${key}`)
+  }
+  const queryCode = await runRegistryCommand(['query', key])
+  if (queryCode === 1) return
+  if (queryCode !== 0) throw new Error(`Could not inspect Windows installer registry key: ${key}`)
+  const deleteCode = await runRegistryCommand(['delete', key, '/f'])
+  if (deleteCode !== 0) throw new Error(`Could not remove Windows installer registry key: ${key}`)
+}
+
 async function main() {
   if (process.platform !== 'win32') {
     throw new Error('Windows package smoke only runs on Windows.')
@@ -170,19 +203,26 @@ async function main() {
   const appDataPath = assertSmokePath(smokeRoot, resolve(smokeRoot, 'appdata'))
   const localAppDataPath = assertSmokePath(smokeRoot, resolve(smokeRoot, 'localappdata'))
   let application
+  let installerRegistryKey
   let activeStage = 'package-build'
 
   try {
     await Promise.all([mkdir(installPath), mkdir(appDataPath), mkdir(localAppDataPath)])
     const tauriCli = resolve(projectRoot, 'node_modules', '@tauri-apps', 'cli', 'tauri.js')
     const nsisDirectory = resolve(tauriTargetRoot, 'release', 'bundle', 'nsis')
-    const tauriConfig = JSON.parse(
-      await readFile(resolve(projectRoot, 'src-tauri', 'tauri.conf.json'), 'utf8'),
-    )
-    const cargoManifest = await readFile(resolve(projectRoot, 'src-tauri', 'Cargo.toml'), 'utf8')
+    const [tauriConfig, packageJson, cargoManifest] = await Promise.all([
+      readFile(resolve(projectRoot, 'src-tauri', 'tauri.conf.json'), 'utf8').then(JSON.parse),
+      readFile(resolve(projectRoot, 'package.json'), 'utf8').then(JSON.parse),
+      readFile(resolve(projectRoot, 'src-tauri', 'Cargo.toml'), 'utf8'),
+    ])
     const cargoPackageName = cargoManifest.match(/^name\s*=\s*"([^"]+)"/m)?.[1]
     if (!cargoPackageName) throw new Error('Could not read the Cargo package name for the installed executable.')
+    if (typeof packageJson.author !== 'string' || !packageJson.author.trim()) {
+      throw new Error('Could not read the package author for Windows installer cleanup.')
+    }
     const binaryName = tauriConfig.mainBinaryName?.trim() || cargoPackageName
+    const smokeBundleConfig = createSmokeBundleConfig(tauriConfig)
+    installerRegistryKey = `HKCU\\Software\\${packageJson.author}\\${smokeBundleConfig.productName}`
     await runCommand(process.execPath, [
       tauriCli,
       'build',
@@ -190,14 +230,14 @@ async function main() {
       'nsis',
       '--no-sign',
       '--config',
-      '{"bundle":{"createUpdaterArtifacts":false}}',
+      JSON.stringify(smokeBundleConfig),
     ])
     updateSmokeStage(report, 'package-build', 'PASS', 'Tauri returned exit code 0 for an unsigned NSIS build.')
 
     activeStage = 'silent-install'
     const installerName = selectNsisInstaller(
       await listNsisInstallers(nsisDirectory),
-      tauriConfig.productName,
+      smokeBundleConfig.productName,
       tauriConfig.version,
     )
     const installerPath = resolve(nsisDirectory, installerName)
@@ -237,7 +277,9 @@ async function main() {
       console.log(`Windows package smoke report: ${smokeReportPath}`)
     } finally {
       await terminateChild(application)
-      await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath)
+      await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath, {
+        registryKey: installerRegistryKey,
+      })
     }
   }
 }
@@ -248,7 +290,9 @@ export async function cleanupWindowsSmokeInstallation(
   installPath,
   {
     exists = async (path) => stat(path).then((entry) => entry.isFile()).catch(() => false),
+    registryKey,
     uninstall = (path, args) => runCommand(path, args),
+    removeRegistry = removeWindowsInstallerRegistryKey,
     remove = removeSmokeRoot,
   } = {},
 ) {
@@ -258,6 +302,7 @@ export async function cleanupWindowsSmokeInstallation(
   if (await exists(uninstallerPath)) {
     await uninstall(uninstallerPath, createNsisUninstallArgs())
   }
+  if (registryKey) await removeRegistry(registryKey)
   await remove(targetRoot, safeSmokeRoot)
 }
 
