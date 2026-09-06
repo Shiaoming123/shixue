@@ -114,6 +114,8 @@ test('mounted TaskEditSheet stages child reminder and recurrence events until ou
       title: 'Stored', notes: '', topicId: null, plannedAt: '2026-09-06T01:00:00.000Z', dueOn: null,
       reminderAt: null, priority: 'none', estimateMinutes: 15,
     },
+    baseReminderRules: [rule],
+    baseRecurrenceRule: null,
     reminderCommands: [addition], recurrenceRule: recurrence,
   })
   app.unmount()

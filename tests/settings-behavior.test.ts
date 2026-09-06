@@ -7,6 +7,7 @@ import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { createWorkspaceExport } from '../src/storage/workspace/data-port.ts'
 import { prepareWorkspaceImport, summarizeWorkspace } from '../src/lib/workspace-data-summary.ts'
 import { currentSidebarDestination } from '../src/lib/sidebar-navigation.ts'
+import { resolveRecurrenceEditWrite, resolveReminderEditWrite } from '../src/lib/task-edit-commit.ts'
 
 // Execute the production handlers with deterministic ports; no browser or source-pattern assertions.
 function script(file: string) {
@@ -320,6 +321,79 @@ test('task edit retry skips an already saved task and resumes only the failed ne
   assert.equal(taskSaves, 1, 'retry must not create a second task revision after the first task save succeeded')
   assert.equal(reminderAttempts, 2, 'retry resumes the failed reminder')
   assert.equal(errors.length, 1)
+})
+
+test('reminder edit uses its opened base for update, remove, add, convergence, and concurrent conflict', async () => {
+  const base = { id: 'rule', taskId: 'task', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true, revision: 1 }
+  let rules: any[] = [{ ...base, revision: 3 }]
+  const api = handlers('App.vue', ['reminderCommandForCurrentState'], {
+    getWorkspaceStore: () => ({ load: async () => ({ reminderRules: rules }) }), resolveReminderEditWrite,
+  })
+  const update = { type: 'reminder.set', ruleId: 'rule', taskId: 'task', occurrenceId: null, trigger: { kind: 'before_start', minutes: 10 }, enabled: true }
+  assert.equal((await api.reminderCommandForCurrentState(update, [base])).expectedRevision, 3)
+  const remove = { ...update, trigger: base.trigger, enabled: false }
+  assert.equal((await api.reminderCommandForCurrentState(remove, [base])).expectedRevision, 3)
+  rules = []
+  const addition = { ...update, ruleId: 'new' }
+  assert.equal(Object.hasOwn(await api.reminderCommandForCurrentState(addition, []), 'expectedRevision'), false)
+  rules = [{ id: 'rule', taskId: 'task', occurrenceId: null, trigger: update.trigger, enabled: true, revision: 1 }]
+  assert.equal(await api.reminderCommandForCurrentState(update, [base]), null, 'an independently converged desired rule is complete')
+  rules = [{ ...base, trigger: { kind: 'before_start', minutes: 60 }, revision: 4 }]
+  await assert.rejects(() => api.reminderCommandForCurrentState(update, [base]), /其他位置|冲突/)
+})
+
+test('recurrence create retry detects persisted convergence and never executes or opens update scope twice', async () => {
+  const rule = { cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', end: { kind: 'never' } }
+  const task = { id: 'task', revision: 2, recurrenceSeriesId: null, schedule: { startAt: null, startOn: '2026-09-06' } }
+  let persistedSeries: any = null
+  let executes = 0
+  let refreshes = 0
+  const recurrenceScopeOpen = ref(false)
+  const taskEditorOpen = ref(true)
+  const selectedRecurrence = ref<any>(null)
+  const api = handlers('App.vue', ['requestRecurrenceEdit'], {
+    selectedRecurrence, selectedTask: ref({ id: 'task', plannedOn: '2026-09-06' }), recurrenceWorkspace: ref({ revision: 7, tasks: [task] }),
+    recurrenceExecuting: ref(false), recurrenceScopeOpen, taskEditorOpen, pendingRecurrenceRule: null,
+    clearRecurrencePreview() {}, cloneRecurrenceRuleDto: (value: any) => structuredClone(value),
+    getWorkspaceStore: () => ({ load: async () => ({ revision: persistedSeries ? 8 : 7, tasks: [{ ...task, revision: persistedSeries ? 3 : 2, recurrenceSeriesId: persistedSeries?.id ?? null }], recurrenceSeries: persistedSeries ? [persistedSeries] : [] }) }),
+    resolveRecurrenceEditWrite,
+    capabilityService: { execute: async () => { executes++; persistedSeries = { id: 'series', taskId: 'task', revision: 1, ...structuredClone(rule), timezone: 'Asia/Shanghai', anchorAt: null, anchorOn: '2026-09-06' } } },
+    CAPABILITY_PROTOCOL_VERSION: 1, crypto: { randomUUID: () => `id:${executes}` }, timezone: 'Asia/Shanghai', today: ref('2026-09-06'),
+    refreshState: async () => { refreshes++; if (refreshes === 1) throw Error('refresh failed') }, notify() {},
+  })
+  await assert.rejects(() => api.requestRecurrenceEdit(rule, null), /refresh failed/)
+  selectedRecurrence.value = persistedSeries
+  await api.requestRecurrenceEdit(rule, null)
+  assert.equal(executes, 1)
+  assert.equal(recurrenceScopeOpen.value, false)
+  assert.equal(taskEditorOpen.value, false)
+})
+
+test('recurrence create execution failure preserves the dirty editor and never opens series scope', async () => {
+  const rule = { cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', end: { kind: 'never' } }
+  const taskEditorOpen = ref(true)
+  const recurrenceScopeOpen = ref(false)
+  const recurrenceExecuting = ref(false)
+  const api = handlers('App.vue', ['requestRecurrenceEdit'], {
+    selectedTask: ref({ id: 'task', plannedOn: null }), recurrenceExecuting, recurrenceScopeOpen, taskEditorOpen, pendingRecurrenceRule: null,
+    clearRecurrencePreview() {}, cloneRecurrenceRuleDto: (value: any) => structuredClone(value),
+    getWorkspaceStore: () => ({ load: async () => ({ revision: 7, tasks: [{ id: 'task', revision: 2, deletedAt: null, recurrenceSeriesId: null, schedule: { startAt: null, startOn: null } }], recurrenceSeries: [] }) }),
+    resolveRecurrenceEditWrite, capabilityService: { execute: async () => { throw Error('create CAS') } },
+    CAPABILITY_PROTOCOL_VERSION: 1, crypto: { randomUUID: () => 'id' }, timezone: 'Asia/Shanghai', today: ref('2026-09-06'),
+    refreshState: async () => assert.fail('an execution failure cannot refresh or acknowledge the create'), notify: () => assert.fail('an execution failure cannot report success'),
+  })
+  await assert.rejects(() => api.requestRecurrenceEdit(rule, null), /create CAS/)
+  assert.equal(taskEditorOpen.value, true)
+  assert.equal(recurrenceScopeOpen.value, false)
+  assert.equal(recurrenceExecuting.value, false)
+})
+
+test('recurrence three-way resolution only updates the captured base', () => {
+  const base = { cadence: { kind: 'weekly', interval: 1, weekdays: [5, 1] }, basis: 'fixed_schedule', end: { kind: 'never' } }
+  const desired = { ...base, cadence: { kind: 'weekly', interval: 2, weekdays: [1, 5] } }
+  assert.equal(resolveRecurrenceEditWrite(base as any, base as any, desired as any), 'write')
+  assert.equal(resolveRecurrenceEditWrite(desired as any, base as any, desired as any), 'noop')
+  assert.equal(resolveRecurrenceEditWrite({ ...base, basis: 'after_completion' } as any, base as any, desired as any), 'conflict')
 })
 
 test('task edit fails loud when editable task state changed externally', async () => {

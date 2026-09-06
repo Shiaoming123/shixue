@@ -25,6 +25,8 @@ export interface TaskEditValue {
 
 export interface TaskEditChanges {
   baseTask: TaskEditValue
+  baseReminderRules: TaskReminderRule[]
+  baseRecurrenceRule: RecurrenceRule | null
   reminderCommands: ReminderSetValue[]
   recurrenceRule?: RecurrenceRule
 }
@@ -66,6 +68,8 @@ const recurrenceRule = ref<RecurrenceRule | null>(null)
 const recurrenceDirty = ref(false)
 const reminderCommands = ref<ReminderSetValue[]>([])
 const baseTask = ref<TaskEditValue | null>(null)
+const baseReminderRules = ref<TaskReminderRule[]>([])
+const baseRecurrenceRule = ref<RecurrenceRule | null>(null)
 const draftReminderRules = computed<TaskReminderRule[]>(() => {
   const rules = [...(props.reminderRules ?? [])]
   for (const command of reminderCommands.value) {
@@ -96,6 +100,8 @@ watch([() => props.open, () => props.task?.id, () => Boolean(props.task)], ([ope
     recurrenceDirty.value = false
     reminderCommands.value = []
     baseTask.value = null
+    baseReminderRules.value = []
+    baseRecurrenceRule.value = null
     return
   }
   if (!task) return
@@ -114,6 +120,10 @@ watch([() => props.open, () => props.task?.id, () => Boolean(props.task)], ([ope
   recurrenceDirty.value = false
   reminderCommands.value = []
   baseTask.value = draftValue()
+  baseReminderRules.value = (props.reminderRules ?? [])
+    .filter((rule) => rule.taskId === task.id && rule.occurrenceId === null)
+    .map(cloneReminderRule)
+  baseRecurrenceRule.value = props.recurrenceRule ? cloneRecurrenceRule(props.recurrenceRule) : null
 }, { immediate: true })
 
 watch(() => JSON.stringify(props.recurrenceRule ?? null), () => {
@@ -126,7 +136,7 @@ function sameReminder(command: ReminderSetValue, rule: TaskReminderRule) {
 }
 
 function stageReminderSet(command: ReminderSetValue) {
-  const base = (props.reminderRules ?? []).find(({ id }) => id === command.ruleId)
+  const base = baseReminderRules.value.find(({ id }) => id === command.ruleId)
   const index = reminderCommands.value.findIndex(({ ruleId }) => ruleId === command.ruleId)
   if ((!base && !command.enabled) || (base && sameReminder(command, base))) {
     if (index >= 0) reminderCommands.value.splice(index, 1)
@@ -149,6 +159,18 @@ function stageRecurrence(rule: RecurrenceRule) {
 }
 
 function requestClose() { emit('close') }
+
+function cloneReminderRule(rule: TaskReminderRule): TaskReminderRule {
+  return { ...rule, trigger: { ...rule.trigger } }
+}
+
+function cloneRecurrenceRule(rule: RecurrenceRule): RecurrenceRule {
+  return {
+    cadence: rule.cadence.kind === 'weekly' ? { ...rule.cadence, weekdays: [...rule.cadence.weekdays] } : { ...rule.cadence },
+    basis: rule.basis,
+    end: { ...rule.end },
+  }
+}
 
 function draftValue(): TaskEditValue | null {
   const normalizedTitle = title.value.trim()
@@ -175,6 +197,8 @@ function save() {
   if (!value) return
   emit('save', value, {
     baseTask: baseTask.value ?? value,
+    baseReminderRules: baseReminderRules.value.map(cloneReminderRule),
+    baseRecurrenceRule: baseRecurrenceRule.value ? cloneRecurrenceRule(baseRecurrenceRule.value) : null,
     reminderCommands: [...reminderCommands.value],
     ...(recurrenceDirty.value && recurrenceRule.value ? { recurrenceRule: recurrenceRule.value } : {}),
   })

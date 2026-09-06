@@ -93,7 +93,7 @@ import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelo
 import type { CalendarCapabilityCommand } from './domain/capabilities/calendar-commands'
 import { createCalendarUndoAction, runCalendarCommand } from './lib/calendar-command-handler'
 import { runOverdueBatchMove } from './lib/overdue-batch-command'
-import { resolveTaskEditWrite, runTaskEditCommit } from './lib/task-edit-commit'
+import { resolveRecurrenceEditWrite, resolveReminderEditWrite, resolveTaskEditWrite, runTaskEditCommit } from './lib/task-edit-commit'
 import type { Task, WorkspaceStateV3 } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
@@ -817,15 +817,13 @@ function openTaskEditor(taskId: string) {
   taskEditorOpen.value = true
 }
 
-function reminderCommandForCurrentState(command: ReminderSetValue): ReminderSetValue | null {
-  const current = recurrenceWorkspace.value?.reminderRules.find(({ id }) => id === command.ruleId)
-  if (!current) {
-    if (!command.enabled) return null
-    const { expectedRevision: _staleRevision, ...createCommand } = command
-    return createCommand
-  }
-  if (current.taskId === command.taskId && current.occurrenceId === command.occurrenceId && current.enabled === command.enabled && JSON.stringify(current.trigger) === JSON.stringify(command.trigger)) return null
-  return { ...command, expectedRevision: current.revision }
+async function reminderCommandForCurrentState(command: ReminderSetValue, baseRules: TaskEditChanges['baseReminderRules']): Promise<ReminderSetValue | null> {
+  const workspace = await getWorkspaceStore().load()
+  const current = workspace.reminderRules.find(({ id }) => id === command.ruleId)
+  const base = baseRules.find(({ id }) => id === command.ruleId)
+  const result = resolveReminderEditWrite(current, base, command)
+  if (result.decision === 'conflict') throw new Error('提醒规则已在其他位置修改，请重新打开后合并更改。')
+  return result.decision === 'write' ? result.command : null
 }
 
 async function readCurrentTaskEdit(taskId: string): Promise<{ task: Task; value: TaskEditValue }> {
@@ -867,10 +865,11 @@ async function saveTaskEdit(value: TaskEditValue, changes: TaskEditChanges) {
         await refreshState()
       },
       saveReminder: async (draftCommand) => {
-        const command = reminderCommandForCurrentState(draftCommand)
+        const command = await reminderCommandForCurrentState(draftCommand, changes.baseReminderRules)
         if (command) await saveReminderRuleWithoutBusyGuard(command)
+        else await refreshState()
       },
-      saveRecurrence: requestRecurrenceEdit,
+      saveRecurrence: (rule) => requestRecurrenceEdit(rule, changes.baseRecurrenceRule),
     })
     if (recurrenceScopeOpen.value || !taskEditorOpen.value) return
     taskEditorOpen.value = false
@@ -888,12 +887,27 @@ function cloneRecurrenceRuleDto(rule: RecurrenceRule): RecurrenceRule {
   return { cadence, basis: rule.basis, end: { ...rule.end } }
 }
 
-async function requestRecurrenceEdit(rule: RecurrenceRule) {
+async function requestRecurrenceEdit(rule: RecurrenceRule, baseRule: RecurrenceRule | null) {
   const portableRule = cloneRecurrenceRuleDto(rule)
-  if (!selectedRecurrence.value) {
-    const workspace = recurrenceWorkspace.value
-    const task = workspace?.tasks.find((item) => item.id === selectedTask.value?.id)
-    if (!workspace || !task) throw new Error('重复规则上下文已变化，请重试。')
+  const workspace = await getWorkspaceStore().load()
+  const task = workspace.tasks.find((item) => item.id === selectedTask.value?.id && !item.deletedAt)
+  const currentSeries = task?.recurrenceSeriesId
+    ? workspace.recurrenceSeries.find((series) => series.id === task.recurrenceSeriesId) ?? null
+    : null
+  if (!task) throw new Error('重复规则上下文已变化，请重试。')
+  const currentRule: RecurrenceRule | null = currentSeries
+    ? { cadence: currentSeries.cadence, basis: currentSeries.basis, end: currentSeries.end }
+    : null
+  const decision = resolveRecurrenceEditWrite(currentRule, baseRule, portableRule)
+  if (decision === 'conflict') throw new Error('重复规则已在其他位置修改，请重新打开后合并更改。')
+  if (decision === 'noop') {
+    await refreshState()
+    taskEditorOpen.value = false
+    notify(baseRule ? '重复规则已更新。' : '已创建重复规则。')
+    return
+  }
+  if (baseRule === null) {
+    const anchorOn = task.schedule.startOn ?? (task.schedule.startAt ? parseZonedDateTime(task.schedule.startAt, timezone).date : today.value)
     recurrenceExecuting.value = true
     try {
       await capabilityService.execute({
@@ -903,14 +917,17 @@ async function requestRecurrenceEdit(rule: RecurrenceRule) {
         expectedWorkspaceRevision: workspace.revision,
         command: {
           type: 'recurrence.create', taskId: task.id, expectedTaskRevision: task.revision,
-          cadence: portableRule.cadence, basis: portableRule.basis, anchorOn: selectedTask.value?.plannedOn ?? today.value,
+          cadence: portableRule.cadence, basis: portableRule.basis, anchorOn,
           end: portableRule.end, timezone,
         },
       })
-      await refreshState(); taskEditorOpen.value = false; notify('已创建重复规则。')
+      await refreshState()
+      taskEditorOpen.value = false
+      notify('已创建重复规则。')
     } finally { recurrenceExecuting.value = false }
     return
   }
+  await refreshState()
   pendingRecurrenceRule = portableRule
   clearRecurrencePreview()
   recurrenceScopeOpen.value = true

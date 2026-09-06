@@ -84,6 +84,8 @@ test('reminder and recurrence edits stay local until the outer save and cancel p
       title: 'Stored title', notes: 'Stored notes', topicId: null, plannedOn: '2026-09-05', dueOn: null,
       reminderAt: null, priority: 'none', estimateMinutes: 15,
     },
+    baseReminderRules: [{ id: 'rule:b', taskId: 'one', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true, revision: 2 }],
+    baseRecurrenceRule: null,
     reminderCommands: [
       { ...addition, trigger: { kind: 'absolute', at: '2026-09-07T01:00:00.000Z' } },
       replacement,
@@ -115,6 +117,7 @@ test('removing an existing rule is drafted once and background refresh does not 
   assert.equal(state.draftReminderRules.value.find((item: any) => item.id === rule.id).enabled, false)
   assert.deepEqual(state.recurrenceRule.value, recurrence)
   state.save()
+  assert.deepEqual(events[0][2].baseReminderRules, [rule], 'the save carries the reminder snapshot captured when editing opened')
   assert.deepEqual(events[0][2].reminderCommands, [{
     type: 'reminder.set', ruleId: rule.id, taskId: rule.taskId, occurrenceId: rule.occurrenceId,
     trigger: rule.trigger, enabled: false, expectedRevision: rule.revision,
