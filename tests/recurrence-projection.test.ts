@@ -120,38 +120,43 @@ test('completed occurrence remains projected as history without advancing task d
   })
   const workspace = fixture({ task: parent, occurrences: [completed] })
 
-  const [row] = projectTaskItems(workspace, todayRange, 'Asia/Shanghai')
+  const rows = projectTaskItems(workspace, todayRange, 'Asia/Shanghai')
+  const row = rows.find(({ occurrenceId }) => occurrenceId === completed.id)
+  const deadline = rows.find(({ key }) => key === `task:${parent.id}`)
 
   assert.equal(row?.occurrence?.status, 'completed')
   assert.equal(row?.scheduledAt, completed.scheduledAt)
-  assert.equal(row?.dueAt, parent.deadline.dueAt)
+  assert.equal(row?.dueAt, null)
+  assert.equal(deadline?.dueAt, parent.deadline.dueAt)
   assert.equal(workspace.tasks[0]?.schedule.startOn, null)
 })
 
-test('Today retains the next occurrence when only its independent parent deadline is today', () => {
+test('Today keeps an independent parent deadline separate from a future occurrence', () => {
   const parent = task({ deadline: { dueAt: null, dueOn: '2026-09-05' } })
   const future = occurrence({ scheduledAt: null, scheduledOn: '2026-09-08' })
   const [row] = projectTaskItems(fixture({ task: parent, occurrences: [future] }), todayRange, 'Asia/Shanghai')
 
-  assert.equal(row?.occurrenceId, future.id)
-  assert.equal(row?.scheduledOn, '2026-09-08')
+  assert.equal(row?.key, `task:${parent.id}`)
+  assert.equal(row?.occurrenceId, null)
+  assert.equal(row?.scheduledOn, null)
   assert.equal(row?.dueOn, '2026-09-05')
-  assert.deepEqual(row?.reasons, ['due', 'recurring'])
+  assert.deepEqual(row?.reasons, ['due'])
 })
 
-test('deadline fallback selects the earliest pending occurrence without relying on input order', () => {
+test('deadline falls back to the parent instead of selecting an unrelated future occurrence', () => {
   const parent = task({ deadline: { dueAt: null, dueOn: '2026-09-05' } })
   const later = occurrence({ id: 'occ:later', ordinal: 2, scheduledAt: null, scheduledOn: '2026-09-10' })
   const earlier = occurrence({ id: 'occ:earlier', ordinal: 1, scheduledAt: null, scheduledOn: '2026-09-08' })
 
   const [row] = projectTaskItems(fixture({ task: parent, occurrences: [later, earlier] }), todayRange, 'Asia/Shanghai')
 
-  assert.equal(row?.occurrenceId, earlier.id)
-  assert.equal(row?.scheduledOn, '2026-09-08')
-  assert.deepEqual(row?.reasons, ['due', 'recurring'])
+  assert.equal(row?.key, `task:${parent.id}`)
+  assert.equal(row?.occurrenceId, null)
+  assert.equal(row?.scheduledOn, null)
+  assert.deepEqual(row?.reasons, ['due'])
 })
 
-test('Today retains a pending deadline row when a completed occurrence is already projected', () => {
+test('Today retains one parent deadline row when a completed same-day occurrence is already projected', () => {
   const parent = task({ deadline: { dueAt: null, dueOn: '2026-09-05' } })
   const completed = occurrence({
     id: 'occ:done',
@@ -163,11 +168,12 @@ test('Today retains a pending deadline row when a completed occurrence is alread
   const future = occurrence({ id: 'occ:future', ordinal: 2, scheduledAt: null, scheduledOn: '2026-09-08' })
 
   const rows = projectTaskItems(fixture({ task: parent, occurrences: [completed, future] }), todayRange, 'Asia/Shanghai')
-  const pending = rows.find(({ occurrenceId }) => occurrenceId === future.id)
+  const deadline = rows.find(({ key }) => key === `task:${parent.id}`)
 
-  assert.equal(pending?.occurrence?.status, 'pending')
-  assert.equal(pending?.scheduledOn, '2026-09-08')
-  assert.deepEqual(pending?.reasons, ['due', 'recurring'])
+  assert.equal(rows.some(({ occurrenceId }) => occurrenceId === future.id), false)
+  assert.equal(deadline?.occurrenceId, null)
+  assert.equal(deadline?.dueOn, '2026-09-05')
+  assert.deepEqual(deadline?.reasons, ['due'])
 })
 
 test('Today falls back to the parent deadline row when no pending occurrence remains', () => {

@@ -7,6 +7,7 @@ export interface CalendarCommandHandler {
   refresh(): Promise<void>
   notify(message: string, action?: CalendarNoticeAction): void
   successAction(result: CommandResult): CalendarNoticeAction | undefined
+  successMessage?: string
 }
 
 interface CalendarOperationCopy {
@@ -93,7 +94,7 @@ async function runCalendarOperation(handler: CalendarCommandHandler, copy: Calen
 }
 
 function notifySuccess(handler: CalendarCommandHandler, result: CommandResult, copy: CalendarOperationCopy) {
-  handler.notify(copy.success, handler.successAction(result))
+  handler.notify(handler.successMessage ?? copy.success, handler.successAction(result))
 }
 
 function notifyRefreshFailure(handler: CalendarCommandHandler, result: CommandResult, error: unknown, copy: CalendarOperationCopy) {

@@ -12,10 +12,11 @@ const priorityOrder = { high: 0, medium: 1, low: 2, none: 3 } as const
 export function selectToday(state: WorkspaceStateV3, now: string, timezone: string): TodayGroup[] {
   const today = localDate(now, timezone)
   const taskOrder = new Map(state.tasks.map((task, index) => [task.id, index]))
+  const compare = createProjectionComparator(taskOrder, timezone)
   const merged = mergeProjections(projectTaskItems(state, { from: today, to: today }, timezone))
     .filter((item) => item.task.deletedAt === null && item.task.status !== 'completed' && item.task.status !== 'cancelled')
     .filter((item) => item.occurrence === null || item.occurrence.status === 'pending')
-    .sort((left, right) => compareProjection(left, right, taskOrder))
+    .sort(compare)
 
   return TODAY_GROUP_KINDS.map((kind) => ({
     kind,
@@ -27,13 +28,31 @@ export function canonicalReasons(reasons: readonly TaskProjectionReason[]): Task
   return [...new Set(reasons)].sort((left, right) => reasonOrder.get(left)! - reasonOrder.get(right)!)
 }
 
-export function compareProjection(left: TaskProjection, right: TaskProjection, taskOrder: ReadonlyMap<string, number>): number {
-  return compareText(effectivePlanDate(left), effectivePlanDate(right)) ||
-    compareText(effectivePlanTime(left), effectivePlanTime(right)) ||
-    priorityOrder[left.task.priority] - priorityOrder[right.task.priority] ||
-    (taskOrder.get(left.taskId) ?? Number.MAX_SAFE_INTEGER) - (taskOrder.get(right.taskId) ?? Number.MAX_SAFE_INTEGER) ||
-    (left.occurrence?.ordinal ?? -1) - (right.occurrence?.ordinal ?? -1) ||
-    compareText(left.key, right.key)
+export function createProjectionComparator(taskOrder: ReadonlyMap<string, number>, timezone: string) {
+  const format = createTimeZoneFormatter(timezone)
+  const timeCache = new Map<string, { minute: string; instant: number }>()
+  const effectivePlanTime = (item: TaskProjection): { minute: string; instant: number } => {
+    const value = item.scheduledAt ?? item.dueAt
+    if (!value) return { minute: '', instant: Number.NEGATIVE_INFINITY }
+    const cached = timeCache.get(value)
+    if (cached) return cached
+    const instant = new Date(value)
+    if (Number.isNaN(instant.getTime())) throw new Error(`Invalid projection instant: ${value}`)
+    const time = { minute: format(instant).time, instant: instant.getTime() }
+    timeCache.set(value, time)
+    return time
+  }
+  return (left: TaskProjection, right: TaskProjection): number => {
+    const leftTime = effectivePlanTime(left)
+    const rightTime = effectivePlanTime(right)
+    return compareText(effectivePlanDate(left), effectivePlanDate(right)) ||
+      compareText(leftTime.minute, rightTime.minute) ||
+      leftTime.instant - rightTime.instant ||
+      priorityOrder[left.task.priority] - priorityOrder[right.task.priority] ||
+      (taskOrder.get(left.taskId) ?? Number.MAX_SAFE_INTEGER) - (taskOrder.get(right.taskId) ?? Number.MAX_SAFE_INTEGER) ||
+      (left.occurrence?.ordinal ?? -1) - (right.occurrence?.ordinal ?? -1) ||
+      compareText(left.key, right.key)
+  }
 }
 
 function mergeProjections(items: readonly TaskProjection[]): TaskProjection[] {
@@ -52,10 +71,6 @@ function primaryReason(reasons: readonly TaskProjectionReason[]): TodayGroupKind
 
 function effectivePlanDate(item: TaskProjection): string {
   return item.scheduledOn ?? item.dueOn ?? '9999-12-31'
-}
-
-function effectivePlanTime(item: TaskProjection): string {
-  return item.scheduledAt ?? item.dueAt ?? ''
 }
 
 function localDate(now: string, timezone: string): string {

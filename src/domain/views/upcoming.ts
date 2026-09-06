@@ -1,7 +1,7 @@
 import { addCalendarDays } from '../../storage/study/types.ts'
 import { projectTaskItems, type TaskProjection } from '../../lib/study-task-query.ts'
 import type { WorkspaceStateV3 } from '../workspace/types.ts'
-import { canonicalReasons, compareProjection } from './today.ts'
+import { canonicalReasons, createProjectionComparator } from './today.ts'
 
 export interface DayGroup { date: string; items: TaskProjection[] }
 
@@ -15,6 +15,7 @@ export function selectUpcoming(
   const endExclusive = addCalendarDays(start, days)
   const endInclusive = addCalendarDays(endExclusive, -1)
   const taskOrder = new Map(state.tasks.map((task, index) => [task.id, index]))
+  const compare = createProjectionComparator(taskOrder, timezone)
   const byKey = new Map<string, { date: string; item: TaskProjection }>()
 
   for (const projection of projectTaskItems(state, { from: start, to: endInclusive }, timezone)) {
@@ -38,7 +39,7 @@ export function selectUpcoming(
   }
   return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, items]) => ({
     date,
-    items: items.sort((left, right) => compareProjection(left, right, taskOrder)),
+    items: items.sort(compare),
   }))
 }
 

@@ -95,7 +95,7 @@ const sections = computed(() => {
 })
 
 function reasonLabel(reason: TaskProjectionReason) {
-  return ({ overdue: '已过期', planned: '已计划', due: '今日截止', recurring: '重复' } as const)[reason]
+  return ({ overdue: '已过期', planned: '已计划', due: props.smartView === 'next7' ? '截止' : '今日截止', recurring: '重复' } as const)[reason]
 }
 
 watch(() => props.smartView, clearSelection)

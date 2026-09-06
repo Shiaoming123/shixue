@@ -92,6 +92,98 @@ test('Upcoming resolves timed values, DST boundaries and occurrence overrides in
   assert.deepEqual(groups[0]!.items.map(({ reasons }) => reasons), [['recurring'], ['recurring']])
 })
 
+test('occurrence overrides replace the whole schedule across date-only and timed DST forms', () => {
+  const state = workspace({
+    tasks: [task({ id: 'series', recurrenceSeriesId: 'series:override' })],
+    recurrenceSeries: [series('series:override', 'series', 'America/New_York')],
+    occurrences: [
+      occurrence({
+        id: 'all-to-timed', seriesId: 'series:override', ordinal: 1, scheduledOn: '2026-03-07',
+        override: { scheduledAt: '2026-03-08T07:30:00.000Z', scheduledOn: null, estimateMinutes: null },
+      }),
+      occurrence({
+        id: 'timed-to-all', seriesId: 'series:override', ordinal: 2, scheduledAt: '2026-03-08T06:30:00.000Z',
+        override: { scheduledAt: null, scheduledOn: '2026-03-09', estimateMinutes: null },
+      }),
+    ],
+  })
+
+  const rows = selectUpcoming(state, '2026-03-08', 2, 'America/New_York').flatMap(({ items }) => items)
+
+  assert.deepEqual(rows.map(({ key, scheduledAt, scheduledOn }) => [key, scheduledAt, scheduledOn]), [
+    ['occurrence:all-to-timed', '2026-03-08T07:30:00.000Z', '2026-03-08'],
+    ['occurrence:timed-to-all', null, '2026-03-09'],
+  ])
+})
+
+test('one parent deadline attaches to one stable same-day occurrence without regrouping later occurrences', () => {
+  const state = workspace({
+    tasks: [task({ id: 'series', recurrenceSeriesId: 'series:deadline', deadline: { dueAt: null, dueOn: '2026-09-08' } })],
+    recurrenceSeries: [series('series:deadline', 'series')],
+    occurrences: [
+      ...Array.from({ length: 7 }, (_, index) => occurrence({
+        id: `occ:${index + 5}`, seriesId: 'series:deadline', ordinal: index + 1, scheduledOn: `2026-09-${String(index + 5).padStart(2, '0')}`,
+      })),
+      occurrence({ id: 'occ:8-second', seriesId: 'series:deadline', ordinal: 99, scheduledOn: '2026-09-08' }),
+    ],
+  })
+
+  const groups = selectUpcoming(state, '2026-09-05', 7, 'Asia/Shanghai')
+  const rows = groups.flatMap(({ date, items }) => items.map((item) => ({ date, ...item })))
+
+  assert.deepEqual(groups.map(({ date }) => date), [
+    '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11',
+  ])
+  assert.equal(rows.length, 8)
+  assert.deepEqual(rows.filter(({ reasons }) => reasons.includes('due')).map(({ key, date }) => [key, date]), [
+    ['occurrence:occ:8', '2026-09-08'],
+  ])
+  assert.deepEqual(rows.filter(({ key }) => key === 'occurrence:occ:9').map(({ date, dueOn, reasons }) => [date, dueOn, reasons]), [
+    ['2026-09-09', null, ['recurring']],
+  ])
+})
+
+test('a parent deadline without a same-day pending occurrence uses one independent task row', () => {
+  const state = workspace({
+    tasks: [task({ id: 'series', recurrenceSeriesId: 'series:deadline', deadline: { dueAt: null, dueOn: '2026-09-08' } })],
+    recurrenceSeries: [series('series:deadline', 'series')],
+    occurrences: [
+      occurrence({ id: 'occ:9', seriesId: 'series:deadline', ordinal: 1, scheduledOn: '2026-09-09' }),
+      occurrence({ id: 'occ:10', seriesId: 'series:deadline', ordinal: 2, scheduledOn: '2026-09-10' }),
+    ],
+  })
+
+  const groups = selectUpcoming(state, '2026-09-08', 3, 'Asia/Shanghai')
+
+  assert.deepEqual(groups.map(({ date, items }) => [date, items.map(({ key, reasons }) => [key, reasons])]), [
+    ['2026-09-08', [['task:series', ['due']]]],
+    ['2026-09-09', [['occurrence:occ:9', ['recurring']]]],
+    ['2026-09-10', [['occurrence:occ:10', ['recurring']]]],
+  ])
+})
+
+test('same-day timed projections sort by target-timezone minute instead of source offset text', () => {
+  const state = workspace({ tasks: [
+    task({ id: 'late', schedule: { startAt: '2026-09-05T01:00:00-04:00', startOn: null, estimateMinutes: null } }),
+    task({ id: 'early', schedule: { startAt: '2026-09-05T08:00:00+08:00', startOn: null, estimateMinutes: null } }),
+  ] })
+
+  const rows = selectToday(state, '2026-09-05', 'Asia/Shanghai').flatMap(({ items }) => items)
+
+  assert.deepEqual(rows.map(({ key }) => key), ['task:early', 'task:late'])
+})
+
+test('ambiguous DST minutes use the real instant as the stable timed tie-breaker', () => {
+  const state = workspace({ tasks: [
+    task({ id: 'second-0130', priority: 'high', schedule: { startAt: '2026-11-01T06:30:00.000Z', startOn: null, estimateMinutes: null } }),
+    task({ id: 'first-0130', priority: 'low', schedule: { startAt: '2026-11-01T05:30:00.000Z', startOn: null, estimateMinutes: null } }),
+  ] })
+
+  const rows = selectToday(state, '2026-11-01', 'America/New_York').flatMap(({ items }) => items)
+
+  assert.deepEqual(rows.map(({ key }) => key), ['task:first-0130', 'task:second-0130'])
+})
+
 test('projection selectors reject invalid ranges without mutating deadlines', () => {
   const state = workspace({ tasks: [task({ id: 'overdue', schedule: { startAt: null, startOn: '2026-09-01', estimateMinutes: null }, deadline: { dueAt: null, dueOn: '2026-09-02' } })] })
   const before = structuredClone(state.tasks[0]!.deadline)
@@ -112,18 +204,21 @@ test('live Today and Upcoming consume workspace selectors and Tasks renders cano
   assert.match(app, /taskSort\.value !== 'manual'/)
   assert.match(tasks, /\['overdue', 'planned', 'due', 'recurring'\]/)
   for (const label of ['已过期', '已计划', '今日截止', '重复']) assert.match(tasks, new RegExp(label))
+  assert.match(tasks, /props\.smartView === 'next7' \? '截止' : '今日截止'/)
 })
 
 test('the overdue command bar previews one atomic ordinary-task batch through the singleton service', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const tasks = readFileSync(new URL('../src/components/study/TasksView.vue', import.meta.url), 'utf8')
+  const handler = readFileSync(new URL('../src/lib/overdue-batch-command.ts', import.meta.url), 'utf8')
 
   assert.match(tasks, /overdueMoveToToday/)
   assert.match(tasks, /emit\('defer', task\.id\)/)
   assert.match(tasks, /emit\('cancel', task\.id\)/)
-  assert.match(app, /type: 'task\.batch_reschedule'/)
-  assert.match(app, /capabilityService\.preview\(envelope\)/)
-  assert.match(app, /capabilityService\.execute\(envelope\)/)
+  assert.match(app, /runOverdueBatchMove\(taskIds, today\.value/)
+  assert.match(handler, /type: 'task\.batch_reschedule'/)
+  assert.match(handler, /runtime\.preview\(envelope\)/)
+  assert.match(handler, /runCalendarCommand/)
   assert.doesNotMatch(app, /bulkRescheduleStudyTasks\(/)
 })
 

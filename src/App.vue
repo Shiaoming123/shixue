@@ -91,6 +91,7 @@ import { createTaskCapabilityService } from './domain/capabilities/service'
 import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef } from './domain/capabilities/types'
 import type { CalendarCapabilityCommand } from './domain/capabilities/calendar-commands'
 import { createCalendarUndoAction, runCalendarCommand } from './lib/calendar-command-handler'
+import { runOverdueBatchMove } from './lib/overdue-batch-command'
 import type { WorkspaceStateV3, ReminderRule } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
@@ -993,26 +994,15 @@ async function bulkDeleteTasks(taskIds: string[]) {
 }
 
 async function bulkMoveTasksToToday(taskIds: string[]) {
-  try {
-    const workspace = await capabilityService.query({ type: 'workspace.snapshot' })
-    const tasks = workspace.tasks.filter((task) => taskIds.includes(task.id) && task.deletedAt === null && task.status !== 'completed' && task.status !== 'cancelled' && task.recurrenceSeriesId === null)
-    if (!tasks.length) { notify('所选逾期项需要逐项处理。'); return }
-    const command: Extract<CapabilityCommand, { type: 'task.batch_reschedule' }> = {
-      type: 'task.batch_reschedule', taskIds: tasks.map(({ id }) => id), startOn: today.value,
-      expectedRevisions: Object.fromEntries(tasks.map(({ id, revision }) => [id, revision])),
-      eventIds: Object.fromEntries(tasks.map(({ id }) => [id, crypto.randomUUID()])),
-      reason: '从逾期分组批量移到今天',
-    }
-    const envelope: CommandEnvelope<typeof command> = {
-      protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `overdue-ui:${crypto.randomUUID()}`,
-      source: 'human-ui', expectedWorkspaceRevision: workspace.revision, command,
-    }
-    const preview = await capabilityService.preview(envelope)
-    if (!preview.accepted) throw new Error(preview.validationErrors[0]?.message ?? '批量调整未通过预演。')
-    const result = await capabilityService.execute(envelope)
-    await refreshState(); selectedTaskId.value = ''; setDestination({ kind: 'today' })
-    notify(`已把 ${tasks.length} 项移到今天。`, calendarUndoAction(result))
-  } catch (error) { reportStorageError(error) }
+  await runOverdueBatchMove(taskIds, today.value, {
+    snapshot: () => capabilityService.query({ type: 'workspace.snapshot' }),
+    preview: (envelope) => capabilityService.preview(envelope),
+    execute: (envelope) => capabilityService.execute(envelope),
+    refresh: async () => { await refreshState(); selectedTaskId.value = ''; setDestination({ kind: 'today' }) },
+    notify,
+    successAction: calendarUndoAction,
+    createId: () => crypto.randomUUID(),
+  })
 }
 
 async function toggleTaskCompletion(taskId: string) {
