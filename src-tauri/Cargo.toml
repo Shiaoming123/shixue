@@ -1,6 +1,6 @@
 [package]
 name = "meow-study"
-version = "0.2.3"
+version = "0.2.4"
 description = "Local-first personal learning record and review assistant"
 authors = ["Shiaoming123"]
 license = "MIT"

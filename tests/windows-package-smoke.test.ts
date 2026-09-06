@@ -4,8 +4,10 @@ import { resolve } from 'node:path'
 import {
   assertSmokePath,
   appendManualWindowsStages,
+  cleanupWindowsSmokeInstallation,
   createWindowsSmokeReport,
   createNsisInstallArgs,
+  createNsisUninstallArgs,
   removeSmokeRoot,
   resolveInstalledExecutable,
   selectNsisInstaller,
@@ -45,6 +47,25 @@ test('keeps the NSIS destination argument last', () => {
     ),
     ['/S', '/D=D:/repo/src-tauri/target/meow-windows-package-smoke-a/install'],
   )
+  assert.deepEqual(createNsisUninstallArgs(), ['/S'])
+})
+
+test('uninstalls the isolated NSIS app before removing its smoke root', async () => {
+  const calls: string[] = []
+  const targetRoot = resolve('D:/repo/src-tauri/target')
+  const smokeRoot = resolve(targetRoot, 'meow-windows-package-smoke-a')
+  const installPath = resolve(smokeRoot, 'install')
+
+  await cleanupWindowsSmokeInstallation(targetRoot, smokeRoot, installPath, {
+    exists: async () => true,
+    uninstall: async (path: string, args: string[]) => { calls.push(`uninstall:${path}:${args.join(' ')}`) },
+    remove: async (_root: string, path: string) => { calls.push(`remove:${path}`) },
+  })
+
+  assert.deepEqual(calls, [
+    `uninstall:${resolve(installPath, 'uninstall.exe')}:/S`,
+    `remove:${smokeRoot}`,
+  ])
 })
 
 test('selects the single installer for the configured product and version', () => {

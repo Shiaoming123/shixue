@@ -14,6 +14,8 @@
 
 Portable 表示“应用本体是一个 EXE，不需要安装”，不表示数据写在 EXE 旁边。拾学仍把 SQLite、设置和日志放在系统用户数据目录，因此覆盖 Portable EXE 不会主动删除学习数据。
 
+启动新 Portable 前，应先从托盘退出仍在运行的旧版本。拾学采用单实例运行；旧进程尚未退出时，双击新 EXE 只会唤回旧窗口。可在任务管理器的“命令行”列或 PowerShell `Get-CimInstance Win32_Process` 输出中核对实际可执行文件路径。
+
 Windows 10/11 通常已经包含 WebView2 Runtime；精简系统或旧环境若无法启动，需要先安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 
 ## 为什么 Windows 会提示风险

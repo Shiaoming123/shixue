@@ -72,6 +72,10 @@ export function createNsisInstallArgs(_installerPath, installPath) {
   return ['/S', `/D=${installPath}`]
 }
 
+export function createNsisUninstallArgs() {
+  return ['/S']
+}
+
 export function selectNsisInstaller(candidates, productName, version) {
   const matches = candidates.filter(
     (candidate) => candidate.startsWith(`${productName}_${version}_`) && candidate.endsWith('-setup.exe'),
@@ -233,9 +237,28 @@ async function main() {
       console.log(`Windows package smoke report: ${smokeReportPath}`)
     } finally {
       await terminateChild(application)
-      await removeSmokeRoot(tauriTargetRoot, smokeRoot)
+      await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath)
     }
   }
+}
+
+export async function cleanupWindowsSmokeInstallation(
+  targetRoot,
+  smokeRoot,
+  installPath,
+  {
+    exists = async (path) => stat(path).then((entry) => entry.isFile()).catch(() => false),
+    uninstall = (path, args) => runCommand(path, args),
+    remove = removeSmokeRoot,
+  } = {},
+) {
+  const safeSmokeRoot = assertSmokePath(targetRoot, smokeRoot)
+  const safeInstallPath = assertSmokePath(safeSmokeRoot, installPath)
+  const uninstallerPath = assertSmokePath(safeSmokeRoot, resolve(safeInstallPath, 'uninstall.exe'))
+  if (await exists(uninstallerPath)) {
+    await uninstall(uninstallerPath, createNsisUninstallArgs())
+  }
+  await remove(targetRoot, safeSmokeRoot)
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
