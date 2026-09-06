@@ -95,9 +95,13 @@ export function resolveLegacyReviewLink(
   reviewedOn: string,
 ): ReviewTaskLink | null {
   const links = state.reviewTaskLinks.filter((link) => link.completionRecordId === recordId)
-  const replays = links.filter((link) => link.completion?.result === result && link.completion.reviewedOn === reviewedOn)
+  const sameDateHistory = links.filter((link) => link.completion?.reviewedOn === reviewedOn)
+  const replays = sameDateHistory.filter((link) => link.completion?.result === result)
   if (replays.length > 1) throw new DomainCommandError('VALIDATION_ERROR', 'Legacy review replay is ambiguous.', { recordId })
   if (replays.length === 1) return replays[0]!
+  if (sameDateHistory.length > 0) {
+    throw new DomainCommandError('VALIDATION_ERROR', 'Legacy review outcome does not match completed history.', { recordId, reviewedOn })
+  }
   if (links.some((link) => link.completedAt !== null && link.completion === null)) {
     throw new DomainCommandError('VALIDATION_ERROR', 'Legacy review history has no completion outcome; use an exact review link.', { recordId })
   }

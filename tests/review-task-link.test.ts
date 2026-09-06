@@ -288,6 +288,13 @@ test('archived review targets preserve receipt-independent outcome replay', asyn
     assert.deepEqual(replayed.taskEvents, before.taskEvents)
   }
 
+  const beforeLegacyMismatch = await store.load()
+  await assert.rejects(
+    execute({ type: 'completion.review', recordId: link.completionRecordId, result: 'fuzzy', reviewedOn: outcome.reviewedOn }, 'archived:legacy-mismatch'),
+    /does not match completed history/,
+  )
+  assert.deepEqual(await store.load(), beforeLegacyMismatch)
+
   const beforeMismatch = await store.load()
   await assert.rejects(
     execute({ type: 'review.complete', linkId: link.id, result: 'fuzzy', reviewedOn: outcome.reviewedOn }, 'archived:mismatch'),
