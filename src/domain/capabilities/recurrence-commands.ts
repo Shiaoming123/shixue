@@ -37,6 +37,17 @@ export function seriesMovePatchForOccurrence(
   startOn: string | null,
 ): RecurrenceUpdatePatch {
   const target = recurrenceSchedule(startAt, startOn, 'Calendar series target')
+  if (series.basis === 'after_completion') {
+    if (occurrence.status !== 'pending') {
+      throw validation(`Only the pending after-completion occurrence can move its series: ${occurrence.id}.`)
+    }
+    return {
+      anchorAt: target.at,
+      anchorOn: target.on,
+      scheduledAt: target.at,
+      scheduledOn: target.on,
+    }
+  }
   const timedTarget = target.at === null ? null : localDateTime(target.at, series.timezone)
   const targetDate = target.on ?? timedTarget!.date
   const current = occurrenceSchedule(series, occurrence.ordinal)
@@ -178,9 +189,16 @@ function updateRecurrence(
     const priorBasis = series.basis
     applySeriesPatch(series, command.patch)
     series.revision += 1
+    const relocated = priorBasis === 'after_completion' && series.basis === 'after_completion'
+      ? relocateAfterCompletionOccurrence(series, occurrence, command.patch)
+      : null
     const pending = recomputePendingOccurrences(state, series, priorBasis)
     const materialized = fillSeriesWindow(state, series, context.now)
-    const changed = [...pending, ...materialized]
+    const changed = [
+      ...(relocated ? [relocated] : []),
+      ...pending.filter((item) => item.id !== relocated?.id),
+      ...materialized,
+    ]
     const event = appendOccurrenceEvent(state, task, occurrence, 'rescheduled', context, 'Recurrence series updated.')
     return recurrenceApplication({
       tasks: [],
@@ -390,6 +408,28 @@ function recomputePendingOccurrences(
     }
   }
   return changed
+}
+
+function relocateAfterCompletionOccurrence(
+  series: RecurrenceSeries,
+  occurrence: TaskOccurrence,
+  patch: RecurrenceUpdatePatch,
+): TaskOccurrence | null {
+  if (patch.scheduledAt === undefined && patch.scheduledOn === undefined) return null
+  if (occurrence.status !== 'pending') {
+    throw validation(`Only a pending after-completion occurrence can be rescheduled: ${occurrence.id}.`)
+  }
+  const schedule = patchSchedule(patch, occurrence)
+  if (isPastSeriesEnd(series, schedule.at, schedule.on, occurrence.ordinal)) {
+    throw validation(`After-completion occurrence falls outside the recurrence end: ${occurrence.id}.`)
+  }
+  occurrence.scheduledAt = schedule.at
+  occurrence.scheduledOn = schedule.on
+  occurrence.override = null
+  occurrence.completedAt = null
+  occurrence.revision += 1
+  series.createdThrough = schedule.on ?? schedule.at
+  return occurrence
 }
 
 function createAfterCompletionSuccessor(

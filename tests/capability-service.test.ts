@@ -293,7 +293,7 @@ test('rejects stale workspace and entity revisions without changing the workspac
 test('catalog exposes fixed risk, scope, reversibility, and preview metadata for every core command', () => {
   assert.deepEqual(COMMAND_CATALOG, [
     { type: 'calendar.move', risk: 'high', scope: 'series', reversibility: 'reversible', requiresPreview: true },
-    { type: 'calendar.resize', risk: 'high', scope: 'single', reversibility: 'reversible', requiresPreview: true },
+    { type: 'calendar.resize', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'task.create', risk: 'low', scope: 'single', reversibility: 'compensating', requiresPreview: false },
     { type: 'task.update', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'task.delete', risk: 'high', scope: 'single', reversibility: 'compensating', requiresPreview: true },

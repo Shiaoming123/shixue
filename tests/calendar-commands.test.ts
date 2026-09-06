@@ -133,6 +133,9 @@ test('resizing a task accepts five-minute boundaries and rejects invalid duratio
     command: { type: 'calendar.resize', taskId: 'task:resize', estimateMinutes: 35, scope: 'single' },
   })
   assert.equal(preview.accepted, true)
+  assert.deepEqual(preview.descriptor, {
+    type: 'calendar.resize', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false,
+  })
   assert.equal(preview.confirmation, 'none')
 
   for (const estimateMinutes of [5, 1440]) {
@@ -429,6 +432,106 @@ test('moving a non-first recurrence occurrence shifts the series so the selected
       )
 
       await executeNext(service, `undo-calendar-series-move-${index}`, { type: 'undo.apply', token: moved.undoToken! })
+      const afterUndo = await service.query({ type: 'workspace.snapshot' })
+      assert.deepEqual(afterUndo.recurrenceSeries, before.recurrenceSeries)
+      assert.deepEqual(afterUndo.occurrences, before.occurrences)
+    })
+  }
+})
+
+test('moving an after-completion series relocates its pending occurrence and preserves successor cadence', async (context) => {
+  const scenarios = [
+    {
+      label: 'timed across America/Los_Angeles DST',
+      timezone: 'America/Los_Angeles',
+      initialNow: '2026-10-31T16:00:00.000Z',
+      anchor: { anchorAt: '2026-10-31T09:00:00-07:00' },
+      cadence: { kind: 'daily', interval: 1 },
+      move: { startAt: '2026-11-02T10:30:00-08:00' },
+      expectedTarget: { scheduledAt: '2026-11-02T10:30:00-08:00', scheduledOn: null },
+      completedAt: '2026-11-02T18:30:00.000Z',
+      expectedSuccessor: { scheduledAt: '2026-11-03T18:30:00.000Z', scheduledOn: null },
+    },
+    {
+      label: 'date-only weekly',
+      timezone: 'Asia/Shanghai',
+      initialNow: '2026-09-05T10:00:00.000Z',
+      anchor: { anchorOn: '2026-09-05' },
+      cadence: { kind: 'weekly', interval: 1, weekdays: [1, 3] },
+      move: { startOn: '2026-09-18' },
+      expectedTarget: { scheduledAt: null, scheduledOn: '2026-09-18' },
+      completedAt: '2026-09-18T04:00:00.000Z',
+      expectedSuccessor: { scheduledAt: null, scheduledOn: '2026-09-28' },
+    },
+  ] as const
+
+  for (const [index, scenario] of scenarios.entries()) {
+    await context.test(scenario.label, async () => {
+      let nextId = 0
+      const service = createTaskCapabilityService(
+        createInMemoryWorkspaceStore(),
+        () => scenario.initialNow,
+        (kind) => `${kind}-after-${index}-${++nextId}`,
+      )
+      await executeNext(service, `create-after-task-${index}`, {
+        type: 'task.create', taskId: 'task:after-move', listId: 'list:system:learning', title: scenario.label,
+      })
+      await executeNext(service, `create-after-series-${index}`, {
+        type: 'recurrence.create', taskId: 'task:after-move', expectedTaskRevision: 1,
+        seriesId: 'series:after-move', cadence: scenario.cadence, basis: 'after_completion',
+        ...scenario.anchor, end: { kind: 'never' }, timezone: scenario.timezone,
+      })
+      await executeNext(service, `complete-after-first-${index}`, {
+        type: 'recurrence.complete', occurrenceId: 'occurrence:series:after-move:1',
+      })
+      const before = await service.query({ type: 'workspace.snapshot' })
+      const envelope: CommandEnvelope = {
+        protocolVersion: 1,
+        idempotencyKey: `move-after-series-${index}`,
+        source: 'human-ui',
+        expectedWorkspaceRevision: before.revision,
+        command: {
+          type: 'calendar.move', taskId: 'task:after-move', occurrenceId: 'occurrence:series:after-move:2',
+          scope: 'series', ...scenario.move,
+        } as CommandEnvelope['command'],
+      }
+
+      await assert.rejects(
+        service.execute(envelope),
+        (error) => error instanceof DomainCommandError && error.code === 'VALIDATION_ERROR',
+      )
+      const preview = await service.preview(envelope)
+      assert.equal(preview.accepted, true)
+      assert.equal(preview.confirmation, 'explicit')
+      const moved = await service.execute({
+        ...envelope,
+        explicitConfirmation: { previewReceiptId: preview.previewReceiptId!, confirmedAt: scenario.initialNow },
+      })
+      const afterMove = await service.query({ type: 'workspace.snapshot' })
+      const series = afterMove.recurrenceSeries.find(({ id }) => id === 'series:after-move')
+      const selected = afterMove.occurrences.find(({ id }) => id === 'occurrence:series:after-move:2')
+      assert.deepEqual(series?.cadence, scenario.cadence)
+      assert.deepEqual(
+        { scheduledAt: selected?.scheduledAt, scheduledOn: selected?.scheduledOn },
+        scenario.expectedTarget,
+      )
+
+      const continuing = createTaskCapabilityService(
+        createInMemoryWorkspaceStore(afterMove),
+        () => scenario.completedAt,
+        (kind) => `${kind}-after-continue-${index}`,
+      )
+      await executeNext(continuing, `complete-moved-after-${index}`, {
+        type: 'recurrence.complete', occurrenceId: 'occurrence:series:after-move:2',
+      })
+      const afterCompletion = await continuing.query({ type: 'workspace.snapshot' })
+      const successor = afterCompletion.occurrences.find(({ id }) => id === 'occurrence:series:after-move:3')
+      assert.deepEqual(
+        { scheduledAt: successor?.scheduledAt, scheduledOn: successor?.scheduledOn },
+        scenario.expectedSuccessor,
+      )
+
+      await executeNext(service, `undo-after-series-move-${index}`, { type: 'undo.apply', token: moved.undoToken! })
       const afterUndo = await service.query({ type: 'workspace.snapshot' })
       assert.deepEqual(afterUndo.recurrenceSeries, before.recurrenceSeries)
       assert.deepEqual(afterUndo.occurrences, before.occurrences)

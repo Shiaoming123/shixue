@@ -2,7 +2,7 @@ import { DomainCommandError, type CapabilityCommand, type CommandDescriptor, typ
 
 export const COMMAND_CATALOG: readonly CommandDescriptor[] = [
   { type: 'calendar.move', risk: 'high', scope: 'series', reversibility: 'reversible', requiresPreview: true },
-  { type: 'calendar.resize', risk: 'high', scope: 'single', reversibility: 'reversible', requiresPreview: true },
+  { type: 'calendar.resize', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
   { type: 'task.create', risk: 'low', scope: 'single', reversibility: 'compensating', requiresPreview: false },
   { type: 'task.update', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
   { type: 'task.delete', risk: 'high', scope: 'single', reversibility: 'compensating', requiresPreview: true },
