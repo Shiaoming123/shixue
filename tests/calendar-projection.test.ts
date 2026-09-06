@@ -12,6 +12,10 @@ test('calendar ranges use a start-inclusive, end-exclusive boundary', () => {
   assert.deepEqual(calendarRange('month', '2026-09-04', 1), { start: '2026-08-31', end: '2026-10-05' })
 })
 
+test('calendar ranges reject invalid calendar dates instead of normalizing them', () => {
+  assert.throws(() => calendarRange('day', '2026-02-30', 1), /Invalid calendar date/)
+})
+
 test('projects date-only tasks as all-day items without synthesizing a timestamp', () => {
   const state = fixture({ schedule: { startAt: null, startOn: '2026-09-04', estimateMinutes: 30 } })
 
@@ -56,6 +60,55 @@ test('uses occurrence overrides for date, time, and duration without mutating st
     kind: 'timed', start: '2026-09-04T11:00:00+08:00', end: '2026-09-04T04:15:00.000Z',
   }])
   assert.deepEqual(state, before)
+})
+
+test('an occurrence override can change a date-only occurrence into a timed block', () => {
+  const state = fixture({
+    schedule: { startAt: null, startOn: '2026-09-04', estimateMinutes: 30 },
+    recurrenceSeriesId: 'series:1',
+    occurrences: [occurrence({
+      scheduledAt: null,
+      scheduledOn: '2026-09-04',
+      override: { scheduledAt: '2026-09-04T11:00:00+08:00', scheduledOn: null, estimateMinutes: 75 },
+    })],
+  })
+
+  assert.deepEqual(projectCalendarItems(state, dayRange), [{
+    key: 'occurrence:occ:1', taskId: 'task:1', occurrenceId: 'occ:1',
+    kind: 'timed', start: '2026-09-04T11:00:00+08:00', end: '2026-09-04T04:15:00.000Z',
+  }])
+})
+
+test('an occurrence override can change a timed occurrence into an all-day item', () => {
+  const state = fixture({
+    schedule: { startAt: '2026-09-04T09:00:00+08:00', startOn: null, estimateMinutes: 30 },
+    recurrenceSeriesId: 'series:1',
+    occurrences: [occurrence({
+      override: { scheduledAt: null, scheduledOn: '2026-09-04', estimateMinutes: null },
+    })],
+  })
+
+  assert.deepEqual(projectCalendarItems(state, dayRange), [{
+    key: 'occurrence:occ:1', taskId: 'task:1', occurrenceId: 'occ:1',
+    kind: 'all-day', start: '2026-09-04', end: null,
+  }])
+})
+
+test('sorts timed items by their instant, duration, then stable key across ISO offsets', () => {
+  const state = fixture()
+  state.tasks = [
+    { ...state.tasks[0]!, id: 'task:late', schedule: { startAt: '2026-09-04T09:30:00+08:00', startOn: null, estimateMinutes: 30 } },
+    { ...state.tasks[0]!, id: 'task:early-short', schedule: { startAt: '2026-09-04T01:00:00Z', startOn: null, estimateMinutes: 30 } },
+    { ...state.tasks[0]!, id: 'task:early-long-z', schedule: { startAt: '2026-09-04T09:00:00+08:00', startOn: null, estimateMinutes: 60 } },
+    { ...state.tasks[0]!, id: 'task:early-long-a', schedule: { startAt: '2026-09-04T01:00:00Z', startOn: null, estimateMinutes: 60 } },
+  ]
+
+  assert.deepEqual(projectCalendarItems(state, dayRange).map(({ key }) => key), [
+    'task:task:early-long-a',
+    'task:task:early-long-z',
+    'task:task:early-short',
+    'task:task:late',
+  ])
 })
 
 test('uses the recurrence timezone at DST boundaries instead of the process timezone', () => {

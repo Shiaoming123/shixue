@@ -54,12 +54,17 @@ function occurrenceItem(
   dateForInstant: (value: string) => string,
 ): CalendarItem | null {
   if (occurrence.status === 'cancelled') return null
+  const schedule = occurrence.override ?? {
+    scheduledAt: occurrence.scheduledAt,
+    scheduledOn: occurrence.scheduledOn,
+    estimateMinutes: task.schedule.estimateMinutes,
+  }
   return scheduledItem(
     `occurrence:${occurrence.id}`,
     occurrence.id,
-    occurrence.override?.scheduledAt ?? occurrence.scheduledAt,
-    occurrence.override?.scheduledOn ?? occurrence.scheduledOn,
-    occurrence.override?.estimateMinutes ?? task.schedule.estimateMinutes,
+    schedule.scheduledAt,
+    schedule.scheduledOn,
+    schedule.estimateMinutes,
     range,
     dateForInstant,
     task.id,
@@ -103,7 +108,7 @@ function inRange(date: string, range: CalendarRange): boolean {
 }
 
 function compareItems(left: CalendarItem, right: CalendarItem): number {
-  const byStart = left.start.localeCompare(right.start)
+  const byStart = Date.parse(left.start) - Date.parse(right.start)
   if (byStart !== 0) return byStart
   const leftDuration = duration(left)
   const rightDuration = duration(right)
