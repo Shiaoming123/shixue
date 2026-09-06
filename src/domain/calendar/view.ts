@@ -18,6 +18,18 @@ export interface AgendaScrollAnchor {
   offset: number
 }
 
+export interface AgendaMeasurementState {
+  heights: ReadonlyMap<string, number>
+  pendingAnchor: AgendaScrollAnchor | null
+  generation: number
+  restoreQueued: boolean
+}
+
+export interface AgendaPendingRestore {
+  top: number
+  generation: number
+}
+
 export function resolveCalendarMode(requested: CalendarView, width: number): CalendarView {
   return width <= 819 && requested === 'week' ? 'day' : requested
 }
@@ -108,6 +120,69 @@ export function agendaScrollTop(
     top += height
   }
   return null
+}
+
+export function createAgendaMeasurementState(): AgendaMeasurementState {
+  return { heights: new Map(), pendingAnchor: null, generation: 0, restoreQueued: false }
+}
+
+export function updateAgendaMeasurements(
+  state: AgendaMeasurementState,
+  rowKeys: readonly string[],
+  scrollTop: number,
+  viewportHeight: number,
+  measurements: ReadonlyMap<string, number>,
+  invalidate: boolean,
+): { state: AgendaMeasurementState; restore: AgendaPendingRestore | null } {
+  const previousHeights = state.heights
+  const heights = invalidate ? new Map<string, number>() : new Map(previousHeights)
+  let pendingAnchor = state.pendingAnchor
+  let generation = state.generation
+  let restoreQueued = state.restoreQueued
+  let changed = invalidate && previousHeights.size > 0
+
+  if (invalidate) {
+    pendingAnchor ??= agendaScrollAnchor(rowKeys, previousHeights, scrollTop)
+    generation += 1
+    restoreQueued = false
+  }
+  for (const [key, height] of measurements) {
+    if (height > 0 && heights.get(key) !== height) {
+      heights.set(key, height)
+      changed = true
+    }
+  }
+  if (!invalidate && changed && pendingAnchor === null) {
+    pendingAnchor = agendaScrollAnchor(rowKeys, previousHeights, scrollTop)
+    if (pendingAnchor) generation += 1
+  } else if (changed && restoreQueued) {
+    generation += 1
+    restoreQueued = false
+  }
+  if (pendingAnchor && !rowKeys.includes(pendingAnchor.key)) {
+    pendingAnchor = null
+    restoreQueued = false
+  }
+
+  const complete = viewportHeight > 0 && rowKeys.every((key) => (heights.get(key) ?? 0) > 0)
+  let restore: AgendaPendingRestore | null = null
+  if (pendingAnchor && complete && !restoreQueued) {
+    const top = agendaScrollTop(rowKeys, heights, pendingAnchor)
+    if (top !== null) {
+      restore = { top, generation }
+      restoreQueued = true
+    }
+  }
+  return { state: { heights, pendingAnchor, generation, restoreQueued }, restore }
+}
+
+export function finishAgendaMeasurementRestore(
+  state: AgendaMeasurementState,
+  generation: number,
+): AgendaMeasurementState {
+  return state.generation === generation
+    ? { ...state, pendingAnchor: null, restoreQueued: false }
+    : state
 }
 
 function itemOrder(item: CalendarItem): number {

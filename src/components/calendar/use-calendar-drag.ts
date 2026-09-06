@@ -1,11 +1,14 @@
 import { readonly, ref, type Ref } from 'vue'
 import type { CalendarCapabilityCommand } from '../../domain/capabilities/calendar-commands.ts'
 import type { CalendarItem } from '../../domain/calendar/project.ts'
+import { calendarTimedTarget, type CalendarTargetClock } from '../../domain/calendar/target.ts'
 import type { Task } from '../../domain/workspace/types.ts'
 
 export interface CalendarDragPreview {
   itemKey: string
   proposedStart: string
+  displayDate: string
+  displayMinute: number | null
   proposedDuration: number
   valid: boolean
   conflict: string | null
@@ -134,6 +137,37 @@ export function calendarMoveCommand(
   }
 }
 
+export function calendarPointerMovePreview(
+  item: CalendarItem,
+  displayDate: string,
+  displayMinute: number,
+  proposedDuration: number,
+  clock: CalendarTargetClock,
+): CalendarDragPreview {
+  const target = calendarTimedTarget(displayDate, displayMinute, clock)
+  return {
+    itemKey: item.key,
+    proposedStart: target.startAt,
+    displayDate: target.displayDate,
+    displayMinute: target.displayMinute,
+    proposedDuration,
+    valid: true,
+    conflict: null,
+  }
+}
+
+export function calendarMenuMoveCommand(
+  item: Pick<CalendarItem, 'taskId' | 'occurrenceId'>,
+  displayDate: string,
+  displayMinute: number | null,
+  estimateMinutes: number,
+  clock: CalendarTargetClock,
+): CalendarCapabilityCommand {
+  if (displayMinute === null) return calendarMoveCommand(item, { startOn: displayDate })
+  const target = calendarTimedTarget(displayDate, displayMinute, clock)
+  return calendarMoveCommand(item, { startAt: target.startAt }, estimateMinutes)
+}
+
 export function calendarResizeCommand(
   item: Pick<CalendarItem, 'taskId' | 'occurrenceId'>,
   estimateMinutes: number,
@@ -161,6 +195,7 @@ export function calendarKeyboardCommand(
   item: CalendarItem,
   key: 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown',
   resize: boolean,
+  clock: CalendarTargetClock,
 ): CalendarCapabilityCommand | null {
   if (item.kind === 'deadline-marker') return null
   if (resize) {
@@ -176,10 +211,17 @@ export function calendarKeyboardCommand(
     return calendarMoveCommand(item, { startOn: addCalendarDays(item.start, key === 'ArrowLeft' ? -1 : 1) })
   }
 
-  const date = new Date(item.start)
-  if (key === 'ArrowLeft' || key === 'ArrowRight') date.setDate(date.getDate() + (key === 'ArrowLeft' ? -1 : 1))
-  else date.setMinutes(date.getMinutes() + (key === 'ArrowUp' ? -15 : 15))
-  return calendarMoveCommand(item, { startAt: date.toISOString() })
+  let displayDate = item.displayDate
+  let displayMinute = item.displayMinute ?? 0
+  if (key === 'ArrowLeft' || key === 'ArrowRight') displayDate = addCalendarDays(displayDate, key === 'ArrowLeft' ? -1 : 1)
+  else {
+    const shifted = displayMinute + (key === 'ArrowUp' ? -15 : 15)
+    if (shifted < 0) { displayDate = addCalendarDays(displayDate, -1); displayMinute = shifted + 1440 }
+    else if (shifted >= 1440) { displayDate = addCalendarDays(displayDate, 1); displayMinute = shifted - 1440 }
+    else displayMinute = shifted
+  }
+  const target = calendarTimedTarget(displayDate, displayMinute, clock)
+  return calendarMoveCommand(item, { startAt: target.startAt })
 }
 
 export function durationMinutes(item: CalendarItem): number {

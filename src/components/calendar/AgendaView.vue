@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import type { CalendarItem } from '../../domain/calendar/project.ts'
-import { agendaScrollAnchor, agendaScrollTop, agendaWindow, groupCalendarItems, shouldVirtualizeAgenda } from '../../domain/calendar/view.ts'
+import {
+  agendaWindow,
+  createAgendaMeasurementState,
+  finishAgendaMeasurementRestore,
+  groupCalendarItems,
+  shouldVirtualizeAgenda,
+  updateAgendaMeasurements,
+} from '../../domain/calendar/view.ts'
 
 type AgendaRow =
   | { kind: 'header'; key: string; date: string }
@@ -12,7 +19,7 @@ const viewport = ref<HTMLElement | null>(null)
 const scrollTop = ref(0)
 const viewportHeight = ref(0)
 const focusedKey = ref('')
-const measuredHeights = shallowRef(new Map<string, number>())
+const measurementState = shallowRef(createAgendaMeasurementState())
 const rowElements = new Map<string, HTMLElement>()
 let observer: ResizeObserver | undefined
 let viewportWidth = 0
@@ -27,7 +34,7 @@ const rows = computed<AgendaRow[]>(() => {
 })
 const virtualizationEnabled = computed(() => shouldVirtualizeAgenda(props.items.length))
 const measuredWindow = computed(() => virtualizationEnabled.value
-  ? agendaWindow(rows.value.map(({ key }) => key), measuredHeights.value, scrollTop.value, viewportHeight.value, focusedKey.value)
+  ? agendaWindow(rows.value.map(({ key }) => key), measurementState.value.heights, scrollTop.value, viewportHeight.value, focusedKey.value)
   : null)
 const visibleRows = computed(() => measuredWindow.value ? rows.value.slice(measuredWindow.value.start, measuredWindow.value.end) : rows.value)
 const listStyle = computed(() => measuredWindow.value ? {
@@ -39,30 +46,37 @@ const dateFormatter = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month:
 onMounted(() => {
   if (typeof ResizeObserver === 'undefined') return
   observer = new ResizeObserver((entries) => {
-    const next = new Map(measuredHeights.value)
     const keys = rows.value.map(({ key }) => key)
-    const scrollAnchor = agendaScrollAnchor(keys, measuredHeights.value, viewport.value?.scrollTop ?? 0)
-    let changed = false
+    const viewportEntry = entries.find(({ target }) => target === viewport.value)
+    const nextWidth = viewportEntry?.contentRect.width ?? viewportWidth
+    const invalidate = viewportWidth > 0 && nextWidth !== viewportWidth
+    if (viewportEntry) {
+      viewportHeight.value = viewportEntry.contentRect.height
+      viewportWidth = nextWidth
+    }
+    const measurements = new Map<string, number>()
     for (const entry of entries) {
-      if (entry.target === viewport.value) {
-        const width = entry.contentRect.width
-        viewportHeight.value = entry.contentRect.height
-        if (viewportWidth && width !== viewportWidth) {
-          next.clear()
-          changed = true
-        }
-        viewportWidth = width
-        continue
-      }
+      if (entry.target === viewport.value) continue
       const key = (entry.target as HTMLElement).dataset.agendaRowKey
       const height = entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height
-      if (key && height > 0 && next.get(key) !== height) { next.set(key, height); changed = true }
+      if (key && height > 0) measurements.set(key, height)
     }
-    if (changed) {
-      measuredHeights.value = next
-      if (scrollAnchor) nextTick(() => {
-        const restored = agendaScrollTop(keys, next, scrollAnchor)
-        if (viewport.value && restored !== null) viewport.value.scrollTop = restored
+    const update = updateAgendaMeasurements(
+      measurementState.value,
+      keys,
+      viewport.value?.scrollTop ?? 0,
+      viewportHeight.value,
+      measurements,
+      invalidate,
+    )
+    measurementState.value = update.state
+    if (update.restore) {
+      const restore = update.restore
+      nextTick(() => {
+        if (measurementState.value.generation !== restore.generation) return
+        if (viewport.value) viewport.value.scrollTop = restore.top
+        scrollTop.value = restore.top
+        measurementState.value = finishAgendaMeasurementRestore(measurementState.value, restore.generation)
       })
     }
   })
@@ -73,10 +87,13 @@ onMounted(() => {
 onUnmounted(() => observer?.disconnect())
 
 function setRowElement(key: string, value: Element | null) {
+  const previous = rowElements.get(key)
   if (!(value instanceof HTMLElement)) {
+    if (previous) observer?.unobserve(previous)
     rowElements.delete(key)
     return
   }
+  if (previous && previous !== value) observer?.unobserve(previous)
   value.dataset.agendaRowKey = key
   rowElements.set(key, value)
   observer?.observe(value)

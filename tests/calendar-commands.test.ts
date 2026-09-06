@@ -5,6 +5,12 @@ import { DomainCommandError, type CommandEnvelope } from '../src/domain/capabili
 import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { createWorkspaceExport, parseWorkspaceExport } from '../src/storage/workspace/data-port.ts'
 import { projectCalendarItems } from '../src/domain/calendar/project.ts'
+import {
+  calendarKeyboardCommand,
+  calendarMenuMoveCommand,
+  calendarPointerMovePreview,
+  calendarCommandForPreview,
+} from '../src/components/calendar/use-calendar-drag.ts'
 
 const NOW = '2026-09-05T10:00:00.000Z'
 
@@ -52,6 +58,94 @@ async function createRecurringTask(service = fixture()) {
   })
   return service
 }
+
+test('pointer, menu, and keyboard timed writes round-trip an explicit offset wall clock', async () => {
+  const previousTimezone = process.env.TZ
+  process.env.TZ = 'America/New_York'
+  try {
+    const service = fixture()
+    for (const [taskId, start] of [
+      ['task:pointer', { startOn: '2026-09-05' }],
+      ['task:menu', { startAt: '2026-09-05T09:00:00+08:00', estimateMinutes: 30 }],
+      ['task:keyboard', { startAt: '2026-09-05T09:00:00+08:00', estimateMinutes: 30 }],
+    ] as const) {
+      await executeNext(service, `create-${taskId}`, {
+        type: 'task.create', taskId, listId: 'list:system:learning', title: taskId, ...start,
+      })
+    }
+    const snapshot = await service.query({ type: 'workspace.snapshot' })
+    const projected = projectCalendarItems(snapshot, { start: '2026-09-05', end: '2026-09-08' })
+    const pointerItem = projected.find(({ taskId }) => taskId === 'task:pointer')!
+    const menuItem = projected.find(({ taskId }) => taskId === 'task:menu')!
+    const keyboardItem = projected.find(({ taskId }) => taskId === 'task:keyboard')!
+    const clock = { kind: 'offset', offset: '+08:00' } as const
+
+    const pointerPreview = calendarPointerMovePreview(pointerItem, '2026-09-06', 9 * 60 + 45, 30, clock)
+    await executeNext(service, 'pointer-move', calendarCommandForPreview(pointerItem, 'move', pointerPreview, true))
+    await executeNext(service, 'menu-move', calendarMenuMoveCommand(menuItem, '2026-09-06', 10 * 60 + 15, 30, clock))
+    await executeNext(service, 'keyboard-move', calendarKeyboardCommand(keyboardItem, 'ArrowDown', false, clock)!)
+
+    const taskIds = new Set(['task:pointer', 'task:menu', 'task:keyboard'])
+    const persisted = await service.query({ type: 'workspace.snapshot' })
+    assert.deepEqual(persisted.tasks.filter(({ id }) => taskIds.has(id)).map(({ id, schedule }) => [id, schedule.startAt]), [
+      ['task:pointer', '2026-09-06T09:45:00+08:00'],
+      ['task:menu', '2026-09-06T10:15:00+08:00'],
+      ['task:keyboard', '2026-09-05T09:15:00+08:00'],
+    ])
+    const refreshed = projectCalendarItems(persisted, { start: '2026-09-05', end: '2026-09-08' })
+    assert.deepEqual(refreshed.filter(({ taskId }) => taskIds.has(taskId)).map(({ taskId, displayDate, displayMinute }) => [taskId, displayDate, displayMinute]), [
+      ['task:keyboard', '2026-09-05', 9 * 60 + 15],
+      ['task:pointer', '2026-09-06', 9 * 60 + 45],
+      ['task:menu', '2026-09-06', 10 * 60 + 15],
+    ])
+    assert.deepEqual({ date: pointerPreview.displayDate, minute: pointerPreview.displayMinute }, { date: '2026-09-06', minute: 9 * 60 + 45 })
+  } finally {
+    if (previousTimezone === undefined) delete process.env.TZ
+    else process.env.TZ = previousTimezone
+  }
+})
+
+test('pointer, menu, and keyboard occurrence writes round-trip the series timezone off-device', async () => {
+  const previousTimezone = process.env.TZ
+  process.env.TZ = 'Asia/Shanghai'
+  try {
+    const service = fixture()
+    await executeNext(service, 'create-la-task', {
+      type: 'task.create', taskId: 'task:la', listId: 'list:system:learning', title: 'LA series', estimateMinutes: 30,
+    })
+    await executeNext(service, 'create-la-series', {
+      type: 'recurrence.create', taskId: 'task:la', expectedTaskRevision: 1, seriesId: 'series:la',
+      cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', anchorAt: '2026-09-05T09:00:00-07:00',
+      end: { kind: 'after', count: 3 }, timezone: 'America/Los_Angeles',
+    })
+    const clock = { kind: 'timezone', timezone: 'America/Los_Angeles' } as const
+    const before = projectCalendarItems(await service.query({ type: 'workspace.snapshot' }), { start: '2026-09-05', end: '2026-09-09' })
+    const pointerItem = before.find(({ occurrenceId }) => occurrenceId === 'occurrence:series:la:1')!
+    const menuItem = before.find(({ occurrenceId }) => occurrenceId === 'occurrence:series:la:2')!
+    const keyboardItem = before.find(({ occurrenceId }) => occurrenceId === 'occurrence:series:la:3')!
+
+    const pointerPreview = calendarPointerMovePreview(pointerItem, '2026-09-05', 10 * 60 + 30, 30, clock)
+    await executeNext(service, 'pointer-la', calendarCommandForPreview(pointerItem, 'move', pointerPreview))
+    await executeNext(service, 'menu-la', calendarMenuMoveCommand(menuItem, '2026-09-06', 11 * 60 + 15, 30, clock))
+    await executeNext(service, 'keyboard-la', calendarKeyboardCommand(keyboardItem, 'ArrowDown', false, clock)!)
+
+    const persisted = await service.query({ type: 'workspace.snapshot' })
+    assert.deepEqual(persisted.occurrences.filter(({ seriesId }) => seriesId === 'series:la').map(({ id, override }) => [id, override?.scheduledAt]), [
+      ['occurrence:series:la:1', '2026-09-05T17:30:00.000Z'],
+      ['occurrence:series:la:2', '2026-09-06T18:15:00.000Z'],
+      ['occurrence:series:la:3', '2026-09-07T16:15:00.000Z'],
+    ])
+    const refreshed = projectCalendarItems(persisted, { start: '2026-09-05', end: '2026-09-09' })
+    assert.deepEqual(refreshed.filter(({ taskId }) => taskId === 'task:la').map(({ occurrenceId, displayDate, displayMinute }) => [occurrenceId, displayDate, displayMinute]), [
+      ['occurrence:series:la:1', '2026-09-05', 10 * 60 + 30],
+      ['occurrence:series:la:2', '2026-09-06', 11 * 60 + 15],
+      ['occurrence:series:la:3', '2026-09-07', 9 * 60 + 15],
+    ])
+  } finally {
+    if (previousTimezone === undefined) delete process.env.TZ
+    else process.env.TZ = previousTimezone
+  }
+})
 
 test('moving an occurrence defaults to an override and undo restores it', async () => {
   const service = await createRecurringTask()

@@ -7,7 +7,8 @@ import Button from '../ui/Button.vue'
 import DatePicker from '../ui/DatePicker.vue'
 import Popover from '../ui/Popover.vue'
 import TimePicker from '../ui/TimePicker.vue'
-import { calendarKeyboardCommand, calendarMoveCommand, durationMinutes } from './use-calendar-drag.ts'
+import { calendarKeyboardCommand, calendarMenuMoveCommand, durationMinutes } from './use-calendar-drag.ts'
+import type { CalendarTargetClock } from '../../domain/calendar/target.ts'
 
 const props = withDefaults(defineProps<{
   item: CalendarItem
@@ -15,6 +16,7 @@ const props = withDefaults(defineProps<{
   selected?: boolean
   previewing?: boolean
   interactive?: boolean
+  targetClock: CalendarTargetClock
 }>(), { selected: false, previewing: false, interactive: true })
 const emit = defineEmits<{
   select: [key: string]
@@ -50,7 +52,7 @@ function onKeydown(event: KeyboardEvent) {
     return
   }
   if (!props.interactive || !event.altKey || !isArrow(event.key)) return
-  const command = calendarKeyboardCommand(props.item, event.key, event.shiftKey)
+  const command = calendarKeyboardCommand(props.item, event.key, event.shiftKey, props.targetClock)
   if (!command) return
   event.preventDefault()
   emit('command', command, 'keyboard')
@@ -58,10 +60,8 @@ function onKeydown(event: KeyboardEvent) {
 
 function applyMove(close: (reason: 'select') => void) {
   if (!moveDate.value || !timeValid.value) return
-  const target = moveTime.value
-    ? { startAt: new Date(`${moveDate.value}T${moveTime.value}:00`).toISOString() }
-    : { startOn: moveDate.value }
-  emit('command', calendarMoveCommand(props.item, target, 'startAt' in target ? duration.value : undefined), 'human-ui')
+  const minute = moveTime.value ? Number(moveTime.value.slice(0, 2)) * 60 + Number(moveTime.value.slice(3, 5)) : null
+  emit('command', calendarMenuMoveCommand(props.item, moveDate.value, minute, duration.value, props.targetClock), 'human-ui')
   close('select')
 }
 

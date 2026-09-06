@@ -3,8 +3,9 @@ import { computed, ref } from 'vue'
 import type { CalendarCapabilityCommand } from '../../domain/capabilities/calendar-commands.ts'
 import type { LaidOutCalendarItem } from '../../domain/calendar/layout.ts'
 import type { CalendarItem as CalendarItemModel } from '../../domain/calendar/project.ts'
+import type { CalendarTargetClock } from '../../domain/calendar/target.ts'
 import CalendarItem from './CalendarItem.vue'
-import { durationMinutes, snapCalendarMinutes, type CalendarDragPreview } from './use-calendar-drag.ts'
+import { calendarPointerMovePreview, durationMinutes, snapCalendarMinutes, type CalendarDragPreview } from './use-calendar-drag.ts'
 import { calendarOverlapMessage } from './calendar-conflicts.ts'
 import { compareCalendarItems } from '../../domain/calendar/view.ts'
 
@@ -19,6 +20,7 @@ const props = defineProps<{
   selectedKey: string
   preview: CalendarDragPreview | null
   now: string
+  targetClock: (item: CalendarItemModel) => CalendarTargetClock
 }>()
 const emit = defineEmits<{
   select: [key: string]
@@ -57,10 +59,10 @@ function itemStyle(item: LaidOutCalendarItem) {
 }
 function deadlineStyle(item: CalendarItemModel) { return { top: `${item.displayMinute ?? 0}px` } }
 function previewStyle(day: string) {
-  if (!props.preview || dateForValue(props.preview.proposedStart) !== day || !props.preview.proposedStart.includes('T')) return null
-  return { top: `${minuteOfDay(props.preview.proposedStart)}px`, height: `${Math.max(20, props.preview.proposedDuration)}px` }
+  if (!props.preview || props.preview.displayDate !== day || props.preview.displayMinute === null) return null
+  return { top: `${props.preview.displayMinute}px`, height: `${Math.max(20, props.preview.proposedDuration)}px` }
 }
-function allDayPreview(day: string) { return props.preview?.proposedStart === day ? props.preview : null }
+function allDayPreview(day: string) { return props.preview?.displayDate === day && props.preview.displayMinute === null ? props.preview : null }
 function dayLabel(day: string) { return dayFormatter.format(new Date(`${day}T00:00:00`)).replace('星期', '周') }
 function timeLabel(minutes: number) { return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}` }
 function forwardPointer(event: PointerEvent, item: CalendarItemModel, action: 'move' | 'resize') { emit('pointer-start', event, item, action) }
@@ -76,36 +78,23 @@ function propose(clientX: number, clientY: number, item: CalendarItemModel, acti
   const originalDuration = durationMinutes(item)
 
   if (action === 'move' && clientY >= allDayBox.top && clientY <= allDayBox.bottom) {
-    return { itemKey: item.key, proposedStart: proposedDate, proposedDuration: originalDuration, valid: true, conflict: null }
+    return { itemKey: item.key, proposedStart: proposedDate, displayDate: proposedDate, displayMinute: null, proposedDuration: originalDuration, valid: true, conflict: null }
   }
 
   const pointerMinute = Math.min(MINUTES_PER_DAY - 1, Math.max(0, clientY - columnBox.top))
   if (action === 'resize') {
     const startMinute = item.displayMinute ?? 0
     const proposedDuration = Math.min(1440, Math.max(15, snapCalendarMinutes(pointerMinute - startMinute)))
-    return { itemKey: item.key, proposedStart: item.start, proposedDuration, valid: true, conflict: calendarOverlapMessage(props.timedItems, item.key, dateForItem(item), startMinute, proposedDuration) }
+    return { itemKey: item.key, proposedStart: item.start, displayDate: item.displayDate, displayMinute: item.displayMinute, proposedDuration, valid: true, conflict: calendarOverlapMessage(props.timedItems, item.key, dateForItem(item), startMinute, proposedDuration) }
   }
 
   const proposedMinute = Math.min(MINUTES_PER_DAY - originalDuration, Math.max(0, snapCalendarMinutes(pointerMinute)))
-  const proposedStart = localInstant(proposedDate, proposedMinute)
-  return {
-    itemKey: item.key,
-    proposedStart,
-    proposedDuration: originalDuration,
-    valid: true,
-    conflict: calendarOverlapMessage(props.timedItems, item.key, proposedDate, proposedMinute, originalDuration),
-  }
+  const preview = calendarPointerMovePreview(item, proposedDate, proposedMinute, originalDuration, props.targetClock(item))
+  return { ...preview, conflict: calendarOverlapMessage(props.timedItems, item.key, preview.displayDate, preview.displayMinute!, originalDuration) }
 }
 
 function dateForItem(item: CalendarItemModel) { return item.displayDate }
-function dateForValue(value: string) { return value.includes('T') ? dateKey(new Date(value)) : value }
 function dateKey(date: Date) { return date.toLocaleDateString('sv-SE') }
-function minuteOfDay(value: string) { const date = new Date(value); return date.getHours() * 60 + date.getMinutes() }
-function localInstant(day: string, minutes: number) {
-  const hours = Math.floor(minutes / 60)
-  const minute = minutes % 60
-  return new Date(`${day}T${String(hours).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`).toISOString()
-}
 
 defineExpose({ propose })
 </script>
@@ -120,7 +109,7 @@ defineExpose({ propose })
       <span class="time-grid__all-day-label">全天</span>
       <div ref="allDayColumns" class="time-grid__all-day-columns">
         <div v-for="day in days" :key="day" class="time-grid__all-day-day">
-          <CalendarItem v-for="item in dateOnlyFactsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :interactive="item.kind !== 'deadline-marker'" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" />
+          <CalendarItem v-for="item in dateOnlyFactsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :interactive="item.kind !== 'deadline-marker'" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" />
           <div v-if="allDayPreview(day)" class="time-grid__preview time-grid__preview--all-day" :class="{ 'time-grid__preview--conflict': preview?.conflict }"><strong>预览</strong><span>{{ preview?.conflict ?? '全天' }}</span></div>
         </div>
       </div>
@@ -134,9 +123,9 @@ defineExpose({ propose })
           <section v-for="day in days" :key="day" class="time-grid__day" :aria-label="dayLabel(day)">
             <i v-for="minute in halfHours" :key="minute" class="time-grid__half-hour" :style="{ top: `${minute}px` }" aria-hidden="true"></i>
             <div v-if="day === currentDate" class="current-time-line" :style="{ top: `${currentMinute}px` }"><span aria-hidden="true"></span><em class="sr-only">当前时间 {{ timeLabel(currentMinute) }}</em></div>
-            <CalendarItem v-for="item in itemsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :style="itemStyle(item)" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" />
-            <CalendarItem v-for="item in preciseDeadlinesForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :interactive="false" :style="deadlineStyle(item)" />
-            <div v-if="previewStyle(day)" class="time-grid__preview" :class="{ 'time-grid__preview--conflict': preview?.conflict }" :style="previewStyle(day) ?? undefined"><strong>预览</strong><span>{{ preview?.conflict ?? timeLabel(minuteOfDay(preview!.proposedStart)) }}</span></div>
+            <CalendarItem v-for="item in itemsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :style="itemStyle(item)" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" />
+            <CalendarItem v-for="item in preciseDeadlinesForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :interactive="false" :style="deadlineStyle(item)" />
+            <div v-if="previewStyle(day)" class="time-grid__preview" :class="{ 'time-grid__preview--conflict': preview?.conflict }" :style="previewStyle(day) ?? undefined"><strong>预览</strong><span>{{ preview?.conflict ?? timeLabel(preview!.displayMinute!) }}</span></div>
           </section>
         </div>
       </div>

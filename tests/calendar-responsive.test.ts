@@ -6,10 +6,13 @@ import {
   agendaWindow,
   agendaScrollAnchor,
   agendaScrollTop,
+  createAgendaMeasurementState,
+  finishAgendaMeasurementRestore,
   groupCalendarItems,
   monthOverflow,
   resolveCalendarMode,
   shouldVirtualizeAgenda,
+  updateAgendaMeasurements,
 } from '../src/domain/calendar/view.ts'
 
 test('responsive calendar mode uses the exact compact boundary', () => {
@@ -72,6 +75,61 @@ test('agenda virtualizes item rows only above 500 and fails open until measured'
   assert.equal(agendaScrollTop(keys, resized, anchor!), 125)
 })
 
+test('501-row agenda preserves a later focused anchor across partial width remeasurement', () => {
+  const rowKeys = ['day:2026-09-07', ...Array.from({ length: 501 }, (_, index) => `item:item:${index}`)]
+  const oldHeights = new Map(rowKeys.map((key) => [key, 20]))
+  let measurement = updateAgendaMeasurements(createAgendaMeasurementState(), rowKeys, 0, 300, oldHeights, false).state
+  const focusedKey = 'item:item:399'
+  const oldScrollTop = 8007
+  assert.equal(shouldVirtualizeAgenda(501), true)
+  const initialWindow = agendaWindow(rowKeys, measurement.heights, oldScrollTop, 300, focusedKey)!
+  assert.ok(initialWindow.start <= rowKeys.indexOf(focusedKey) && initialWindow.end > rowKeys.indexOf(focusedKey))
+
+  const newHeights = new Map(rowKeys.map((key, index) => [key, index === 0 ? 40 : 30]))
+  let update = updateAgendaMeasurements(
+    measurement,
+    rowKeys,
+    oldScrollTop,
+    360,
+    new Map(rowKeys.slice(390, 411).map((key) => [key, newHeights.get(key)!])),
+    true,
+  )
+  measurement = update.state
+  assert.deepEqual(measurement.pendingAnchor, { key: focusedKey, offset: 7 })
+  assert.equal(update.restore, null)
+  assert.equal(agendaWindow(rowKeys, measurement.heights, oldScrollTop, 300, focusedKey), null)
+
+  for (const [start, end] of [[0, 150], [150, 350]] as const) {
+    update = updateAgendaMeasurements(
+      measurement,
+      rowKeys,
+      oldScrollTop,
+      360,
+      new Map(rowKeys.slice(start, end).map((key) => [key, newHeights.get(key)!])),
+      false,
+    )
+    measurement = update.state
+    assert.equal(update.restore, null)
+    assert.equal(agendaWindow(rowKeys, measurement.heights, oldScrollTop, 300, focusedKey), null)
+  }
+
+  update = updateAgendaMeasurements(
+    measurement,
+    rowKeys,
+    oldScrollTop,
+    360,
+    new Map(rowKeys.slice(350).map((key) => [key, newHeights.get(key)!])),
+    false,
+  )
+  measurement = update.state
+  assert.deepEqual(update.restore, { top: 12017, generation: measurement.generation })
+  measurement = finishAgendaMeasurementRestore(measurement, update.restore!.generation)
+  assert.deepEqual(agendaScrollAnchor(rowKeys, measurement.heights, update.restore!.top), { key: focusedKey, offset: 7 })
+  const restoredWindow = agendaWindow(rowKeys, measurement.heights, update.restore!.top, 360, focusedKey)!
+  assert.ok(restoredWindow.start <= rowKeys.indexOf(focusedKey) && restoredWindow.end > rowKeys.indexOf(focusedKey))
+  assert.equal(updateAgendaMeasurements(measurement, rowKeys, update.restore!.top, 360, new Map(), false).restore, null)
+})
+
 test('month and agenda components use the themed disclosure and measured window contracts', () => {
   const month = source('MonthGrid.vue')
   const agenda = source('AgendaView.vue')
@@ -87,6 +145,9 @@ test('month and agenda components use the themed disclosure and measured window 
   assert.doesNotMatch(month, /pointer-start|calendar\.move|calendar\.resize/)
   assert.match(agenda, /ResizeObserver/)
   assert.match(agenda, /agendaWindow/)
+  assert.match(agenda, /entries\.find/)
+  assert.match(agenda, /updateAgendaMeasurements/)
+  assert.match(agenda, /finishAgendaMeasurementRestore/)
   assert.match(agenda, /shouldVirtualizeAgenda/)
   assert.match(agenda, /v-for="row in visibleRows"/)
   assert.match(agenda, /aria-posinset/)

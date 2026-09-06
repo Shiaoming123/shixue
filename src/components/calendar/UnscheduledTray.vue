@@ -7,9 +7,9 @@ import Button from '../ui/Button.vue'
 import DatePicker from '../ui/DatePicker.vue'
 import Popover from '../ui/Popover.vue'
 import TimePicker from '../ui/TimePicker.vue'
-import { calendarMoveCommand, filterUnscheduledTasks } from './use-calendar-drag.ts'
+import { calendarMenuMoveCommand, filterUnscheduledTasks } from './use-calendar-drag.ts'
 
-const props = defineProps<{ tasks: readonly Task[]; anchor: string; defaultDuration: number }>()
+const props = defineProps<{ tasks: readonly Task[]; anchor: string; defaultDuration: number; targetOffset: string }>()
 const emit = defineEmits<{
   'pointer-start': [event: PointerEvent, task: Task]
   command: [command: CalendarCapabilityCommand, source: 'human-ui' | 'keyboard']
@@ -32,12 +32,14 @@ function openPlanner(taskId: string) {
 
 function plan(task: Task, close: (reason: 'select') => void) {
   if (!planDate.value || !timeValid.value) return
-  const target = planTime.value
-    ? { startAt: new Date(`${planDate.value}T${planTime.value}:00`).toISOString() }
-    : { startOn: planDate.value }
-  emit('command', calendarMoveCommand(
-    { taskId: task.id, occurrenceId: null }, target,
-    planTime.value ? duration.value : undefined,
+  const [hours = 0, minutes = 0] = planTime.value.split(':').map(Number)
+  const minute = planTime.value ? hours * 60 + minutes : null
+  emit('command', calendarMenuMoveCommand(
+    { taskId: task.id, occurrenceId: null },
+    planDate.value,
+    minute,
+    duration.value,
+    { kind: 'offset', offset: props.targetOffset },
   ), 'human-ui')
   close('select')
 }

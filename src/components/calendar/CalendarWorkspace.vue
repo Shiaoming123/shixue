@@ -5,6 +5,7 @@ import type { CalendarCapabilityCommand } from '../../domain/capabilities/calend
 import { layoutTimedItems } from '../../domain/calendar/layout.ts'
 import { projectCalendarItems, type CalendarItem } from '../../domain/calendar/project.ts'
 import { calendarRange, type CalendarView } from '../../domain/calendar/range.ts'
+import { calendarTimedTarget, timestampOffset, type CalendarTargetClock } from '../../domain/calendar/target.ts'
 import { resolveCalendarMode } from '../../domain/calendar/view.ts'
 import type { CommandEnvelope } from '../../domain/capabilities/types.ts'
 import type { Task, WorkspaceStateV3 } from '../../domain/workspace/types.ts'
@@ -28,12 +29,14 @@ const props = withDefaults(defineProps<{
   defaultEstimateMinutes?: number | null
   initialMode?: CalendarView
   now?: string
+  targetOffset?: string
   executeCommand: (command: CalendarCapabilityCommand, source: CommandEnvelope['source']) => Promise<void>
 }>(), {
   weekStartsOn: 1,
   defaultEstimateMinutes: null,
   initialMode: 'week',
   now: () => new Date().toISOString(),
+  targetOffset: 'Z',
 })
 
 const initialWidth = typeof window === 'undefined' ? 820 : window.innerWidth
@@ -117,11 +120,12 @@ function beginItemPointer(event: PointerEvent, item: CalendarItem, action: 'move
 function beginTrayPointer(event: PointerEvent, task: Task) {
   if (event.button !== 0) return
   const duration = task.schedule.estimateMinutes ?? defaultDropDuration.value
-  const start = new Date(`${anchor.value}T09:00:00`).toISOString()
+  const target = calendarTimedTarget(anchor.value, 9 * 60, { kind: 'offset', offset: props.targetOffset })
+  const start = target.startAt
   const item: CalendarItem = {
     key: `task:${task.id}`, taskId: task.id, occurrenceId: null,
     kind: 'timed', start, end: new Date(Date.parse(start) + duration * 60_000).toISOString(),
-    displayDate: anchor.value, displayMinute: 9 * 60,
+    displayDate: target.displayDate, displayMinute: target.displayMinute,
   }
   if (drag.begin(event, { itemKey: item.key, item, action: 'move', sourceStart: null, sourceDuration: duration })) {
     selectedKey.value = item.key
@@ -185,6 +189,16 @@ function withDeadlineConflict(item: CalendarItem, preview: CalendarDragPreview):
   return { ...preview, conflict: preview.conflict ? `${preview.conflict}；${warning}` : warning }
 }
 
+function targetClock(item: CalendarItem): CalendarTargetClock {
+  if (item.occurrenceId !== null) {
+    const occurrence = props.workspace?.occurrences.find(({ id }) => id === item.occurrenceId)
+    const series = occurrence && props.workspace?.recurrenceSeries.find(({ id }) => id === occurrence.seriesId)
+    if (!series) throw new Error(`Missing recurrence timezone for calendar item: ${item.key}`)
+    return { kind: 'timezone', timezone: series.timezone }
+  }
+  return { kind: 'offset', offset: timestampOffset(item.start) ?? props.targetOffset }
+}
+
 function datesBetween(start: string, end: string) { const result: string[] = []; for (let date = start; date < end; date = addDays(date, 1)) result.push(date); return result }
 function addDays(value: string, days: number) { const [year, month, day] = value.split('-').map(Number); return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10) }
 function addMonths(value: string, months: number) { const [year, month, day] = value.split('-').map(Number); const next = new Date(Date.UTC(year, month - 1 + months, 1)); const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate(); next.setUTCDate(Math.min(day, lastDay)); return next.toISOString().slice(0, 10) }
@@ -195,14 +209,14 @@ function shortDate(value?: string) { if (!value) return ''; const date = new Dat
 <template>
   <section class="calendar-workspace" @pointermove="updatePointer" @pointerup="finishPointer" @pointercancel="cancelPointer($event)" @lostpointercapture="cancelPointer($event)" @keydown.esc="cancelPointer()">
     <CalendarToolbar :mode="effectiveMode" :anchor="anchor" :anchor-label="anchorLabel" :compact="compact" @update:mode="setMode" @update:anchor="anchor = $event" @previous="moveAnchor(-1)" @next="moveAnchor(1)" @today="selectToday" />
-    <UnscheduledTray :tasks="workspace?.tasks ?? []" :anchor="anchor" :default-duration="defaultDropDuration" @pointer-start="beginTrayPointer" @command="requestCommand" />
+    <UnscheduledTray :tasks="workspace?.tasks ?? []" :anchor="anchor" :default-duration="defaultDropDuration" :target-offset="targetOffset" @pointer-start="beginTrayPointer" @command="requestCommand" />
     <div v-if="pendingCommand" class="calendar-workspace__confirmation" role="alert">
       <AlertTriangle :size="17" aria-hidden="true" /><span>{{ pendingCommand.message }}</span>
       <Button variant="secondary" size="sm" @click="pendingCommand = null; statusMessage = ''">取消</Button>
       <Button variant="primary" size="sm" @click="confirmPending">仍然安排</Button>
     </div>
     <p class="sr-only" aria-live="polite">{{ statusMessage }}{{ drag.preview.value?.conflict ? ` ${drag.preview.value.conflict}` : '' }}</p>
-    <TimeGrid v-if="effectiveMode === 'day' || effectiveMode === 'week'" ref="timeGrid" :days="days" :items="items" :timed-items="timedItems" :titles="titles" :selected-key="selectedKey" :preview="drag.preview.value" :now="now" @select="selectedKey = $event" @pointer-start="beginItemPointer" @command="requestCommand" />
+    <TimeGrid v-if="effectiveMode === 'day' || effectiveMode === 'week'" ref="timeGrid" :days="days" :items="items" :timed-items="timedItems" :titles="titles" :selected-key="selectedKey" :preview="drag.preview.value" :now="now" :target-clock="targetClock" @select="selectedKey = $event" @pointer-start="beginItemPointer" @command="requestCommand" />
     <MonthGrid v-else-if="effectiveMode === 'month'" :days="days" :anchor="anchor" :week-starts-on="weekStartsOn" :items="items" :titles="titles" @select-date="anchor = $event" />
     <AgendaView v-else :items="items" :titles="titles" />
   </section>
