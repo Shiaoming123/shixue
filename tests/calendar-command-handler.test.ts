@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { runCalendarCommand, type CalendarCommandHandler } from '../src/lib/calendar-command-handler.ts'
+import { createCalendarUndoAction, runCalendarCommand, type CalendarCommandHandler } from '../src/lib/calendar-command-handler.ts'
 import type { CommandResult } from '../src/domain/capabilities/types.ts'
 
 const result: CommandResult = { receiptId: 'receipt:1', workspaceRevision: 2, affected: [], events: [], undoToken: { id: 'undo:1' } as CommandResult['undoToken'], data: null }
@@ -56,4 +56,57 @@ test('normal success refreshes before exposing the undo-bearing result', async (
   assert.deepEqual(calls, ['preflight', 'execute:1', 'refresh'])
   assert.equal(notices[0]?.message, '日历安排已更新。')
   assert.equal(notices[0]?.action?.label, '撤销')
+})
+
+test('App undo seam preserves a saved undo across refresh failure and retries only refresh', async () => {
+  const calls: string[] = []
+  const notices: Array<{ message: string; action?: { label: string; run(): Promise<void> } }> = []
+  let firstRefresh = true
+  const action = createCalendarUndoAction({
+    token: result.undoToken!,
+    preflight: async () => { calls.push('preflight'); return 2 },
+    execute: async (revision, token) => { calls.push(`execute:${revision}:${token.id}`); return { ...result, undoToken: null } },
+    refresh: async () => { calls.push('refresh'); if (firstRefresh) { firstRefresh = false; throw new Error('view load failed') } },
+    notify: (message, noticeAction) => notices.push({ message, action: noticeAction }),
+  })
+
+  await action.run()
+  assert.deepEqual(calls, ['preflight', 'execute:2:undo:1', 'refresh'])
+  assert.equal(notices[0]?.message, '日历撤销已保存，但视图刷新失败：view load failed')
+  assert.equal(notices[0]?.action?.label, '重新加载')
+  await notices[0]!.action!.run()
+  assert.deepEqual(calls, ['preflight', 'execute:2:undo:1', 'refresh', 'refresh'])
+  assert.equal(notices[1]?.message, '已撤销。')
+})
+
+test('App undo seam classifies preflight and execute failures without retrying undo', async (context) => {
+  await context.test('preflight', async () => {
+    const calls: string[] = []
+    const notices: string[] = []
+    const action = createCalendarUndoAction({
+      token: result.undoToken!,
+      preflight: async () => { calls.push('preflight'); throw new Error('snapshot unavailable') },
+      execute: async () => { calls.push('execute'); return result },
+      refresh: async () => { calls.push('refresh') },
+      notify: (message) => notices.push(message),
+    })
+    await action.run()
+    assert.deepEqual(calls, ['preflight'])
+    assert.deepEqual(notices, ['无法读取最新日历，未执行撤销：snapshot unavailable'])
+  })
+
+  await context.test('execute', async () => {
+    const calls: string[] = []
+    const notices: string[] = []
+    const action = createCalendarUndoAction({
+      token: result.undoToken!,
+      preflight: async () => { calls.push('preflight'); return 2 },
+      execute: async () => { calls.push('execute'); throw new Error('undo CAS conflict') },
+      refresh: async () => { calls.push('refresh') },
+      notify: (message) => notices.push(message),
+    })
+    await action.run()
+    assert.deepEqual(calls, ['preflight', 'execute', 'refresh'])
+    assert.deepEqual(notices, ['日历撤销未保存：undo CAS conflict'])
+  })
 })

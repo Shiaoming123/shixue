@@ -74,7 +74,7 @@ import { getWorkspaceStore } from './storage/workspace/registry'
 import { createTaskCapabilityService } from './domain/capabilities/service'
 import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef } from './domain/capabilities/types'
 import type { CalendarCapabilityCommand } from './domain/capabilities/calendar-commands'
-import { calendarCommandErrorDetail, runCalendarCommand } from './lib/calendar-command-handler'
+import { createCalendarUndoAction, runCalendarCommand } from './lib/calendar-command-handler'
 import type { WorkspaceStateV3, ReminderRule } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
@@ -562,27 +562,19 @@ async function executeCalendarCommand(command: CalendarCapabilityCommand, source
 }
 
 function calendarUndoAction(result: Awaited<ReturnType<typeof capabilityService.execute>>) {
-  return result.undoToken ? {
-      label: '撤销',
-      successMessage: '',
-      run: async () => {
-        try {
-          const current = await capabilityService.query({ type: 'workspace.snapshot' })
-          await capabilityService.execute({
-            protocolVersion: CAPABILITY_PROTOCOL_VERSION,
-            idempotencyKey: `calendar-undo:${crypto.randomUUID()}`,
-            source: 'human-ui',
-            expectedWorkspaceRevision: current.revision,
-            command: { type: 'undo.apply', token: result.undoToken! },
-          })
-          await refreshState()
-          notify('已撤销。')
-        } catch (error) {
-          try { await refreshState() } catch { /* Keep the undo error primary. */ }
-          notify(`日历撤销未完成：${calendarCommandErrorDetail(error)}`)
-        }
-      },
-    } : undefined
+  return result.undoToken ? createCalendarUndoAction({
+    token: result.undoToken,
+    preflight: async () => (await capabilityService.query({ type: 'workspace.snapshot' })).revision,
+    execute: (expectedWorkspaceRevision, token) => capabilityService.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+      idempotencyKey: `calendar-undo:${crypto.randomUUID()}`,
+      source: 'human-ui',
+      expectedWorkspaceRevision,
+      command: { type: 'undo.apply', token },
+    }),
+    refresh: refreshState,
+    notify,
+  }) : undefined
 }
 
 function scheduleCloudSync() {
