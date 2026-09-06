@@ -39,7 +39,7 @@ async fn read_legacy_reminder_deliveries(
 fn set_quick_add_shortcut(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     #[cfg(all(desktop, feature = "shortcut"))]
     {
-        return shortcut::set_registered(&app, enabled);
+        shortcut::set_registered(&app, enabled)
     }
     #[cfg(not(all(desktop, feature = "shortcut")))]
     {

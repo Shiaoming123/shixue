@@ -5,10 +5,16 @@ import type { App } from 'vue'
 import { moduleContracts, type ModuleId } from '../src/modules/contract.ts'
 import { moduleRegistry, type ModuleConfig } from '../src/modules/config.ts'
 import { mountModules } from '../src/modules/loader.ts'
+import { createShortcutModule } from '../src/modules/shortcut/index.ts'
 
 const webRuntime = {
   platform: 'web' as const,
   capabilities: ['web-storage'] as const,
+}
+
+const desktopRuntime = {
+  platform: 'desktop' as const,
+  capabilities: ['system-tray', 'global-shortcut'] as const,
 }
 
 test('module failure still mounts the Vue shell after storage selection', async () => {
@@ -72,4 +78,29 @@ test('loader rejects a dynamic module that differs from its static contract', as
   } finally {
     Object.assign(moduleRegistry, originalRegistry)
   }
+})
+
+test('loader surfaces native shortcut registration failures after its tray bridge dependency', async () => {
+  const loaded: string[] = []
+  const config = Object.fromEntries(
+    Object.keys(moduleRegistry).map((id) => [id, ['core', 'storage', 'tray', 'shortcut'].includes(id)]),
+  ) as unknown as ModuleConfig
+  const registry = { ...moduleRegistry }
+  registry.core = async () => ({ default: { ...testModule('core'), setup: () => { loaded.push('core') } } })
+  registry.storage = async () => ({ default: { ...testModule('storage'), setup: () => { loaded.push('storage') } } })
+  registry.tray = async () => ({ default: { ...testModule('tray'), setup: () => { loaded.push('tray') } } })
+  registry.shortcut = async () => ({
+    default: createShortcutModule(async () => ({
+      setEnabled: async () => {
+        loaded.push('shortcut')
+        throw new Error('shortcut conflict')
+      },
+    })),
+  })
+
+  await assert.rejects(
+    mountModules({} as App, config, desktopRuntime, registry),
+    /shortcut conflict/,
+  )
+  assert.deepEqual(loaded, ['core', 'storage', 'tray', 'shortcut'])
 })

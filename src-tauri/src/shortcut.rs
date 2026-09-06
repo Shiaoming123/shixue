@@ -9,6 +9,33 @@ fn is_quick_add_pressed(registered: &Shortcut, triggered: &Shortcut, state: Shor
     registered == triggered && state == ShortcutState::Pressed
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum RegistrationChange {
+    None,
+    Register,
+    Unregister,
+}
+
+fn registration_change(current: bool, enabled: bool) -> RegistrationChange {
+    match (current, enabled) {
+        (false, true) => RegistrationChange::Register,
+        (true, false) => RegistrationChange::Unregister,
+        _ => RegistrationChange::None,
+    }
+}
+
+fn apply_registration_change<E>(
+    change: RegistrationChange,
+    register: impl FnOnce() -> Result<(), E>,
+    unregister: impl FnOnce() -> Result<(), E>,
+) -> Result<(), E> {
+    match change {
+        RegistrationChange::None => Ok(()),
+        RegistrationChange::Register => register(),
+        RegistrationChange::Unregister => unregister(),
+    }
+}
+
 pub fn plugin<R: Runtime>() -> TauriPlugin<R> {
     let quick_add_shortcut = quick_add_shortcut();
     tauri_plugin_global_shortcut::Builder::new()
@@ -23,20 +50,18 @@ pub fn plugin<R: Runtime>() -> TauriPlugin<R> {
 pub fn set_registered<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> Result<(), String> {
     let shortcut = quick_add_shortcut();
     let global_shortcut = app.global_shortcut();
-    if global_shortcut.is_registered(shortcut) == enabled {
-        return Ok(());
-    }
-    if enabled {
-        global_shortcut.register(shortcut)
-    } else {
-        global_shortcut.unregister(shortcut)
-    }
+    apply_registration_change(
+        registration_change(global_shortcut.is_registered(shortcut), enabled),
+        || global_shortcut.register(shortcut),
+        || global_shortcut.unregister(shortcut),
+    )
     .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
 
     #[test]
     fn only_the_registered_pressed_event_activates_quick_add() {
@@ -58,5 +83,42 @@ mod tests {
             &another,
             ShortcutState::Pressed
         ));
+    }
+
+    #[test]
+    fn registration_changes_are_idempotent_and_propagate_native_errors() {
+        assert_eq!(registration_change(false, false), RegistrationChange::None);
+        assert_eq!(registration_change(true, true), RegistrationChange::None);
+        assert_eq!(
+            registration_change(false, true),
+            RegistrationChange::Register
+        );
+        assert_eq!(
+            registration_change(true, false),
+            RegistrationChange::Unregister
+        );
+
+        let action = Cell::new("none");
+        apply_registration_change(
+            RegistrationChange::Register,
+            || {
+                action.set("register");
+                Ok::<(), &str>(())
+            },
+            || {
+                action.set("unregister");
+                Ok(())
+            },
+        )
+        .expect("registration succeeds");
+        assert_eq!(action.get(), "register");
+
+        let error = apply_registration_change(
+            RegistrationChange::Unregister,
+            || Ok::<(), &str>(()),
+            || Err("native unregister failed"),
+        )
+        .expect_err("native errors must reach the caller");
+        assert_eq!(error, "native unregister failed");
     }
 }

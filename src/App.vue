@@ -153,7 +153,11 @@ const calendarTargetOffset = computed(() => offsetForInstant(new Date(clock.valu
 const toast = ref('')
 const toastAction = ref<{ label: string; run: () => Promise<void>; successMessage?: string } | null>(null)
 const toastVersion = ref(0)
+const moduleStartupError = '部分系统能力未能启动。任务数据与核心界面仍可使用。'
 const storageError = ref('')
+const errorBannerMessage = computed(() => storageError.value === moduleStartupError
+  ? moduleStartupError
+  : '上一次更改未保存。拾学不会用演示数据覆盖现有记录。')
 const remindersEnabled = ref(false)
 const planningPreferences = ref(loadPlanningPreferences())
 const calendarStartsCompact = typeof window !== 'undefined' && window.innerWidth <= 819
@@ -575,7 +579,7 @@ function handleQuickAdd() {
   requestAnimationFrame(() => tasksView.value?.activateQuickAdd())
 }
 function handleModuleError() {
-  storageError.value = '部分系统能力未能启动。任务数据与核心界面仍可使用。'
+  storageError.value = moduleStartupError
 }
 
 function onCompactChange(event: MediaQueryListEvent) {
@@ -1391,7 +1395,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
       </template>
     </Dialog>
     <ToastRegion :key="toastVersion" :message="toast" :action-label="toastAction?.label" :duration="toastAction ? 6000 : 3200" :raised="compact && Boolean(selectedTaskId)" @action="runToastAction" @dismiss="dismissToast" />
-    <div v-if="storageError" class="error-banner" role="alert"><span>上一次更改未保存。拾学不会用演示数据覆盖现有记录。</span><button @click="storageError = ''">知道了</button></div>
+    <div v-if="storageError" class="error-banner" role="alert"><span>{{ errorBannerMessage }}</span><button @click="storageError = ''">知道了</button></div>
   </div>
 </template>
 

@@ -36,6 +36,9 @@ test('global quick add closes blocking layers, navigates to Inbox, and focuses t
   assert.match(app, /function handleQuickAdd\(\)[\s\S]*taskEditorOpen\.value = false[\s\S]*selectSmartView\('inbox'\)[\s\S]*tasksView\.value\?\.activateQuickAdd\(\)/)
   assert.doesNotMatch(app, /settingsOpen/)
   assert.doesNotMatch(app, /handleQuickAdd[\s\S]{0,700}querySelector/)
+  assert.match(app, /const moduleStartupError = '部分系统能力未能启动[^']*'/)
+  assert.match(app, /storageError\.value === moduleStartupError/)
+  assert.match(app, /class="error-banner"[\s\S]*\{\{ errorBannerMessage \}\}/)
 })
 
 function editableTarget(options: {

@@ -25,7 +25,7 @@ test('shortcut setup controls native registration without exposing the plugin ca
   assert.deepEqual(transitions, [true, false])
 })
 
-test('shortcut registration failure reaches the module loader error boundary', async () => {
+test('shortcut setup surfaces native registration failures', async () => {
   const module = createShortcutModule(async () => ({
     setEnabled: async () => { throw new Error('shortcut conflict') },
   }))
