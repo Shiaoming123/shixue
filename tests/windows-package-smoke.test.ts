@@ -8,13 +8,11 @@ import {
   assertSmokePath,
   appendManualWindowsStages,
   cleanupWindowsSmokeInstallation,
-  createSmokeBundleConfig,
   createWindowsSmokeReport,
   createNsisInstallArgs,
   createNsisUninstallArgs,
   removeSmokeRoot,
   resolveInstalledExecutable,
-  selectNsisInstaller,
   loadCandidateNsisArtifact,
   waitForFileRemoval,
   updateSmokeStage,
@@ -98,17 +96,6 @@ test('keeps the NSIS destination argument last', () => {
   assert.deepEqual(createNsisUninstallArgs(), ['/S'])
 })
 
-test('uses a separate Windows identity for the package smoke app', () => {
-  assert.deepEqual(createSmokeBundleConfig({
-    productName: '拾学',
-    identifier: 'com.shiaoming123.shixue',
-  }), {
-    productName: '拾学 Package Smoke',
-    identifier: 'com.shiaoming123.shixue.package-smoke',
-    bundle: { createUpdaterArtifacts: false },
-  })
-})
-
 test('uninstalls the isolated NSIS app before removing its smoke root', async () => {
   const calls: string[] = []
   const targetRoot = resolve('D:/repo/src-tauri/target')
@@ -128,21 +115,6 @@ test('uninstalls the isolated NSIS app before removing its smoke root', async ()
     'registry:HKCU\\Software\\shiaoming123\\拾学 Package Smoke',
     `remove:${smokeRoot}`,
   ])
-})
-
-test('selects the single installer for the configured product and version', () => {
-  assert.equal(
-    selectNsisInstaller(
-      ['Meow Starter_0.0.9_x64-setup.exe', 'Meow Starter_0.1.0_x64-setup.exe'],
-      'Meow Starter',
-      '0.1.0',
-    ),
-    'Meow Starter_0.1.0_x64-setup.exe',
-  )
-  assert.throws(
-    () => selectNsisInstaller(['Meow Starter_0.1.0_x64-setup.exe', 'copy.exe'], 'Meow Starter', '0.2.0'),
-    /Expected one NSIS installer/,
-  )
 })
 
 test('uses the Cargo binary name for the installed executable', () => {

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -105,27 +105,6 @@ export function createNsisUninstallArgs() {
   return ['/S']
 }
 
-export function createSmokeBundleConfig(tauriConfig) {
-  if (!tauriConfig.productName?.trim() || !tauriConfig.identifier?.trim()) {
-    throw new Error('Windows package smoke requires a product name and identifier.')
-  }
-  return {
-    productName: `${tauriConfig.productName} Package Smoke`,
-    identifier: `${tauriConfig.identifier}.package-smoke`,
-    bundle: { createUpdaterArtifacts: false },
-  }
-}
-
-export function selectNsisInstaller(candidates, productName, version) {
-  const matches = candidates.filter(
-    (candidate) => candidate.startsWith(`${productName}_${version}_`) && candidate.endsWith('-setup.exe'),
-  )
-  if (matches.length !== 1) {
-    throw new Error(`Expected one NSIS installer for ${productName} ${version}, found ${matches.length}.`)
-  }
-  return matches[0]
-}
-
 export function resolveInstalledExecutable(installPath, binaryName) {
   return resolve(installPath, `${binaryName}.exe`)
 }
@@ -175,16 +154,6 @@ function runCommand(command, args, options = {}) {
       rejectCommand(new Error(`${command} exited with ${signal ?? code}`))
     })
   })
-}
-
-async function listNsisInstallers(directory) {
-  try {
-    const entries = await readdir(directory)
-    return entries.filter((entry) => entry.endsWith('-setup.exe'))
-  } catch (error) {
-    if (error && typeof error === 'object' && error.code === 'ENOENT') return []
-    throw error
-  }
 }
 
 async function waitForChildToStayAlive(child, durationMs) {

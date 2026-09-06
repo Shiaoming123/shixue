@@ -77,9 +77,10 @@ function completeReview(
   if (reviewTask.status !== 'completed' && reviewTask.status !== 'cancelled') {
     const fromStatus = reviewTask.status
     for (const session of state.studySessions.filter(({ taskId, state: sessionState, deletedAt }) => taskId === reviewTask.id && sessionState !== 'finished' && deletedAt === null)) {
-      session.state = 'finished'; session.activeSince = null; session.updatedAt = context.now
+      finishSession(session, context.now)
     }
     reviewTask.status = 'completed'
+    if (reviewTask.learning) reviewTask.learning.blockedReason = null
     reviewTask.revision += 1
     reviewTask.updatedAt = context.now
     const event: TaskEvent = {
@@ -94,7 +95,6 @@ function completeReview(
   const next = updated.nextReviewOn ? ensureReviewTask(state, updated.id, updated.nextReviewOn, context) : null
   const affected = [
     { type: 'completion_record' as const, id: updated.id },
-    { type: 'completion_record' as const, id: link.completionRecordId },
     { type: 'task' as const, id: reviewTask.id, revision: reviewTask.revision },
     ...(next ? [
       { type: 'task' as const, id: next.task.id, revision: next.task.revision },
@@ -107,4 +107,17 @@ function completeReview(
     events, compensation: null,
     data: structuredClone({ completionRecordId: updated.id, linkId: link.id, result: command.result, reviewedOn: command.reviewedOn, record: updated, link, nextLinkId: next?.link.id ?? null }) as never,
   }
+}
+
+function finishSession(session: WorkspaceStateV3['studySessions'][number], now: string): void {
+  if (session.state === 'running' && session.activeSince) {
+    const milliseconds = Date.parse(now) - Date.parse(session.activeSince)
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+      throw new DomainCommandError('VALIDATION_ERROR', 'Study session elapsed time cannot be negative.')
+    }
+    session.elapsedSeconds += Math.floor(milliseconds / 1000)
+  }
+  session.state = 'finished'
+  session.activeSince = null
+  session.updatedAt = now
 }
