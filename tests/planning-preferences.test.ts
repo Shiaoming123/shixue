@@ -90,7 +90,7 @@ test('App explicitly wires planning preferences through themed settings into Qui
   assert.match(app, /:quick-add-remove-recognized-text="planningPreferences\.quickAddRemoveRecognizedText"/)
   assert.match(app, /:quick-add-default-estimate-minutes="planningPreferences\.defaultEstimateMinutes"/)
 
-  const settings = studySource('SettingsSheet.vue')
+  const settings = studySource('SettingsView.vue')
   assert.match(settings, /<Switch\b[\s\S]*quickAddRemoveRecognizedText/)
   assert.match(settings, /<Listbox\b[\s\S]*defaultEstimateMinutes/)
   assert.doesNotMatch(settings, /<select\b/)

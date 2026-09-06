@@ -1,3 +1,4 @@
+import { deliveryKey } from '../reminders/resolve.ts'
 import type {
   CompletionRecord,
   CommandReceipt,
@@ -51,6 +52,7 @@ export function parseWorkspaceState(value: unknown): WorkspaceStateV3 {
     recurrenceSeries: parseArray(state.recurrenceSeries, 'Workspace state recurrenceSeries', parseSeries),
     occurrences: parseArray(state.occurrences, 'Workspace state occurrences', parseOccurrence),
     reminderRules: parseArray(state.reminderRules, 'Workspace state reminderRules', parseReminderRule),
+    ...(state.reminderMigration === undefined ? {} : { reminderMigration: parseReminderMigration(state.reminderMigration) }),
     reminderDeliveries: parseArray(state.reminderDeliveries, 'Workspace state reminderDeliveries', parseReminderDelivery),
     studySessions: parseArray(state.studySessions, 'Workspace state studySessions', parseStudySession),
     taskEvents: parseArray(state.taskEvents, 'Workspace state taskEvents', parseTaskEvent),
@@ -285,6 +287,7 @@ function parseReminderRule(raw: unknown, index: number): ReminderRule {
   if (typeof value.enabled !== 'boolean') throw new Error('Reminder rule enabled must be boolean.')
   return {
     id: requireText(value.id, 'Reminder rule id'),
+    ...(value.owner === undefined ? {} : { owner: parseEnum(value.owner, ['legacy', 'user'] as const, 'Reminder rule owner') }),
     taskId: requireText(value.taskId, 'Reminder rule taskId'),
     occurrenceId: parseNullableText(value.occurrenceId, 'Reminder rule occurrenceId'),
     trigger: parseReminderTrigger(value.trigger),
@@ -305,14 +308,18 @@ function parseReminderTrigger(raw: unknown): ReminderRule['trigger'] {
 
 function parseReminderDelivery(raw: unknown, index: number): ReminderDelivery {
   const value = requireRecord(raw, `Reminder delivery ${index}`)
+  if (value.status === 'armed' && (value.claim === undefined || value.revision === undefined)) throw new Error('Armed delivery requires a persisted claim and revision.')
   const action = value.action
   if (action !== null && action !== 'complete' && action !== 'open') throw new Error('Reminder delivery action is invalid.')
   return {
     id: requireText(value.id, 'Reminder delivery id'),
+    ...(value.revision === undefined ? {} : { revision: requirePositiveInteger(value.revision, 'Reminder delivery revision') }),
+    ...(value.claim === undefined ? {} : { claim: parseReminderClaim(value.claim) }),
+    ...(value.acknowledgedAt === undefined ? {} : { acknowledgedAt: requireIsoDateTime(value.acknowledgedAt, 'Reminder acknowledgement') }),
     reminderRuleId: requireText(value.reminderRuleId, 'Reminder delivery reminderRuleId'),
     occurrenceId: parseNullableText(value.occurrenceId, 'Reminder delivery occurrenceId'),
     scheduledFor: requireIsoDateTime(value.scheduledFor, 'Reminder delivery scheduledFor'),
-    status: parseEnum(value.status, ['pending', 'delivered', 'snoozed', 'acted', 'dismissed', 'failed'], 'Reminder delivery status'),
+    status: parseEnum(value.status, ['pending', 'delivered', 'snoozed', 'acted', 'dismissed', 'failed', 'cancelled', 'armed', 'ambiguous'], 'Reminder delivery status'),
     snoozedUntil: parseNullableIsoDateTime(value.snoozedUntil, 'Reminder delivery snoozedUntil'),
     action,
   }
@@ -452,9 +459,17 @@ function assertReferences(state: WorkspaceStateV3): void {
       throw new Error(`Reminder delivery ${delivery.id} does not match reminder rule occurrence.`)
     }
     if (delivery.occurrenceId) assertOccurrenceTask(occurrences.get(delivery.occurrenceId), series, rule.taskId, `Reminder delivery ${delivery.id}`)
-    const key = `${delivery.reminderRuleId}\u0000${delivery.occurrenceId ?? ''}\u0000${delivery.scheduledFor}`
+    const key = deliveryKey(delivery.reminderRuleId, delivery.occurrenceId, delivery.scheduledFor)
     if (deliveryKeys.has(key)) throw new Error('Workspace state contains a duplicate reminder delivery.')
     deliveryKeys.add(key)
+  }
+  for (const mapping of state.reminderMigration?.mapped ?? []) {
+    if (mapping.deliveryIds.length === 0) throw new Error('Legacy mapping requires a delivery.')
+    for (const id of mapping.deliveryIds) {
+      const delivery = state.reminderDeliveries.find((item) => item.id === id)
+      const rule = delivery ? rules.get(delivery.reminderRuleId) : undefined
+      if (!delivery || rule?.taskId !== mapping.row.taskId || Date.parse(delivery.scheduledFor) !== Date.parse(mapping.row.reminderAt)) throw new Error('Legacy mapping references an inconsistent delivery.')
+    }
   }
   for (const session of state.studySessions) if (!tasks.has(session.taskId)) throw new Error(`Study session ${session.id} has unknown taskId.`)
   for (const record of state.completionRecords) {
@@ -550,3 +565,29 @@ function assertUniqueAcrossEntities(collections: readonly (readonly { id: string
 function ids(values: readonly { id: string }[]): Set<string> { return new Set(values.map((value) => value.id)) }
 function isDateOnly(value: string): boolean { if (!DATE_ONLY.test(value)) return false; const [year, month, day] = value.split('-').map(Number); return new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) === value }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
+
+function parseReminderClaim(raw: unknown) {
+  const value = requireRecord(raw, 'Reminder claim')
+  return { token: requireText(value.token, 'Reminder claim token'), armedAt: requireIsoDateTime(value.armedAt, 'Reminder armedAt') }
+}
+
+function parseReminderMigration(raw: unknown) {
+  const value = requireRecord(raw, 'Reminder migration')
+  if (value.version !== 1) throw new Error('Reminder migration version is invalid.')
+  const parseRow = (raw: unknown) => {
+    const row = requireRecord(raw, 'Legacy reminder row')
+    return { taskId: requireText(row.taskId, 'Legacy taskId'), reminderAt: requireText(row.reminderAt, 'Legacy reminderAt'), deliveredAt: requireText(row.deliveredAt, 'Legacy deliveredAt') }
+  }
+  return {
+    version: 1 as const,
+    completedAt: requireIsoDateTime(value.completedAt, 'Reminder migration completedAt'),
+    mapped: parseArray(value.mapped, 'Reminder migration mapped', (raw) => {
+      const entry = requireRecord(raw, 'Reminder mapping')
+      return { row: parseRow(entry.row), deliveryIds: parseArray(entry.deliveryIds, 'Mapped deliveries', (id) => requireText(id, 'Mapped delivery id')) }
+    }),
+    quarantined: parseArray(value.quarantined, 'Reminder migration quarantined', (raw) => {
+      const entry = requireRecord(raw, 'Quarantined reminder')
+      return { row: parseRow(entry.row), reason: requireText(entry.reason, 'Quarantine reason') }
+    }),
+  }
+}

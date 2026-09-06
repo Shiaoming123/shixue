@@ -67,7 +67,8 @@ test('global quick add closes blocking layers, navigates to Inbox, and focuses t
   assert.match(app, /window\.addEventListener\('shixue:quick-add', handleQuickAdd\)/)
   assert.match(app, /window\.removeEventListener\('shixue:quick-add', handleQuickAdd\)/)
   assert.match(app, /<TasksView\b[\s\S]*ref="tasksView"/)
-  assert.match(app, /function handleQuickAdd\(\)[\s\S]*settingsOpen\.value = false[\s\S]*taskEditorOpen\.value = false[\s\S]*selectSmartView\('inbox'\)[\s\S]*tasksView\.value\?\.activateQuickAdd\(\)/)
+  assert.match(app, /function handleQuickAdd\(\)[\s\S]*taskEditorOpen\.value = false[\s\S]*selectSmartView\('inbox'\)[\s\S]*tasksView\.value\?\.activateQuickAdd\(\)/)
+  assert.doesNotMatch(app, /settingsOpen/)
   assert.doesNotMatch(app, /handleQuickAdd[\s\S]{0,700}querySelector/)
 })
 

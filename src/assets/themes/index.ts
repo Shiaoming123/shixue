@@ -22,6 +22,7 @@ export interface ThemeTokens {
   success: string
   warning: string
   danger: string
+  dangerText?: string
 }
 
 export interface Theme {
@@ -42,13 +43,14 @@ export const themes: Theme[] = [
       surface: '#f8faf9',
       surfaceAlt: '#e5ecea',
       text: '#17201d',
-      muted: '#66716d',
+      muted: '#5e6965',
       border: 'rgba(30, 58, 50, 0.14)',
-      accent: '#3f8a57',
+      accent: '#347447',
       accentText: '#ffffff',
-      success: '#3f985b',
-      warning: '#cb8618',
-      danger: '#c44f48',
+      success: '#317347',
+      warning: '#8a5c0b',
+      danger: '#aa403a',
+      dangerText: '#ffffff',
     },
     dark: {
       bg: '#0d1518',
@@ -62,6 +64,7 @@ export const themes: Theme[] = [
       success: '#72c487',
       warning: '#e6a643',
       danger: '#ef776e',
+      dangerText: '#0d1518',
     },
   },
   {
@@ -217,6 +220,7 @@ export function applyTheme(id: string, dark: boolean) {
     '--success': tokens.success,
     '--warning': tokens.warning,
     '--danger': tokens.danger,
+    '--danger-text': tokens.dangerText ?? '#ffffff',
   }
   for (const [k, v] of Object.entries(map)) root.style.setProperty(k, v)
 }

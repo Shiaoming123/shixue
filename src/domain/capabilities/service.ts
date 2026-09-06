@@ -1,3 +1,6 @@
+import { deliveryKey } from '../reminders/resolve.ts'
+import { applyReminderCommand, type ReminderCapabilityCommand } from './reminder-commands.ts'
+import { reconcileReminderDeliveries } from '../reminders/resolve.ts'
 import { parseWorkspaceState } from '../workspace/parse.ts'
 import type { CommandReceipt, JsonValue, Task, TaskEvent, WorkspaceStateV3 } from '../workspace/types.ts'
 import type { WorkspaceStore } from '../../storage/workspace/types.ts'
@@ -154,6 +157,7 @@ export function createTaskCapabilityService(
 
       const draft = structuredClone(current)
       const application = applyCapabilityCommand(draft, envelope.command, { now, id: ids })
+      reconcileReminderDeliveries(draft, envelope.command.type.startsWith('reminder.'))
       draft.revision = current.revision + 1
       draft.updatedAt = nextUpdatedAt(current.updatedAt, now)
       application.affected = application.affected.map((entity) =>
@@ -221,6 +225,7 @@ function applyCapabilityCommand(
   command: CapabilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
+  if (command.type.startsWith('reminder.')) return applyReminderCommand(state, command as ReminderCapabilityCommand, context)
   if (isCoreTaskCommand(command)) return applyTaskCommand(state, command, context)
   if (isRecurrenceCommand(command)) return applyRecurrenceCommand(state, command, context)
   if (isLiveCompatibilityCommand(command)) return applyLiveCompatibilityCommand(state, command, context)
@@ -237,7 +242,20 @@ function applyWorkspaceImport(state: WorkspaceStateV3, command: WorkspaceImportC
   } catch (error) {
     throw new DomainCommandError('IMPORT_INVALID', errorMessage(error))
   }
+  for (const local of state.reminderDeliveries) {
+    if (local.status === 'pending' && !local.acknowledgedAt && !local.claim) continue
+    const localRule = state.reminderRules.find(({ id }) => id === local.reminderRuleId)!
+    const importedRule = imported.reminderRules.find(({ id }) => id === local.reminderRuleId)
+    if (!importedRule || importedRule.taskId !== localRule.taskId || importedRule.occurrenceId !== localRule.occurrenceId || (local.occurrenceId && !imported.occurrences.some(({ id }) => id === local.occurrenceId))) {
+      throw new DomainCommandError('IMPORT_INVALID', 'Import would discard local reminder submission history; this backup cannot safely replace the workspace.')
+    }
+    const key = deliveryKey(local.reminderRuleId, local.occurrenceId, local.scheduledFor)
+    imported.reminderDeliveries = imported.reminderDeliveries.filter((item) => item.id !== local.id && deliveryKey(item.reminderRuleId, item.occurrenceId, item.scheduledFor) !== key)
+    imported.reminderDeliveries.push(structuredClone(local))
+  }
   imported.commandReceipts = []
+  delete imported.reminderMigration
+  delete state.reminderMigration
   const currentRevision = state.revision
   Object.assign(state, structuredClone(imported))
   const affected: EntityRef = { type: 'workspace', id: 'workspace', revision: currentRevision }
@@ -345,7 +363,13 @@ function applyUndo(
     if (token.compensation.reminderRules !== undefined) {
       const taskIds = new Set(token.compensation.tasks.map(({ id }) => id))
       const revisions = new Map(state.reminderRules.map(({ id, revision }) => [id, revision]))
-      state.reminderRules = state.reminderRules.filter(({ taskId }) => !taskIds.has(taskId))
+      const restoredIds = new Set(token.compensation.reminderRules.map(({ id }) => id))
+      const referencedIds = new Set(state.reminderDeliveries.map(({ reminderRuleId }) => reminderRuleId))
+      state.reminderRules = state.reminderRules.flatMap((rule) => {
+        if (!taskIds.has(rule.taskId)) return [rule]
+        if (!restoredIds.has(rule.id) && referencedIds.has(rule.id)) return [{ ...rule, enabled: false, revision: rule.revision + 1 }]
+        return []
+      })
       state.reminderRules.push(...token.compensation.reminderRules.map((prior) => ({
         ...structuredClone(prior),
         revision: Math.max(prior.revision, revisions.get(prior.id) ?? 0) + 1,
@@ -357,6 +381,10 @@ function applyUndo(
       record.updatedAt = context.now
     }
   } else if (token.compensation.type === 'recurrence.restore') {
+    for (const id of token.compensation.completionRecordIds ?? []) {
+      const record = state.completionRecords.find((entry) => entry.id === id)
+      if (record) { record.deletedAt = context.now; record.updatedAt = context.now }
+    }
     const taskIds = new Set(token.compensation.tasks.map(({ id }) => id))
     const seriesIds = new Set([
       ...token.compensation.recurrenceSeries.map(({ id }) => id),

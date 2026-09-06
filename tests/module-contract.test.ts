@@ -90,7 +90,7 @@ test('quick capture declares the concrete shortcut commands it invokes', () => {
   ])
 })
 
-test('quick capture and notifications are enabled across frontend, Cargo defaults, and desktop permissions', () => {
+test('quick capture, notifications, and autostart settings are enabled across frontend, Cargo defaults, and desktop permissions', () => {
   const root = new URL('../', import.meta.url)
   const cargoToml = readFileSync(new URL('src-tauri/Cargo.toml', root), 'utf8')
   const capabilities = JSON.parse(
@@ -99,10 +99,11 @@ test('quick capture and notifications are enabled across frontend, Cargo default
 
   assert.equal(defaultModuleConfig.shortcut, true)
   assert.equal(defaultModuleConfig.notification, true)
-  assert.match(cargoToml, /^default = \["shortcut", "notification"\]$/m)
+  assert.equal(defaultModuleConfig.autostart, true)
+  assert.match(cargoToml, /^default = \["shortcut", "notification", "autostart"\]$/m)
   assert.deepEqual(
     auditModuleContract({
-      contracts: [moduleContracts.shortcut, moduleContracts.notification],
+      contracts: [moduleContracts.shortcut, moduleContracts.notification, moduleContracts.autostart],
       config: defaultModuleConfig,
       platform: 'desktop',
       cargoToml,
@@ -110,4 +111,17 @@ test('quick capture and notifications are enabled across frontend, Cargo default
     }).errors,
     [],
   )
+})
+
+test('autostart remains unavailable outside desktop even when the standard desktop build enables it', () => {
+  const selectedByPlatform = Object.fromEntries(runtimeProfiles.map((runtime) => [
+    runtime.platform,
+    selectCompatibleModules([moduleContracts.autostart], runtime).map(({ id }) => id),
+  ]))
+
+  assert.deepEqual(selectedByPlatform, {
+    web: [],
+    desktop: ['autostart'],
+    mobile: [],
+  })
 })

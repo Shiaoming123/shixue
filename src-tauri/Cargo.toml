@@ -1,6 +1,6 @@
 [package]
 name = "meow-study"
-version = "0.2.3"
+version = "0.2.4"
 description = "Local-first personal learning record and review assistant"
 authors = ["Shiaoming123"]
 license = "MIT"
@@ -50,7 +50,7 @@ futures-util = { version = "0.3", optional = true }
 # 功能模块开关（与前端 modules.config.ts 对应）
 # 核心能力（sqlite/store/updater/tray）始终启用，无需 feature
 [features]
-default = ["shortcut", "notification"]
+default = ["shortcut", "notification", "autostart"]
 shortcut = ["dep:tauri-plugin-global-shortcut"]
 clipboard = ["dep:tauri-plugin-clipboard-manager"]
 notification = ["dep:tauri-plugin-notification", "dep:chrono", "dep:sqlx", "dep:tokio"]

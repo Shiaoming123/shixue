@@ -70,8 +70,10 @@ function validProtocol() {
         'live-write-capability-routing',
         'themed-control-foundation',
         'recurrence-occurrence-v1',
+        'offline-natural-language-v1',
+        'multi-reminder-v1',
       ],
-      planned: ['offline-natural-language', 'multi-reminder', 'calendar', 'agent-behavior'],
+      planned: ['calendar', 'agent-behavior'],
     },
     delivery: {
       desktopPackage: 'unverified',

@@ -4,7 +4,10 @@ import { Bell, CalendarDays, Flag, ListTree, X } from '@lucide/vue'
 import type { StudyTaskPriority, StudyTopic } from '../../storage/study/types'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import Listbox from '../ui/Listbox.vue'
+import { useModalOverlay } from '../ui/use-overlay'
 import RecurrenceEditor, { type RecurrenceRule } from './RecurrenceEditor.vue'
+import ReminderEditor, { type ReminderPermission, type ReminderSetValue } from './ReminderEditor.vue'
+import type { ReminderRule as TaskReminderRule } from '../../domain/workspace/types'
 
 export interface TaskEditValue {
   title: string
@@ -20,7 +23,7 @@ export interface TaskEditValue {
   acceptanceCriteria?: string[]
 }
 
-type EditableStudyTask = TaskEditValue & { status: string }
+type EditableStudyTask = TaskEditValue & { id?: string; status: string }
 
 const props = defineProps<{
   open: boolean
@@ -30,15 +33,24 @@ const props = defineProps<{
   learning?: boolean
   plannedAt?: string | null
   dueAt?: string | null
+  reminderRules?: TaskReminderRule[]
+  notificationAvailable?: boolean
+  reminderPermission?: ReminderPermission
+  reminderBusy?: boolean
+  reminderError?: string
 }>()
 
 const emit = defineEmits<{
   close: []
   save: [value: TaskEditValue]
   recurrenceSave: [rule: RecurrenceRule]
+  reminderSet: [value: ReminderSetValue]
+  reminderRemove: [rule: TaskReminderRule]
 }>()
 
 const title = ref('')
+const panel = ref<HTMLElement | null>(null)
+const { layerId } = useModalOverlay(() => Boolean(props.open && props.task), panel, () => emit('close'))
 const notes = ref('')
 const topicId = ref('')
 const plannedOn = ref('')
@@ -61,7 +73,8 @@ const priorityOptions = [
   { value: 'high', label: '高' },
 ]
 
-watch(() => [props.open, props.task, props.recurrenceRule] as const, ([open, task, rule]) => {
+watch([() => props.open, () => props.task?.id, () => Boolean(props.task)], ([open]) => {
+  const task = props.task
   if (!open || !task) return
   title.value = task.title
   notes.value = task.notes
@@ -74,8 +87,12 @@ watch(() => [props.open, props.task, props.recurrenceRule] as const, ([open, tas
   priority.value = task.priority
   estimateMinutes.value = task.estimateMinutes
   criteria.value = task.acceptanceCriteria?.join('\n') ?? ''
-  recurrenceRule.value = rule ?? null
+  recurrenceRule.value = props.recurrenceRule ?? null
 }, { immediate: true })
+
+watch(() => JSON.stringify(props.recurrenceRule ?? null), () => {
+  if (props.open) recurrenceRule.value = props.recurrenceRule ?? null
+})
 
 function save() {
   const normalizedTitle = title.value.trim()
@@ -105,8 +122,9 @@ function toLocalDateTime(value: string) {
 </script>
 
 <template>
-  <div v-if="open && task" class="backdrop" @click.self="emit('close')">
-    <form class="sheet" role="dialog" aria-modal="true" aria-labelledby="task-edit-title" @submit.prevent="save">
+  <Teleport defer to="#ui-overlay-host">
+  <div v-if="open && task" class="backdrop">
+    <form ref="panel" :data-overlay-layer="layerId" tabindex="-1" class="sheet" role="dialog" aria-modal="true" aria-labelledby="task-edit-title" @submit.prevent="save">
       <header><h2 id="task-edit-title">编辑任务</h2><button type="button" title="关闭" aria-label="关闭" @click="emit('close')"><X :size="19" /></button></header>
       <label><span>标题</span><input v-model="title" aria-label="任务标题" required autofocus /></label>
       <label><span>备注</span><textarea v-model="notes" aria-label="任务备注" placeholder="备注" /></label>
@@ -115,7 +133,8 @@ function toLocalDateTime(value: string) {
         <label><span><CalendarDays :size="15" />日期</span><DateTimePicker v-model="plannedOn" :mode="plannedTimed ? 'datetime' : 'date'" label="日期" placeholder="不设置计划日期" /></label>
         <label><span>截止</span><DateTimePicker v-model="dueOn" :mode="dueTimed ? 'datetime' : 'date'" label="截止日期" placeholder="不设置截止日期" /></label>
       </div>
-      <label><span><Bell :size="15" />提醒</span><DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" placeholder="不设置提醒" /></label>
+      <ReminderEditor v-if="reminderRules !== undefined && task.id" :key="task.id" :task-id="task.id" :rules="reminderRules" :start-at="plannedAt" :due-at="dueAt" :notification-available="notificationAvailable" :permission="reminderPermission" :busy="reminderBusy" :error="reminderError" @set="emit('reminderSet', $event)" @remove="emit('reminderRemove', $event)" />
+      <label v-else><span><Bell :size="15" />提醒</span><DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" placeholder="不设置提醒" /></label>
       <label><span><Flag :size="15" />优先级</span><Listbox :model-value="priority" :options="priorityOptions" label="优先级" @update:model-value="priority = $event as StudyTaskPriority" /></label>
       <label><span>重复</span><RecurrenceEditor :model-value="recurrenceRule" @save="recurrenceRule = $event; emit('recurrenceSave', $event)" /></label>
       <label><span>预计分钟</span><input v-model.number="estimateMinutes" type="number" min="1" max="1440" placeholder="分钟" /></label>
@@ -123,9 +142,11 @@ function toLocalDateTime(value: string) {
       <footer><button type="button" class="cancel" @click="emit('close')">取消</button><button class="save" type="submit" :disabled="!title.trim()">保存</button></footer>
     </form>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>
+.backdrop { pointer-events: auto; }
 .backdrop { position: fixed; z-index: var(--z-modal); inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--text) 22%, transparent); backdrop-filter: saturate(120%) blur(12px); }
 .sheet { width: min(100%, 520px); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 28px; border: 1px solid var(--hairline); border-radius: var(--radius-2xl); background: var(--material-regular); box-shadow: var(--shadow-lg); animation: sheet-in var(--motion-slow) var(--ease-spring); }
 header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding-bottom: 15px; border-bottom: 1px solid var(--hairline); } h2 { margin: 0; font-size: var(--text-xl); font-weight: 600; } header button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--control-fill); color: var(--muted); }

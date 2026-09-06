@@ -485,6 +485,7 @@ function resetWorkspace(state: WorkspaceStateV3, context: CapabilityCommandConte
     archivedAt: null,
   })
   reset.commandReceipts = []
+  delete state.reminderMigration
   const currentRevision = state.revision
   Object.assign(state, reset)
   const entity: EntityRef = { type: 'workspace', id: 'workspace', revision: currentRevision }

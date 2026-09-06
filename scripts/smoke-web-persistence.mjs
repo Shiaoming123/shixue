@@ -277,8 +277,8 @@ async function main() {
       await page.getByRole('button', { name: /^已完成/ }).click()
       await page.getByText(editedMarker, { exact: true }).waitFor({ state: 'visible' })
 
-      await page.locator('.task-row').filter({ hasText: editedMarker }).getByRole('button').nth(1).click()
-      await page.getByRole('complementary', { name: '任务详情', exact: true }).waitFor({ state: 'visible' })
+      await page.locator('.task-row').filter({ hasText: editedMarker }).locator('.task-main').click()
+      await page.locator('.detail-drawer').waitFor({ state: 'visible' })
       await page.evaluate(() => localStorage.setItem('meow-study-appearance', 'dark'))
       for (const viewport of [
         { width: 700, height: 844, hasBottomNav: true, modalPicker: true },
@@ -292,6 +292,7 @@ async function main() {
         { width: 370, height: 700, hasBottomNav: true, modalPicker: true },
         { width: 390, height: 844, hasBottomNav: true, modalPicker: true },
       ]) {
+        console.log(`Responsive smoke viewport: ${viewport.width}x${viewport.height}`)
         await page.setViewportSize(viewport)
         await page.reload({ waitUntil: 'networkidle' })
         const mobileNav = page.getByRole('navigation', { name: '移动端主导航' })
@@ -322,7 +323,7 @@ async function main() {
         await apply.scrollIntoViewIfNeeded()
         const applyBox = await apply.boundingBox()
         if (viewport.hasBottomNav) {
-          const bottomNavBox = await mobileNav.boundingBox()
+          const bottomNavBox = await page.locator('.tabbar').boundingBox()
           if (!applyBox || !bottomNavBox || applyBox.y + applyBox.height > bottomNavBox.y) {
             throw new Error(`Compact picker actions overlap bottom navigation at ${viewport.width}px: apply=${JSON.stringify(applyBox)}, nav=${JSON.stringify(bottomNavBox)}`)
           }
@@ -330,9 +331,12 @@ async function main() {
         if (!viewport.modalPicker) {
           await apply.click()
           await compactQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ }).waitFor({ state: 'visible' })
-          const mediumDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
+          const mediumDetail = page.getByRole('dialog', { name: '任务详情', exact: true })
           if (!(await mediumDetail.isVisible())) await page.locator('.task-row').first().locator('.task-main').click()
           await mediumDetail.waitFor({ state: 'visible' })
+          if ((await mediumDetail.getAttribute('aria-modal')) !== 'true') {
+            throw new Error(`Medium detail must isolate the covered task list at ${viewport.width}px.`)
+          }
           const [detailPosition, detailBox, tasksBox] = await Promise.all([
             mediumDetail.evaluate((element) => getComputedStyle(element).position),
             mediumDetail.boundingBox(),

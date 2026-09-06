@@ -1,3 +1,4 @@
+import type { ReminderClaim, ReminderMigration } from '../reminders/protocol.ts'
 import type {
   CompletionRecord,
   StudySession,
@@ -140,6 +141,7 @@ export type ReminderTrigger =
   | { kind: 'absolute'; at: string }
 
 export interface ReminderRule {
+  owner?: 'legacy' | 'user'
   id: string
   taskId: string
   occurrenceId: string | null
@@ -149,11 +151,14 @@ export interface ReminderRule {
 }
 
 export interface ReminderDelivery {
+  revision?: number
+  claim?: ReminderClaim
+  acknowledgedAt?: string
   id: string
   reminderRuleId: string
   occurrenceId: string | null
   scheduledFor: string
-  status: 'pending' | 'delivered' | 'snoozed' | 'acted' | 'dismissed' | 'failed'
+  status: 'pending' | 'delivered' | 'snoozed' | 'acted' | 'dismissed' | 'failed' | 'cancelled' | 'armed' | 'ambiguous'
   snoozedUntil: string | null
   action: 'complete' | 'open' | null
 }
@@ -197,6 +202,7 @@ export interface WorkspaceStateV3 {
   occurrences: TaskOccurrence[]
   reminderRules: ReminderRule[]
   reminderDeliveries: ReminderDelivery[]
+  reminderMigration?: ReminderMigration
   studySessions: StudySession[]
   taskEvents: TaskEvent[]
   completionRecords: CompletionRecord[]
