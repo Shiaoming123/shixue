@@ -43,6 +43,7 @@ export interface StudyWriteOptions {
 
 export interface TaskCommandOptions extends StudyWriteOptions {
   eventId?: string
+  reviewedOn?: string
 }
 
 export interface BulkTaskTarget {
@@ -441,6 +442,7 @@ export async function toggleStudyTaskCompletion(
   await executeCommand({
     type: 'task.toggle_completion', taskId, expectedRevision: options.expectedRevision,
     eventId: makeId('event', options.eventId),
+    reviewedOn: options.reviewedOn,
   }, now)
   return requireTask(await loadStudyState(), taskId)
 }
@@ -457,6 +459,25 @@ export async function reviewCompletionRecord(
   }, commandTime(options.now))
   const record = (await loadStudyState()).completionRecords.find(({ id }) => id === recordId)
   if (!record) throw new Error(`Completion record not found: ${recordId}.`)
+  return structuredClone(record)
+}
+
+export async function completeReviewTaskLink(
+  linkId: string,
+  result: ReviewResult,
+  reviewedOn: string,
+  options: TaskCommandOptions = {},
+): Promise<CompletionRecord> {
+  const store = getWorkspaceStore()
+  const before = await store.load()
+  const link = before.reviewTaskLinks.find(({ id }) => id === linkId)
+  if (!link) throw new Error(`Review task link not found: ${linkId}.`)
+  await executeCommand({
+    type: 'review.complete', linkId, result, reviewedOn,
+    expectedReviewTaskRevision: options.expectedRevision,
+  }, commandTime(options.now))
+  const record = (await store.load()).completionRecords.find(({ id }) => id === link.completionRecordId)
+  if (!record) throw new Error(`Completion record not found: ${link.completionRecordId}.`)
   return structuredClone(record)
 }
 

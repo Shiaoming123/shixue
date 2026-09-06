@@ -485,11 +485,25 @@ function assertReferences(state: WorkspaceStateV3): void {
   if (activeSessions.some((session) => tasks.get(session.taskId)?.status !== 'in_progress')) {
     throw new Error('An active Study session requires an in-progress task.')
   }
+  const pendingRecordIds = new Set<string>()
+  const reviewTargets = new Set<string>()
   for (const link of state.reviewTaskLinks) {
     const record = records.get(link.completionRecordId)
     if (!record) throw new Error(`Review task link ${link.id} has unknown completionRecordId.`)
-    if (!tasks.has(link.reviewTaskId)) throw new Error(`Review task link ${link.id} has unknown reviewTaskId.`)
+    const reviewTask = tasks.get(link.reviewTaskId)
+    if (!reviewTask) throw new Error(`Review task link ${link.id} has unknown reviewTaskId.`)
+    if (reviewTask.id === record.taskId) throw new Error(`Review task link ${link.id} cannot link evidence to its source task.`)
+    if (reviewTask.mode !== 'learning') throw new Error(`Review task link ${link.id} requires a learning task.`)
     if (link.occurrenceId) assertOccurrenceTask(occurrences.get(link.occurrenceId), series, link.reviewTaskId, `Review task link ${link.id}`)
+    const target = link.occurrenceId ?? link.reviewTaskId
+    if (reviewTargets.has(target)) throw new Error(`Review task target ${target} has duplicate links.`)
+    reviewTargets.add(target)
+    if (link.completedAt === null) {
+      if (record.deletedAt !== null || reviewTask.deletedAt !== null) throw new Error(`Pending review task link ${link.id} references deleted evidence.`)
+      if (record.nextReviewOn !== link.dueOn || record.reviewStage !== link.reviewStage) throw new Error(`Pending review task link ${link.id} does not match its active review.`)
+      if (pendingRecordIds.has(record.id)) throw new Error(`Completion record ${record.id} has duplicate pending review links.`)
+      pendingRecordIds.add(record.id)
+    }
   }
 }
 

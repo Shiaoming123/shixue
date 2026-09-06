@@ -55,6 +55,7 @@ import {
   archiveStudyListGroup,
   bulkDeleteStudyTasks,
   completeStudyTask,
+  completeReviewTaskLink,
   createTaskFromNextAction,
   deleteStudyTask,
   exportStudyState,
@@ -63,7 +64,6 @@ import {
   projectWorkspaceState,
   pauseStudySession,
   planStudyTask,
-  reviewCompletionRecord,
   rescheduleStudyTask,
   resumeStudySession,
   saveStudyScratchpad,
@@ -101,6 +101,7 @@ const state = ref<StudyState>(createSeedStudyState())
 const loading = ref(true)
 const showFocus = ref(false)
 const completionOpen = ref(false)
+const completionReviewLinkId = ref('')
 const topicEditorOpen = ref(false)
 const groupEditorOpen = ref(false)
 const topicTitle = ref('')
@@ -221,6 +222,8 @@ const today = computed(() => new Date().toLocaleDateString('sv-SE'))
 const dateLabel = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date()).replace('星期', '周'))
 const activeSession = computed(() => state.value.sessions.find((session) => !session.deletedAt && (session.state === 'running' || session.state === 'paused')))
 const activeTask = computed(() => state.value.tasks.find((task) => task.id === activeSession.value?.taskId && !task.deletedAt))
+const activeReviewLinkId = computed(() => recurrenceWorkspace.value?.reviewTaskLinks.find(({ reviewTaskId, completedAt }) =>
+  reviewTaskId === activeTask.value?.id && completedAt === null)?.id ?? '')
 const selectedTask = computed(() => state.value.tasks.find((task) => task.id === selectedTaskId.value && !task.deletedAt))
 const selectedWorkspaceTask = computed(() => recurrenceWorkspace.value?.tasks.find((task) => task.id === selectedTaskId.value && !task.deletedAt))
 const selectedOccurrence = computed(() => recurrenceWorkspace.value?.occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId.value) ?? null)
@@ -327,7 +330,11 @@ const completedRecords = computed(() => state.value.completionRecords.filter((re
 const weeklyRecords = computed(() => completedRecords.value.filter((record) => new Date(record.completedAt).getTime() >= startOfWeek.value))
 const weeklyMinutes = computed(() => weeklyRecords.value.reduce((sum, record) => sum + recordMinutes(record), 0))
 const reviewQueue = computed(() => completedRecords.value.filter((record) => record.nextReviewOn && record.nextReviewOn <= today.value).sort((a, b) => (a.nextReviewOn ?? '').localeCompare(b.nextReviewOn ?? '')))
-const reviewItems = computed<ReviewViewItem[]>(() => reviewQueue.value.map((record) => ({ id: record.id, topic: topicTitleFor(record.topicId), learned: record.learned, evidence: record.evidence, ageLabel: formatAge(record.completedAt) })))
+const reviewItems = computed<ReviewViewItem[]>(() => reviewQueue.value.flatMap((record) => {
+  const link = recurrenceWorkspace.value?.reviewTaskLinks.find(({ completionRecordId, reviewStage, dueOn, completedAt }) =>
+    completionRecordId === record.id && reviewStage === record.reviewStage && dueOn === record.nextReviewOn && completedAt === null)
+  return link ? [{ id: record.id, linkId: link.id, topic: topicTitleFor(record.topicId), learned: record.learned, evidence: record.evidence, ageLabel: formatAge(record.completedAt) }] : []
+}))
 const recordViews = computed<CompletionRecordViewItem[]>(() => completedRecords.value.map((record) => ({ id: record.id, taskId: record.taskId, topicId: record.topicId, topic: topicTitleFor(record.topicId), taskTitle: record.taskTitleSnapshot, learned: record.learned, evidence: record.evidence, blocker: record.blocker, nextAction: record.nextAction, mastery: record.mastery, completedLabel: formatShortDate(record.completedAt), minutes: recordMinutes(record) })))
 
 const topicViews = computed<TopicViewItem[]>(() => state.value.topics.filter((topic) => !topic.archivedAt).map((topic) => {
@@ -512,8 +519,8 @@ async function handleReminderAction(action: ReminderCardAction) {
     else if (delivery.occurrenceId) {
       const occurrence = workspace?.occurrences.find(({ id }) => id === delivery.occurrenceId)
       if (!occurrence) throw new Error('提醒对应的重复实例已不存在。')
-      await executeReminderCommand({ type: 'recurrence.complete', occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision })
-    } else await executeReminderCommand({ type: 'task.complete', taskId: task.id, expectedRevision: task.revision })
+      await executeReminderCommand({ type: 'recurrence.complete', occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, reviewedOn: today.value })
+    } else await executeReminderCommand({ type: 'task.complete', taskId: task.id, expectedRevision: task.revision, reviewedOn: today.value })
     await pollReminders()
   } catch (error) { reminderError.value = error instanceof Error ? error.message : '提醒操作未能保存，请重试。' }
   finally { reminderBusy.value = false }
@@ -529,8 +536,8 @@ async function completeReminderEvidence(payload: CompletionPayload) {
     if (delivery.occurrenceId) {
       const occurrence = workspace?.occurrences.find(({ id }) => id === delivery.occurrenceId)
       if (!occurrence) throw new Error('提醒对应的重复实例已不存在，填写内容仍保留。')
-      await executeReminderCommand({ type: 'recurrence.complete', occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, expectedTaskRevision: task.revision, ...payload })
-    } else await executeReminderCommand({ type: 'task.complete', taskId: task.id, expectedRevision: task.revision, ...payload })
+      await executeReminderCommand({ type: 'recurrence.complete', occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, expectedTaskRevision: task.revision, ...payload, reviewedOn: today.value })
+    } else await executeReminderCommand({ type: 'task.complete', taskId: task.id, expectedRevision: task.revision, ...payload, reviewedOn: today.value })
     await pollReminders()
     completionOpen.value = false
     completionReminderId.value = ''
@@ -563,6 +570,7 @@ async function setLaunchAtLogin(enabled: boolean) {
 function handleQuickAdd() {
   completionOpen.value = false
   completionReminderId.value = ''
+  completionReviewLinkId.value = ''
   taskActionOpen.value = false
   taskEditorOpen.value = false
   recurrenceScopeOpen.value = false
@@ -1009,7 +1017,7 @@ async function toggleTaskCompletion(taskId: string) {
   const task = state.value.tasks.find((item) => item.id === taskId && !item.deletedAt)
   if (!task || task.status === 'cancelled') return
   try {
-    const changed = await toggleStudyTaskCompletion(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString() })
+    const changed = await toggleStudyTaskCompletion(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString(), reviewedOn: today.value })
     await refreshState()
     notify(changed.status === 'completed' ? '任务已完成。' : '任务已重新打开。')
   } catch (error) { reportStorageError(error) }
@@ -1019,7 +1027,7 @@ async function bulkCompleteTasks(taskIds: string[]) {
   try {
     for (const taskId of taskIds) {
       const task = (await loadStudyState()).tasks.find((item) => item.id === taskId && !item.deletedAt)
-      if (task && task.status !== 'completed' && task.status !== 'cancelled') await toggleStudyTaskCompletion(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString() })
+      if (task && task.status !== 'completed' && task.status !== 'cancelled') await toggleStudyTaskCompletion(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString(), reviewedOn: today.value })
     }
     await refreshState(); selectedTaskId.value = ''; notify(`已完成 ${taskIds.length} 项。`)
   } catch (error) { reportStorageError(error) }
@@ -1079,15 +1087,20 @@ async function completeFocus(payload: CompletionPayload) {
   if (!session || !task) return
   const now = new Date().toISOString()
   try {
-    await completeStudyTask({ taskId: task.id, sessionId: session.id, learned: payload.learned, evidence: payload.evidence, blocker: payload.blocker, nextAction: payload.nextAction, mastery: payload.mastery }, { recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now })
+    if (completionReviewLinkId.value) await completeReviewTaskLink(completionReviewLinkId.value, 'clear', today.value, { expectedRevision: task.revision, now })
+    else await completeStudyTask({ taskId: task.id, sessionId: session.id, learned: payload.learned, evidence: payload.evidence, blocker: payload.blocker, nextAction: payload.nextAction, mastery: payload.mastery }, { recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now })
+    completionReviewLinkId.value = ''
     await refreshState(); completionOpen.value = false; setDestination({ kind: 'today' }); notify(`已记录这次学习。下一项：${weeklyNext.value}`)
   } catch (error) { reportStorageError(error) }
 }
 
-async function rateReview(result: ReviewResult) {
-  const record = reviewQueue.value[0]
-  if (!record) return
-  try { await reviewCompletionRecord(record.id, result, today.value, { now: new Date().toISOString() }); await refreshState(); reviewRevealed.value = false; notify(result === 'clear' ? '已安排下一次回顾。' : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。') } catch (error) { reportStorageError(error) }
+async function rateReview(linkId: string, result: ReviewResult) {
+  try { await completeReviewTaskLink(linkId, result, today.value, { now: new Date().toISOString() }); await refreshState(); reviewRevealed.value = false; notify(result === 'clear' ? '已安排下一次回顾。' : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。') } catch (error) { reportStorageError(error) }
+}
+
+function openFocusCompletion(reviewLinkId?: string) {
+  completionReviewLinkId.value = reviewLinkId ?? ''
+  completionOpen.value = true
 }
 
 async function createFromNextAction(recordId: string) {
@@ -1268,7 +1281,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
       <header v-if="!showFocus" class="mobile-header"><div><img src="/shixue-mark.svg" alt="" /><strong>拾学</strong></div><button title="设置" :aria-current="destination.kind === 'settings' ? 'page' : undefined" @click="setDestination({ kind: 'settings' })"><Settings :size="22" /></button></header>
       <main :class="{ 'focus-main': showFocus, 'tasks-main': (page === 'tasks' || page === 'today') && !showFocus, 'calendar-main': page === 'calendar' && !showFocus }">
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
-        <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" @back="showFocus = false" @toggle="toggleFocus" @finish="completionOpen = true" @update:scratchpad="updateScratchpad" />
+        <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" :review-link-id="activeReviewLinkId || undefined" @back="showFocus = false" @toggle="toggleFocus" @finish="openFocusCompletion" @update:scratchpad="updateScratchpad" />
         <template v-else-if="page === 'tasks' || page === 'today'">
           <div v-if="destination.kind === 'lists'" class="lists-more">
             <Popover v-model:open="listsMoreOpen" kind="menu" align="end" mobile-sheet mobile-sheet-label="清单更多导航">
@@ -1294,7 +1307,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
       <BottomTabs v-if="!showFocus" :active="destination" @navigate="setDestination" />
     </div>
 
-    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) && reminderBusy" :task-title="reminderCompletionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''" @save="completeFocus" />
+    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) && reminderBusy" :task-title="reminderCompletionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionReviewLinkId = ''" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
     <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @reminder-set="saveReminderRule" @reminder-remove="removeReminderRule" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" @recurrence-save="requestRecurrenceEdit" />
     <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @edit-occurrence="editSingleOccurrence" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />

@@ -312,10 +312,10 @@ test('general recurring reminder completes exactly its occurrence, and snooze ch
   const before = structuredClone(workspace)
   const api = handlers('App.vue', ['handleReminderAction'], {
     reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''),
-    executeReminderCommand: async (command: unknown) => { commands.push(command) }, pollReminders: async () => {},
+    executeReminderCommand: async (command: unknown) => { commands.push(command) }, pollReminders: async () => {}, today: ref('2026-09-06'),
   })
   await api.handleReminderAction({ deliveryId: 'delivery', action: 'complete' })
-  assert.deepEqual(commands[0], { type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 2 })
+  assert.deepEqual(commands[0], { type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 2, reviewedOn: '2026-09-06' })
   const now = Date.now()
   await api.handleReminderAction({ deliveryId: 'delivery', action: 'snooze', minutes: 10 })
   assert.equal(commands[1].type, 'reminder.snooze')
@@ -332,11 +332,11 @@ test('repeated learning completion sends evidence with occurrence and task revis
   const api = handlers('App.vue', ['completeReminderEvidence'], {
     recurrenceWorkspace: ref({ reminderDeliveries: [{ id: 'delivery', occurrenceId: 'occurrence' }], occurrences: [{ id: 'occurrence', revision: 4 }] }), completionReminderId, completionOpen,
     reminderCompletionTask: ref({ id: 'task', revision: 7 }), reminderBusy: ref(false), notify() {},
-    executeReminderCommand: async (command: unknown) => { commands.push(command) }, pollReminders: async () => { polled++ },
+    executeReminderCommand: async (command: unknown) => { commands.push(command) }, pollReminders: async () => { polled++ }, today: ref('2026-09-06'),
   })
   const payload = { learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 }
   await api.completeReminderEvidence(payload)
-  assert.deepEqual(commands, [{ type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 4, expectedTaskRevision: 7, ...payload }])
+  assert.deepEqual(commands, [{ type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 4, expectedTaskRevision: 7, ...payload, reviewedOn: '2026-09-06' }])
   assert.equal(polled, 1)
   assert.equal(completionOpen.value, false)
   assert.equal(completionReminderId.value, '')
@@ -350,7 +350,7 @@ test('failed repeated learning completion keeps the same evidence context and op
   const api = handlers('App.vue', ['completeReminderEvidence'], {
     recurrenceWorkspace: ref({ reminderDeliveries: [{ id: 'delivery', occurrenceId: 'occurrence' }], occurrences: [{ id: 'occurrence', revision: 4 }] }), completionReminderId, completionOpen,
     reminderCompletionTask: ref({ id: 'task', revision: 7 }), reminderBusy, notify: (message: string) => messages.push(message),
-    executeReminderCommand: async () => { throw Error('保存失败') }, pollReminders: async () => assert.fail('failed writes must not poll or discard evidence'),
+    executeReminderCommand: async () => { throw Error('保存失败') }, pollReminders: async () => assert.fail('failed writes must not poll or discard evidence'), today: ref('2026-09-06'),
   })
   const payload = Object.freeze({ learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 })
   await api.completeReminderEvidence(payload)

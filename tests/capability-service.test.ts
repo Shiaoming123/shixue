@@ -336,6 +336,8 @@ test('catalog exposes fixed risk, scope, reversibility, and preview metadata for
     { type: 'task.reorder', risk: 'low', scope: 'batch', reversibility: 'irreversible', requiresPreview: false },
     { type: 'task.toggle_completion', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'completion.review', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
+    { type: 'review.schedule', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
+    { type: 'review.complete', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'completion.create_next_action', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'workspace.reset', risk: 'high', scope: 'workspace', reversibility: 'irreversible', requiresPreview: true },
     { type: 'workspace.import', risk: 'high', scope: 'workspace', reversibility: 'irreversible', requiresPreview: true },
@@ -529,7 +531,8 @@ test('learning completion requires evidence and records it atomically', async ()
   assert.equal(data.record.mastery, 4)
   const state = await service.query({ type: 'workspace.snapshot' })
   assert.equal(state.completionRecords.at(-1)?.taskId, 'learning')
-  assert.equal(state.taskEvents.at(-1)?.completionRecordId, state.completionRecords.at(-1)?.id)
+  assert.equal(state.taskEvents.findLast(({ type, taskId }) => type === 'completed' && taskId === 'learning')?.completionRecordId, state.completionRecords.at(-1)?.id)
+  assert.equal(state.reviewTaskLinks.at(-1)?.completionRecordId, state.completionRecords.at(-1)?.id)
 })
 
 test('batch cancel and delete mutate every validated target with consecutive events', async () => {

@@ -178,6 +178,8 @@ export interface TaskCompleteCommand {
   mastery?: CompletionRecord['mastery']
   eventId?: string
   recordId?: string
+  reviewResult?: Exclude<CompletionRecord['lastReviewResult'], null>
+  reviewedOn?: string
 }
 
 export interface TaskReopenCommand {
@@ -263,6 +265,8 @@ export interface RecurrenceCompleteCommand extends Pick<TaskCompleteCommand, 'le
   type: 'recurrence.complete'
   occurrenceId: string
   expectedOccurrenceRevision?: number
+  reviewResult?: Exclude<CompletionRecord['lastReviewResult'], null>
+  reviewedOn?: string
 }
 
 export interface RecurrenceSkipCommand {
@@ -374,6 +378,8 @@ export interface TaskToggleCompletionCommand {
   taskId: string
   expectedRevision?: number
   eventId?: string
+  reviewResult?: Exclude<CompletionRecord['lastReviewResult'], null>
+  reviewedOn?: string
 }
 
 export interface CompletionReviewCommand {
@@ -383,6 +389,24 @@ export interface CompletionReviewCommand {
   reviewedOn: string
   expectedTaskRevision?: number
 }
+
+export interface ReviewScheduleCommand {
+  type: 'review.schedule'
+  completionRecordId: string
+  dueOn: string
+  occurrenceId?: string | null
+}
+
+export interface ReviewCompleteCommand {
+  type: 'review.complete'
+  linkId: string
+  result: Exclude<CompletionRecord['lastReviewResult'], null>
+  reviewedOn: string
+  expectedReviewTaskRevision?: number
+  expectedOccurrenceRevision?: number
+}
+
+export type ReviewCapabilityCommand = ReviewScheduleCommand | ReviewCompleteCommand
 
 export interface CompletionCreateNextActionCommand {
   type: 'completion.create_next_action'
@@ -409,11 +433,15 @@ export type UndoCompensation =
       tasks: Task[]
       sessions: StudySession[]
       completionRecordIds: string[]
+      reviewTaskIds?: string[]
+      reviewTaskLinkIds?: string[]
       reminderRules?: ReminderRule[]
     }
   | {
       type: 'recurrence.restore'
       completionRecordIds?: string[]
+      reviewTaskIds?: string[]
+      reviewTaskLinkIds?: string[]
       tasks: Task[]
       recurrenceSeries: RecurrenceSeries[]
       occurrenceSnapshots: TaskOccurrence[]
@@ -475,6 +503,7 @@ export type CapabilityCommand =
   | ReminderCapabilityCommand
   | TaskCapabilityCommand
   | RecurrenceCapabilityCommand
+  | ReviewCapabilityCommand
   | LiveCompatibilityCommand
   | WorkspaceImportCommand
   | UndoApplyCommand
