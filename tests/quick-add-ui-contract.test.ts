@@ -42,10 +42,9 @@ test('invalid typed time remains visible and blocks candidate resolution', () =>
 
 test('candidate editor exposes a named adaptive dialog', () => {
   const composer = studySource('QuickAddComposer.vue')
-  assert.match(composer, /role="dialog"/)
-  assert.match(composer, /:aria-modal="modal \? 'true' : 'false'"/)
   assert.match(composer, /mobile-sheet/)
-  assert.match(composer, /:aria-labelledby="`quick-add-editor-title-\$\{candidate\.id\}`"/)
+  assert.match(composer, /:mobile-sheet-label="`编辑\$\{candidateLabel\(candidate\)\}`"/)
+  assert.doesNotMatch(composer, /class="candidate-editor"[^>]*(?:role|aria-modal|aria-labelledby)=/s)
   assert.match(composer, /:id="`quick-add-editor-title-\$\{candidate\.id\}`"/)
 })
 

@@ -5,6 +5,7 @@ import { parseWorkspaceState } from '../workspace/parse.ts'
 import type { CommandReceipt, JsonValue, Task, TaskEvent, WorkspaceStateV3 } from '../workspace/types.ts'
 import type { WorkspaceStore } from '../../storage/workspace/types.ts'
 import { getCommandDescriptor, getPreviewConfirmation } from './catalog.ts'
+import { applyCalendarCommand, type CalendarCapabilityCommand } from './calendar-commands.ts'
 import { applyLiveCompatibilityCommand } from './live-commands.ts'
 import { applyRecurrenceCommand } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
@@ -226,6 +227,7 @@ function applyCapabilityCommand(
   context: CapabilityCommandContext,
 ): CommandApplication {
   if (command.type.startsWith('reminder.')) return applyReminderCommand(state, command as ReminderCapabilityCommand, context)
+  if (isCalendarCommand(command)) return applyCalendarCommand(state, command, context)
   if (isCoreTaskCommand(command)) return applyTaskCommand(state, command, context)
   if (isRecurrenceCommand(command)) return applyRecurrenceCommand(state, command, context)
   if (isLiveCompatibilityCommand(command)) return applyLiveCompatibilityCommand(state, command, context)
@@ -499,6 +501,10 @@ function isCoreTaskCommand(command: CapabilityCommand): command is TaskCapabilit
     command.type === 'task.batch_delete'
 }
 
+function isCalendarCommand(command: CapabilityCommand): command is CalendarCapabilityCommand {
+  return command.type === 'calendar.move' || command.type === 'calendar.resize'
+}
+
 function assertExplicitConfirmation(
   previewHandles: readonly PreviewHandle[],
   envelope: CommandEnvelope,
@@ -524,11 +530,13 @@ function assertExplicitConfirmation(
 
 function previewConfirmationFor(command: CapabilityCommand, descriptor: ReturnType<typeof getCommandDescriptor>): PreviewConfirmation {
   if (command.type === 'recurrence.update' && command.scope === 'occurrence') return 'none'
+  if (command.type === 'calendar.move' && (command.occurrenceId === undefined || command.scope === undefined || command.scope === 'occurrence')) return 'none'
   return getPreviewConfirmation(descriptor)
 }
 
 function requiresExplicitExecutionConfirmation(command: CapabilityCommand): boolean {
-  return command.type === 'recurrence.update' && (command.scope === 'future' || command.scope === 'series')
+  return (command.type === 'recurrence.update' || command.type === 'calendar.move') &&
+    (command.scope === 'future' || command.scope === 'series')
 }
 
 function isRecurrenceCommand(command: CapabilityCommand): command is RecurrenceCapabilityCommand {

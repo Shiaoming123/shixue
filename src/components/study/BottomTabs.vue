@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, CalendarDays, History, Inbox } from '@lucide/vue'
+import { BookOpen, CalendarDays, CalendarRange, History, Inbox } from '@lucide/vue'
 import type { StudyPage, StudySmartView } from './AppSidebar.vue'
 
 defineProps<{ active: StudyPage }>()
@@ -19,6 +19,7 @@ type MobileNavItem = {
 const items: MobileNavItem[] = [
   { key: 'today', label: '今天', icon: CalendarDays, smartView: 'today' },
   { key: 'tasks', label: '收件箱', icon: Inbox, smartView: 'inbox' },
+  { key: 'calendar', label: '日历', icon: CalendarRange },
   { key: 'topics', label: '主题', icon: BookOpen },
   { key: 'review', label: '回顾', icon: History },
 ]
@@ -63,7 +64,7 @@ function activate(item: MobileNavItem) {
     bottom: max(8px, env(safe-area-inset-bottom, 0px));
     min-height: 64px;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     padding: 6px 8px;
     overflow: hidden;
     border: 1px solid color-mix(in srgb, white 22%, var(--hairline));

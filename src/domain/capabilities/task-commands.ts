@@ -1,6 +1,7 @@
 import type { RecurrenceSeries, ReminderRule, StudySession, Task, TaskEvent, TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
 import { materializeOccurrenceWindow } from '../recurrence/materialize.ts'
 import { assertIanaTimezone } from '../recurrence/timezone.ts'
+import { assertPlanningDuration } from './duration-validation.ts'
 import {
   DomainCommandError,
   type CapabilityCommandContext,
@@ -279,6 +280,7 @@ function rescheduleTask(
   const task = requireTask(state, command.taskId, command.expectedRevision)
   if (task.status === 'completed' || task.status === 'cancelled') invalidTransition(task, 'planned')
   assertSchedule(command.startAt ?? null, command.startOn ?? null)
+  if (command.estimateMinutes !== undefined) assertPlanningDuration(command.estimateMinutes)
   const before = structuredClone(task)
   const sessions = activeTaskSessions(state, [task.id])
   finishSessions(sessions.current, context.now)
@@ -286,6 +288,7 @@ function rescheduleTask(
   task.status = 'planned'
   task.schedule.startAt = command.startAt ?? null
   task.schedule.startOn = command.startOn ?? null
+  if (command.estimateMinutes !== undefined) task.schedule.estimateMinutes = command.estimateMinutes
   if (task.learning) task.learning.blockedReason = null
   task.revision += 1
   task.updatedAt = context.now

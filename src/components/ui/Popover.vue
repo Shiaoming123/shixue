@@ -9,6 +9,7 @@ const props = withDefaults(defineProps<{
   offset?: number
   matchTriggerWidth?: boolean
   mobileSheet?: boolean
+  mobileSheetLabel?: string
   inline?: boolean
 }>(), {
   kind: 'popover',
@@ -28,6 +29,7 @@ const id = `popover-${useId()}`
 const trigger = ref<HTMLElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
 const mobileSheetActive = ref(false)
+const dialogPanelActive = computed(() => mobileSheetActive.value || (!props.inline && props.kind === 'popover'))
 const position = reactive({ top: '0px', left: '0px', minWidth: '' })
 let compactMedia: MediaQueryList | undefined
 const registration = {
@@ -42,7 +44,7 @@ const { layerId, bringToFront } = useOverlay(registration)
 const triggerProps = computed(() => ({
   'aria-expanded': props.open,
   'aria-controls': id,
-  'aria-haspopup': props.kind === 'menu' ? 'menu' as const : 'dialog' as const,
+  'aria-haspopup': mobileSheetActive.value ? 'dialog' as const : props.kind === 'menu' ? 'menu' as const : props.kind === 'popover' ? 'dialog' as const : undefined,
   onClick: toggle,
 }))
 
@@ -183,6 +185,9 @@ defineExpose({ close: requestClose, updatePosition })
           :data-overlay-layer="layerId"
           :style="mobileSheetActive || inline ? undefined : position"
           :tabindex="mobileSheetActive ? -1 : undefined"
+          :role="dialogPanelActive ? 'dialog' : undefined"
+          :aria-modal="dialogPanelActive ? (mobileSheetActive ? 'true' : 'false') : undefined"
+          :aria-label="dialogPanelActive ? mobileSheetLabel : undefined"
           @keydown="onKeydown"
         >
           <slot :close="requestClose" :modal="mobileSheetActive" />
