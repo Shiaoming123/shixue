@@ -98,6 +98,21 @@ mod tests {
             RegistrationChange::Unregister
         );
 
+        let calls = Cell::new(0);
+        apply_registration_change(
+            RegistrationChange::None,
+            || {
+                calls.set(calls.get() + 1);
+                Ok::<(), &str>(())
+            },
+            || {
+                calls.set(calls.get() + 1);
+                Ok(())
+            },
+        )
+        .expect("an unchanged registration is a no-op");
+        assert_eq!(calls.get(), 0);
+
         let action = Cell::new("none");
         apply_registration_change(
             RegistrationChange::Register,
@@ -112,6 +127,14 @@ mod tests {
         )
         .expect("registration succeeds");
         assert_eq!(action.get(), "register");
+
+        let register_error = apply_registration_change(
+            RegistrationChange::Register,
+            || Err("native register failed"),
+            || Ok::<(), &str>(()),
+        )
+        .expect_err("register errors must reach the caller");
+        assert_eq!(register_error, "native register failed");
 
         let error = apply_registration_change(
             RegistrationChange::Unregister,
