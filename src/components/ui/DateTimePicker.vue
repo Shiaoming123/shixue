@@ -70,8 +70,8 @@ function applyDateTime() {
           <span>{{ displayValue }}</span><i aria-hidden="true" />
         </button>
       </template>
-      <template #default="{ modal }">
-        <div ref="panel" class="date-panel" :role="modal ? undefined : 'dialog'" :aria-modal="modal ? undefined : 'false'" :aria-label="modal ? undefined : label">
+      <template #default>
+        <div ref="panel" class="date-panel">
           <DatePicker :model-value="draftDate" :label="label" @update:model-value="selectDate" />
           <template v-if="mode === 'datetime'">
             <label class="time-field">

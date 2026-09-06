@@ -291,9 +291,6 @@ defineExpose({ focus })
         <section
           :id="`quick-add-editor-${candidate.id}`"
           class="candidate-editor"
-          :role="modal ? undefined : 'dialog'"
-          :aria-modal="modal ? undefined : 'false'"
-          :aria-labelledby="modal ? undefined : `quick-add-editor-title-${candidate.id}`"
         >
           <h2 :id="`quick-add-editor-title-${candidate.id}`" class="visually-hidden">编辑{{ candidateLabel(candidate) }}</h2>
           <template v-if="candidate.kind === 'schedule' || candidate.kind === 'deadline'">

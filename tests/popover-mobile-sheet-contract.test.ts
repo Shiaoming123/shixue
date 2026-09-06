@@ -4,13 +4,23 @@ import test from 'node:test'
 
 const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
-test('shared Popover makes only its mobile Sheet panel a named modal dialog', () => {
+test('shared Popover owns named dialog semantics for desktop popovers and mobile Sheets', () => {
   const popover = source('src/components/ui/Popover.vue')
 
   assert.match(popover, /mobileSheetLabel\?: string/)
-  assert.match(popover, /:role="mobileSheetActive \? 'dialog' : undefined"/)
-  assert.match(popover, /:aria-modal="mobileSheetActive \? 'true' : undefined"/)
-  assert.match(popover, /:aria-label="mobileSheetActive \? mobileSheetLabel : undefined"/)
+  assert.match(popover, /dialogPanelActive = computed\(\(\) => mobileSheetActive\.value \|\| \(!props\.inline && props\.kind === 'popover'\)\)/)
+  assert.match(popover, /'aria-haspopup': props\.kind === 'menu' \? 'menu' as const : props\.kind === 'popover' \? 'dialog' as const : undefined/)
+  assert.match(popover, /:role="dialogPanelActive \? 'dialog' : undefined"/)
+  assert.match(popover, /:aria-modal="dialogPanelActive \? \(mobileSheetActive \? 'true' : 'false'\) : undefined"/)
+  assert.match(popover, /:aria-label="dialogPanelActive \? mobileSheetLabel : undefined"/)
+})
+
+test('popover content does not duplicate the shared panel dialog', () => {
+  const dateTimePicker = source('src/components/ui/DateTimePicker.vue')
+  const quickAdd = source('src/components/study/QuickAddComposer.vue')
+
+  assert.doesNotMatch(dateTimePicker, /class="date-panel"[^>]*(?:role|aria-modal|aria-label)=/s)
+  assert.doesNotMatch(quickAdd, /class="candidate-editor"[^>]*(?:role|aria-modal|aria-labelledby)=/s)
 })
 
 test('every mobile Sheet caller supplies a concrete accessible name', () => {

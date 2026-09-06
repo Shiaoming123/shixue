@@ -240,7 +240,7 @@ Run: `npm run benchmark:task-query`
 
 - [ ] **Step 3: Capture and inspect all five `VISUAL_QA.md` viewports**
 
-Open the themed date ARIA `grid`, drag preview and both named mobile Sheet states. The date grid must expose exactly 42 visible `gridcell` elements at 1280×800 and 390×844; mobile cells and the 320×700 planning primary action must be at least 44px. Assert the 820px icon-sidebar breakpoint, modal Sheet naming and focus trapping. Any visible unadapted native control, clipped overlay or horizontal page scroll fails acceptance.
+Open the themed date ARIA `grid`, drag preview and both named mobile Sheet states. The desktop date Popover owns one named `role="dialog"` panel with `aria-modal="false"`; mobile Sheets own the same single dialog boundary with `aria-modal="true"`. The date grid must expose exactly 42 visible `gridcell` elements at 1280×800 and 390×844; mobile cells and the 320×700 planning primary action must be at least 44px. Assert the 820px icon-sidebar breakpoint, modal Sheet naming and focus trapping. Any visible unadapted native control, clipped overlay or horizontal page scroll fails acceptance.
 
 - [ ] **Step 4: Run full gates**
 
