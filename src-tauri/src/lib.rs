@@ -17,6 +17,23 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+/// Reports the compile target to the WebView so module routing does not rely
+/// on a browser user agent (notably iPadOS desktop-mode user agents).
+#[tauri::command]
+fn runtime_platform() -> &'static str {
+    if cfg!(target_os = "android") {
+        "android"
+    } else if cfg!(target_os = "ios") {
+        "ios"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    }
+}
+
 #[tauri::command]
 async fn read_legacy_reminder_deliveries(
     app: tauri::AppHandle,
@@ -83,6 +100,7 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
             read_legacy_reminder_deliveries,
             agent::set_api_key,
             agent::has_api_key,
@@ -101,6 +119,7 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
             read_legacy_reminder_deliveries,
             agent::set_api_key,
             agent::has_api_key,
@@ -114,6 +133,7 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
             read_legacy_reminder_deliveries,
             study_cloud::study_cloud_sign_in,
             study_cloud::study_cloud_session_status,
@@ -127,6 +147,7 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
             read_legacy_reminder_deliveries
         ]);
     }

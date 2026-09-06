@@ -9,10 +9,7 @@
       "core:window:allow-hide",
       "core:window:allow-show",
       "core:window:allow-set-focus",
-      "global-shortcut:allow-register",
-      "global-shortcut:allow-unregister",
       "notification:default",
-      "autostart:default",
       "opener:default",
       "sql:default",
       "sql:allow-execute",
@@ -20,6 +17,23 @@
       "dialog:default",
       "store:default"
     ]
+  },
+  {
+    "identifier": "shortcut-desktop",
+    "description": "Global shortcut access is only available on desktop runtimes.",
+    "windows": ["main"],
+    "platforms": ["linux", "macOS", "windows"],
+    "permissions": [
+      "global-shortcut:allow-register",
+      "global-shortcut:allow-unregister"
+    ]
+  },
+  {
+    "identifier": "autostart-desktop",
+    "description": "Autostart access is only available on desktop runtimes.",
+    "windows": ["main"],
+    "platforms": ["linux", "macOS", "windows"],
+    "permissions": ["autostart:default"]
   },
   {
     "identifier": "updater-desktop",

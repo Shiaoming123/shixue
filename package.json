@@ -30,6 +30,7 @@
     "package:windows": "node scripts/package-windows.mjs",
     "package:windows:audit": "node scripts/package-windows.mjs --audit-only",
     "mobile:doctor": "node scripts/mobile-doctor.mjs",
+    "mobile:ios:prepare": "node scripts/prepare-ios-build.mjs",
     "rust:verify": "node scripts/rust-verify.mjs",
     "smoke:web-persistence": "node scripts/smoke-web-persistence.mjs",
     "smoke:calendar": "node scripts/smoke-calendar.mjs",

@@ -4,28 +4,29 @@
 
 ## 1. 当前基线
 
-截至 PR1（时间规划领域基础）完成：
+截至 PR5（日历工作区）合并：
 
 - `WorkspaceStateV3`、v1/v2 迁移、`WorkspaceStore` 与事务能力服务是跨端共享的数据和写入边界。
+- recurrence 规则、date-only/timed schedule、occurrence materialization、离线快速日期解析、多提醒账本、日历投影/移动/缩放和对应 capability commands 已进入共享 TypeScript 层；iOS 只复用，不另建原生规则实现。
 - Vue 界面已有窄屏布局、安全区和移动端导航基础；这些只证明前端适配，不证明 iOS 工程可编译或可运行。
 - Rust 入口已有 `tauri::mobile_entry_point`，托盘、单实例、更新器、全局快捷键和提醒调度器按桌面目标隔离。
 - 通知插件可在移动端装配，但当前前端轮询不能保证应用挂起或终止后的投递；原生后台提醒仍未实现。
-- Android 已有调试构建证据；iOS 尚未执行 `tauri ios init`，没有 Xcode、模拟器、真机、签名或商店证据。
+- Android 已有调试构建证据；iOS 已在 macOS/Xcode 26.6 上执行 `tauri ios init` 并完成 Apple Silicon Simulator 无签名 Debug 原生编译。最新模拟器启动在 Wry WebView 初始化、前端与 SQLite 运行前以 `SIGTRAP` 失败，因此没有模拟器成功、真机、签名或商店证据。
 
-iOS 可以在 PR1 合并后开始，不必等待 PR2–PR6 全部完成。开始条件是以最新 `origin/main` 为基线，不从未合并的功能分支复制生成工程。
+iOS 基础分支已同步 `origin/main@140c012`，包含 PR2、PR3、PR4 和 PR5。PR6（导航/集成/发布）尚未实现；它可以与 iOS 运行阻断排查并行，但不得从未合并的功能分支复制生成工程或领域规则。
 
 ## 2. 与整体路线的并行关系
 
 | 主路线 | iOS 同期工作 | 合并约束 |
 | --- | --- | --- |
-| PR1：领域基础 | 等待 PR1 合并；准备 macOS 与 Apple 工具链 | iOS 分支必须从含 PR1 的最新 `main` 创建 |
-| PR2：重复任务 | 初始化 Apple 工程、完成模拟器编译、验证 V3 本地持久化 | 复用纯 TypeScript recurrence，不在 Swift/Rust 复制规则 |
-| PR3：快速添加 | 验证触摸输入、键盘弹出、日期选择和前后台恢复 | iOS 不实现桌面全局快捷键；用可见的 App 内入口替代 |
-| PR4：多提醒/Windows 调度 | 定义共享提醒规则到 iOS 本地通知请求的适配器 | Windows 托盘轮询与 iOS 系统调度分离，共用规则和能力命令 |
-| PR5：日历工作区 | 适配紧凑宽度、动态字体、手势与可见键盘替代 | 日历投影和命令共享，平台层只负责交互与呈现 |
+| PR1：领域基础 | 已合并；复用 V3、store 和 capability service | 所有状态修改继续经过共享事务边界 |
+| PR2：重复任务 | 已合并；iOS 直接消费共享 recurrence/occurrence 合同 | 不在 Swift/Rust 复制规则；运行恢复后补 V3 重启持久化证据 |
+| PR3：快速添加 | 已合并共享解析器；待验证触摸输入、键盘弹出、日期选择和前后台恢复 | iOS 不实现桌面全局快捷键；用可见的 App 内入口替代 |
+| PR4：多提醒/Windows 调度 | 已合并共享规则、delivery 账本和命令；待实现 iOS 本地通知适配器 | Windows 托盘轮询与 iOS 系统调度分离，共用规则和能力命令 |
+| PR5：日历工作区 | 已合并共享投影、命令和 Web 交互；待验证 iOS 紧凑宽度、动态字体、手势与可见操作替代 | 日历投影和命令共享，平台层只负责交互与呈现 |
 | PR6：导航/集成/Windows 发布 | 收口 iPhone/iPad 导航、场景恢复和跨端视觉一致性 | Windows 发布不阻塞 iOS 基础开发；iOS 发布另设证据链 |
 
-建议新增独立 `feat/ios-foundation` PR，只完成原生工程、编译、存储和平台降级。提醒、日历与发布能力分别跟随对应主路线进入后续小 PR，避免一个长期 iOS 大分支持续漂移。
+`feat/ios-foundation` PR 只完成原生工程、编译、存储和平台降级。提醒、日历 iOS 验证与发布能力分别进入后续小 PR，避免一个长期 iOS 大分支持续漂移。
 
 ## 3. iOS 分阶段交付
 
@@ -49,13 +50,12 @@ npm run mobile:doctor
 
 ### I1：iOS 原生基础 PR
 
-从最新远端主线创建分支：
+从最新远端主线创建隔离 worktree，不切换或清理已有工作区：
 
 ```bash
-git fetch origin
-git switch main
-git pull --ff-only origin main
-git switch -c feat/ios-foundation
+git fetch --prune origin
+git worktree add -b feat/ios-foundation ../shixue-ios-foundation origin/main
+cd ../shixue-ios-foundation
 npm ci
 npm run tauri -- ios init
 ```
@@ -77,16 +77,39 @@ npm run tauri -- ios init
 ```bash
 npm run typecheck
 npm run build
+npm run mobile:ios:prepare -- aarch64-sim
 npm run tauri -- ios build --debug --target aarch64-sim
 ```
 
 上述命令面向 Apple Silicon 模拟器；Intel 模拟器使用 `--target x86_64`。若官方 CLI 仍触发签名或无法稳定复现，必须完成无签名的 iOS Simulator `xcodebuild`，并把准确的 workspace、scheme 和 destination 命令固化到脚本后再合并。不能用 Web/Vite 构建代替 iOS 原生编译。
 
+Tauri CLI 2.11.4 不会覆盖上一次生成的 Simulator `.app`，连续构建时会在归档完成后以 `Directory not empty` 退出。`mobile:ios:prepare` 只清理当前 target 对应的、被 Git 忽略的旧 `.app` 和 AppleDouble sidecar；它不修改生成工程、源码或签名材料。Intel 模拟器改用 `npm run mobile:ios:prepare -- x86_64`。
+
 完成定义：干净 checkout 能重复完成前端构建和 iOS Simulator 原生编译。模拟器启动与持久化结果单独标注；未执行时写 `NOT_RUN`，不影响“编译就绪”，但不得声称“模拟器验证完成”。
+
+### I1 实际证据快照（2026-09-05）
+
+| 检查 | 状态 | 实际证据 |
+| --- | --- | --- |
+| macOS 工具链 | PASS | Xcode 26.6 (17F113)、CocoaPods 1.17.0、Rust iOS 三个 targets、`npm run mobile:doctor` ready |
+| 工程生成 | PASS | `npm run tauri -- ios init`；生成且忽略 `src-tauri/gen/apple/`，scheme `meow-study_iOS`，minimum iOS 14.0 |
+| 前端门槛 | PASS | `npm run typecheck`、`npm run build` |
+| 原生 Simulator 编译 | PASS | `npm run mobile:ios:prepare -- aarch64-sim` 后执行 `CARGO_TARGET_DIR=/Users/wuling/Library/Caches/shixue-ios-foundation/cargo-target npm run tauri -- ios build --debug --target aarch64-sim --no-sign --ci`，产出 `build/arm64-sim/拾学.app` |
+| iPhone 17 Pro / iOS Simulator 26.5 启动 | FAIL | `simctl install` 与 `simctl launch` 成功返回 pid，但进程以 `SIGTRAP` 退出；crash 栈在 Wry 0.55.1 `platform_webview_version` 的 `NSBundle::bundleWithIdentifier`，发生在 WebView 与前端启动前 |
+| WorkspaceStateV3 SQLite 写入与重启读取 | NOT_RUN | 应用未到达前端/SQLite 写入路径；仅发现沙盒数据库文件不构成迁移或持久化验收 |
+| safe area、viewport-fit、系统字体、44pt 触控、Blob 下载/HTML 文件输入 | NOT_RUN | 源码含相应设计和 viewport 声明，但尚无 WKWebView 运行证据 |
+| 真机、TestFlight、App Store | NOT_RUN | 未请求或使用签名材料、Apple Developer 身份或发布权限 |
+
+本工作区位于 exFAT 卷时，Tauri/Cargo 读取 capability 前会受到 AppleDouble
+sidecar 干扰。每次原生 Simulator 构建先运行 `npm run mobile:ios:prepare -- <target>`，并把
+`CARGO_TARGET_DIR` 指向本机 APFS 缓存目录；这两步是可重复编译所需的环境
+准备，不是运行成功的证据。
+
+该故障在应用业务代码、`runtime_platform` command、SQLite 以及 capability service 执行之前发生。I1 不通过复制 Swift/Rust 状态机或绕过 capability service 规避它；恢复运行后，首个验收仍是 V3 任务写入、彻底终止、重启读取，再继续视觉与文件输入验证。
 
 ### I2：共享功能持续接入
 
-PR2、PR3 和 PR5 的领域规则、解析器、投影和 capability command 保持平台无关。iOS 只提供以下适配：
+PR2 的 recurrence/occurrence、PR3 的快速日期解析、PR4 的提醒账本和 PR5 的日历投影/命令已保持平台无关。iOS 只提供以下适配：
 
 - 输入：触摸命中区不小于 44×44pt，支持动态字体、屏幕键盘和安全区。
 - 导航：iPhone 使用不超过五项的底部一级导航；更多入口进入明确的列表/更多页面。iPad 可转换为侧栏，但路由描述保持一致。

@@ -13,8 +13,12 @@ const webRuntime = {
 
 test('module failure still mounts the Vue shell after storage selection', async () => {
   const source = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
-  assert.match(source, /mountModules\(app\)[\s\S]*\.catch\([\s\S]*\.finally\(/)
-  assert.match(source, /\.finally\(\(\) => \{[\s\S]*app\.mount\("#app"\)/)
+  const storageSelection = source.indexOf('await mountModules(app, undefined, runtime)')
+  const shellMount = source.indexOf('app.mount("#app")')
+
+  assert.notEqual(storageSelection, -1)
+  assert.ok(shellMount > storageSelection)
+  assert.match(source.slice(storageSelection, shellMount), /\.catch\(/)
 })
 
 function testModule(id: ModuleId): Module {

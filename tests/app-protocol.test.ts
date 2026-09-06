@@ -26,7 +26,7 @@ const packageJson = {
 
 function validProtocol() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     product: {
       name: 'meow-study',
       goal: 'Build a local-first cross-platform application.',
@@ -72,8 +72,9 @@ function validProtocol() {
         'recurrence-occurrence-v1',
         'offline-natural-language-v1',
         'multi-reminder-v1',
+        'calendar-workspace-v1',
       ],
-      planned: ['calendar', 'agent-behavior'],
+      planned: ['agent-behavior'],
     },
     delivery: {
       desktopPackage: 'unverified',
@@ -81,6 +82,14 @@ function validProtocol() {
       updater: 'template-only',
       webDeployment: 'unverified',
       mobileNative: 'unverified',
+    },
+    nativeEvidence: {
+      ios: {
+        maturity: 'compile-ready',
+        nativeBuild: 'pass',
+        simulatorRun: 'fail',
+        deviceRun: 'not-run',
+      },
     },
     acceptance: {
       required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
@@ -134,4 +143,11 @@ test('rejects a mobile delivery claim that does not match recorded local evidenc
   protocol.delivery.mobileNative = 'local-debug'
 
   assert.match(validate(protocol).errors.join('\n'), /delivery must retain the currently evidenced release boundary/)
+})
+
+test('rejects iOS evidence that would turn a native build into a simulator claim', () => {
+  const protocol = validProtocol()
+  protocol.nativeEvidence.ios.simulatorRun = 'pass'
+
+  assert.match(validate(protocol).errors.join('\n'), /nativeEvidence must retain the recorded iOS evidence boundary/)
 })

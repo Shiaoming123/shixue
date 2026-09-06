@@ -21,6 +21,14 @@ const EXPECTED_DELIVERY = {
   webDeployment: 'unverified',
   mobileNative: 'unverified',
 }
+const EXPECTED_NATIVE_EVIDENCE = {
+  ios: {
+    maturity: 'compile-ready',
+    nativeBuild: 'pass',
+    simulatorRun: 'fail',
+    deviceRun: 'not-run',
+  },
+}
 const EXPECTED_SHIPPED_FOUNDATION = [
   'workspace-state-v3',
   'legacy-study-v1-v2-migration',
@@ -30,9 +38,9 @@ const EXPECTED_SHIPPED_FOUNDATION = [
   'recurrence-occurrence-v1',
   'offline-natural-language-v1',
   'multi-reminder-v1',
+  'calendar-workspace-v1',
 ]
 const EXPECTED_PLANNED_FEATURES = [
-  'calendar',
   'agent-behavior',
 ]
 
@@ -60,8 +68,8 @@ export function validateApplicationProtocol({
   const errors = []
   if (!isRecord(protocol)) return { errors: ['Protocol must be a JSON object.'] }
 
-  if (protocol.schemaVersion !== 2) {
-    errors.push('schemaVersion must be 2.')
+  if (protocol.schemaVersion !== 3) {
+    errors.push('schemaVersion must be 3.')
   }
 
   validateProduct(protocol.product, packageJson, errors)
@@ -71,6 +79,7 @@ export function validateApplicationProtocol({
   validateCapabilities(protocol.capabilities, implementationFacts, errors)
   validateImplementationStatus(protocol.implementation, errors)
   validateDelivery(protocol.delivery, errors)
+  validateNativeEvidence(protocol.nativeEvidence, errors)
   validateAcceptance(protocol.acceptance, packageJson, errors)
   validateEvolution(protocol.evolution, errors)
 
@@ -190,13 +199,19 @@ function validateImplementationStatus(implementation, errors) {
     errors.push('implementation.shippedFoundation must match the currently implemented planning foundation.')
   }
   if (!sameStrings(implementation.planned, EXPECTED_PLANNED_FEATURES)) {
-    errors.push('implementation.planned must retain calendar and Agent behaviour as planned.')
+    errors.push('implementation.planned must retain Agent behaviour as planned.')
   }
 }
 
 function validateDelivery(delivery, errors) {
   if (!sameRecord(delivery, EXPECTED_DELIVERY)) {
     errors.push('delivery must retain the currently evidenced release boundary.')
+  }
+}
+
+function validateNativeEvidence(nativeEvidence, errors) {
+  if (!sameRecord(nativeEvidence, EXPECTED_NATIVE_EVIDENCE)) {
+    errors.push('nativeEvidence must retain the recorded iOS evidence boundary.')
   }
 }
 
