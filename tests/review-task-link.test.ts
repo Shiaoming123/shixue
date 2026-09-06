@@ -266,6 +266,36 @@ test('exact completed review accepts only the persisted semantic outcome', async
   assert.deepEqual(await store.load(), before)
 })
 
+test('archived review targets preserve receipt-independent outcome replay', async () => {
+  const { store, execute } = await setup()
+  const link = (await store.load()).reviewTaskLinks[0]!
+  const outcome = { result: 'clear', reviewedOn: '2026-09-06' } as const
+  await execute({ type: 'review.complete', linkId: link.id, ...outcome }, 'archived:first')
+  const completed = await store.load()
+  const reviewTask = completed.tasks.find(({ id }) => id === link.reviewTaskId)!
+  await execute({ type: 'task.delete', taskId: reviewTask.id, expectedRevision: reviewTask.revision }, 'archived:delete')
+  const archived = await store.load()
+  await store.save({ ...archived, commandReceipts: [] }, archived.updatedAt)
+
+  for (const [key, command] of [
+    ['archived:direct-replay', { type: 'review.complete', linkId: link.id, ...outcome }],
+    ['archived:legacy-replay', { type: 'completion.review', recordId: link.completionRecordId, ...outcome }],
+  ] as const) {
+    const before = await store.load()
+    await execute(command, key)
+    const replayed = await store.load()
+    assert.equal(replayed.completionRecords.find(({ id }) => id === link.completionRecordId)?.reviewStage, 1)
+    assert.deepEqual(replayed.taskEvents, before.taskEvents)
+  }
+
+  const beforeMismatch = await store.load()
+  await assert.rejects(
+    execute({ type: 'review.complete', linkId: link.id, result: 'fuzzy', reviewedOn: outcome.reviewedOn }, 'archived:mismatch'),
+    /does not match this review outcome/,
+  )
+  assert.deepEqual(await store.load(), beforeMismatch)
+})
+
 test('legacy review refuses completed history that predates persisted outcomes', async () => {
   const { store, execute } = await setup()
   const link = (await store.load()).reviewTaskLinks[0]!

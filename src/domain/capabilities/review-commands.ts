@@ -41,17 +41,17 @@ function completeReview(
 ): CommandApplication {
   const link = state.reviewTaskLinks.find(({ id }) => id === command.linkId)
   if (!link) throw new DomainCommandError('VALIDATION_ERROR', `Review task link not found: ${command.linkId}.`, { linkId: command.linkId })
+  if (link.completedAt !== null) {
+    if (link.completion?.result !== command.result || link.completion.reviewedOn !== command.reviewedOn) {
+      throw new DomainCommandError('VALIDATION_ERROR', 'Completed review link does not match this review outcome.', { linkId: link.id })
+    }
+    return { affected: [], changes: [], events: [], compensation: null, data: { completionRecordId: link.completionRecordId, linkId: link.id, result: command.result, reviewedOn: command.reviewedOn, completed: false } }
+  }
   const recordIndex = state.completionRecords.findIndex(({ id, deletedAt }) => id === link.completionRecordId && deletedAt === null)
   if (recordIndex < 0) throw new DomainCommandError('COMPLETION_RECORD_NOT_FOUND', `Completion record not found: ${link.completionRecordId}.`, { recordId: link.completionRecordId })
   const record = state.completionRecords[recordIndex]!
   const reviewTask = state.tasks.find(({ id, deletedAt }) => id === link.reviewTaskId && deletedAt === null)
   if (!reviewTask) throw new DomainCommandError('TASK_NOT_FOUND', `Review task not found: ${link.reviewTaskId}.`, { taskId: link.reviewTaskId })
-  if (link.completedAt !== null) {
-    if (link.completion?.result !== command.result || link.completion.reviewedOn !== command.reviewedOn) {
-      throw new DomainCommandError('VALIDATION_ERROR', 'Completed review link does not match this review outcome.', { linkId: link.id })
-    }
-    return { affected: [], changes: [], events: [], compensation: null, data: { completionRecordId: record.id, linkId: link.id, result: command.result, reviewedOn: command.reviewedOn, completed: false } }
-  }
   const occurrence = link.occurrenceId === null ? null : state.occurrences.find(({ id }) => id === link.occurrenceId)
   if (link.occurrenceId !== null && (!occurrence || occurrence.status !== 'pending')) {
     throw new DomainCommandError('VALIDATION_ERROR', 'Review task link requires a pending occurrence.', { linkId: link.id, occurrenceId: link.occurrenceId })
