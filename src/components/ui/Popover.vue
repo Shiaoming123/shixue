@@ -44,7 +44,7 @@ const { layerId, bringToFront } = useOverlay(registration)
 const triggerProps = computed(() => ({
   'aria-expanded': props.open,
   'aria-controls': id,
-  'aria-haspopup': props.kind === 'menu' ? 'menu' as const : props.kind === 'popover' ? 'dialog' as const : undefined,
+  'aria-haspopup': mobileSheetActive.value ? 'dialog' as const : props.kind === 'menu' ? 'menu' as const : props.kind === 'popover' ? 'dialog' as const : undefined,
   onClick: toggle,
 }))
 

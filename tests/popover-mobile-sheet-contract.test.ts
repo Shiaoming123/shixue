@@ -9,7 +9,7 @@ test('shared Popover owns named dialog semantics for desktop popovers and mobile
 
   assert.match(popover, /mobileSheetLabel\?: string/)
   assert.match(popover, /dialogPanelActive = computed\(\(\) => mobileSheetActive\.value \|\| \(!props\.inline && props\.kind === 'popover'\)\)/)
-  assert.match(popover, /'aria-haspopup': props\.kind === 'menu' \? 'menu' as const : props\.kind === 'popover' \? 'dialog' as const : undefined/)
+  assert.match(popover, /'aria-haspopup': mobileSheetActive\.value \? 'dialog' as const : props\.kind === 'menu' \? 'menu' as const : props\.kind === 'popover' \? 'dialog' as const : undefined/)
   assert.match(popover, /:role="dialogPanelActive \? 'dialog' : undefined"/)
   assert.match(popover, /:aria-modal="dialogPanelActive \? \(mobileSheetActive \? 'true' : 'false'\) : undefined"/)
   assert.match(popover, /:aria-label="dialogPanelActive \? mobileSheetLabel : undefined"/)
