@@ -28,7 +28,7 @@ test('sorts equal starts by longer duration then stable key before laying out', 
   const items = [
     timed('z-short', '2026-09-04T09:00:00Z', '2026-09-04T09:30:00Z'),
     timed('a-long', '2026-09-04T09:00:00Z', '2026-09-04T10:00:00Z'),
-    { key: 'all-day', taskId: 'task:all', occurrenceId: null, kind: 'all-day', start: '2026-09-04', end: null } satisfies CalendarItem,
+    { key: 'all-day', taskId: 'task:all', occurrenceId: null, kind: 'all-day', start: '2026-09-04', end: null, displayDate: '2026-09-04', displayMinute: null } satisfies CalendarItem,
   ]
 
   assert.deepEqual(layoutTimedItems(items).map(({ key, column, columnCount }) => [key, column, columnCount]), [
@@ -44,5 +44,6 @@ function overlapFixture(): CalendarItem[] {
 }
 
 function timed(key: string, start: string, end: string): CalendarItem {
-  return { key, taskId: `task:${key}`, occurrenceId: null, kind: 'timed', start, end }
+  const match = /T(\d{2}):(\d{2})/.exec(start)!
+  return { key, taskId: `task:${key}`, occurrenceId: null, kind: 'timed', start, end, displayDate: start.slice(0, 10), displayMinute: Number(match[1]) * 60 + Number(match[2]) }
 }

@@ -9,6 +9,8 @@ export interface CalendarItem {
   kind: 'timed' | 'all-day' | 'deadline-marker'
   start: string
   end: string | null
+  displayDate: string
+  displayMinute: number | null
 }
 
 export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRange): CalendarItem[] {
@@ -28,19 +30,20 @@ export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRan
   for (const task of state.tasks) {
     if (task.deletedAt !== null || task.status === 'cancelled') continue
     const series = task.recurrenceSeriesId === null ? undefined : seriesById.get(task.recurrenceSeriesId)
-    const dateForInstant = series ? createTimeZoneFormatter(series.timezone) : undefined
+    const seriesFormatter = series ? createTimeZoneFormatter(series.timezone) : undefined
+    const displayForInstant = seriesFormatter ? (value: string) => seriesFormatter(new Date(value)) : wallClockForTimestamp
 
-    const deadline = deadlineItem(task, range, dateForInstant ? (value) => dateForInstant(new Date(value)).date : datePart)
+    const deadline = deadlineItem(task, range, wallClockForTimestamp)
     if (deadline) items.push(deadline)
 
     const occurrences = occurrencesByTask.get(task.id)
     if (occurrences?.length) {
       for (const occurrence of occurrences) {
-        const item = occurrenceItem(task, occurrence, range, dateForInstant ? (value) => dateForInstant(new Date(value)).date : datePart)
+        const item = occurrenceItem(task, occurrence, range, displayForInstant)
         if (item) items.push(item)
       }
     } else if (task.recurrenceSeriesId === null) {
-      const item = scheduledItem(`task:${task.id}`, null, task.schedule.startAt, task.schedule.startOn, task.schedule.estimateMinutes, range, datePart, task.id)
+      const item = scheduledItem(`task:${task.id}`, null, task.schedule.startAt, task.schedule.startOn, task.schedule.estimateMinutes, range, wallClockForTimestamp, task.id)
       if (item) items.push(item)
     }
   }
@@ -51,7 +54,7 @@ function occurrenceItem(
   task: Task,
   occurrence: TaskOccurrence,
   range: CalendarRange,
-  dateForInstant: (value: string) => string,
+  displayForInstant: (value: string) => { date: string; time: string },
 ): CalendarItem | null {
   if (occurrence.status === 'cancelled') return null
   const schedule = occurrence.override ?? {
@@ -66,7 +69,7 @@ function occurrenceItem(
     schedule.scheduledOn,
     schedule.estimateMinutes,
     range,
-    dateForInstant,
+    displayForInstant,
     task.id,
   )
 }
@@ -78,29 +81,42 @@ function scheduledItem(
   startOn: string | null,
   estimateMinutes: number | null,
   range: CalendarRange,
-  dateForInstant: (value: string) => string,
+  displayForInstant: (value: string) => { date: string; time: string },
   taskId = key.slice('task:'.length),
 ): CalendarItem | null {
   if (startOn !== null && inRange(startOn, range)) {
-    return { key, taskId, occurrenceId, kind: 'all-day', start: startOn, end: null }
+    return { key, taskId, occurrenceId, kind: 'all-day', start: startOn, end: null, displayDate: startOn, displayMinute: null }
   }
-  if (startAt === null || estimateMinutes === null || !inRange(dateForInstant(startAt), range)) return null
+  if (startAt === null || estimateMinutes === null) return null
+  const display = displayForInstant(startAt)
+  if (!inRange(display.date, range)) return null
   const end = new Date(Date.parse(startAt) + estimateMinutes * 60_000)
   if (Number.isNaN(end.getTime())) throw new Error(`Invalid calendar datetime: ${startAt}`)
-  return { key, taskId, occurrenceId, kind: 'timed', start: startAt, end: end.toISOString() }
+  return { key, taskId, occurrenceId, kind: 'timed', start: startAt, end: end.toISOString(), displayDate: display.date, displayMinute: minuteForTime(display.time) }
 }
 
-function deadlineItem(task: Task, range: CalendarRange, dateForInstant: (value: string) => string): CalendarItem | null {
+function deadlineItem(task: Task, range: CalendarRange, displayForInstant: (value: string) => { date: string; time: string }): CalendarItem | null {
   const start = task.deadline.dueOn ?? task.deadline.dueAt
   if (start === null) return null
-  const date = task.deadline.dueOn ?? dateForInstant(task.deadline.dueAt!)
-  if (!inRange(date, range)) return null
-  return { key: `deadline:${task.id}`, taskId: task.id, occurrenceId: null, kind: 'deadline-marker', start, end: null }
+  const display = task.deadline.dueOn === null ? displayForInstant(task.deadline.dueAt!) : null
+  const displayDate = task.deadline.dueOn ?? display!.date
+  if (!inRange(displayDate, range)) return null
+  return {
+    key: `deadline:${task.id}`, taskId: task.id, occurrenceId: null,
+    kind: 'deadline-marker', start, end: null,
+    displayDate, displayMinute: display ? minuteForTime(display.time) : null,
+  }
 }
 
-function datePart(value: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) throw new Error(`Invalid calendar datetime: ${value}`)
-  return value.slice(0, 10)
+function wallClockForTimestamp(value: string): { date: string; time: string } {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value)
+  if (!match || Number.isNaN(Date.parse(value))) throw new Error(`Invalid calendar datetime: ${value}`)
+  return { date: match[1]!, time: `${match[2]}:${match[3]}` }
+}
+
+function minuteForTime(value: string): number {
+  const [hour, minute] = value.split(':').map(Number)
+  return (hour === 24 ? 0 : hour) * 60 + minute
 }
 
 function inRange(date: string, range: CalendarRange): boolean {

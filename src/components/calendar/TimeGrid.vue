@@ -6,6 +6,7 @@ import type { CalendarItem as CalendarItemModel } from '../../domain/calendar/pr
 import CalendarItem from './CalendarItem.vue'
 import { durationMinutes, snapCalendarMinutes, type CalendarDragPreview } from './use-calendar-drag.ts'
 import { calendarOverlapMessage } from './calendar-conflicts.ts'
+import { compareCalendarItems } from '../../domain/calendar/view.ts'
 
 const HALF_HOUR = 30
 const MINUTES_PER_DAY = 1440
@@ -39,7 +40,7 @@ function itemsForDay(day: string) {
   return props.timedItems.filter((item) => dateForItem(item) === day)
 }
 function factsForDay(day: string) {
-  return props.items.filter((item) => item.kind !== 'timed' && dateForItem(item) === day)
+  return props.items.filter((item) => item.kind !== 'timed' && dateForItem(item) === day).slice().sort(compareCalendarItems)
 }
 function preciseDeadlinesForDay(day: string) {
   return props.items.filter((item) => item.kind === 'deadline-marker' && item.start.includes('T') && dateForItem(item) === day)
@@ -49,12 +50,12 @@ function dateOnlyFactsForDay(day: string) {
 }
 function titleFor(item: CalendarItemModel) { return props.titles.get(item.taskId) ?? '未命名任务' }
 function itemStyle(item: LaidOutCalendarItem) {
-  const start = minuteOfDay(item.start)
+  const start = item.displayMinute ?? 0
   const duration = durationMinutes(item)
   const width = 100 / item.columnCount
   return { top: `${start}px`, height: `${Math.max(20, duration)}px`, left: `${item.column * width}%`, width: `${width}%` }
 }
-function deadlineStyle(item: CalendarItemModel) { return { top: `${minuteOfDay(item.start)}px` } }
+function deadlineStyle(item: CalendarItemModel) { return { top: `${item.displayMinute ?? 0}px` } }
 function previewStyle(day: string) {
   if (!props.preview || dateForValue(props.preview.proposedStart) !== day || !props.preview.proposedStart.includes('T')) return null
   return { top: `${minuteOfDay(props.preview.proposedStart)}px`, height: `${Math.max(20, props.preview.proposedDuration)}px` }
@@ -80,7 +81,7 @@ function propose(clientX: number, clientY: number, item: CalendarItemModel, acti
 
   const pointerMinute = Math.min(MINUTES_PER_DAY - 1, Math.max(0, clientY - columnBox.top))
   if (action === 'resize') {
-    const startMinute = minuteOfDay(item.start)
+    const startMinute = item.displayMinute ?? 0
     const proposedDuration = Math.min(1440, Math.max(15, snapCalendarMinutes(pointerMinute - startMinute)))
     return { itemKey: item.key, proposedStart: item.start, proposedDuration, valid: true, conflict: calendarOverlapMessage(props.timedItems, item.key, dateForItem(item), startMinute, proposedDuration) }
   }
@@ -96,7 +97,7 @@ function propose(clientX: number, clientY: number, item: CalendarItemModel, acti
   }
 }
 
-function dateForItem(item: CalendarItemModel) { return dateForValue(item.start) }
+function dateForItem(item: CalendarItemModel) { return item.displayDate }
 function dateForValue(value: string) { return value.includes('T') ? dateKey(new Date(value)) : value }
 function dateKey(date: Date) { return date.toLocaleDateString('sv-SE') }
 function minuteOfDay(value: string) { const date = new Date(value); return date.getHours() * 60 + date.getMinutes() }

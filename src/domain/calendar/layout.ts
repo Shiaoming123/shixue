@@ -15,7 +15,7 @@ export function layoutTimedItems(items: readonly CalendarItem[]): LaidOutCalenda
   let group: LaidOutCalendarItem[] = []
 
   for (const item of timed) {
-    active = active.filter((entry) => Date.parse(entry.end!) > Date.parse(item.start))
+    active = active.filter((entry) => entry.displayDate === item.displayDate && (entry.displayMinute ?? 0) + duration(entry) > (item.displayMinute ?? 0))
     if (active.length === 0 && group.length) {
       appendGroup(result, group)
       group = []
@@ -37,8 +37,14 @@ function appendGroup(result: LaidOutCalendarItem[], group: LaidOutCalendarItem[]
 }
 
 function compareTimedItems(left: CalendarItem, right: CalendarItem): number {
-  const byStart = Date.parse(left.start) - Date.parse(right.start)
+  const byDate = left.displayDate.localeCompare(right.displayDate)
+  if (byDate !== 0) return byDate
+  const byStart = (left.displayMinute ?? 0) - (right.displayMinute ?? 0)
   if (byStart !== 0) return byStart
-  const byDuration = (Date.parse(right.end!) - Date.parse(right.start)) - (Date.parse(left.end!) - Date.parse(left.start))
+  const byDuration = duration(right) - duration(left)
   return byDuration || left.key.localeCompare(right.key)
+}
+
+function duration(item: CalendarItem): number {
+  return item.end === null ? 0 : Math.max(0, Math.round((Date.parse(item.end) - Date.parse(item.start)) / 60_000))
 }

@@ -22,9 +22,7 @@ export function calendarRange(view: CalendarView, anchor: string, weekStartsOn: 
 
   const first = `${anchor.slice(0, 8)}01`
   const start = startOfWeek(first, weekStartsOn)
-  const last = addDays(addMonths(first, 1), -1)
-  const end = addDays(startOfWeek(last, weekStartsOn), 7)
-  return { start, end }
+  return { start, end: addDays(start, 42) }
 }
 
 function startOfWeek(date: string, weekStartsOn: number): string {
@@ -35,12 +33,6 @@ function startOfWeek(date: string, weekStartsOn: number): string {
 function addDays(date: string, days: number): string {
   const [year, month, day] = date.split('-').map(Number)
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
-}
-
-function addMonths(date: string, months: number): string {
-  const [year, month] = date.split('-').map(Number)
-  const total = year * 12 + month - 1 + months
-  return `${String(Math.floor(total / 12)).padStart(4, '0')}-${String(total % 12 + 1).padStart(2, '0')}-01`
 }
 
 function assertDate(value: string): void {

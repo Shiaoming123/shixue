@@ -23,23 +23,23 @@ const emit = defineEmits<{
 }>()
 
 const menuOpen = ref(false)
-const moveDate = ref(datePart(props.item.start))
-const moveTime = ref(timePart(props.item.start))
+const moveDate = ref(props.item.displayDate)
+const moveTime = ref(timePart(props.item))
 const timeValid = ref(true)
 const duration = ref(durationMinutes(props.item))
 const durationOptions = [15, 30, 45, 60, 90, 120]
 const accessibleLabel = computed(() => props.item.kind === 'all-day'
   ? `${props.title}，全天`
   : props.item.kind === 'deadline-marker'
-    ? `${props.title}，截止 ${formatTime(props.item.start)}`
-    : `${props.title}，${formatTime(props.item.start)}，${durationMinutes(props.item)} 分钟`)
+    ? `${props.title}，截止 ${formatTime(props.item)}`
+    : `${props.title}，${formatTime(props.item)}，${durationMinutes(props.item)} 分钟`)
 const keyboardShortcuts = computed(() => props.item.kind === 'all-day'
   ? 'Alt+ArrowLeft Alt+ArrowRight'
   : 'Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown Shift+Alt+ArrowUp Shift+Alt+ArrowDown')
 
 watch(() => props.item, (item) => {
-  moveDate.value = datePart(item.start)
-  moveTime.value = timePart(item.start)
+  moveDate.value = item.displayDate
+  moveTime.value = timePart(item)
   duration.value = durationMinutes(item)
 }, { deep: true })
 
@@ -78,9 +78,8 @@ function beginPointer(event: PointerEvent, action: 'move' | 'resize') {
 function isArrow(key: string): key is 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown' {
   return ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(key)
 }
-function datePart(value: string) { return value.includes('T') ? new Date(value).toLocaleDateString('sv-SE') : value }
-function timePart(value: string) { const date = new Date(value); return value.includes('T') && !Number.isNaN(date.getTime()) ? `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}` : '' }
-function formatTime(value: string) { return timePart(value) || datePart(value) }
+function timePart(item: CalendarItem) { return item.displayMinute === null ? '' : `${String(Math.floor(item.displayMinute / 60)).padStart(2, '0')}:${String(item.displayMinute % 60).padStart(2, '0')}` }
+function formatTime(item: CalendarItem) { return timePart(item) || item.displayDate }
 </script>
 
 <template>
@@ -95,9 +94,9 @@ function formatTime(value: string) { return timePart(value) || datePart(value) }
     @keydown="onKeydown"
   >
     <button v-if="interactive" type="button" class="calendar-item__body" :aria-label="`移动 ${title}`" @pointerdown="beginPointer($event, 'move')">
-      <strong>{{ title }}</strong><span>{{ item.kind === 'all-day' ? '全天' : formatTime(item.start) }}</span>
+      <strong>{{ title }}</strong><span>{{ item.kind === 'all-day' ? '全天' : formatTime(item) }}</span>
     </button>
-    <div v-else class="calendar-item__fact"><strong>{{ title }}</strong><span>{{ formatTime(item.start) }}</span></div>
+    <div v-else class="calendar-item__fact"><strong>{{ title }}</strong><span>{{ item.kind === 'deadline-marker' ? `截止 ${formatTime(item)}` : formatTime(item) }}</span></div>
 
     <Popover v-if="interactive" v-model:open="menuOpen" align="end" mobile-sheet>
       <template #trigger="{ triggerProps }">

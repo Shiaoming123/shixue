@@ -29,7 +29,8 @@ import { defaultModuleConfig } from './modules/config'
 import { installWindowLifecycle, type WindowCloseBehavior } from './lib/window-lifecycle'
 import { createReminderRuntime, readNativeLegacyReminderRows, submitNativeReminder } from './lib/reminder-runtime'
 import type { NotificationPermissionStatus } from './modules/notification'
-import { loadPlanningPreferences, savePlanningPreferences, type PlanningPreferences } from './lib/planning-preferences'
+import { loadLastDesktopCalendarView, loadPlanningPreferences, saveLastDesktopCalendarView, savePlanningPreferences, type PlanningPreferences } from './lib/planning-preferences'
+import type { CalendarView } from './domain/calendar/range'
 import { loadSidebarPreferences, saveSidebarPreferences, type SidebarPreferences } from './lib/sidebar-preferences'
 import { shouldAutoSelectTask } from './lib/task-detail-layout'
 import { detectRuntimeInfo, hasRuntimeCapability } from './lib/platform'
@@ -127,6 +128,11 @@ const toastVersion = ref(0)
 const storageError = ref('')
 const remindersEnabled = ref(false)
 const planningPreferences = ref(loadPlanningPreferences())
+const calendarStartsCompact = typeof window !== 'undefined' && window.innerWidth <= 819
+const desktopCalendarMode = ref<CalendarView>(calendarStartsCompact
+  ? planningPreferences.value.defaultCalendarView
+  : loadLastDesktopCalendarView() ?? planningPreferences.value.defaultCalendarView)
+let desktopCalendarModeLoaded = !calendarStartsCompact
 const defaultSidebarMenuKeys = ['smart:inbox', 'smart:today', 'smart:next7', 'page:calendar', 'smart:all', 'smart:completed', 'page:topics', 'page:review']
 const sidebarPreferences = ref(loadSidebarPreferences(defaultSidebarMenuKeys))
 const tasksView = ref<InstanceType<typeof TasksView> | null>(null)
@@ -536,7 +542,14 @@ function handleModuleError() {
   storageError.value = '部分系统能力未能启动。任务数据与核心界面仍可使用。'
 }
 
-function onCompactChange(event: MediaQueryListEvent) { compact.value = event.matches; if (event.matches && page.value === 'tasks') selectedTaskId.value = '' }
+function onCompactChange(event: MediaQueryListEvent) {
+  compact.value = event.matches
+  if (event.matches && page.value === 'tasks') selectedTaskId.value = ''
+  if (!event.matches && !desktopCalendarModeLoaded) {
+    desktopCalendarMode.value = loadLastDesktopCalendarView() ?? planningPreferences.value.defaultCalendarView
+    desktopCalendarModeLoaded = true
+  }
+}
 async function refreshState() {
   const workspace = await getWorkspaceStore().load()
   const projected = projectWorkspaceState(workspace)
@@ -1136,6 +1149,16 @@ function updatePlanningPreferences(patch: Partial<PlanningPreferences>) {
     notify('设置未能保存，请重试。')
   }
 }
+function persistDesktopCalendarMode(mode: CalendarView) {
+  if (desktopCalendarMode.value === mode && desktopCalendarModeLoaded) return
+  desktopCalendarMode.value = mode
+  desktopCalendarModeLoaded = true
+  try {
+    saveLastDesktopCalendarView(mode)
+  } catch {
+    notify('日历视图未能保存，本次选择仍可继续使用。')
+  }
+}
 function applyReducedGlass(value: PlanningPreferences['reducedGlassOverride']) {
   if (value === 'on') document.documentElement.dataset.reducedGlass = 'on'
   else delete document.documentElement.dataset.reducedGlass
@@ -1211,7 +1234,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
         <SettingsView v-else-if="page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export="exportData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-appearance="setAppearance" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
         <TopicsView v-else-if="page === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
         <ReviewView v-else-if="page === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
-        <CalendarWorkspace v-if="!loading && page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="planningPreferences.defaultCalendarView === 'week' ? 'week' : 'day'" :now="new Date(clock).toISOString()" :execute-command="executeCalendarCommand" />
+        <CalendarWorkspace v-if="!loading && page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :execute-command="executeCalendarCommand" @desktop-mode-selected="persistDesktopCalendarMode" />
       </main>
       <BottomTabs v-if="!showFocus" :active="page" @navigate="navigate" @smart-view="selectSmartView" />
     </div>

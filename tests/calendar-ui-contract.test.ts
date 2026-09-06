@@ -226,7 +226,11 @@ test('calendar components expose the locked pointer, keyboard, menu, grid and na
   assert.match(tray, /calendarMoveCommand/)
   assert.doesNotMatch(tray, /type:\s*'calendar.resize'/)
   assert.match(workspace, /defaultEstimateMinutes \?\? 30/)
-  assert.match(toolbar, /'day' \| 'week'/)
+  assert.match(toolbar, /CalendarView/)
+  assert.match(toolbar, />日</)
+  assert.match(toolbar, />周</)
+  assert.match(toolbar, />月</)
+  assert.match(toolbar, />议程</)
   assert.match(navigation, /StudyPage = [^\n]*'calendar'/)
   assert.equal(currentSidebarDestination('calendar'), 'page:calendar')
   assert.match(sidebar, /orderKey: 'page:calendar'/)
@@ -236,15 +240,24 @@ test('calendar components expose the locked pointer, keyboard, menu, grid and na
   assert.match(app, /'smart:next7', 'page:calendar', 'smart:all'/)
   assert.match(app, /:workspace="recurrenceWorkspace"/)
   assert.match(app, /:execute-command="executeCalendarCommand"/)
+  assert.match(app, /loadLastDesktopCalendarView/)
+  assert.match(app, /saveLastDesktopCalendarView/)
+  assert.match(app, /@desktop-mode-selected="persistDesktopCalendarMode"/)
+  assert.doesNotMatch(app, /defaultCalendarView === 'week'/)
   assert.match(app, /result\.undoToken/)
   assert.match(app, /await refreshState\(\)/)
   assert.doesNotMatch([workspace, grid, item, tray, toolbar].join('\n'), /getWorkspaceStore|createTaskCapabilityService/)
 })
 
 function timedItem(overrides: Partial<CalendarItem> = {}): CalendarItem {
+  const start = overrides.start ?? '2026-09-04T01:00:00.000Z'
+  const time = /T(\d{2}):(\d{2})/.exec(start)
   return {
     key: 'task:plain', taskId: 'task:plain', occurrenceId: null, kind: 'timed',
-    start: '2026-09-04T01:00:00.000Z', end: '2026-09-04T02:00:00.000Z', ...overrides,
+    start, end: '2026-09-04T02:00:00.000Z',
+    displayDate: overrides.displayDate ?? start.slice(0, 10),
+    displayMinute: overrides.displayMinute ?? (Number(time?.[1] ?? 0) * 60 + Number(time?.[2] ?? 0)),
+    ...overrides,
   }
 }
 

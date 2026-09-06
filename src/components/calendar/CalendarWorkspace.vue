@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { AlertTriangle } from '@lucide/vue'
 import type { CalendarCapabilityCommand } from '../../domain/capabilities/calendar-commands.ts'
 import { layoutTimedItems } from '../../domain/calendar/layout.ts'
 import { projectCalendarItems, type CalendarItem } from '../../domain/calendar/project.ts'
-import { calendarRange } from '../../domain/calendar/range.ts'
+import { calendarRange, type CalendarView } from '../../domain/calendar/range.ts'
+import { resolveCalendarMode } from '../../domain/calendar/view.ts'
 import type { CommandEnvelope } from '../../domain/capabilities/types.ts'
 import type { Task, WorkspaceStateV3 } from '../../domain/workspace/types.ts'
 import Button from '../ui/Button.vue'
 import CalendarToolbar from './CalendarToolbar.vue'
 import TimeGrid from './TimeGrid.vue'
+import MonthGrid from './MonthGrid.vue'
+import AgendaView from './AgendaView.vue'
 import UnscheduledTray from './UnscheduledTray.vue'
 import {
   createCalendarDragController,
@@ -23,7 +26,7 @@ const props = withDefaults(defineProps<{
   workspace: WorkspaceStateV3 | null
   weekStartsOn?: 0 | 1
   defaultEstimateMinutes?: number | null
-  initialMode?: 'day' | 'week'
+  initialMode?: CalendarView
   now?: string
   executeCommand: (command: CalendarCapabilityCommand, source: CommandEnvelope['source']) => Promise<void>
 }>(), {
@@ -33,26 +36,32 @@ const props = withDefaults(defineProps<{
   now: () => new Date().toISOString(),
 })
 
+const initialWidth = typeof window === 'undefined' ? 820 : window.innerWidth
 const anchor = ref(localDate(new Date(props.now)))
-const mode = ref<'day' | 'week'>(props.initialMode)
-const compact = ref(false)
-const compactOverride = ref(false)
+const requestedMode = ref<CalendarView>(initialWidth <= 819 ? 'day' : props.initialMode)
+const lastDesktopMode = ref<CalendarView>(props.initialMode)
+const viewportWidth = ref(initialWidth)
 const selectedKey = ref('')
 const statusMessage = ref('')
 const pendingCommand = ref<{ command: CalendarCapabilityCommand; source: CommandEnvelope['source']; message: string } | null>(null)
 const timeGrid = ref<InstanceType<typeof TimeGrid> | null>(null)
 let compactMedia: MediaQueryList | undefined
 
-const effectiveMode = computed<'day' | 'week'>(() => compact.value && !compactOverride.value ? 'day' : mode.value)
+const compact = computed(() => viewportWidth.value <= 819)
+const effectiveMode = computed(() => resolveCalendarMode(requestedMode.value, viewportWidth.value))
 const range = computed(() => calendarRange(effectiveMode.value, anchor.value, props.weekStartsOn))
 const days = computed(() => datesBetween(range.value.start, range.value.end))
 const items = computed(() => props.workspace ? projectCalendarItems(props.workspace, range.value) : [])
 const timedItems = computed(() => layoutTimedItems(items.value))
 const titles = computed(() => new Map((props.workspace?.tasks ?? []).map((task) => [task.id, task.title])))
 const defaultDropDuration = computed(() => props.defaultEstimateMinutes ?? 30)
-const anchorLabel = computed(() => effectiveMode.value === 'week'
-  ? `${shortDate(days.value[0])}–${shortDate(days.value[days.value.length - 1])}`
-  : new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric' }).format(new Date(`${anchor.value}T00:00:00`)))
+const anchorLabel = computed(() => {
+  if (effectiveMode.value === 'week' || effectiveMode.value === 'agenda') return `${shortDate(days.value[0])}–${shortDate(days.value[days.value.length - 1])}`
+  const options = effectiveMode.value === 'month' ? { year: 'numeric', month: 'long' } as const : { month: 'long', day: 'numeric' } as const
+  return new Intl.DateTimeFormat('zh-CN', options).format(new Date(`${anchor.value}T00:00:00`))
+})
+
+const emit = defineEmits<{ 'desktop-mode-selected': [mode: CalendarView] }>()
 
 const drag = createCalendarDragController(async (command) => {
   try {
@@ -66,7 +75,7 @@ const drag = createCalendarDragController(async (command) => {
 
 onMounted(() => {
   compactMedia = window.matchMedia('(max-width: 819px)')
-  compact.value = compactMedia.matches
+  viewportWidth.value = compactMedia.matches ? Math.min(window.innerWidth, 819) : Math.max(window.innerWidth, 820)
   compactMedia.addEventListener('change', onCompactChange)
 })
 onUnmounted(() => {
@@ -74,9 +83,30 @@ onUnmounted(() => {
   compactMedia?.removeEventListener('change', onCompactChange)
 })
 
-function onCompactChange(event: MediaQueryListEvent) { compact.value = event.matches; if (!event.matches) compactOverride.value = false }
-function setMode(next: 'day' | 'week') { mode.value = next; compactOverride.value = compact.value; statusMessage.value = '' }
-function moveAnchor(direction: -1 | 1) { anchor.value = addDays(anchor.value, direction * (effectiveMode.value === 'week' ? 7 : 1)) }
+watch(() => props.initialMode, (next) => {
+  lastDesktopMode.value = next
+  if (!compact.value) requestedMode.value = next
+})
+
+function onCompactChange(event: MediaQueryListEvent) {
+  viewportWidth.value = event.matches ? 819 : 820
+  if (!event.matches) requestedMode.value = lastDesktopMode.value
+}
+function setMode(next: CalendarView) {
+  statusMessage.value = compact.value && next === 'week' ? '窄屏使用日视图。' : ''
+  if (compact.value) {
+    requestedMode.value = next
+    return
+  }
+  if (next === requestedMode.value) return
+  requestedMode.value = next
+  lastDesktopMode.value = next
+  emit('desktop-mode-selected', next)
+}
+function moveAnchor(direction: -1 | 1) {
+  if (effectiveMode.value === 'month') anchor.value = addMonths(anchor.value, direction)
+  else anchor.value = addDays(anchor.value, direction * (effectiveMode.value === 'week' ? 7 : effectiveMode.value === 'agenda' ? 30 : 1))
+}
 function selectToday() { anchor.value = localDate(new Date()) }
 
 function beginItemPointer(event: PointerEvent, item: CalendarItem, action: 'move' | 'resize') {
@@ -91,6 +121,7 @@ function beginTrayPointer(event: PointerEvent, task: Task) {
   const item: CalendarItem = {
     key: `task:${task.id}`, taskId: task.id, occurrenceId: null,
     kind: 'timed', start, end: new Date(Date.parse(start) + duration * 60_000).toISOString(),
+    displayDate: anchor.value, displayMinute: 9 * 60,
   }
   if (drag.begin(event, { itemKey: item.key, item, action: 'move', sourceStart: null, sourceDuration: duration })) {
     selectedKey.value = item.key
@@ -156,13 +187,14 @@ function withDeadlineConflict(item: CalendarItem, preview: CalendarDragPreview):
 
 function datesBetween(start: string, end: string) { const result: string[] = []; for (let date = start; date < end; date = addDays(date, 1)) result.push(date); return result }
 function addDays(value: string, days: number) { const [year, month, day] = value.split('-').map(Number); return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10) }
+function addMonths(value: string, months: number) { const [year, month, day] = value.split('-').map(Number); const next = new Date(Date.UTC(year, month - 1 + months, 1)); const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate(); next.setUTCDate(Math.min(day, lastDay)); return next.toISOString().slice(0, 10) }
 function localDate(date: Date) { return date.toLocaleDateString('sv-SE') }
 function shortDate(value?: string) { if (!value) return ''; const date = new Date(`${value}T00:00:00`); return `${date.getMonth() + 1}/${date.getDate()}` }
 </script>
 
 <template>
   <section class="calendar-workspace" @pointermove="updatePointer" @pointerup="finishPointer" @pointercancel="cancelPointer($event)" @lostpointercapture="cancelPointer($event)" @keydown.esc="cancelPointer()">
-    <CalendarToolbar :mode="effectiveMode" :anchor="anchor" :anchor-label="anchorLabel" @update:mode="setMode" @update:anchor="anchor = $event" @previous="moveAnchor(-1)" @next="moveAnchor(1)" @today="selectToday" />
+    <CalendarToolbar :mode="effectiveMode" :anchor="anchor" :anchor-label="anchorLabel" :compact="compact" @update:mode="setMode" @update:anchor="anchor = $event" @previous="moveAnchor(-1)" @next="moveAnchor(1)" @today="selectToday" />
     <UnscheduledTray :tasks="workspace?.tasks ?? []" :anchor="anchor" :default-duration="defaultDropDuration" @pointer-start="beginTrayPointer" @command="requestCommand" />
     <div v-if="pendingCommand" class="calendar-workspace__confirmation" role="alert">
       <AlertTriangle :size="17" aria-hidden="true" /><span>{{ pendingCommand.message }}</span>
@@ -170,7 +202,9 @@ function shortDate(value?: string) { if (!value) return ''; const date = new Dat
       <Button variant="primary" size="sm" @click="confirmPending">仍然安排</Button>
     </div>
     <p class="sr-only" aria-live="polite">{{ statusMessage }}{{ drag.preview.value?.conflict ? ` ${drag.preview.value.conflict}` : '' }}</p>
-    <TimeGrid ref="timeGrid" :days="days" :items="items" :timed-items="timedItems" :titles="titles" :selected-key="selectedKey" :preview="drag.preview.value" :now="now" @select="selectedKey = $event" @pointer-start="beginItemPointer" @command="requestCommand" />
+    <TimeGrid v-if="effectiveMode === 'day' || effectiveMode === 'week'" ref="timeGrid" :days="days" :items="items" :timed-items="timedItems" :titles="titles" :selected-key="selectedKey" :preview="drag.preview.value" :now="now" @select="selectedKey = $event" @pointer-start="beginItemPointer" @command="requestCommand" />
+    <MonthGrid v-else-if="effectiveMode === 'month'" :days="days" :anchor="anchor" :week-starts-on="weekStartsOn" :items="items" :titles="titles" @select-date="anchor = $event" />
+    <AgendaView v-else :items="items" :titles="titles" />
   </section>
 </template>
 

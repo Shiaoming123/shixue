@@ -19,10 +19,9 @@ export function calendarOverlapMessage(
   items: readonly LaidOutCalendarItem[], itemKey: string, day: string, start: number, duration: number,
 ): string | null {
   const end = start + duration
-  const count = items.filter((item) => item.key !== itemKey && dateValue(item.start) === day)
-    .filter((item) => minuteOfDay(item.start) < end && minuteOfDay(item.start) + durationMinutes(item) > start).length
+  const count = items.filter((item) => item.key !== itemKey && item.displayDate === day)
+    .filter((item) => (item.displayMinute ?? 0) < end && (item.displayMinute ?? 0) + durationMinutes(item) > start).length
   return count ? `与 ${count} 个任务重叠` : null
 }
 
-function dateValue(value: string) { return value.includes('T') ? new Date(value).toLocaleDateString('sv-SE') : value }
-function minuteOfDay(value: string) { const date = new Date(value); return date.getHours() * 60 + date.getMinutes() }
+function dateValue(value: string) { return value.includes('T') ? value.slice(0, 10) : value }

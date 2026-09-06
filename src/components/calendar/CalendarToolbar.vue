@@ -4,10 +4,11 @@ import { CalendarDays, ChevronLeft, ChevronRight } from '@lucide/vue'
 import Button from '../ui/Button.vue'
 import DatePicker from '../ui/DatePicker.vue'
 import Popover from '../ui/Popover.vue'
+import type { CalendarView } from '../../domain/calendar/range.ts'
 
-defineProps<{ mode: 'day' | 'week'; anchor: string; anchorLabel: string }>()
+defineProps<{ mode: CalendarView; anchor: string; anchorLabel: string; compact?: boolean }>()
 const emit = defineEmits<{
-  'update:mode': [mode: 'day' | 'week']
+  'update:mode': [mode: CalendarView]
   'update:anchor': [anchor: string]
   previous: []
   next: []
@@ -38,7 +39,9 @@ const dateOpen = ref(false)
       <Button variant="ghost" size="sm" @click="emit('today')">今天</Button>
       <div class="calendar-toolbar__modes" aria-label="日历视图">
         <button type="button" :aria-pressed="mode === 'day'" @click="emit('update:mode', 'day')">日</button>
-        <button type="button" :aria-pressed="mode === 'week'" @click="emit('update:mode', 'week')">周</button>
+        <button type="button" :aria-pressed="mode === 'week'" :title="compact ? '窄屏使用日视图' : undefined" @click="emit('update:mode', 'week')">周</button>
+        <button type="button" :aria-pressed="mode === 'month'" @click="emit('update:mode', 'month')">月</button>
+        <button type="button" :aria-pressed="mode === 'agenda'" @click="emit('update:mode', 'agenda')">议程</button>
       </div>
     </div>
   </header>
@@ -57,5 +60,7 @@ const dateOpen = ref(false)
   .calendar-toolbar { align-items: stretch; flex-direction: column; padding: 14px 16px 10px; }
   .calendar-toolbar__actions { justify-content: flex-start; overflow-x: auto; padding-bottom: 2px; }
   .calendar-toolbar__actions :deep(.btn) { min-height: 44px; }
+  .calendar-toolbar__modes button { min-width: 44px; min-height: 44px; }
 }
+@media (pointer: coarse) and (max-width: 819px) { .calendar-toolbar__modes button { min-width: 48px; min-height: 48px; } }
 </style>

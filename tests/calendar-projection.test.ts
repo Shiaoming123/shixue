@@ -9,7 +9,14 @@ const dayRange = { start: '2026-09-04', end: '2026-09-05' } as const
 test('calendar ranges use a start-inclusive, end-exclusive boundary', () => {
   assert.deepEqual(calendarRange('day', '2026-09-04', 1), dayRange)
   assert.deepEqual(calendarRange('week', '2026-09-04', 1), { start: '2026-08-31', end: '2026-09-07' })
-  assert.deepEqual(calendarRange('month', '2026-09-04', 1), { start: '2026-08-31', end: '2026-10-05' })
+  assert.deepEqual(calendarRange('month', '2026-09-04', 1), { start: '2026-08-31', end: '2026-10-12' })
+})
+
+test('month ranges always expose six complete weeks', () => {
+  for (const [anchor, weekStartsOn] of [['2026-02-01', 0], ['2028-02-29', 1], ['2026-12-31', 1]] as const) {
+    const range = calendarRange('month', anchor, weekStartsOn)
+    assert.equal((Date.parse(`${range.end}T00:00:00Z`) - Date.parse(`${range.start}T00:00:00Z`)) / 86_400_000, 42)
+  }
 })
 
 test('calendar ranges reject invalid calendar dates instead of normalizing them', () => {
@@ -21,7 +28,7 @@ test('projects date-only tasks as all-day items without synthesizing a timestamp
 
   assert.deepEqual(projectCalendarItems(state, dayRange), [{
     key: 'task:task:1', taskId: 'task:1', occurrenceId: null,
-    kind: 'all-day', start: '2026-09-04', end: null,
+    kind: 'all-day', start: '2026-09-04', end: null, displayDate: '2026-09-04', displayMinute: null,
   }])
 })
 
@@ -31,7 +38,7 @@ test('projects timed tasks only when a start and duration are both present', () 
 
   assert.deepEqual(projectCalendarItems(state, dayRange), [{
     key: 'task:task:1', taskId: 'task:1', occurrenceId: null,
-    kind: 'timed', start: '2026-09-04T09:00:00+08:00', end: '2026-09-04T01:45:00.000Z',
+    kind: 'timed', start: '2026-09-04T09:00:00+08:00', end: '2026-09-04T01:45:00.000Z', displayDate: '2026-09-04', displayMinute: 540,
   }])
   assert.deepEqual(projectCalendarItems(startOnly, dayRange), [])
 })
@@ -41,7 +48,7 @@ test('deadline-only task is a marker rather than a timed block', () => {
 
   assert.deepEqual(projectCalendarItems(state, dayRange), [{
     key: 'deadline:task:1', taskId: 'task:1', occurrenceId: null,
-    kind: 'deadline-marker', start: '2026-09-04T16:00:00+08:00', end: null,
+    kind: 'deadline-marker', start: '2026-09-04T16:00:00+08:00', end: null, displayDate: '2026-09-04', displayMinute: 960,
   }])
 })
 
@@ -57,7 +64,7 @@ test('uses occurrence overrides for date, time, and duration without mutating st
 
   assert.deepEqual(projectCalendarItems(state, dayRange), [{
     key: 'occurrence:occ:1', taskId: 'task:1', occurrenceId: 'occ:1',
-    kind: 'timed', start: '2026-09-04T11:00:00+08:00', end: '2026-09-04T04:15:00.000Z',
+    kind: 'timed', start: '2026-09-04T11:00:00+08:00', end: '2026-09-04T04:15:00.000Z', displayDate: '2026-09-04', displayMinute: 660,
   }])
   assert.deepEqual(state, before)
 })
@@ -75,7 +82,7 @@ test('an occurrence override can change a date-only occurrence into a timed bloc
 
   assert.deepEqual(projectCalendarItems(state, dayRange), [{
     key: 'occurrence:occ:1', taskId: 'task:1', occurrenceId: 'occ:1',
-    kind: 'timed', start: '2026-09-04T11:00:00+08:00', end: '2026-09-04T04:15:00.000Z',
+    kind: 'timed', start: '2026-09-04T11:00:00+08:00', end: '2026-09-04T04:15:00.000Z', displayDate: '2026-09-04', displayMinute: 660,
   }])
 })
 
@@ -90,7 +97,7 @@ test('an occurrence override can change a timed occurrence into an all-day item'
 
   assert.deepEqual(projectCalendarItems(state, dayRange), [{
     key: 'occurrence:occ:1', taskId: 'task:1', occurrenceId: 'occ:1',
-    kind: 'all-day', start: '2026-09-04', end: null,
+    kind: 'all-day', start: '2026-09-04', end: null, displayDate: '2026-09-04', displayMinute: null,
   }])
 })
 
@@ -121,9 +128,42 @@ test('uses the recurrence timezone at DST boundaries instead of the process time
 
   assert.deepEqual(projectCalendarItems(state, { start: '2026-03-07', end: '2026-03-08' }), [{
     key: 'occurrence:occ:1', taskId: 'task:1', occurrenceId: 'occ:1',
-    kind: 'timed', start: '2026-03-08T04:30:00.000Z', end: '2026-03-08T05:00:00.000Z',
+    kind: 'timed', start: '2026-03-08T04:30:00.000Z', end: '2026-03-08T05:00:00.000Z', displayDate: '2026-03-07', displayMinute: 1410,
   }])
   assert.deepEqual(projectCalendarItems(state, { start: '2026-03-08', end: '2026-03-09' }), [])
+})
+
+test('an explicit timestamp offset owns its display day across device timezones', () => {
+  const state = fixture({
+    schedule: { startAt: '2026-09-04T00:30:00+14:00', startOn: null, estimateMinutes: 30 },
+    deadline: { dueAt: '2026-09-04T23:45:00-10:00', dueOn: null },
+  })
+  const projected = projectCalendarItems(state, { start: '2026-09-04', end: '2026-09-05' })
+  assert.deepEqual(projected.map(({ kind, displayDate, displayMinute }) => [kind, displayDate, displayMinute]), [
+    ['timed', '2026-09-04', 30],
+    ['deadline-marker', '2026-09-04', 1425],
+  ])
+})
+
+test('a recurring task deadline keeps its own explicit offset wall clock', () => {
+  const projected = projectCalendarItems(fixture({
+    recurrenceSeriesId: 'series:1',
+    seriesTimezone: 'America/New_York',
+    deadline: { dueAt: '2026-09-04T00:15:00+14:00', dueOn: null },
+  }), dayRange)
+  const deadline = projected.find(({ kind }) => kind === 'deadline-marker')
+  assert.deepEqual([deadline?.displayDate, deadline?.displayMinute], ['2026-09-04', 15])
+})
+
+test('date-only schedule and deadline stay separate canonical facts', () => {
+  const projected = projectCalendarItems(fixture({
+    schedule: { startAt: null, startOn: '2026-09-04', estimateMinutes: 45 },
+    deadline: { dueAt: null, dueOn: '2026-09-04' },
+  }), dayRange)
+  assert.deepEqual(new Map(projected.map(({ key, kind, displayDate, displayMinute }) => [key, [kind, displayDate, displayMinute]])), new Map([
+    ['task:task:1', ['all-day', '2026-09-04', null]],
+    ['deadline:task:1', ['deadline-marker', '2026-09-04', null]],
+  ]))
 })
 
 function fixture(input: {
