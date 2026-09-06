@@ -25,9 +25,14 @@ test('business sheets and responsive task detail no longer own parallel overlay 
     assert.doesNotMatch(source, /useModalOverlay|<Teleport\b|class="backdrop"|@click\.self/)
   }
   const detail = rootSource('src/components/study/TaskDetailDrawer.vue')
-  assert.match(detail, /:placement="covering \? 'right' : 'inline'"/)
+  assert.match(detail, /resolveTaskDetailPlacement/)
+  assert.match(detail, /:placement="detailPlacement"/)
   assert.match(detail, /width:\s*100%/)
   assert.doesNotMatch(detail, /width:\s*420px|min-width:\s*420px/)
+
+  const responsive = rootSource('src/components/ui/Sheet.vue')
+  assert.match(responsive, /\.sheet-panel--responsive::before/)
+  assert.match(responsive, /\.sheet-overlay-enter-from \.sheet-panel--responsive[\s\S]*translateY/)
 })
 
 test('dialog delegates modal keyboard and focus behavior to the shared overlay lifecycle', () => {

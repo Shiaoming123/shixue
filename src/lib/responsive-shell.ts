@@ -22,3 +22,8 @@ export function resolveShell(viewportWidth: number): ShellResolution {
   }
   return { mode: 'single-column-bottom-tabs', navigation: 'bottom-tabs', detail: 'sheet', detailWidth: viewportWidth, horizontalOverflow: false }
 }
+
+export function resolveTaskDetailPlacement(viewportWidth: number): 'responsive' | 'right' | 'inline' {
+  const detail = resolveShell(viewportWidth).detail
+  return detail === 'sheet' ? 'responsive' : detail === 'overlay' ? 'right' : 'inline'
+}

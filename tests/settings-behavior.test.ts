@@ -284,9 +284,12 @@ test('ordinary task edits omit the compatibility reminder field so independently
   let update: Record<string, unknown> | undefined
   const api = handlers('App.vue', ['saveTaskEdit'], {
     selectedTask: ref({ id: 'task', revision: 3 }), updateStudyTask: async (_id: string, value: Record<string, unknown>) => { update = value },
-    refreshState: async () => {}, taskEditorOpen: ref(true), notify() {}, reportStorageError(error: unknown) { throw error },
+    refreshState: async () => {}, taskEditorOpen: ref(true), reminderBusy: ref(false), reminderError: ref(''), recurrenceScopeOpen: ref(false),
+    runTaskEditCommit: async (input: any, steps: any) => { await steps.saveTask(); for (const reminder of input.reminders) await steps.saveReminder(reminder); if (input.recurrence) await steps.saveRecurrence(input.recurrence) },
+    reminderCommandForCurrentState: () => null, saveReminderRuleWithoutBusyGuard: async () => {}, requestRecurrenceEdit: async () => {},
+    notify() {}, reportStorageError(error: unknown) { throw error },
   })
-  await api.saveTaskEdit({ title: 'Updated', reminderAt: null })
+  await api.saveTaskEdit({ title: 'Updated', reminderAt: null }, { reminderCommands: [] })
   assert.equal(update?.title, 'Updated')
   assert.equal(Object.hasOwn(update!, 'reminderAt'), false)
 })

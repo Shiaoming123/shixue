@@ -23,6 +23,11 @@ export interface TaskEditValue {
   acceptanceCriteria?: string[]
 }
 
+export interface TaskEditChanges {
+  reminderCommands: ReminderSetValue[]
+  recurrenceRule?: RecurrenceRule
+}
+
 type EditableStudyTask = TaskEditValue & { id?: string; status: string }
 
 const props = defineProps<{
@@ -42,10 +47,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  save: [value: TaskEditValue]
-  recurrenceSave: [rule: RecurrenceRule]
-  reminderSet: [value: ReminderSetValue]
-  reminderRemove: [rule: TaskReminderRule]
+  save: [value: TaskEditValue, changes: TaskEditChanges]
 }>()
 
 const title = ref('')
@@ -60,6 +62,21 @@ const priority = ref<StudyTaskPriority>('none')
 const estimateMinutes = ref<number | null>(null)
 const criteria = ref('')
 const recurrenceRule = ref<RecurrenceRule | null>(null)
+const recurrenceDirty = ref(false)
+const reminderCommands = ref<ReminderSetValue[]>([])
+const draftReminderRules = computed<TaskReminderRule[]>(() => {
+  const rules = [...(props.reminderRules ?? [])]
+  for (const command of reminderCommands.value) {
+    const index = rules.findIndex(({ id }) => id === command.ruleId)
+    const rule: TaskReminderRule = {
+      id: command.ruleId, taskId: command.taskId, occurrenceId: command.occurrenceId,
+      trigger: command.trigger, enabled: command.enabled, revision: index >= 0 ? rules[index]!.revision : 0,
+    }
+    if (index >= 0) rules.splice(index, 1, rule)
+    else if (command.enabled) rules.push(rule)
+  }
+  return rules
+})
 const topicOptions = computed(() => [
   { value: '', label: '收件箱' },
   ...props.topics.map((topic) => ({ value: topic.id, label: topic.title })),
@@ -86,11 +103,43 @@ watch([() => props.open, () => props.task?.id, () => Boolean(props.task)], ([ope
   estimateMinutes.value = task.estimateMinutes
   criteria.value = task.acceptanceCriteria?.join('\n') ?? ''
   recurrenceRule.value = props.recurrenceRule ?? null
+  recurrenceDirty.value = false
+  reminderCommands.value = []
 }, { immediate: true })
 
 watch(() => JSON.stringify(props.recurrenceRule ?? null), () => {
-  if (props.open) recurrenceRule.value = props.recurrenceRule ?? null
+  if (props.open && !recurrenceDirty.value) recurrenceRule.value = props.recurrenceRule ?? null
 })
+
+function sameReminder(command: ReminderSetValue, rule: TaskReminderRule) {
+  return command.taskId === rule.taskId && command.occurrenceId === rule.occurrenceId &&
+    command.enabled === rule.enabled && JSON.stringify(command.trigger) === JSON.stringify(rule.trigger)
+}
+
+function stageReminderSet(command: ReminderSetValue) {
+  const base = (props.reminderRules ?? []).find(({ id }) => id === command.ruleId)
+  const index = reminderCommands.value.findIndex(({ ruleId }) => ruleId === command.ruleId)
+  if ((!base && !command.enabled) || (base && sameReminder(command, base))) {
+    if (index >= 0) reminderCommands.value.splice(index, 1)
+    return
+  }
+  if (index >= 0) reminderCommands.value.splice(index, 1, command)
+  else reminderCommands.value.push(command)
+}
+
+function stageReminderRemove(rule: TaskReminderRule) {
+  stageReminderSet({
+    type: 'reminder.set', ruleId: rule.id, taskId: rule.taskId, occurrenceId: rule.occurrenceId,
+    trigger: rule.trigger, enabled: false, expectedRevision: rule.revision,
+  })
+}
+
+function stageRecurrence(rule: RecurrenceRule) {
+  recurrenceRule.value = rule
+  recurrenceDirty.value = JSON.stringify(rule) !== JSON.stringify(props.recurrenceRule ?? null)
+}
+
+function requestClose() { emit('close') }
 
 function save() {
   const normalizedTitle = title.value.trim()
@@ -109,6 +158,9 @@ function save() {
     priority: priority.value,
     estimateMinutes: estimateMinutes.value && estimateMinutes.value > 0 ? estimateMinutes.value : null,
     ...(props.learning ? { acceptanceCriteria: criteria.value.split('\n').map((item) => item.trim()).filter(Boolean) } : {}),
+  }, {
+    reminderCommands: [...reminderCommands.value],
+    ...(recurrenceDirty.value && recurrenceRule.value ? { recurrenceRule: recurrenceRule.value } : {}),
   })
 }
 
@@ -120,9 +172,9 @@ function toLocalDateTime(value: string) {
 </script>
 
 <template>
-  <Sheet :open="Boolean(open && task)" label="编辑任务" @close="emit('close')">
+  <Sheet :open="Boolean(open && task)" label="编辑任务" @close="requestClose">
     <form v-if="task" class="sheet-content" @submit.prevent="save">
-      <header><h2 id="task-edit-title">编辑任务</h2><button type="button" title="关闭" aria-label="关闭" @click="emit('close')"><X :size="19" /></button></header>
+      <header><h2 id="task-edit-title">编辑任务</h2><button type="button" title="关闭" aria-label="关闭" @click="requestClose"><X :size="19" /></button></header>
       <label><span>标题</span><input v-model="title" aria-label="任务标题" required autofocus /></label>
       <label><span>备注</span><textarea v-model="notes" aria-label="任务备注" placeholder="备注" /></label>
       <label><span><ListTree :size="15" />清单</span><Listbox v-model="topicId" :options="topicOptions" label="清单" /></label>
@@ -130,13 +182,13 @@ function toLocalDateTime(value: string) {
         <label><span><CalendarDays :size="15" />日期</span><DateTimePicker v-model="plannedOn" :mode="plannedTimed ? 'datetime' : 'date'" label="日期" placeholder="不设置计划日期" /></label>
         <label><span>截止</span><DateTimePicker v-model="dueOn" :mode="dueTimed ? 'datetime' : 'date'" label="截止日期" placeholder="不设置截止日期" /></label>
       </div>
-      <ReminderEditor v-if="reminderRules !== undefined && task.id" :key="task.id" :task-id="task.id" :rules="reminderRules" :start-at="plannedAt" :due-at="dueAt" :notification-available="notificationAvailable" :permission="reminderPermission" :busy="reminderBusy" :error="reminderError" @set="emit('reminderSet', $event)" @remove="emit('reminderRemove', $event)" />
+      <ReminderEditor v-if="reminderRules !== undefined && task.id" :key="task.id" :task-id="task.id" :rules="draftReminderRules" :start-at="plannedAt" :due-at="dueAt" :notification-available="notificationAvailable" :permission="reminderPermission" :busy="reminderBusy" :error="reminderError" @set="stageReminderSet" @remove="stageReminderRemove" />
       <label v-else><span><Bell :size="15" />提醒</span><DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" placeholder="不设置提醒" /></label>
       <label><span><Flag :size="15" />优先级</span><Listbox :model-value="priority" :options="priorityOptions" label="优先级" @update:model-value="priority = $event as StudyTaskPriority" /></label>
-      <label><span>重复</span><RecurrenceEditor :model-value="recurrenceRule" @save="recurrenceRule = $event; emit('recurrenceSave', $event)" /></label>
+      <label><span>重复</span><RecurrenceEditor :model-value="recurrenceRule" @save="stageRecurrence" /></label>
       <label><span>预计分钟</span><input v-model.number="estimateMinutes" type="number" min="1" max="1440" placeholder="分钟" /></label>
       <label v-if="learning"><span>完成标准</span><textarea v-model="criteria" aria-label="完成标准" placeholder="每行一项" /></label>
-      <footer><button type="button" class="cancel" @click="emit('close')">取消</button><button class="save" type="submit" :disabled="!title.trim()">保存</button></footer>
+      <footer><button type="button" class="cancel" @click="requestClose">取消</button><button class="save" type="submit" :disabled="!title.trim() || reminderBusy">保存</button></footer>
     </form>
   </Sheet>
 </template>

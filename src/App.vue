@@ -13,7 +13,7 @@ import ReminderCard, { type ReminderCardAction } from './components/study/Remind
 import type { ReminderSetValue } from './components/study/ReminderEditor.vue'
 import TaskActionSheet, { type TaskActionMode, type TaskActionPayload } from './components/study/TaskActionSheet.vue'
 import TaskDetailDrawer, { type TaskEventViewItem } from './components/study/TaskDetailDrawer.vue'
-import TaskEditSheet, { type TaskEditValue } from './components/study/TaskEditSheet.vue'
+import TaskEditSheet, { type TaskEditChanges, type TaskEditValue } from './components/study/TaskEditSheet.vue'
 import RecurrenceScopeDialog, { type RecurrenceRuleScope } from './components/study/RecurrenceScopeDialog.vue'
 import OccurrenceRescheduleSheet from './components/study/OccurrenceRescheduleSheet.vue'
 import { type RecurrenceRule } from './components/study/RecurrenceEditor.vue'
@@ -93,7 +93,8 @@ import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelo
 import type { CalendarCapabilityCommand } from './domain/capabilities/calendar-commands'
 import { createCalendarUndoAction, runCalendarCommand } from './lib/calendar-command-handler'
 import { runOverdueBatchMove } from './lib/overdue-batch-command'
-import type { WorkspaceStateV3, ReminderRule } from './domain/workspace/types'
+import { runTaskEditCommit } from './lib/task-edit-commit'
+import type { WorkspaceStateV3 } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
 const destination = ref<ShellDestination>({ kind: 'today' })
@@ -474,22 +475,12 @@ async function executeReminderCommand(command: CapabilityCommand) {
   await refreshState()
 }
 
-async function saveReminderRule(command: ReminderSetValue) {
-  if (reminderBusy.value) return
-  reminderBusy.value = true
-  reminderError.value = ''
-  try {
-    const first = !recurrenceWorkspace.value?.reminderRules.some(({ enabled }) => enabled)
-    if (first && command.enabled && nativeNotificationAvailable.value) notificationPermission.value = await (await notificationAdapter()).ensureNotificationPermission('first-reminder')
-    await executeReminderCommand(command)
-    notify(remindersEnabled.value ? '提醒规则已保存。' : '提醒规则已保存；请在设置中开启任务提醒。')
-    await pollReminders()
-  } catch (error) { reminderError.value = error instanceof Error ? error.message : '提醒规则未能保存，请重试。' }
-  finally { reminderBusy.value = false }
-}
-
-async function removeReminderRule(rule: ReminderRule) {
-  await saveReminderRule({ type: 'reminder.set', ruleId: rule.id, taskId: rule.taskId, occurrenceId: rule.occurrenceId, trigger: rule.trigger, enabled: false, expectedRevision: rule.revision })
+async function saveReminderRuleWithoutBusyGuard(command: ReminderSetValue) {
+  const first = !recurrenceWorkspace.value?.reminderRules.some(({ enabled }) => enabled)
+  if (first && command.enabled && nativeNotificationAvailable.value) notificationPermission.value = await (await notificationAdapter()).ensureNotificationPermission('first-reminder')
+  await executeReminderCommand(command)
+  notify(remindersEnabled.value ? '提醒规则已保存。' : '提醒规则已保存；请在设置中开启任务提醒。')
+  await pollReminders()
 }
 
 async function handleReminderAction(action: ReminderCardAction) {
@@ -826,16 +817,44 @@ function openTaskEditor(taskId: string) {
   taskEditorOpen.value = true
 }
 
-async function saveTaskEdit(value: TaskEditValue) {
+function reminderCommandForCurrentState(command: ReminderSetValue): ReminderSetValue | null {
+  const current = recurrenceWorkspace.value?.reminderRules.find(({ id }) => id === command.ruleId)
+  if (!current) {
+    if (!command.enabled) return null
+    const { expectedRevision: _staleRevision, ...createCommand } = command
+    return createCommand
+  }
+  if (current.taskId === command.taskId && current.occurrenceId === command.occurrenceId && current.enabled === command.enabled && JSON.stringify(current.trigger) === JSON.stringify(command.trigger)) return null
+  return { ...command, expectedRevision: current.revision }
+}
+
+async function saveTaskEdit(value: TaskEditValue, changes: TaskEditChanges = { reminderCommands: [] }) {
   const task = selectedTask.value
-  if (!task) return
+  if (!task || reminderBusy.value) return
   try {
-    const { reminderAt: _legacyReminderAt, ...taskValue } = value
-    await updateStudyTask(task.id, taskValue, { expectedRevision: task.revision, now: new Date().toISOString() })
-    await refreshState()
+    if (changes.reminderCommands.length) {
+      reminderBusy.value = true
+      reminderError.value = ''
+    }
+    await runTaskEditCommit({ reminders: changes.reminderCommands, recurrence: changes.recurrenceRule }, {
+      saveTask: async () => {
+        const { reminderAt: _legacyReminderAt, ...taskValue } = value
+        await updateStudyTask(task.id, taskValue, { expectedRevision: task.revision, now: new Date().toISOString() })
+        await refreshState()
+      },
+      saveReminder: async (draftCommand) => {
+        const command = reminderCommandForCurrentState(draftCommand)
+        if (command) await saveReminderRuleWithoutBusyGuard(command)
+      },
+      saveRecurrence: requestRecurrenceEdit,
+    })
+    if (recurrenceScopeOpen.value || !taskEditorOpen.value) return
     taskEditorOpen.value = false
     notify('任务内容已更新。')
-  } catch (error) { reportStorageError(error) }
+  } catch (error) {
+    if (changes.reminderCommands.length) reminderError.value = error instanceof Error ? error.message : '提醒规则未能保存，请重试。'
+    reportStorageError(error)
+  } finally { reminderBusy.value = false }
 }
 
 function cloneRecurrenceRuleDto(rule: RecurrenceRule): RecurrenceRule {
@@ -850,7 +869,7 @@ async function requestRecurrenceEdit(rule: RecurrenceRule) {
   if (!selectedRecurrence.value) {
     const workspace = recurrenceWorkspace.value
     const task = workspace?.tasks.find((item) => item.id === selectedTask.value?.id)
-    if (!workspace || !task) return
+    if (!workspace || !task) throw new Error('重复规则上下文已变化，请重试。')
     recurrenceExecuting.value = true
     try {
       await capabilityService.execute({
@@ -865,7 +884,7 @@ async function requestRecurrenceEdit(rule: RecurrenceRule) {
         },
       })
       await refreshState(); taskEditorOpen.value = false; notify('已创建重复规则。')
-    } catch (error) { reportStorageError(error) } finally { recurrenceExecuting.value = false }
+    } finally { recurrenceExecuting.value = false }
     return
   }
   pendingRecurrenceRule = portableRule
@@ -1313,7 +1332,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 
     <CompletionSheet :open="completionOpen" :context-id="completionReminderId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) && reminderBusy" :task-title="reminderCompletionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionReviewLinkId = ''" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
-    <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @reminder-set="saveReminderRule" @reminder-remove="removeReminderRule" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" @recurrence-save="requestRecurrenceEdit" />
+    <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" />
     <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @edit-occurrence="editSingleOccurrence" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />
     <OccurrenceRescheduleSheet :open="occurrenceRescheduleOpen" :title="selectedTask?.title ?? ''" :model-value="occurrenceRescheduleValue" :timed="occurrenceRescheduleTimed" @close="occurrenceRescheduleOpen = false" @submit="rescheduleOccurrence" />
     <Sheet :open="topicEditorOpen" :label="state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单'" size="lg" @close="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" autofocus required placeholder="清单名称" /></label><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></Sheet>

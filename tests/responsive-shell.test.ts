@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { resolveShell } from '../src/lib/responsive-shell.ts'
+import { resolveShell, resolveTaskDetailPlacement } from '../src/lib/responsive-shell.ts'
 
 test('workspace shell resolves the five locked viewport contracts', () => {
   assert.deepEqual(resolveShell(1440), {
@@ -25,4 +25,12 @@ test('workspace shell keeps the exact 819/820 and 1279/1280 boundaries', () => {
   assert.equal(resolveShell(1279).mode, 'rail-with-overlay-detail')
   assert.equal(resolveShell(1280).mode, 'three-column')
   assert.throws(() => resolveShell(0), /positive viewport width/)
+})
+
+test('task detail consumes the shell resolution for compact sheet, medium drawer, and desktop aside', () => {
+  assert.equal(resolveTaskDetailPlacement(320), 'responsive')
+  assert.equal(resolveTaskDetailPlacement(819), 'responsive')
+  assert.equal(resolveTaskDetailPlacement(820), 'right')
+  assert.equal(resolveTaskDetailPlacement(1279), 'right')
+  assert.equal(resolveTaskDetailPlacement(1280), 'inline')
 })

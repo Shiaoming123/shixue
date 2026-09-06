@@ -4,6 +4,7 @@ import { ArrowRight, Bell, CalendarDays, Check, Clock3, Flag, Inbox, MoreHorizon
 import type { TaskViewItem } from './TasksView.vue'
 import type { TaskOccurrence } from '../../domain/workspace/types'
 import Sheet from '../ui/Sheet.vue'
+import { resolveTaskDetailPlacement } from '../../lib/responsive-shell'
 
 export interface TaskEventViewItem {
   id: string
@@ -41,14 +42,14 @@ const emit = defineEmits<{
 }>()
 
 const checklistDraft = ref('')
-const covering = ref(window.matchMedia('(max-width: 1279px)').matches)
-let coveringMedia: MediaQueryList | undefined
-function updateCovering(event: MediaQueryListEvent) { covering.value = event.matches }
+const viewportWidth = ref(window.innerWidth)
+const detailPlacement = computed(() => resolveTaskDetailPlacement(viewportWidth.value))
+const covering = computed(() => detailPlacement.value !== 'inline')
+function updateViewportWidth() { viewportWidth.value = window.innerWidth }
 onMounted(() => {
-  coveringMedia = window.matchMedia('(max-width: 1279px)')
-  coveringMedia.addEventListener('change', updateCovering)
+  window.addEventListener('resize', updateViewportWidth)
 })
-onUnmounted(() => coveringMedia?.removeEventListener('change', updateCovering))
+onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
 const confirmDelete = ref(false)
 const checklistLocked = computed(() => props.task?.status === 'completed' || props.task?.status === 'cancelled')
 watch(() => props.task?.id, () => { checklistDraft.value = ''; confirmDelete.value = false })
@@ -72,7 +73,7 @@ function addChecklistItem() {
 </script>
 
 <template>
-  <Sheet :open="Boolean(task)" label="任务详情" :placement="covering ? 'right' : 'inline'" @close="emit('close')">
+  <Sheet :open="Boolean(task)" label="任务详情" :placement="detailPlacement" @close="emit('close')">
   <aside v-if="task" class="detail-drawer" :class="{ mobile }" :role="covering ? undefined : 'complementary'" aria-label="任务详情">
     <header class="drawer-header">
       <div><button title="编辑任务" aria-label="编辑任务" @click="emit('edit', task.id)"><Pencil :size="18" /></button><button title="删除任务" aria-label="删除任务" @click="confirmDelete = true"><Trash2 :size="18" /></button></div>

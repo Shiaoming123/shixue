@@ -4,6 +4,7 @@ import test from 'node:test'
 import { parse, compileScript } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import * as Vue from 'vue'
+import { runTaskEditCommit } from '../src/lib/task-edit-commit.ts'
 
 const { descriptor } = parse(readFileSync(new URL('../src/components/study/TaskEditSheet.vue', import.meta.url), 'utf8'))
 const code = ts.transpileModule(compileScript(descriptor, { id: 'edit-draft-test' }).content, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText
@@ -12,11 +13,12 @@ new Function('require', 'exports', code)((id: string) => id === 'vue' ? Vue : id
 const renderer = Vue.createRenderer({ createElement: () => ({}), createText: () => ({}), createComment: () => ({}), insert() {}, remove() {}, setText() {}, setElementText() {}, parentNode: () => null, nextSibling: () => null, patchProp() {} })
 const task = (id = 'one', title = 'Stored title') => ({ id, title, notes: 'Stored notes', topicId: null, plannedOn: '2026-09-05', dueOn: null, reminderAt: null, status: 'planned', priority: 'none', estimateMinutes: 15, acceptanceCriteria: [] })
 function mount() {
-  const props = Vue.reactive<any>({ open: true, task: task(), topics: [], recurrenceRule: null, plannedAt: null, dueAt: null })
+  const props = Vue.reactive<any>({ open: true, task: task(), topics: [], recurrenceRule: null, plannedAt: null, dueAt: null, reminderRules: [{ id: 'rule:b', taskId: 'one', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true, revision: 2 }] })
+  const events: any[][] = []
   let state: any
-  const app = renderer.createApp({ setup() { state = exported.default.setup(props, { expose() {}, emit() {} }); return () => Vue.h('div') } })
+  const app = renderer.createApp({ setup() { state = exported.default.setup(props, { expose() {}, emit: (...args: any[]) => events.push(args) }); return () => Vue.h('div') } })
   app.mount({})
-  return { props, state, unmount: () => app.unmount() }
+  return { props, state, events, unmount: () => app.unmount() }
 }
 
 test('runtime snapshot and reminder-rule refresh cannot overwrite an unsaved task draft', async () => {
@@ -55,4 +57,76 @@ test('switching task identity and closing then reopening each initialize fresh p
   assert.equal(state.title.value, 'Fresh persisted second task')
   assert.equal(state.notes.value, 'Stored notes')
   unmount()
+})
+
+test('reminder and recurrence edits stay local until the outer save and cancel paths submit nothing', async () => {
+  const { state, events, unmount } = mount()
+  const replacement = { type: 'reminder.set', ruleId: 'rule:b', taskId: 'one', occurrenceId: null, trigger: { kind: 'before_start', minutes: 10 }, enabled: true, expectedRevision: 2 }
+  const addition = { type: 'reminder.set', ruleId: 'rule:a', taskId: 'one', occurrenceId: null, trigger: { kind: 'absolute', at: '2026-09-06T01:00:00.000Z' }, enabled: true }
+  const recurrence = { cadence: { kind: 'daily', interval: 2 }, basis: 'fixed_schedule', end: { kind: 'never' } }
+  state.stageReminderSet(addition)
+  state.stageReminderSet({ ...addition, trigger: { kind: 'absolute', at: '2026-09-07T01:00:00.000Z' } })
+  state.stageReminderSet(replacement)
+  state.stageRecurrence(recurrence)
+  assert.deepEqual(events, [], 'editing nested controls must not persist before the outer save')
+  state.requestClose('outside')
+  state.requestClose('escape')
+  assert.deepEqual(events, [['close'], ['close']], 'outside and Escape only dismiss the editor')
+
+  events.length = 0
+  state.title.value = '  Updated title  '
+  state.save()
+  assert.equal(events.length, 1)
+  assert.equal(events[0][0], 'save')
+  assert.equal(events[0][1].title, 'Updated title', 'ordinary fields retain their existing save contract')
+  assert.deepEqual(events[0][2], {
+    reminderCommands: [
+      { ...addition, trigger: { kind: 'absolute', at: '2026-09-07T01:00:00.000Z' } },
+      replacement,
+    ],
+    recurrenceRule: recurrence,
+  }, 'the outer save emits each final reminder change once, in staging order, followed by the recurrence draft')
+  unmount()
+})
+
+test('removing an existing rule is drafted once and background refresh does not overwrite dirty nested drafts', async () => {
+  const { props, state, events, unmount } = mount()
+  const rule = props.reminderRules[0]
+  state.stageReminderRemove(rule)
+  const recurrence = { cadence: { kind: 'weekly', interval: 1, weekdays: [1] }, basis: 'after_completion', end: { kind: 'never' } }
+  state.stageRecurrence(recurrence)
+  props.reminderRules = [{ ...rule, revision: 3 }]
+  props.recurrenceRule = { cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', end: { kind: 'never' } }
+  await Vue.nextTick()
+  assert.equal(state.draftReminderRules.value.find((item: any) => item.id === rule.id).enabled, false)
+  assert.deepEqual(state.recurrenceRule.value, recurrence)
+  state.save()
+  assert.deepEqual(events[0][2].reminderCommands, [{
+    type: 'reminder.set', ruleId: rule.id, taskId: rule.taskId, occurrenceId: rule.occurrenceId,
+    trigger: rule.trigger, enabled: false, expectedRevision: rule.revision,
+  }])
+  props.reminderError = 'CAS failure'
+  props.task = { ...task(), title: 'Persisted outer fields' }
+  await Vue.nextTick()
+  assert.equal(state.draftReminderRules.value.find((item: any) => item.id === rule.id).enabled, false, 'failed nested save keeps the reminder draft')
+  assert.deepEqual(state.recurrenceRule.value, recurrence, 'failed nested save keeps the recurrence draft')
+  unmount()
+})
+
+test('outer task edit commit is ordered and stops at the failing nested change', async () => {
+  const order: string[] = []
+  await runTaskEditCommit({ reminders: ['remove', 'add'], recurrence: 'daily' }, {
+    saveTask: async () => { order.push('task') },
+    saveReminder: async (value) => { order.push(value) },
+    saveRecurrence: async (value) => { order.push(value) },
+  })
+  assert.deepEqual(order, ['task', 'remove', 'add', 'daily'])
+
+  order.length = 0
+  await assert.rejects(runTaskEditCommit({ reminders: ['first', 'failed', 'later'], recurrence: 'weekly' }, {
+    saveTask: async () => { order.push('task') },
+    saveReminder: async (value) => { order.push(value); if (value === 'failed') throw new Error('CAS failure') },
+    saveRecurrence: async (value) => { order.push(value) },
+  }), /CAS failure/)
+  assert.deepEqual(order, ['task', 'first', 'failed'], 'a failed nested write must keep later changes pending')
 })
