@@ -34,8 +34,8 @@ test('a repeated global-search target always switches Review to records and expa
   app.unmount()
 })
 
-test('App clears a consumed record target on navigation before assigning a new search target', () => {
+test('App resets Review on navigation before assigning a new search target', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
-  assert.match(app, /function setDestination\([^)]*\)[^{]*\{\s*recordTarget\.value = undefined/)
-  assert.match(app, /function openSearchRecord[\s\S]*setDestination\(\{ kind: 'learning', section: 'review' \}\)\s*recordTarget\.value =/)
+  assert.match(app, /function setDestination\([^)]*\)[^{]*\{\s*recordTarget\.value = undefined\s*reviewMode\.value = 'review'/)
+  assert.match(app, /function openSearchRecord[\s\S]*setDestination\(\{ kind: 'learning', section: 'review' \}\)\s*reviewMode\.value = 'records'\s*recordTarget\.value =/)
 })

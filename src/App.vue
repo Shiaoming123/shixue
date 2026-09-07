@@ -732,6 +732,7 @@ function localDeviceId() {
 
 function setDestination(next: ShellDestination, options: { topicFilter?: string; preservePriority?: boolean } = {}) {
   recordTarget.value = undefined
+  reviewMode.value = 'review'
   destination.value = next
   listsMoreOpen.value = false
   showFocus.value = false
@@ -770,8 +771,8 @@ function openSearchTask(taskId: string) {
 function openSearchRecord(recordId: string) {
   const record = recurrenceWorkspace.value?.completionRecords.find((item) => item.id === recordId && item.deletedAt === null)
   if (!record) { notify('这条完成记录已不存在，搜索结果已刷新。'); return }
-  reviewMode.value = 'records'
   setDestination({ kind: 'learning', section: 'review' })
+  reviewMode.value = 'records'
   recordTarget.value = { id: record.id, requestId: ++recordTargetRequestId }
 }
 function openTagManager(returnToSearch = false) {
