@@ -140,6 +140,28 @@ test('App reports import failure to the review dialog instead of clearing its ca
   assert.deepEqual(results, [false])
 })
 
+test('App downloads separate restorable JSON and readable Markdown exports', async () => {
+  const downloads: unknown[][] = []
+  const messages: string[] = []
+  const api = handlers('App.vue', ['exportJsonData', 'exportMarkdownData'], {
+    exportStudyState: async () => '{"format":"meow-study/workspace-export"}',
+    exportLearningRecordsMarkdown: async () => '# 拾学学习记录\n',
+    downloadData: (...args: unknown[]) => downloads.push(args),
+    today: ref('2026-09-07'),
+    notify: (message: string) => messages.push(message),
+    reportStorageError(error: unknown) { assert.fail(String(error)) },
+  })
+
+  await api.exportJsonData()
+  await api.exportMarkdownData()
+
+  assert.deepEqual(downloads, [
+    ['{"format":"meow-study/workspace-export"}', 'application/json', '拾学记录-2026-09-07.json'],
+    ['# 拾学学习记录\n', 'text/markdown;charset=utf-8', '拾学学习记录-2026-09-07.md'],
+  ])
+  assert.deepEqual(messages, ['JSON 备份已导出。', 'Markdown 学习记录已导出。'])
+})
+
 test('sidebar failure keeps selection and never reports restoration success', () => {
   const messages: string[] = []
   const original = { displayMode: 'icons', order: ['b', 'a'] }

@@ -51,7 +51,7 @@ See the [visual fidelity ledger](./docs/design/fidelity-ledger.md) for concepts,
 - **Lightweight tags and global search:** Create, rename, archive, and associate tags without losing historical links. `Ctrl/Cmd+K` searches task fields, checklists, tags, and completion-record learning, evidence, blockers, and next actions, with combinable topic, status, date, and tag filters.
 - **Multiple reminders and tray:** A task can have several reminders. System notification submission is attempted only while the app or tray process is running and permission is available; reminders are not guaranteed after a full exit. In-app cards provide Complete, Snooze, and Open when native actions are unavailable.
 - **Optional learning mode:** Add topics, focus sessions, acceptance criteria, outcome evidence, and 1 / 3 / 7-day reviews. Rhythm derives weekly progress from real recurring occurrences, while Review groups the current weekly plan snapshot, completed-plan evidence coverage, reviews due this week, evidence-backed completions, linked focus minutes, and reviews actually completed by topic, with drilldown to source tasks, occurrences, or records. Neither view creates new statistics or empty check-ins. General todos do not require learning fields.
-- **Local data evolution:** WorkspaceState v3 supports Study v1/v2 migration and import. IndexedDB / SQLite preserve the legacy snapshot before migration; new exports use `meow-study/workspace-export` v3. Older application versions cannot read v3 data. Pre-upgrade backups exclude later records and do not provide automatic downgrade recovery.
+- **Local data evolution:** WorkspaceState v3 supports Study v1/v2 migration and import. IndexedDB / SQLite preserve the legacy snapshot before migration. JSON v3 is the complete, restorable backup; live completion records can also be exported as deterministic, human-readable Markdown. Older application versions cannot read v3 data. Pre-upgrade backups exclude later records and do not provide automatic downgrade recovery.
 
 ## Download for Windows
 
@@ -108,7 +108,7 @@ Outputs are written to `release-artifacts/windows/<version>/`. This directory co
 
 - The Windows desktop application uses SQLite. The Web application uses IndexedDB scoped to the current site origin.
 - Task and learning data do not require an account and are not uploaded as synchronization data. Update checks may contact GitHub Releases.
-- JSON export provides backup and manual transfer between Web and desktop runtimes. The two runtimes do not synchronize automatically.
+- JSON export provides complete backup and manual transfer between Web and desktop runtimes. Markdown export is a readable view of completion records and cannot restore a workspace. The two runtimes do not synchronize automatically.
 - Cancelling a task does not physically delete tasks, sessions, events, or completion records. A failed migration does not replace the previous state.
 - Portable and installed builds use the operating-system-managed application data location. Deleting the EXE or uninstalling the application should not be treated as proof that learning data was erased.
 - Cloud sync, external calendars, collaboration, AI planning, and authentication are outside the current release boundary; see the native-evidence status below.

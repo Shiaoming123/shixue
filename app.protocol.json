@@ -78,7 +78,8 @@
       "calendar-planning-v1",
       "learning-search-tags-v1",
       "derived-learning-rhythm-v1",
-      "explainable-weekly-evidence-v1"
+      "explainable-weekly-evidence-v1",
+      "learning-records-markdown-export-v1"
     ],
     "shippedEvidence": [
       {
@@ -115,6 +116,11 @@
         "id": "explainable-weekly-evidence",
         "sources": ["src/domain/views/weekly-learning-summary.ts", "src/components/study/ReviewView.vue"],
         "tests": ["tests/weekly-learning-summary.test.ts", "tests/review-weekly-summary.test.ts"]
+      },
+      {
+        "id": "learning-records-markdown-export",
+        "sources": ["src/domain/export/learning-records-markdown.ts", "src/lib/study.ts", "src/components/study/SettingsView.vue", "src/App.vue"],
+        "tests": ["tests/learning-records-markdown.test.ts", "tests/sidebar-settings-ui.test.ts", "tests/settings-behavior.test.ts"]
       }
     ],
     "planned": [
