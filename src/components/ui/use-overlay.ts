@@ -72,6 +72,11 @@ function focusableElements(panel: HTMLElement) {
     .filter((element) => element.tabIndex >= 0 && !element.matches(':disabled') && !element.closest('[hidden], [inert]') && element.getClientRects().length > 0)
 }
 
+export function focusFirstInOverlay(panel: HTMLElement | null) {
+  if (!panel) return
+  ;(panel.querySelector<HTMLElement>('[autofocus]') ?? focusableElements(panel)[0] ?? panel).focus({ preventScroll: true })
+}
+
 export function focusNextToTrigger(trigger: HTMLElement | null, backwards: boolean) {
   if (!trigger) return
   const scope = trigger.closest<HTMLElement>('[data-overlay-layer]') ?? document.body
@@ -88,7 +93,7 @@ function onFocusin(event: FocusEvent) {
   const index = activeLayers.indexOf(modal.id)
   if (activeLayers.slice(index).some((id) => document.querySelector(`[data-overlay-layer="${id}"]`)?.contains(event.target as Node))) return
   const panel = modal.panel?.()
-  if (panel) (focusableElements(panel)[0] ?? panel).focus({ preventScroll: true })
+  focusFirstInOverlay(panel ?? null)
 }
 
 function listen() {
@@ -130,9 +135,24 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 /** Shared modal lifecycle for custom-shaped sheets and responsive drawers. */
-export function useModalOverlay(open: MaybeRefOrGetter<boolean>, panel: Ref<HTMLElement | null>, close: () => void) {
+export function useModalOverlay(
+  open: MaybeRefOrGetter<boolean>,
+  panel: Ref<HTMLElement | null>,
+  close: (reason: OverlayCloseReason) => void,
+  options: { kind?: 'dialog' | 'sheet'; closeOnOutside?: MaybeRefOrGetter<boolean> } = {},
+) {
   const registration: OverlayRegistration = {
-    id: `modal-${useId()}`, kind: 'dialog', trigger: null, panel: () => panel.value, close,
+    id: `modal-${useId()}`,
+    kind: options.kind ?? 'dialog',
+    trigger: null,
+    panel: () => panel.value,
+    close(reason) {
+      if (reason === 'outside' && options.closeOnOutside !== undefined && !toValue(options.closeOnOutside)) {
+        bringToFront()
+        return
+      }
+      close(reason)
+    },
   }
   const { layerId, bringToFront } = useOverlay(registration)
   watch(() => toValue(open), async (active, previous) => {
@@ -142,7 +162,7 @@ export function useModalOverlay(open: MaybeRefOrGetter<boolean>, panel: Ref<HTML
       if (!toValue(open)) return
       bringToFront()
       const element = panel.value
-      if (element) (element.querySelector<HTMLElement>('[autofocus]') ?? focusableElements(element)[0] ?? element).focus({ preventScroll: true })
+      focusFirstInOverlay(element)
     } else if (previous) releaseOverlay(layerId, true)
   }, { immediate: true })
   onUnmounted(() => {

@@ -226,7 +226,7 @@ function completeTask(
   const record = task.mode === 'learning' ? {
     id: command.recordId ?? context.id('completion'), taskId: task.id,
     topicId: task.listId === 'list:system:learning' ? null : task.listId,
-    sessionIds: sessions.current.map(({ id }) => id), taskTitleSnapshot: task.title,
+    sessionIds: sessions.current.map(({ id }) => id), tagIdsSnapshot: [...task.tagIds], taskTitleSnapshot: task.title,
     learned: command.learned!, evidence: command.evidence!, blocker: command.blocker ?? '',
     nextAction: command.nextAction!, mastery: command.mastery ?? null, completedAt: context.now,
     reviewStage: 0 as const, nextReviewOn: addCalendarDays(context.now.slice(0, 10), 1),
@@ -391,7 +391,13 @@ function applyPatch(
   const listId = patch.listId ?? task.listId
   const sectionId = patch.sectionId === undefined ? task.sectionId : patch.sectionId
   const tagIds = patch.tagIds ?? task.tagIds
-  assertReferences(state, listId, sectionId, tagIds)
+  assertReferences(
+    state,
+    listId,
+    sectionId,
+    patch.tagIds === undefined ? [] : tagIds,
+    patch.tagIds === undefined ? [] : task.tagIds,
+  )
   const startAt = patch.startAt === undefined ? task.schedule.startAt : patch.startAt
   const startOn = patch.startOn === undefined ? task.schedule.startOn : patch.startOn
   const dueAt = patch.dueAt === undefined ? task.deadline.dueAt : patch.dueAt
@@ -477,7 +483,13 @@ function requireTasks(
   return taskIds.map((taskId) => requireTask(state, taskId, expectedRevisions?.[taskId]))
 }
 
-function assertReferences(state: WorkspaceStateV3, listId: string, sectionId: string | null, tagIds: readonly string[]): void {
+function assertReferences(
+  state: WorkspaceStateV3,
+  listId: string,
+  sectionId: string | null,
+  tagIds: readonly string[],
+  allowedArchivedTagIds: readonly string[] = [],
+): void {
   if (!state.lists.some(({ id, archivedAt }) => id === listId && archivedAt === null)) {
     throw new DomainCommandError('LIST_NOT_FOUND', `Task list not found: ${listId}.`, { listId })
   }
@@ -488,8 +500,9 @@ function assertReferences(state: WorkspaceStateV3, listId: string, sectionId: st
     }
   }
   if (new Set(tagIds).size !== tagIds.length) throw new DomainCommandError('VALIDATION_ERROR', 'Task tag ids must be unique.')
+  const allowedArchived = new Set(allowedArchivedTagIds)
   for (const tagId of tagIds) {
-    if (!state.tags.some(({ id, archivedAt }) => id === tagId && archivedAt === null)) {
+    if (!state.tags.some(({ id, archivedAt }) => id === tagId && (archivedAt === null || allowedArchived.has(id)))) {
       throw new DomainCommandError('TAG_NOT_FOUND', `Task tag not found: ${tagId}.`, { tagId })
     }
   }

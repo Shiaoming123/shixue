@@ -24,6 +24,52 @@ export function parseWorkspaceStateOrMigrate(
   return parseWorkspaceState(migrateStudyV2(study, migratedAt))
 }
 
+export function repairLegacyDeletedPendingReviewTasks(
+  value: unknown,
+  repairedAt = new Date().toISOString(),
+): WorkspaceStateV3 | null {
+  if (!isRecord(value) || value.version !== WORKSPACE_STATE_VERSION) return null
+  if (!Array.isArray(value.tasks) || !Array.isArray(value.completionRecords) || !Array.isArray(value.reviewTaskLinks)) return null
+  if (!Number.isInteger(value.revision)) return null
+
+  const probe = structuredClone(value) as Record<string, unknown>
+  const probeTasks = probe.tasks as unknown[]
+  const probeRecords = probe.completionRecords as unknown[]
+  const probeLinks = probe.reviewTaskLinks as unknown[]
+  const tasks = new Map(probeTasks.filter(isRecord).map((task) => [task.id, task]))
+  const records = new Map(probeRecords.filter(isRecord).map((record) => [record.id, record]))
+  const repairedTaskIds = new Set<unknown>()
+
+  for (const link of probeLinks.filter(isRecord)) {
+    if (link.completedAt !== null || (link.completion ?? null) !== null) continue
+    const task = tasks.get(link.reviewTaskId)
+    const record = records.get(link.completionRecordId)
+    if (!task || !record || record.deletedAt !== null || typeof task.deletedAt !== 'string') continue
+    if (record.nextReviewOn !== link.dueOn || record.reviewStage !== link.reviewStage) continue
+    if (task.mode !== 'learning' || task.id === record.taskId) continue
+    const pendingForRecord = probeLinks.filter((item) =>
+      isRecord(item) && item.completionRecordId === link.completionRecordId && item.completedAt === null)
+    const linksForTarget = probeLinks.filter((item) =>
+      isRecord(item) && (item.occurrenceId ?? item.reviewTaskId) === (link.occurrenceId ?? link.reviewTaskId))
+    if (pendingForRecord.length !== 1 || linksForTarget.length !== 1) continue
+    if (!isIsoDateTime(task.deletedAt)) continue
+
+    task.deletedAt = null
+    repairedTaskIds.add(task.id)
+  }
+
+  if (repairedTaskIds.size === 0) return null
+  const candidate = parseWorkspaceState(probe)
+  for (const task of candidate.tasks) {
+    if (!repairedTaskIds.has(task.id)) continue
+    task.updatedAt = repairedAt
+    task.revision += 1
+  }
+  candidate.revision += 1
+  candidate.updatedAt = repairedAt
+  return parseWorkspaceState(candidate)
+}
+
 function migrateStudyV2(study: StudyState, migratedAt: string): WorkspaceStateV3 {
   const tasks: Task[] = study.tasks.map((task) => ({
     id: task.id,
@@ -95,6 +141,7 @@ function migrateStudyV2(study: StudyState, migratedAt: string): WorkspaceStateV3
     reviewStage: record.reviewStage,
     dueOn: record.nextReviewOn as string,
     completedAt: null,
+    completion: null,
     createdAt: migratedAt,
     updatedAt: migratedAt,
   }))
@@ -182,4 +229,11 @@ function reviewTaskId(completionRecordId: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isIsoDateTime(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return false
+  const date = value.slice(0, 10)
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) === date && Number.isFinite(Date.parse(value))
 }

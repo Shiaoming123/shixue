@@ -63,6 +63,7 @@ export function parseWorkspaceState(value: unknown): WorkspaceStateV3 {
   }
   assertCollectionSizes(parsed)
   assertUniqueIds(parsed)
+  assertActiveTagTitles(parsed.tags)
   assertReferences(parsed)
   return parsed
 }
@@ -357,9 +358,16 @@ function parseTaskEvent(raw: unknown, index: number): TaskEvent {
 
 function parseCompletionRecord(raw: unknown, index: number): CompletionRecord {
   const value = requireRecord(raw, `Completion record ${index}`)
+  const tagIdsSnapshot = value.tagIdsSnapshot === undefined
+    ? []
+    : parseTextArray(value.tagIdsSnapshot, 'Completion record tagIdsSnapshot')
+  if (new Set(tagIdsSnapshot).size !== tagIdsSnapshot.length) {
+    throw new Error('Completion record has duplicate tagIdsSnapshot.')
+  }
   return {
     id: requireText(value.id, 'Completion record id'), taskId: requireText(value.taskId, 'Completion record taskId'),
     topicId: parseNullableText(value.topicId, 'Completion record topicId'), sessionIds: parseTextArray(value.sessionIds, 'Completion record sessionIds'),
+    tagIdsSnapshot,
     taskTitleSnapshot: requireText(value.taskTitleSnapshot, 'Completion record taskTitleSnapshot'),
     learned: requireText(value.learned, 'Completion record learned'), evidence: requireText(value.evidence, 'Completion record evidence'),
     blocker: requireText(value.blocker, 'Completion record blocker', true), nextAction: requireText(value.nextAction, 'Completion record nextAction'),
@@ -376,12 +384,24 @@ function parseCompletionRecord(raw: unknown, index: number): CompletionRecord {
 
 function parseReviewTaskLink(raw: unknown, index: number): ReviewTaskLink {
   const value = requireRecord(raw, `Review task link ${index}`)
+  const completion = value.completion === undefined || value.completion === null
+    ? null
+    : parseReviewTaskCompletion(value.completion)
   return {
     id: requireText(value.id, 'Review task link id'), completionRecordId: requireText(value.completionRecordId, 'Review task link completionRecordId'),
     reviewTaskId: requireText(value.reviewTaskId, 'Review task link reviewTaskId'), occurrenceId: parseNullableText(value.occurrenceId, 'Review task link occurrenceId'),
     reviewStage: requireRangeInteger(value.reviewStage, 0, 3, 'Review task link reviewStage') as ReviewTaskLink['reviewStage'],
     dueOn: requireDateOnly(value.dueOn, 'Review task link dueOn'), completedAt: parseNullableIsoDateTime(value.completedAt, 'Review task link completedAt'),
+    completion,
     createdAt: requireIsoDateTime(value.createdAt, 'Review task link createdAt'), updatedAt: requireIsoDateTime(value.updatedAt, 'Review task link updatedAt'),
+  }
+}
+
+function parseReviewTaskCompletion(raw: unknown): NonNullable<ReviewTaskLink['completion']> {
+  const value = requireRecord(raw, 'Review task link completion')
+  return {
+    result: parseEnum(value.result, ['clear', 'fuzzy', 'relearn'], 'Review task link completion result'),
+    reviewedOn: requireDateOnly(value.reviewedOn, 'Review task link completion reviewedOn'),
   }
 }
 
@@ -430,6 +450,16 @@ function assertUniqueIds(state: WorkspaceStateV3): void {
   assertUnique(state.commandReceipts.map((receipt) => ({ id: receipt.idempotencyKey })), 'command receipt idempotencyKey')
 }
 
+function assertActiveTagTitles(tags: readonly Tag[]): void {
+  const activeTitles = new Set<string>()
+  for (const tag of tags) {
+    if (tag.archivedAt !== null) continue
+    if (tag.title !== tag.title.trim()) throw new Error(`Active tag ${tag.id} title must be trimmed.`)
+    if (activeTitles.has(tag.title)) throw new Error(`Workspace state contains a duplicate active tag title: ${tag.title}.`)
+    activeTitles.add(tag.title)
+  }
+}
+
 function assertReferences(state: WorkspaceStateV3): void {
   const groups = ids(state.listGroups); const lists = ids(state.lists); const sections = new Map(state.sections.map((section) => [section.id, section])); const tags = ids(state.tags)
   const tasks = new Map(state.tasks.map((task) => [task.id, task])); const series = new Map(state.recurrenceSeries.map((entry) => [entry.id, entry])); const occurrences = new Map(state.occurrences.map((entry) => [entry.id, entry]))
@@ -474,6 +504,7 @@ function assertReferences(state: WorkspaceStateV3): void {
   for (const session of state.studySessions) if (!tasks.has(session.taskId)) throw new Error(`Study session ${session.id} has unknown taskId.`)
   for (const record of state.completionRecords) {
     if (!tasks.has(record.taskId)) throw new Error(`Completion record ${record.id} has unknown taskId.`)
+    for (const tagId of record.tagIdsSnapshot) if (!tags.has(tagId)) throw new Error(`Completion record ${record.id} has unknown tagId.`)
     for (const sessionId of record.sessionIds) { const session = sessions.get(sessionId); if (!session) throw new Error(`Completion record ${record.id} has unknown sessionId.`); if (session.taskId !== record.taskId) throw new Error(`Completion record ${record.id} session belongs to another task.`) }
   }
   assertEvents(state.taskEvents, tasks, records, occurrences, series)
@@ -485,11 +516,40 @@ function assertReferences(state: WorkspaceStateV3): void {
   if (activeSessions.some((session) => tasks.get(session.taskId)?.status !== 'in_progress')) {
     throw new Error('An active Study session requires an in-progress task.')
   }
+  const pendingRecordIds = new Set<string>()
+  const reviewTargets = new Set<string>()
   for (const link of state.reviewTaskLinks) {
     const record = records.get(link.completionRecordId)
     if (!record) throw new Error(`Review task link ${link.id} has unknown completionRecordId.`)
-    if (!tasks.has(link.reviewTaskId)) throw new Error(`Review task link ${link.id} has unknown reviewTaskId.`)
-    if (link.occurrenceId) assertOccurrenceTask(occurrences.get(link.occurrenceId), series, link.reviewTaskId, `Review task link ${link.id}`)
+    const reviewTask = tasks.get(link.reviewTaskId)
+    if (!reviewTask) throw new Error(`Review task link ${link.id} has unknown reviewTaskId.`)
+    if (reviewTask.id === record.taskId) throw new Error(`Review task link ${link.id} cannot link evidence to its source task.`)
+    if (reviewTask.mode !== 'learning') throw new Error(`Review task link ${link.id} requires a learning task.`)
+    if (link.occurrenceId) {
+      const occurrence = occurrences.get(link.occurrenceId)
+      assertOccurrenceTask(occurrence, series, link.reviewTaskId, `Review task link ${link.id}`)
+      if (link.completedAt === null && occurrence?.status !== 'pending') {
+        throw new Error(`Pending review task link ${link.id} requires a pending occurrence.`)
+      }
+      if (link.completedAt !== null && occurrence?.status !== 'completed') {
+        throw new Error(`Completed review task link ${link.id} requires a completed occurrence.`)
+      }
+    }
+    const target = link.occurrenceId ?? link.reviewTaskId
+    if (reviewTargets.has(target)) throw new Error(`Review task target ${target} has duplicate links.`)
+    reviewTargets.add(target)
+    if (link.completedAt === null) {
+      if (link.completion !== null) throw new Error(`Pending review task link ${link.id} cannot have a completion outcome.`)
+      if (record.deletedAt !== null || reviewTask.deletedAt !== null) throw new Error(`Pending review task link ${link.id} references deleted evidence.`)
+      if (record.nextReviewOn !== link.dueOn || record.reviewStage !== link.reviewStage) throw new Error(`Pending review task link ${link.id} does not match its active review.`)
+      if (pendingRecordIds.has(record.id)) throw new Error(`Completion record ${record.id} has duplicate pending review links.`)
+      pendingRecordIds.add(record.id)
+    }
+  }
+  for (const record of state.completionRecords) {
+    if (record.deletedAt === null && record.nextReviewOn !== null && !pendingRecordIds.has(record.id)) {
+      throw new Error(`Completion record ${record.id} requires one matching pending review link.`)
+    }
   }
 }
 

@@ -324,6 +324,9 @@ test('catalog exposes fixed risk, scope, reversibility, and preview metadata for
     { type: 'list.upsert', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'list_group.upsert', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'list_group.archive', risk: 'medium', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
+    { type: 'tag.create', risk: 'low', scope: 'single', reversibility: 'compensating', requiresPreview: false },
+    { type: 'tag.rename', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
+    { type: 'tag.archive', risk: 'medium', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'task.plan', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'task.transition', risk: 'medium', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'task.start', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
@@ -336,6 +339,8 @@ test('catalog exposes fixed risk, scope, reversibility, and preview metadata for
     { type: 'task.reorder', risk: 'low', scope: 'batch', reversibility: 'irreversible', requiresPreview: false },
     { type: 'task.toggle_completion', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'completion.review', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
+    { type: 'review.schedule', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
+    { type: 'review.complete', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'completion.create_next_action', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
     { type: 'workspace.reset', risk: 'high', scope: 'workspace', reversibility: 'irreversible', requiresPreview: true },
     { type: 'workspace.import', risk: 'high', scope: 'workspace', reversibility: 'irreversible', requiresPreview: true },
@@ -502,9 +507,12 @@ test('single task commands advance entity revisions and preserve an ordered life
 
 test('learning completion requires evidence and records it atomically', async () => {
   const service = fixture()
+  await executeNext(service, 'learning-tag', {
+    type: 'tag.create', tagId: 'tag:protocol', title: 'protocol',
+  })
   await executeNext(service, 'learning-create', {
     type: 'task.create', taskId: 'learning', mode: 'learning', listId: 'list:system:learning',
-    title: 'Learn capability protocol', acceptanceCriteria: ['Explain CAS'],
+    tagIds: ['tag:protocol'], title: 'Learn capability protocol', acceptanceCriteria: ['Explain CAS'],
   })
   await executeNext(service, 'learning-plan', {
     type: 'task.reschedule', taskId: 'learning', expectedRevision: 1, startOn: '2026-09-05',
@@ -529,7 +537,9 @@ test('learning completion requires evidence and records it atomically', async ()
   assert.equal(data.record.mastery, 4)
   const state = await service.query({ type: 'workspace.snapshot' })
   assert.equal(state.completionRecords.at(-1)?.taskId, 'learning')
-  assert.equal(state.taskEvents.at(-1)?.completionRecordId, state.completionRecords.at(-1)?.id)
+  assert.deepEqual(state.completionRecords.at(-1)?.tagIdsSnapshot, ['tag:protocol'])
+  assert.equal(state.taskEvents.findLast(({ type, taskId }) => type === 'completed' && taskId === 'learning')?.completionRecordId, state.completionRecords.at(-1)?.id)
+  assert.equal(state.reviewTaskLinks.at(-1)?.completionRecordId, state.completionRecords.at(-1)?.id)
 })
 
 test('batch cancel and delete mutate every validated target with consecutive events', async () => {

@@ -14,7 +14,7 @@ const choices: Array<{ value: RecurrenceScope; label: string; description: strin
   { value: 'series', label: '整个系列', description: '全部应用新规则' },
 ]
 const entityLabels: Record<EntityType, string> = {
-  workspace: '工作区', list_group: '清单分组', list: '清单', task: '关联任务', recurrence_series: '重复规则',
+  workspace: '工作区', list_group: '清单分组', list: '清单', tag: '标签', task: '关联任务', recurrence_series: '重复规则',
   occurrence: '一次计划', session: '专注记录', checklist_item: '检查项', completion_record: '完成记录',
 }
 const affectedCount = () => props.preview?.affected.length ?? 0

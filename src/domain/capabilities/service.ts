@@ -9,6 +9,10 @@ import { applyCalendarCommand, type CalendarCapabilityCommand } from './calendar
 import { applyLiveCompatibilityCommand } from './live-commands.ts'
 import { applyRecurrenceCommand } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
+import { applyReviewCommand } from './review-commands.ts'
+import { applyTagCommand } from './tag-commands.ts'
+import { searchWorkspace } from '../search/workspace-search.ts'
+import { ensureReviewTask, pendingReviewLinkForTarget, resolveLegacyReviewLink } from '../learning/review-task-link.ts'
 import {
   CAPABILITY_PROTOCOL_VERSION,
   COMMAND_RECEIPT_LIMIT,
@@ -30,8 +34,10 @@ import {
   type LiveCompatibilityCommand,
   type PreviewConfirmation,
   type RecurrenceCapabilityCommand,
+  type ReviewCapabilityCommand,
   type QueryResult,
   type TaskCapabilityCommand,
+  type TagCapabilityCommand,
   type TaskCapabilityService,
   type UndoApplyCommand,
   type WorkspaceImportCommand,
@@ -47,6 +53,9 @@ export function createTaskCapabilityService(
     async query<Q extends CapabilityQuery>(query: Q): Promise<QueryResult<Q>> {
       const state = await store.load()
       if (query.type === 'workspace.snapshot') return structuredClone(state) as QueryResult<Q>
+      if (query.type === 'workspace.search') {
+        return structuredClone(searchWorkspace(state, query)) as QueryResult<Q>
+      }
       if (query.type === 'task.get') {
         const task = state.tasks.find(({ id }) => id === query.taskId) ?? null
         return structuredClone(task && (!task.deletedAt || query.includeDeleted) ? task : null) as QueryResult<Q>
@@ -59,11 +68,11 @@ export function createTaskCapabilityService(
         return structuredClone(tasks) as QueryResult<Q>
       }
       if (query.type === 'task.search') {
-        const text = query.text.trim().toLocaleLowerCase()
-        const tasks = state.tasks.filter((task) =>
-          (query.includeDeleted || task.deletedAt === null) &&
-          [task.title, task.notes, ...(task.learning?.acceptanceCriteria ?? []), ...task.checklist.map(({ text }) => text)]
-            .some((value) => value.toLocaleLowerCase().includes(text)))
+        const tasks = searchWorkspace(state, {
+          text: query.text,
+          kinds: ['task'],
+          includeDeleted: query.includeDeleted,
+        }).tasks.map(({ task }) => task)
         return structuredClone(tasks) as QueryResult<Q>
       }
       if (query.type === 'command.describe') return getCommandDescriptor(query.commandType) as QueryResult<Q>
@@ -226,15 +235,93 @@ function applyCapabilityCommand(
   command: CapabilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
+  const routedReview = reviewCommandForGenericTarget(state, command)
+  if (routedReview) return applyReviewCommand(state, routedReview, context)
   if (command.type.startsWith('reminder.')) return applyReminderCommand(state, command as ReminderCapabilityCommand, context)
   if (isCalendarCommand(command)) return applyCalendarCommand(state, command, context)
-  if (isCoreTaskCommand(command)) return applyTaskCommand(state, command, context)
-  if (isRecurrenceCommand(command)) return applyRecurrenceCommand(state, command, context)
-  if (isLiveCompatibilityCommand(command)) return applyLiveCompatibilityCommand(state, command, context)
-  if (command.type === 'workspace.import') return applyWorkspaceImport(state, command)
-  if (command.type === 'undo.apply') return applyUndo(state, command, context)
-  const commandType = (command as { type: string }).type
-  throw new DomainCommandError('COMMAND_NOT_FOUND', `Command is not implemented: ${commandType}.`)
+  if (isReviewCommand(command)) return applyReviewCommand(state, command, context)
+  if (isTagCommand(command)) return applyTagCommand(state, command, context)
+  let application: CommandApplication
+  if (isCoreTaskCommand(command)) application = applyTaskCommand(state, command, context)
+  else if (isRecurrenceCommand(command)) application = applyRecurrenceCommand(state, command, context)
+  else if (isLiveCompatibilityCommand(command)) application = applyLiveCompatibilityCommand(state, command, context)
+  else if (command.type === 'workspace.import') return applyWorkspaceImport(state, command)
+  else if (command.type === 'undo.apply') return applyUndo(state, command, context)
+  else {
+    const commandType = (command as { type: string }).type
+    throw new DomainCommandError('COMMAND_NOT_FOUND', `Command is not implemented: ${commandType}.`)
+  }
+  attachReviewTasksForNewEvidence(state, application, context)
+  return application
+}
+
+function reviewCommandForGenericTarget(
+  state: WorkspaceStateV3,
+  command: CapabilityCommand,
+): ReviewCapabilityCommand | null {
+  if (command.type === 'completion.review') {
+    const link = resolveLegacyReviewLink(state, command.recordId, command.result, command.reviewedOn)
+    return link ? { type: 'review.complete', linkId: link.id, result: command.result, reviewedOn: command.reviewedOn } : null
+  }
+  if (command.type === 'task.complete' || command.type === 'task.toggle_completion') {
+    const link = pendingReviewLinkForTarget(state, command.taskId)
+    if (link && !command.reviewedOn) throw new DomainCommandError('VALIDATION_ERROR', 'Linked review completion requires a local reviewedOn date.', { linkId: link.id })
+    return link ? {
+      type: 'review.complete', linkId: link.id, result: command.reviewResult ?? 'clear', reviewedOn: command.reviewedOn!,
+      expectedReviewTaskRevision: command.expectedRevision,
+    } : null
+  }
+  if (command.type === 'recurrence.complete') {
+    const occurrence = state.occurrences.find(({ id }) => id === command.occurrenceId)
+    const taskId = occurrence && state.recurrenceSeries.find(({ id }) => id === occurrence.seriesId)?.taskId
+    const link = taskId ? pendingReviewLinkForTarget(state, taskId, command.occurrenceId) : null
+    if (link && !command.reviewedOn) throw new DomainCommandError('VALIDATION_ERROR', 'Linked review completion requires a local reviewedOn date.', { linkId: link.id })
+    return link ? {
+      type: 'review.complete', linkId: link.id, result: command.reviewResult ?? 'clear', reviewedOn: command.reviewedOn!,
+      expectedReviewTaskRevision: command.expectedTaskRevision,
+      expectedOccurrenceRevision: command.expectedOccurrenceRevision,
+    } : null
+  }
+  if (command.type === 'recurrence.skip') {
+    const occurrence = state.occurrences.find(({ id }) => id === command.occurrenceId)
+    const taskId = occurrence && state.recurrenceSeries.find(({ id }) => id === occurrence.seriesId)?.taskId
+    const link = taskId ? pendingReviewLinkForTarget(state, taskId, command.occurrenceId) : null
+    if (link?.completedAt === null) {
+      throw new DomainCommandError('VALIDATION_ERROR', 'A linked review occurrence cannot be skipped.', { linkId: link.id, occurrenceId: command.occurrenceId })
+    }
+  }
+  return null
+}
+
+function attachReviewTasksForNewEvidence(
+  state: WorkspaceStateV3,
+  application: CommandApplication,
+  context: CapabilityCommandContext,
+): void {
+  const completionRecordIds = application.compensation?.type === 'task.restore'
+    ? application.compensation.completionRecordIds
+    : application.compensation?.type === 'recurrence.restore'
+      ? application.compensation.completionRecordIds ?? []
+      : []
+  const createdRecords = new Set(completionRecordIds)
+  const unlinked = state.completionRecords.filter((record) =>
+    createdRecords.has(record.id) && record.deletedAt === null && record.nextReviewOn !== null &&
+    !state.reviewTaskLinks.some(({ completionRecordId }) => completionRecordId === record.id))
+  for (const record of unlinked) {
+    const ensured = ensureReviewTask(state, record.id, record.nextReviewOn!, context)
+    if (!ensured.created) continue
+    const taskEntity = { type: 'task' as const, id: ensured.task.id, revision: ensured.task.revision }
+    const linkEntity = { type: 'completion_record' as const, id: ensured.link.completionRecordId }
+    application.affected.push(taskEntity, linkEntity)
+    application.changes.push(
+      { entity: taskEntity, operation: 'create', fields: ['reviewTask'] },
+      { entity: linkEntity, operation: 'create', fields: ['reviewTaskLink'] },
+    )
+    if (application.compensation?.type === 'task.restore' || application.compensation?.type === 'recurrence.restore') {
+      application.compensation.reviewTaskIds = [...(application.compensation.reviewTaskIds ?? []), ensured.task.id]
+      application.compensation.reviewTaskLinkIds = [...(application.compensation.reviewTaskLinkIds ?? []), ensured.link.id]
+    }
+  }
 }
 
 function applyWorkspaceImport(state: WorkspaceStateV3, command: WorkspaceImportCommand): CommandApplication {
@@ -300,7 +387,19 @@ function applyUndo(
 
   const events: TaskEvent[] = []
   const restored: EntityRef[] = []
-  if (token.compensation.type === 'task.remove_created') {
+  if (token.compensation.type === 'tag.remove_created') {
+    const { tagId } = token.compensation
+    const index = state.tags.findIndex(({ id }) => id === tagId)
+    if (index < 0) throw new DomainCommandError('TAG_NOT_FOUND', `Tag not found for undo: ${tagId}.`, { tagId })
+    const [removed] = state.tags.splice(index, 1)
+    restored.push({ type: 'tag', id: removed!.id })
+  } else if (token.compensation.type === 'tag.restore') {
+    const { tag } = token.compensation
+    const index = state.tags.findIndex(({ id }) => id === tag.id)
+    if (index < 0) throw new DomainCommandError('TAG_NOT_FOUND', `Tag not found for undo: ${tag.id}.`, { tagId: tag.id })
+    state.tags[index] = { ...structuredClone(tag), updatedAt: context.now }
+    restored.push({ type: 'tag', id: tag.id })
+  } else if (token.compensation.type === 'task.remove_created') {
     const recurrenceSeriesIds = new Set(token.compensation.recurrenceSeriesIds ?? [])
     const occurrenceIds = new Set(token.compensation.occurrenceIds ?? [])
     const tasks = token.compensation.taskIds.map((taskId) => {
@@ -382,6 +481,7 @@ function applyUndo(
       record.deletedAt = context.now
       record.updatedAt = context.now
     }
+    removeGeneratedReviewTargets(state, token.compensation.reviewTaskIds, token.compensation.reviewTaskLinkIds, context.now)
   } else if (token.compensation.type === 'recurrence.restore') {
     for (const id of token.compensation.completionRecordIds ?? []) {
       const record = state.completionRecords.find((entry) => entry.id === id)
@@ -412,11 +512,16 @@ function applyUndo(
       ...token.compensation.recurrenceSeries.map(({ id, revision }) => ({ type: 'recurrence_series' as const, id, revision })),
       ...token.compensation.occurrenceSnapshots.map(({ id, revision }) => ({ type: 'occurrence' as const, id, revision })),
     )
+    removeGeneratedReviewTargets(state, token.compensation.reviewTaskIds, token.compensation.reviewTaskLinkIds, context.now)
   }
 
   return {
     affected: restored,
-    changes: restored.map((entity) => ({ entity, operation: 'restore', fields: ['state'] })),
+    changes: restored.map((entity) => ({
+      entity,
+      operation: token.compensation.type === 'tag.remove_created' ? 'delete' : 'restore',
+      fields: ['state'],
+    })),
     events,
     compensation: null,
     data: {
@@ -443,13 +548,17 @@ function assertEnvelope(current: { revision: number }, envelope: CommandEnvelope
 }
 
 function previewAffected(
-  state: { revision: number; tasks: { id: string; revision: number }[] },
+  state: WorkspaceStateV3,
   command: CommandEnvelope['command'],
 ): EntityRef[] {
   if (command.type === 'workspace.import' || command.type === 'workspace.reset') {
     return [{ type: 'workspace', id: 'workspace', revision: state.revision }]
   }
-  if (command.type === 'undo.apply') return command.token.compensation.type === 'task.remove_created'
+  if (command.type === 'undo.apply') return command.token.compensation.type === 'tag.remove_created'
+    ? [{ type: 'tag', id: command.token.compensation.tagId }]
+    : command.token.compensation.type === 'tag.restore'
+      ? [{ type: 'tag', id: command.token.compensation.tag.id }]
+      : command.token.compensation.type === 'task.remove_created'
     ? command.token.compensation.taskIds.map((id) => ({ type: 'task', id }))
     : command.token.compensation.type === 'task.restore'
       ? command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task', id, revision }))
@@ -468,12 +577,19 @@ function previewAffected(
   if (command.type === 'list.upsert') return [{ type: 'list', id: command.list.id }]
   if (command.type === 'list_group.upsert') return [{ type: 'list_group', id: command.group.id }]
   if (command.type === 'list_group.archive') return [{ type: 'list_group', id: command.groupId }]
+  if (command.type === 'tag.create') return [{ type: 'tag', id: command.tagId ?? 'pending' }]
+  if (command.type === 'tag.rename' || command.type === 'tag.archive') return [{ type: 'tag', id: command.tagId }]
   if (
     command.type === 'session.pause' ||
     command.type === 'session.resume' ||
     command.type === 'session.scratchpad.update'
   ) return [{ type: 'session', id: command.sessionId }]
   if (command.type === 'completion.review') return [{ type: 'completion_record', id: command.recordId }]
+  if (command.type === 'review.schedule') return [{ type: 'completion_record', id: command.completionRecordId }]
+  if (command.type === 'review.complete') {
+    const completionRecordId = state.reviewTaskLinks.find(({ id }) => id === command.linkId)?.completionRecordId ?? command.linkId
+    return [{ type: 'completion_record', id: completionRecordId }]
+  }
   if (command.type === 'completion.create_next_action') {
     return [{ type: 'task', id: command.taskId ?? 'pending' }]
   }
@@ -499,6 +615,31 @@ function isCoreTaskCommand(command: CapabilityCommand): command is TaskCapabilit
     command.type === 'task.batch_reschedule' ||
     command.type === 'task.batch_cancel' ||
     command.type === 'task.batch_delete'
+}
+
+function isTagCommand(command: CapabilityCommand): command is TagCapabilityCommand {
+  return command.type === 'tag.create' || command.type === 'tag.rename' || command.type === 'tag.archive'
+}
+
+function isReviewCommand(command: CapabilityCommand): command is ReviewCapabilityCommand {
+  return command.type === 'review.schedule' || command.type === 'review.complete'
+}
+
+function removeGeneratedReviewTargets(
+  state: WorkspaceStateV3,
+  taskIds: readonly string[] | undefined,
+  linkIds: readonly string[] | undefined,
+  now: string,
+): void {
+  const tasks = new Set(taskIds ?? [])
+  const links = new Set(linkIds ?? [])
+  for (const task of state.tasks) {
+    if (!tasks.has(task.id) || task.deletedAt !== null) continue
+    task.deletedAt = now
+    task.updatedAt = now
+    task.revision += 1
+  }
+  state.reviewTaskLinks = state.reviewTaskLinks.filter(({ id }) => !links.has(id))
 }
 
 function isCalendarCommand(command: CapabilityCommand): command is CalendarCapabilityCommand {
@@ -570,6 +711,13 @@ function publicPreviewImpact(
   command: CommandEnvelope['command'],
   application: CommandApplication,
 ): Pick<CommandApplication, 'affected' | 'changes'> {
+  if (command.type === 'tag.create' && command.tagId === undefined) {
+    const entity: EntityRef = { type: 'tag', id: 'new' }
+    return {
+      affected: [entity],
+      changes: [{ entity, operation: 'create', fields: ['tag'] }],
+    }
+  }
   if (command.type !== 'task.create' || command.taskId !== undefined) {
     return { affected: application.affected, changes: application.changes }
   }

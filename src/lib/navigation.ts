@@ -1,6 +1,9 @@
 import { hasRuntimeCapability } from './platform.ts'
 import type { RuntimeInfo } from './platform'
 
+export type { ShellDestination, WorkspaceView } from './workspace-view.ts'
+export { resolveShellDestination, resolveWorkspaceView, serializeShellDestination, serializeWorkspaceView } from './workspace-view.ts'
+
 export type NavKey = 'overview' | 'themes' | 'data' | 'updater'
 
 export function availableNavigationKeys(runtime: RuntimeInfo): NavKey[] {

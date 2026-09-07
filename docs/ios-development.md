@@ -13,7 +13,7 @@
 - 通知插件可在移动端装配，但当前前端轮询不能保证应用挂起或终止后的投递；原生后台提醒仍未实现。
 - Android 已有调试构建证据；iOS 已在 macOS/Xcode 26.6 上完成 Apple Silicon Simulator 无签名 Debug 原生编译，并在 iPhone 17 Pro / iOS Simulator 26.5 上通过有界启动 smoke。这不是 SQLite 重启持久化、真机、签名或商店证据。
 
-iOS 基础分支已同步 `origin/main@140c012`，包含 PR2、PR3、PR4 和 PR5。PR6（导航/集成/发布）尚未实现；它可以与 iOS 运行阻断排查并行，但不得从未合并的功能分支复制生成工程或领域规则。
+iOS 基础分支现已合入 `origin/main@f011db1`，包含 PR2 至 PR6 以及 v0.3.0 发布证据。下方 Simulator 结果来自较早的 `origin/main@140c012` 快照，不覆盖当前合并树；在 macOS 上重新执行原生构建和启动 smoke 前，当前协议将 iOS build/run 标记为 `NOT_RUN`。
 
 ## 2. 与整体路线的并行关系
 
@@ -87,7 +87,7 @@ Tauri CLI 2.11.4 不会覆盖上一次生成的 Simulator `.app`，连续构建�
 
 完成定义：干净 checkout 能重复完成前端构建和 iOS Simulator 原生编译。模拟器启动与持久化结果单独标注；未执行时写 `NOT_RUN`，不影响“编译就绪”，但不得声称“模拟器验证完成”。
 
-### I1 实际证据快照（2026-09-06）
+### I1 历史证据快照（2026-09-06，`origin/main@140c012`）
 
 | 检查 | 状态 | 实际证据 |
 | --- | --- | --- |

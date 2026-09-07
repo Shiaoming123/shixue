@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Settings } from '@lucide/vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Search, Settings } from '@lucide/vue'
 import { applyTheme } from './assets/themes'
-import AppSidebar, { type StudyPage, type StudySmartView, type StudySmartViewCounts } from './components/study/AppSidebar.vue'
+import AppSidebar, { type StudySmartViewCounts } from './components/study/AppSidebar.vue'
 import BottomTabs from './components/study/BottomTabs.vue'
 import CalendarWorkspace from './components/calendar/CalendarWorkspace.vue'
 import CompletionSheet, { type CompletionPayload } from './components/study/CompletionSheet.vue'
@@ -13,18 +13,27 @@ import ReminderCard, { type ReminderCardAction } from './components/study/Remind
 import type { ReminderSetValue } from './components/study/ReminderEditor.vue'
 import TaskActionSheet, { type TaskActionMode, type TaskActionPayload } from './components/study/TaskActionSheet.vue'
 import TaskDetailDrawer, { type TaskEventViewItem } from './components/study/TaskDetailDrawer.vue'
-import TaskEditSheet, { type TaskEditValue } from './components/study/TaskEditSheet.vue'
+import TaskEditSheet, { type TaskEditChanges, type TaskEditValue } from './components/study/TaskEditSheet.vue'
+import TagManagerSheet from './components/study/TagManagerSheet.vue'
+import GlobalSearchDialog from './components/study/GlobalSearchDialog.vue'
+import LearningRhythmView, { type LearningRhythmViewItem } from './components/study/LearningRhythmView.vue'
 import RecurrenceScopeDialog, { type RecurrenceRuleScope } from './components/study/RecurrenceScopeDialog.vue'
 import OccurrenceRescheduleSheet from './components/study/OccurrenceRescheduleSheet.vue'
 import { type RecurrenceRule } from './components/study/RecurrenceEditor.vue'
 import TasksView, { type OccurrenceViewItem, type TaskViewItem, type TaskViewStatus } from './components/study/TasksView.vue'
 import TopicsView, { type TopicViewItem } from './components/study/TopicsView.vue'
 import Listbox from './components/ui/Listbox.vue'
+import Popover from './components/ui/Popover.vue'
 import OverlayHost from './components/ui/OverlayHost.vue'
 import ToastRegion from './components/ui/ToastRegion.vue'
 import Button from './components/ui/Button.vue'
 import Dialog from './components/ui/Dialog.vue'
-import { projectTaskItems, queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView, type TaskProjectionReason } from './lib/study-task-query'
+import Sheet from './components/ui/Sheet.vue'
+import { queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView } from './lib/study-task-query'
+import { selectToday } from './domain/views/today'
+import { selectUpcoming } from './domain/views/upcoming'
+import { selectLearningRhythms } from './domain/views/learning-rhythm'
+import { selectWeeklyLearningSummary } from './domain/views/weekly-learning-summary'
 import { defaultModuleConfig } from './modules/config'
 import { installWindowLifecycle, type WindowCloseBehavior } from './lib/window-lifecycle'
 import { createReminderRuntime, readNativeLegacyReminderRows, submitNativeReminder } from './lib/reminder-runtime'
@@ -34,15 +43,26 @@ import type { CalendarView } from './domain/calendar/range'
 import { offsetForInstant } from './domain/calendar/target'
 import { loadSidebarPreferences, saveSidebarPreferences, type SidebarPreferences } from './lib/sidebar-preferences'
 import { shouldAutoSelectTask } from './lib/task-detail-layout'
+import {
+  desktopWorkspaceNavigation,
+  learningWorkspaceNavigation,
+  mobileMoreWorkspaceNavigation,
+  renderPageForDestination,
+  resolveArchivedListTransition,
+  resolveTaskTopicFilterTransition,
+  shouldResetTaskPriority,
+  type ShellDestination,
+  type WorkspaceView,
+} from './lib/workspace-view'
+import { workspaceDestinationFromSmartView } from './lib/sidebar-navigation'
 import { hasRuntimeCapability, RUNTIME_INFO_KEY, runtimeInfoForNativePlatform } from './lib/platform'
 import { reportSmokePhase } from './lib/smoke'
-import { inject } from 'vue'
 import {
   addTaskChecklistItem,
   archiveStudyListGroup,
   bulkDeleteStudyTasks,
-  bulkRescheduleStudyTasks,
   completeStudyTask,
+  completeReviewTaskLink,
   createTaskFromNextAction,
   deleteStudyTask,
   exportStudyState,
@@ -51,7 +71,6 @@ import {
   projectWorkspaceState,
   pauseStudySession,
   planStudyTask,
-  reviewCompletionRecord,
   rescheduleStudyTask,
   resumeStudySession,
   saveStudyScratchpad,
@@ -76,17 +95,25 @@ import {
 import { createSeedStudyState } from './storage/study/types'
 import { getWorkspaceStore } from './storage/workspace/registry'
 import { createTaskCapabilityService } from './domain/capabilities/service'
-import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef } from './domain/capabilities/types'
+import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef, type TagCapabilityCommand } from './domain/capabilities/types'
 import type { CalendarCapabilityCommand } from './domain/capabilities/calendar-commands'
 import { createCalendarUndoAction, runCalendarCommand } from './lib/calendar-command-handler'
-import type { WorkspaceStateV3, ReminderRule } from './domain/workspace/types'
+import { runOverdueBatchMove } from './lib/overdue-batch-command'
+import { runTagCommand } from './lib/tag-command-handler'
+import { destinationForSearchTask } from './lib/search-result-navigation'
+import { resolveRecurrenceEditWrite, resolveReminderEditWrite, resolveTaskEditWrite, runTaskEditCommit } from './lib/task-edit-commit'
+import type { RecurrenceCadence, RecurrenceSeries, Task, WorkspaceStateV3 } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
-const page = ref<StudyPage>('today')
+const destination = ref<ShellDestination>({ kind: 'today' })
+const page = computed(() => renderPageForDestination(destination.value))
 const state = ref<StudyState>(createSeedStudyState())
 const loading = ref(true)
 const showFocus = ref(false)
 const completionOpen = ref(false)
+const completionReviewLinkId = ref('')
+const completionOccurrenceId = ref('')
+const completionOccurrenceBusy = ref(false)
 const topicEditorOpen = ref(false)
 const groupEditorOpen = ref(false)
 const topicTitle = ref('')
@@ -98,15 +125,28 @@ const groupTitle = ref('')
 const selectedTopicId = ref(state.value.topics[0]?.id ?? '')
 const selectedTaskId = ref('')
 const selectedOccurrenceId = ref('')
-const activeSmartView = ref<StudyTaskSmartView>('today')
+const activeSmartView = computed<StudyTaskSmartView>(() => {
+  if (destination.value.kind === 'today') return 'today'
+  if (destination.value.kind === 'upcoming') return 'next7'
+  if (destination.value.kind === 'completed') return 'completed'
+  if (destination.value.kind === 'inbox') return 'inbox'
+  return 'all'
+})
 const taskSearch = ref('')
 const taskTopicFilter = ref('all')
 const taskPriorityFilter = ref<StudyTaskPriority | 'all'>('all')
 const taskSort = ref<StudyTaskQuerySort>('manual')
 const taskActionOpen = ref(false)
+const listsMoreOpen = ref(false)
 const taskActionMode = ref<TaskActionMode>('plan')
 const taskActionTaskId = ref('')
 const taskEditorOpen = ref(false)
+const globalSearchOpen = ref(false)
+const tagManagerOpen = ref(false)
+const tagManagerReturnToSearch = ref(false)
+const tagManagerBusy = ref(false)
+const tagManagerError = ref('')
+const tagManager = ref<InstanceType<typeof TagManagerSheet> | null>(null)
 const recurrenceWorkspace = ref<WorkspaceStateV3 | null>(null)
 const recurrenceScopeOpen = ref(false)
 const recurrencePreview = ref<CommandPreview | null>(null)
@@ -122,6 +162,8 @@ let recurrencePreviewEnvelope: RecurrenceUpdateEnvelope | null = null
 let recurrencePreviewVersion = 0
 const reviewRevealed = ref(false)
 const reviewMode = ref<'review' | 'records'>('review')
+const recordTarget = ref<{ id: string; requestId: number }>()
+let recordTargetRequestId = 0
 const appearanceDark = ref(false)
 const compact = ref(false)
 const clock = ref(Date.now())
@@ -129,7 +171,11 @@ const calendarTargetOffset = computed(() => offsetForInstant(new Date(clock.valu
 const toast = ref('')
 const toastAction = ref<{ label: string; run: () => Promise<void>; successMessage?: string } | null>(null)
 const toastVersion = ref(0)
+const moduleStartupError = '部分系统能力未能启动。任务数据与核心界面仍可使用。'
 const storageError = ref('')
+const errorBannerMessage = computed(() => storageError.value === moduleStartupError
+  ? moduleStartupError
+  : '上一次更改未保存。拾学不会用演示数据覆盖现有记录。')
 const remindersEnabled = ref(false)
 const planningPreferences = ref(loadPlanningPreferences())
 const calendarStartsCompact = typeof window !== 'undefined' && window.innerWidth <= 819
@@ -137,7 +183,7 @@ const desktopCalendarMode = ref<CalendarView>(calendarStartsCompact
   ? planningPreferences.value.defaultCalendarView
   : loadLastDesktopCalendarView() ?? planningPreferences.value.defaultCalendarView)
 let desktopCalendarModeLoaded = !calendarStartsCompact
-const defaultSidebarMenuKeys = ['smart:inbox', 'smart:today', 'smart:next7', 'page:calendar', 'smart:all', 'smart:completed', 'page:topics', 'page:review']
+const defaultSidebarMenuKeys = [...desktopWorkspaceNavigation.map(({ preferenceKey }) => preferenceKey), 'page:review']
 const sidebarPreferences = ref(loadSidebarPreferences(defaultSidebarMenuKeys))
 const tasksView = ref<InstanceType<typeof TasksView> | null>(null)
 const runtime = inject(RUNTIME_INFO_KEY, () => runtimeInfoForNativePlatform('web'), true)
@@ -180,6 +226,12 @@ const reminderCompletionTask = computed(() => {
   const rule = workspace?.reminderRules.find(({ id }) => id === delivery?.reminderRuleId)
   return workspace?.tasks.find(({ id }) => id === rule?.taskId)
 })
+const completionOccurrenceTask = computed(() => {
+  const workspace = recurrenceWorkspace.value
+  const occurrence = workspace?.occurrences.find(({ id }) => id === completionOccurrenceId.value)
+  const series = workspace?.recurrenceSeries.find(({ id }) => id === occurrence?.seriesId)
+  return workspace?.tasks.find(({ id }) => id === series?.taskId)
+})
 const cloudConfig = import.meta.env.VITE_STUDY_SUPABASE_URL?.trim() && import.meta.env.VITE_STUDY_SUPABASE_PUBLISHABLE_KEY?.trim() ? {
   provider: 'supabase' as const,
   projectUrl: import.meta.env.VITE_STUDY_SUPABASE_URL.trim(),
@@ -200,8 +252,14 @@ const today = computed(() => new Date().toLocaleDateString('sv-SE'))
 const dateLabel = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date()).replace('星期', '周'))
 const activeSession = computed(() => state.value.sessions.find((session) => !session.deletedAt && (session.state === 'running' || session.state === 'paused')))
 const activeTask = computed(() => state.value.tasks.find((task) => task.id === activeSession.value?.taskId && !task.deletedAt))
+const activeReviewLinkId = computed(() => recurrenceWorkspace.value?.reviewTaskLinks.find(({ reviewTaskId, completedAt }) =>
+  reviewTaskId === activeTask.value?.id && completedAt === null)?.id ?? '')
 const selectedTask = computed(() => state.value.tasks.find((task) => task.id === selectedTaskId.value && !task.deletedAt))
 const selectedWorkspaceTask = computed(() => recurrenceWorkspace.value?.tasks.find((task) => task.id === selectedTaskId.value && !task.deletedAt))
+const selectedTaskEditModel = computed(() => selectedTask.value ? ({
+  ...selectedTask.value,
+  tagIds: [...(selectedWorkspaceTask.value?.tagIds ?? [])],
+}) : undefined)
 const selectedOccurrence = computed(() => recurrenceWorkspace.value?.occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId.value) ?? null)
 const selectedRecurrence = computed(() => {
   const workspace = recurrenceWorkspace.value
@@ -227,45 +285,80 @@ const filteredTaskViews = computed<TaskViewItem[]>(() => queryStudyTasks(liveTas
   search: taskSearch.value,
   sort: taskSort.value,
   topicId: taskTopicFilter.value === 'all' ? undefined : taskTopicFilter.value === 'unassigned' ? null : taskTopicFilter.value,
-  smartView: activeSmartView.value === 'today' ? 'all' : activeSmartView.value,
+  smartView: activeSmartView.value === 'today' || activeSmartView.value === 'next7' ? 'all' : activeSmartView.value,
   today: today.value,
 }).filter((task) => taskPriorityFilter.value === 'all' || task.priority === taskPriorityFilter.value).map(toTaskView))
-const todayProjections = computed(() => recurrenceWorkspace.value ? projectTaskItems(recurrenceWorkspace.value, { from: today.value, to: today.value }, timezone) : [])
+const todayGroups = computed(() => recurrenceWorkspace.value ? selectToday(recurrenceWorkspace.value, today.value, timezone) : [])
+const upcomingGroups = computed(() => recurrenceWorkspace.value ? selectUpcoming(recurrenceWorkspace.value, today.value, 7, timezone) : [])
+const activeProjectionGroups = computed(() => activeSmartView.value === 'today' ? todayGroups.value : activeSmartView.value === 'next7' ? upcomingGroups.value : [])
+const activeProjectionItems = computed(() => activeProjectionGroups.value.flatMap((group) => group.items.map((item) => ({ item, group: 'kind' in group ? group.kind : group.date }))))
+const filteredProjectionItems = computed(() => {
+  // Selectors own date/occurrence membership; legacy query results only apply the user's text, list, priority and sort choices.
+  const eligibleOrder = new Map(filteredTaskViews.value.map((task, index) => [task.id, index]))
+  const items = activeProjectionItems.value.flatMap((entry, index) => eligibleOrder.has(entry.item.taskId) ? [{ ...entry, index }] : [])
+  if (taskSort.value !== 'manual') items.sort((left, right) => eligibleOrder.get(left.item.taskId)! - eligibleOrder.get(right.item.taskId)! || left.index - right.index)
+  return items
+})
 const taskViews = computed<TaskViewItem[]>(() => {
-  if (activeSmartView.value !== 'today' || !recurrenceWorkspace.value) return filteredTaskViews.value
+  if ((activeSmartView.value !== 'today' && activeSmartView.value !== 'next7') || !recurrenceWorkspace.value) return filteredTaskViews.value
   const eligible = new Map(filteredTaskViews.value.map((task) => [task.id, task]))
-  return todayProjections.value.filter((projection) => projection.occurrenceId === null).map((projection) => {
-    const task = eligible.get(projection.taskId)
-    return task ? { ...task, reasons: projection.reasons } : undefined
-  }).filter((task): task is TaskViewItem => task !== undefined)
+  return filteredProjectionItems.value.filter(({ item }) => item.occurrenceId === null).flatMap(({ item, group }) => {
+    const task = eligible.get(item.taskId)
+    return task ? [{ ...task, reasons: item.reasons, projectionGroup: group }] : []
+  })
 })
 const occurrenceViews = computed<OccurrenceViewItem[]>(() => {
   const workspace = recurrenceWorkspace.value
   if (!workspace) return []
   const tasks = new Map(liveTasks.value.map((task) => [task.id, task]))
   const visibleTaskIds = new Set(filteredTaskViews.value.map((task) => task.id))
-  if (activeSmartView.value === 'today') {
-    return todayProjections.value.filter((projection) => projection.occurrence?.status === 'pending' && visibleTaskIds.has(projection.taskId)).map((projection) => ({
-      id: projection.key,
-      title: tasks.get(projection.taskId)?.title ?? projection.task.title,
-      scheduledLabel: formatPlanDate(projection.scheduledOn ?? projection.scheduledAt),
-      deadlineLabel: projection.dueOn || projection.dueAt ? formatPlanDate(projection.dueOn ?? projection.dueAt) : '',
-      reasons: projection.reasons.map(projectionReasonLabel),
-      occurrence: projection.occurrence!,
+  if (activeSmartView.value === 'today' || activeSmartView.value === 'next7') {
+    return filteredProjectionItems.value.filter(({ item }) => item.occurrence?.status === 'pending').map(({ item, group }) => ({
+      id: item.key,
+      title: tasks.get(item.taskId)?.title ?? item.task.title,
+      scheduledLabel: formatPlanDate(item.scheduledOn ?? item.scheduledAt),
+      deadlineLabel: item.dueOn || item.dueAt ? formatPlanDate(item.dueOn ?? item.dueAt) : '',
+      reasons: item.reasons,
+      projectionGroup: group,
+      occurrence: item.occurrence!,
     }))
   }
   return workspace.occurrences.filter((occurrence) => occurrence.status === 'pending').map((occurrence) => {
     const series = workspace.recurrenceSeries.find((item) => item.id === occurrence.seriesId)
     const task = series ? tasks.get(series.taskId) : undefined
     const scheduled = occurrence.override?.scheduledOn ?? occurrence.override?.scheduledAt ?? occurrence.scheduledOn ?? occurrence.scheduledAt
-    return task && visibleTaskIds.has(task.id) ? { id: `occurrence:${occurrence.id}`, title: task.title, scheduledLabel: formatPlanDate(scheduled), deadlineLabel: task.dueOn ? formatPlanDate(task.dueOn) : '', reasons: ['重复'], occurrence } : null
+    return task && visibleTaskIds.has(task.id) ? { id: `occurrence:${occurrence.id}`, title: task.title, scheduledLabel: formatPlanDate(scheduled), deadlineLabel: task.dueOn ? formatPlanDate(task.dueOn) : '', reasons: ['recurring'], occurrence } : null
   }).filter((item): item is OccurrenceViewItem => item !== null)
+})
+const learningRhythmSelection = computed(() => recurrenceWorkspace.value
+  ? selectLearningRhythms(recurrenceWorkspace.value, {
+      asOf: new Date(clock.value).toISOString(),
+      weekStartsOn: planningPreferences.value.weekStartsOn,
+    })
+  : { items: [], totals: { planned: 0, completedWithEvidence: 0, completedMissingEvidence: 0, skipped: 0, cancelled: 0 } })
+const learningRhythmItems = computed<LearningRhythmViewItem[]>(() => {
+  const workspace = recurrenceWorkspace.value
+  if (!workspace) return []
+  const tasks = new Map(workspace.tasks.map((task) => [task.id, task]))
+  const lists = new Map(workspace.lists.map((list) => [list.id, list]))
+  return learningRhythmSelection.value.items.flatMap((item) => {
+    const task = tasks.get(item.taskId)
+    if (!task) return []
+    return [{
+      ...item,
+      title: task.title,
+      topic: lists.get(item.listId)?.title ?? '未归类',
+      cadenceLabel: formatRhythmCadence(item.cadence, item.basis),
+      weekLabel: formatRhythmWeek(item.rangeStart, item.rangeEnd),
+      nextLabel: item.nextScheduled ? formatPlanDate(item.nextScheduled) : '',
+    }]
+  })
 })
 
 const smartViewCounts = computed<StudySmartViewCounts>(() => ({
   inbox: selectStudyTaskSmartView(liveTasks.value, 'inbox', today.value).length,
-  today: recurrenceWorkspace.value ? todayProjections.value.filter((projection) => projection.occurrence?.status !== 'completed' && projection.occurrence?.status !== 'skipped').length : selectStudyTaskSmartView(liveTasks.value, 'today', today.value).length,
-  next7: selectStudyTaskSmartView(liveTasks.value, 'next7', today.value).length,
+  today: recurrenceWorkspace.value ? todayGroups.value.flatMap(({ items }) => items).length : selectStudyTaskSmartView(liveTasks.value, 'today', today.value).length,
+  next7: recurrenceWorkspace.value ? upcomingGroups.value.flatMap(({ items }) => items).length : selectStudyTaskSmartView(liveTasks.value, 'next7', today.value).length,
   all: selectStudyTaskSmartView(liveTasks.value, 'all', today.value).length,
   completed: selectStudyTaskSmartView(liveTasks.value, 'completed', today.value).length,
 }))
@@ -288,14 +381,29 @@ const sidebarMenuKeys = computed(() => [
 const sidebarOrderCustomized = computed(() => sidebarPreferences.value.order.join('|') !== sidebarMenuKeys.value.join('|'))
 watch(sidebarMenuKeys, (keys) => { sidebarPreferences.value = loadSidebarPreferences(keys) }, { immediate: true })
 
-const startOfWeek = computed(() => {
-  const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - ((date.getDay() + 6) % 7)); return date.getTime()
-})
 const completedRecords = computed(() => state.value.completionRecords.filter((record) => !record.deletedAt).sort((a, b) => b.completedAt.localeCompare(a.completedAt)))
-const weeklyRecords = computed(() => completedRecords.value.filter((record) => new Date(record.completedAt).getTime() >= startOfWeek.value))
-const weeklyMinutes = computed(() => weeklyRecords.value.reduce((sum, record) => sum + recordMinutes(record), 0))
+const weeklyLearningSummary = computed(() => recurrenceWorkspace.value
+  ? selectWeeklyLearningSummary(recurrenceWorkspace.value, {
+      asOf: new Date(clock.value).toISOString(),
+      timezone,
+      weekStartsOn: planningPreferences.value.weekStartsOn,
+    })
+  : {
+      rangeStart: today.value,
+      rangeEnd: today.value,
+      totals: {
+        evidenceCompletions: { value: 0, recordIds: [] },
+        evidenceMinutes: { value: 0, recordIds: [] },
+        completedReviews: { value: 0, recordIds: [] },
+      },
+      topics: [],
+    })
 const reviewQueue = computed(() => completedRecords.value.filter((record) => record.nextReviewOn && record.nextReviewOn <= today.value).sort((a, b) => (a.nextReviewOn ?? '').localeCompare(b.nextReviewOn ?? '')))
-const reviewItems = computed<ReviewViewItem[]>(() => reviewQueue.value.map((record) => ({ id: record.id, topic: topicTitleFor(record.topicId), learned: record.learned, evidence: record.evidence, ageLabel: formatAge(record.completedAt) })))
+const reviewItems = computed<ReviewViewItem[]>(() => reviewQueue.value.flatMap((record) => {
+  const link = recurrenceWorkspace.value?.reviewTaskLinks.find(({ completionRecordId, reviewStage, dueOn, completedAt }) =>
+    completionRecordId === record.id && reviewStage === record.reviewStage && dueOn === record.nextReviewOn && completedAt === null)
+  return link ? [{ id: record.id, linkId: link.id, topic: topicTitleFor(record.topicId), learned: record.learned, evidence: record.evidence, ageLabel: formatAge(record.completedAt) }] : []
+}))
 const recordViews = computed<CompletionRecordViewItem[]>(() => completedRecords.value.map((record) => ({ id: record.id, taskId: record.taskId, topicId: record.topicId, topic: topicTitleFor(record.topicId), taskTitle: record.taskTitleSnapshot, learned: record.learned, evidence: record.evidence, blocker: record.blocker, nextAction: record.nextAction, mastery: record.mastery, completedLabel: formatShortDate(record.completedAt), minutes: recordMinutes(record) })))
 
 const topicViews = computed<TopicViewItem[]>(() => state.value.topics.filter((topic) => !topic.archivedAt).map((topic) => {
@@ -311,13 +419,12 @@ const topicViews = computed<TopicViewItem[]>(() => state.value.topics.filter((to
   }
 }))
 
-const weeklyHighlight = computed(() => weeklyRecords.value[0]?.learned || '开始建立一条可追溯的学习证据链')
-const weeklyBlocker = computed(() => weeklyRecords.value.find((record) => record.blocker)?.blocker || '还没有记录反复出现的问题')
 const weeklyNext = computed(() => liveTasks.value.find((task) => task.status === 'in_progress' || task.status === 'planned')?.title || '从收件箱选择一个下一步')
 
 onMounted(async () => {
   window.addEventListener('shixue:quick-add', handleQuickAdd)
   window.addEventListener('shixue:module-error', handleModuleError)
+  window.addEventListener('keydown', handleGlobalSearchShortcut)
   try {
     appearanceDark.value = localStorage.getItem('meow-study-appearance') === 'dark'
     remindersEnabled.value = localStorage.getItem('meow-study-reminders') === 'enabled'
@@ -360,6 +467,7 @@ onUnmounted(() => {
   compactMedia?.removeEventListener('change', onCompactChange)
   window.removeEventListener('shixue:quick-add', handleQuickAdd)
   window.removeEventListener('shixue:module-error', handleModuleError)
+  window.removeEventListener('keydown', handleGlobalSearchShortcut)
 })
 
 async function notificationAdapter() { return import('./modules/notification') }
@@ -438,22 +546,12 @@ async function executeReminderCommand(command: CapabilityCommand) {
   await refreshState()
 }
 
-async function saveReminderRule(command: ReminderSetValue) {
-  if (reminderBusy.value) return
-  reminderBusy.value = true
-  reminderError.value = ''
-  try {
-    const first = !recurrenceWorkspace.value?.reminderRules.some(({ enabled }) => enabled)
-    if (first && command.enabled && nativeNotificationAvailable.value) notificationPermission.value = await (await notificationAdapter()).ensureNotificationPermission('first-reminder')
-    await executeReminderCommand(command)
-    notify(remindersEnabled.value ? '提醒规则已保存。' : '提醒规则已保存；请在设置中开启任务提醒。')
-    await pollReminders()
-  } catch (error) { reminderError.value = error instanceof Error ? error.message : '提醒规则未能保存，请重试。' }
-  finally { reminderBusy.value = false }
-}
-
-async function removeReminderRule(rule: ReminderRule) {
-  await saveReminderRule({ type: 'reminder.set', ruleId: rule.id, taskId: rule.taskId, occurrenceId: rule.occurrenceId, trigger: rule.trigger, enabled: false, expectedRevision: rule.revision })
+async function saveReminderRuleWithoutBusyGuard(command: ReminderSetValue) {
+  const first = !recurrenceWorkspace.value?.reminderRules.some(({ enabled }) => enabled)
+  if (first && command.enabled && nativeNotificationAvailable.value) notificationPermission.value = await (await notificationAdapter()).ensureNotificationPermission('first-reminder')
+  await executeReminderCommand(command)
+  notify(remindersEnabled.value ? '提醒规则已保存。' : '提醒规则已保存；请在设置中开启任务提醒。')
+  await pollReminders()
 }
 
 async function handleReminderAction(action: ReminderCardAction) {
@@ -471,7 +569,9 @@ async function handleReminderAction(action: ReminderCardAction) {
     return
   }
   if (action.action === 'complete' && task.mode === 'learning') {
+    completionOccurrenceId.value = ''
     completionReminderId.value = delivery.id
+    completionReviewLinkId.value = ''
     reminderCenterOpen.value = false
     await nextTick()
     completionOpen.value = true
@@ -484,8 +584,8 @@ async function handleReminderAction(action: ReminderCardAction) {
     else if (delivery.occurrenceId) {
       const occurrence = workspace?.occurrences.find(({ id }) => id === delivery.occurrenceId)
       if (!occurrence) throw new Error('提醒对应的重复实例已不存在。')
-      await executeReminderCommand({ type: 'recurrence.complete', occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision })
-    } else await executeReminderCommand({ type: 'task.complete', taskId: task.id, expectedRevision: task.revision })
+      await executeReminderCommand({ type: 'recurrence.complete', occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, reviewedOn: today.value })
+    } else await executeReminderCommand({ type: 'task.complete', taskId: task.id, expectedRevision: task.revision, reviewedOn: today.value })
     await pollReminders()
   } catch (error) { reminderError.value = error instanceof Error ? error.message : '提醒操作未能保存，请重试。' }
   finally { reminderBusy.value = false }
@@ -501,8 +601,8 @@ async function completeReminderEvidence(payload: CompletionPayload) {
     if (delivery.occurrenceId) {
       const occurrence = workspace?.occurrences.find(({ id }) => id === delivery.occurrenceId)
       if (!occurrence) throw new Error('提醒对应的重复实例已不存在，填写内容仍保留。')
-      await executeReminderCommand({ type: 'recurrence.complete', occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, expectedTaskRevision: task.revision, ...payload })
-    } else await executeReminderCommand({ type: 'task.complete', taskId: task.id, expectedRevision: task.revision, ...payload })
+      await executeReminderCommand({ type: 'recurrence.complete', occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, expectedTaskRevision: task.revision, ...payload, reviewedOn: today.value })
+    } else await executeReminderCommand({ type: 'task.complete', taskId: task.id, expectedRevision: task.revision, ...payload, reviewedOn: today.value })
     await pollReminders()
     completionOpen.value = false
     completionReminderId.value = ''
@@ -535,6 +635,7 @@ async function setLaunchAtLogin(enabled: boolean) {
 function handleQuickAdd() {
   completionOpen.value = false
   completionReminderId.value = ''
+  completionReviewLinkId.value = ''
   taskActionOpen.value = false
   taskEditorOpen.value = false
   recurrenceScopeOpen.value = false
@@ -547,7 +648,7 @@ function handleQuickAdd() {
   requestAnimationFrame(() => tasksView.value?.activateQuickAdd())
 }
 function handleModuleError() {
-  storageError.value = '部分系统能力未能启动。任务数据与核心界面仍可使用。'
+  storageError.value = moduleStartupError
 }
 
 function onCompactChange(event: MediaQueryListEvent) {
@@ -680,25 +781,102 @@ function localDeviceId() {
   const id = crypto.randomUUID(); localStorage.setItem(key, id); return id
 }
 
-function navigate(next: StudyPage) {
-  page.value = next; showFocus.value = false; reviewRevealed.value = false; selectedOccurrenceId.value = ''
-  if (next === 'today') activeSmartView.value = 'today'
-  if (next === 'tasks' && activeSmartView.value === 'today') activeSmartView.value = 'inbox'
-  if ((next === 'tasks' || next === 'today') && !selectedTaskId.value) selectedTaskId.value = automaticTaskSelection()
-}
-function selectSmartView(view: StudySmartView) {
-  taskTopicFilter.value = 'all'
-  taskPriorityFilter.value = 'all'
-  activeSmartView.value = view
-  page.value = view === 'today' ? 'today' : 'tasks'
+function setDestination(next: ShellDestination, options: { topicFilter?: string; preservePriority?: boolean } = {}) {
+  recordTarget.value = undefined
+  reviewMode.value = 'review'
+  destination.value = next
+  listsMoreOpen.value = false
   showFocus.value = false
+  reviewRevealed.value = false
   selectedOccurrenceId.value = ''
-  selectedTaskId.value = automaticTaskSelection()
+  const taskDestination = next.kind === 'inbox' || next.kind === 'today' || next.kind === 'upcoming' || next.kind === 'lists' || next.kind === 'list' || next.kind === 'completed'
+  if (options.topicFilter !== undefined) taskTopicFilter.value = options.topicFilter
+  else if (taskDestination) taskTopicFilter.value = next.kind === 'list' ? next.listId : 'all'
+  if (shouldResetTaskPriority(next, options.preservePriority)) taskPriorityFilter.value = 'all'
+  if (taskDestination) selectedTaskId.value = automaticTaskSelection()
 }
-function selectList(id: string) { taskTopicFilter.value = id; activeSmartView.value = 'all'; page.value = 'tasks'; showFocus.value = false; selectedOccurrenceId.value = ''; selectedTaskId.value = automaticTaskSelection() }
+function selectSmartView(view: StudyTaskSmartView) { setDestination(workspaceDestinationFromSmartView(view)) }
+function isLearningDestinationActive(view: WorkspaceView) {
+  return view.kind === 'learning' && destination.value.kind === 'learning' && view.section === destination.value.section
+}
 function openTopicEditor(topic?: StudyTopic) { topicEditorOpen.value = true; selectedTopicId.value = topic?.id ?? ''; topicTitle.value = topic?.title ?? ''; topicGoal.value = topic?.goal ?? ''; topicMinutes.value = topic?.weeklyTargetMinutes ?? 120; topicGroupId.value = topic?.groupId ?? '' }
 function openGroupEditor(group?: StudyListGroup) { groupEditorOpen.value = true; selectedGroupId.value = group?.id ?? ''; groupTitle.value = group?.title ?? '' }
-function openTask(taskId: string) { selectedOccurrenceId.value = ''; selectedTaskId.value = taskId; if (page.value !== 'tasks' && page.value !== 'today') page.value = 'tasks'; showFocus.value = false }
+function openTask(taskId: string) { if (page.value !== 'tasks' && page.value !== 'today') setDestination({ kind: 'inbox' }); selectedOccurrenceId.value = ''; selectedTaskId.value = taskId; showFocus.value = false }
+function openGlobalSearch() { globalSearchOpen.value = true }
+function handleGlobalSearchShortcut(event: KeyboardEvent) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLocaleLowerCase() !== 'k') return
+  event.preventDefault()
+  if (document.querySelector('[aria-modal="true"]')) return
+  openGlobalSearch()
+}
+function openSearchTask(taskId: string) {
+  const workspace = recurrenceWorkspace.value
+  const task = workspace?.tasks.find((item) => item.id === taskId && item.deletedAt === null)
+  if (!workspace || !task) { notify('这条任务已不存在，搜索结果已刷新。'); return }
+  const activeListIds = workspace.lists.filter((list) => list.archivedAt === null).map((list) => list.id)
+  setDestination(destinationForSearchTask(task, activeListIds))
+  selectedOccurrenceId.value = ''
+  selectedTaskId.value = task.id
+  showFocus.value = false
+}
+function openRhythmOccurrence(occurrenceId: string) {
+  const workspace = recurrenceWorkspace.value
+  const occurrence = workspace?.occurrences.find((item) => item.id === occurrenceId)
+  const series = occurrence ? workspace?.recurrenceSeries.find((item) => item.id === occurrence.seriesId) : undefined
+  if (!occurrence || !series) { notify('这次学习已不存在，节律视图已刷新。'); return }
+  openSearchTask(series.taskId)
+  selectedOccurrenceId.value = occurrence.id
+}
+function openWeeklyPlanSource(taskId: string, occurrenceId: string | null) {
+  if (occurrenceId) openRhythmOccurrence(occurrenceId)
+  else openSearchTask(taskId)
+}
+function openSearchRecord(recordId: string) {
+  const record = recurrenceWorkspace.value?.completionRecords.find((item) => item.id === recordId && item.deletedAt === null)
+  if (!record) { notify('这条完成记录已不存在，搜索结果已刷新。'); return }
+  setDestination({ kind: 'learning', section: 'review' })
+  reviewMode.value = 'records'
+  recordTarget.value = { id: record.id, requestId: ++recordTargetRequestId }
+}
+function openTagManager(returnToSearch = false) {
+  tagManagerError.value = ''
+  tagManagerReturnToSearch.value = returnToSearch
+  tagManagerOpen.value = true
+}
+function closeTagManager() {
+  const reopenSearch = tagManagerReturnToSearch.value
+  tagManagerReturnToSearch.value = false
+  tagManagerOpen.value = false
+  if (reopenSearch) nextTick(openGlobalSearch)
+}
+async function executeTagMutation(command: TagCapabilityCommand, successMessage: string, completed: 'created' | 'renamed' | 'archived') {
+  if (tagManagerBusy.value) return
+  tagManagerBusy.value = true
+  tagManagerError.value = ''
+  try {
+    await runTagCommand({
+      snapshotRevision: async () => (await capabilityService.query({ type: 'workspace.snapshot' })).revision,
+      execute: (expectedWorkspaceRevision) => capabilityService.execute({
+        protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+        idempotencyKey: `tag-ui:${crypto.randomUUID()}`,
+        source: 'human-ui',
+        expectedWorkspaceRevision,
+        command,
+      }),
+      refresh: refreshState,
+      notify,
+      successAction: calendarUndoAction,
+      successMessage,
+    })
+    if (completed === 'created') tagManager.value?.created()
+    if (completed === 'renamed') tagManager.value?.renamed()
+  } catch (error) {
+    tagManagerError.value = error instanceof Error ? error.message : String(error)
+  } finally { tagManagerBusy.value = false }
+}
+function createTag(title: string) { return executeTagMutation({ type: 'tag.create', title }, '标签已创建。', 'created') }
+function renameTag(tagId: string, title: string) { return executeTagMutation({ type: 'tag.rename', tagId, title }, '标签已重命名。', 'renamed') }
+function archiveTag(tagId: string) { return executeTagMutation({ type: 'tag.archive', tagId }, '标签已归档；历史关联仍然保留。', 'archived') }
 function openOccurrence(occurrenceId: string) {
   const workspace = recurrenceWorkspace.value
   const occurrence = workspace?.occurrences.find((item) => item.id === occurrenceId)
@@ -713,7 +891,10 @@ function alignTaskSelection() {
 }
 function automaticTaskSelection() { return shouldAutoSelectTask(window.innerWidth) ? taskViews.value[0]?.id ?? '' : '' }
 function setTaskSearch(value: string) { taskSearch.value = value; alignTaskSelection() }
-function setTaskTopicFilter(value: string) { taskTopicFilter.value = value; alignTaskSelection() }
+function setTaskTopicFilter(value: string) {
+  const transition = resolveTaskTopicFilterTransition(value)
+  setDestination(transition.destination, { topicFilter: transition.topicFilter, preservePriority: transition.preservePriority })
+}
 function setTaskPriorityFilter(value: StudyTaskPriority | 'all') { taskPriorityFilter.value = value; alignTaskSelection() }
 function setTaskSort(value: StudyTaskQuerySort) { taskSort.value = value; alignTaskSelection() }
 
@@ -758,7 +939,7 @@ async function submitTaskAction(payload: TaskActionPayload) {
       await planStudyTask(task.id, { topicId: task.topicId, plannedOn: payload.plannedOn, dueOn: task.dueOn, estimateMinutes: task.estimateMinutes, acceptanceCriteria: task.acceptanceCriteria }, { eventId: crypto.randomUUID(), now })
     }
     await refreshState(); taskActionOpen.value = false
-    activeSmartView.value = taskActionMode.value === 'cancel' ? 'all' : activeSmartView.value
+    if (taskActionMode.value === 'cancel') setDestination({ kind: 'inbox' })
     notify(taskActionMode.value === 'defer' ? `已延期到${formatShortDate(payload.plannedOn)}。` : taskActionMode.value === 'cancel' ? '任务已取消。' : taskActionMode.value === 'block' ? '已记录阻碍。' : taskActionMode.value === 'reopen' ? '任务已重开。' : '任务已安排。', undo)
   } catch (error) { reportStorageError(error) }
 }
@@ -786,16 +967,68 @@ function openTaskEditor(taskId: string) {
   taskEditorOpen.value = true
 }
 
-async function saveTaskEdit(value: TaskEditValue) {
+async function reminderCommandForCurrentState(command: ReminderSetValue, baseRules: TaskEditChanges['baseReminderRules']): Promise<ReminderSetValue | null> {
+  const workspace = await getWorkspaceStore().load()
+  const current = workspace.reminderRules.find(({ id }) => id === command.ruleId)
+  const base = baseRules.find(({ id }) => id === command.ruleId)
+  const result = resolveReminderEditWrite(current, base, command)
+  if (result.decision === 'conflict') throw new Error('提醒规则已在其他位置修改，请重新打开后合并更改。')
+  return result.decision === 'write' ? result.command : null
+}
+
+async function readCurrentTaskEdit(taskId: string): Promise<{ task: Task; value: TaskEditValue }> {
+  const workspace = await getWorkspaceStore().load()
+  const task = workspace.tasks.find((item) => item.id === taskId && !item.deletedAt)
+  const projected = projectWorkspaceState(workspace).tasks.find((item) => item.id === taskId && !item.deletedAt)
+  if (!task || !projected) throw new Error('任务已不存在，编辑内容未保存。')
+  return {
+    task,
+    value: {
+      title: task.title,
+      notes: task.notes,
+      topicId: projected.topicId,
+      ...(task.schedule.startAt !== null ? { plannedAt: task.schedule.startAt } : { plannedOn: task.schedule.startOn }),
+      ...(task.deadline.dueAt !== null ? { dueAt: task.deadline.dueAt } : { dueOn: task.deadline.dueOn }),
+      reminderAt: null,
+      priority: task.priority,
+      estimateMinutes: task.schedule.estimateMinutes,
+      tagIds: [...task.tagIds],
+      ...(task.mode === 'learning' ? { acceptanceCriteria: [...(task.learning?.acceptanceCriteria ?? [])] } : {}),
+    },
+  }
+}
+
+async function saveTaskEdit(value: TaskEditValue, changes: TaskEditChanges) {
   const task = selectedTask.value
-  if (!task) return
+  if (!task || reminderBusy.value) return
   try {
-    const { reminderAt: _legacyReminderAt, ...taskValue } = value
-    await updateStudyTask(task.id, taskValue, { expectedRevision: task.revision, now: new Date().toISOString() })
-    await refreshState()
+    if (changes.reminderCommands.length) {
+      reminderBusy.value = true
+      reminderError.value = ''
+    }
+    await runTaskEditCommit({ reminders: changes.reminderCommands, recurrence: changes.recurrenceRule }, {
+      saveTask: async () => {
+        const current = await readCurrentTaskEdit(task.id)
+        const decision = resolveTaskEditWrite(current.value, changes.baseTask, value)
+        if (decision === 'conflict') throw new Error('任务已在其他位置修改，请重新打开后合并更改。')
+        const { reminderAt: _legacyReminderAt, ...taskValue } = value
+        if (decision === 'write') await updateStudyTask(task.id, taskValue, { expectedRevision: current.task.revision, now: new Date().toISOString() })
+        await refreshState()
+      },
+      saveReminder: async (draftCommand) => {
+        const command = await reminderCommandForCurrentState(draftCommand, changes.baseReminderRules)
+        if (command) await saveReminderRuleWithoutBusyGuard(command)
+        else await refreshState()
+      },
+      saveRecurrence: (rule) => requestRecurrenceEdit(rule, changes.baseRecurrenceRule),
+    })
+    if (recurrenceScopeOpen.value || !taskEditorOpen.value) return
     taskEditorOpen.value = false
     notify('任务内容已更新。')
-  } catch (error) { reportStorageError(error) }
+  } catch (error) {
+    if (changes.reminderCommands.length) reminderError.value = error instanceof Error ? error.message : '提醒规则未能保存，请重试。'
+    reportStorageError(error)
+  } finally { reminderBusy.value = false }
 }
 
 function cloneRecurrenceRuleDto(rule: RecurrenceRule): RecurrenceRule {
@@ -805,12 +1038,27 @@ function cloneRecurrenceRuleDto(rule: RecurrenceRule): RecurrenceRule {
   return { cadence, basis: rule.basis, end: { ...rule.end } }
 }
 
-async function requestRecurrenceEdit(rule: RecurrenceRule) {
+async function requestRecurrenceEdit(rule: RecurrenceRule, baseRule: RecurrenceRule | null) {
   const portableRule = cloneRecurrenceRuleDto(rule)
-  if (!selectedRecurrence.value) {
-    const workspace = recurrenceWorkspace.value
-    const task = workspace?.tasks.find((item) => item.id === selectedTask.value?.id)
-    if (!workspace || !task) return
+  const workspace = await getWorkspaceStore().load()
+  const task = workspace.tasks.find((item) => item.id === selectedTask.value?.id && !item.deletedAt)
+  const currentSeries = task?.recurrenceSeriesId
+    ? workspace.recurrenceSeries.find((series) => series.id === task.recurrenceSeriesId) ?? null
+    : null
+  if (!task) throw new Error('重复规则上下文已变化，请重试。')
+  const currentRule: RecurrenceRule | null = currentSeries
+    ? { cadence: currentSeries.cadence, basis: currentSeries.basis, end: currentSeries.end }
+    : null
+  const decision = resolveRecurrenceEditWrite(currentRule, baseRule, portableRule)
+  if (decision === 'conflict') throw new Error('重复规则已在其他位置修改，请重新打开后合并更改。')
+  if (decision === 'noop') {
+    await refreshState()
+    taskEditorOpen.value = false
+    notify(baseRule ? '重复规则已更新。' : '已创建重复规则。')
+    return
+  }
+  if (baseRule === null) {
+    const anchorOn = task.schedule.startOn ?? (task.schedule.startAt ? parseZonedDateTime(task.schedule.startAt, timezone).date : today.value)
     recurrenceExecuting.value = true
     try {
       await capabilityService.execute({
@@ -820,14 +1068,17 @@ async function requestRecurrenceEdit(rule: RecurrenceRule) {
         expectedWorkspaceRevision: workspace.revision,
         command: {
           type: 'recurrence.create', taskId: task.id, expectedTaskRevision: task.revision,
-          cadence: portableRule.cadence, basis: portableRule.basis, anchorOn: selectedTask.value?.plannedOn ?? today.value,
+          cadence: portableRule.cadence, basis: portableRule.basis, anchorOn,
           end: portableRule.end, timezone,
         },
       })
-      await refreshState(); taskEditorOpen.value = false; notify('已创建重复规则。')
-    } catch (error) { reportStorageError(error) } finally { recurrenceExecuting.value = false }
+      await refreshState()
+      taskEditorOpen.value = false
+      notify('已创建重复规则。')
+    } finally { recurrenceExecuting.value = false }
     return
   }
+  await refreshState()
   pendingRecurrenceRule = portableRule
   clearRecurrencePreview()
   recurrenceScopeOpen.value = true
@@ -881,7 +1132,7 @@ async function executeRecurrenceScope(scope: RecurrenceRuleScope) {
   recurrenceExecuting.value = true
   try {
     await capabilityService.execute({ ...envelope, explicitConfirmation: preview.confirmation === 'explicit' && preview.previewReceiptId ? { previewReceiptId: preview.previewReceiptId, confirmedAt: new Date().toISOString() } : undefined })
-    await refreshState(); recurrenceScopeOpen.value = false; clearRecurrencePreview(); pendingRecurrenceRule = null
+    await refreshState(); recurrenceScopeOpen.value = false; clearRecurrencePreview(); pendingRecurrenceRule = null; taskEditorOpen.value = false
     notify('重复规则已更新。')
   } catch (error) { reportStorageError(error) } finally { recurrenceExecuting.value = false }
 }
@@ -891,11 +1142,67 @@ function clearRecurrencePreview() { recurrencePreviewVersion += 1; recurrencePre
 async function executeOccurrence(id: string, type: 'recurrence.complete' | 'recurrence.skip') {
   const workspace = recurrenceWorkspace.value
   const occurrence = workspace?.occurrences.find((item) => item.id === id)
+  const series = occurrence ? workspace?.recurrenceSeries.find((item) => item.id === occurrence.seriesId) : undefined
+  const task = series ? workspace?.tasks.find((item) => item.id === series.taskId) : undefined
   if (!workspace || !occurrence) return
+  if (type === 'recurrence.complete' && task?.mode === 'learning') {
+    completionReminderId.value = ''
+    completionReviewLinkId.value = ''
+    completionOccurrenceId.value = occurrence.id
+    await nextTick()
+    completionOpen.value = true
+    return
+  }
   try {
-    await capabilityService.execute({ protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `recurrence:${crypto.randomUUID()}`, source: 'human-ui', expectedWorkspaceRevision: workspace.revision, command: { type, occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision } })
+    const command = type === 'recurrence.complete'
+      ? { type, occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, reviewedOn: today.value }
+      : { type, occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision }
+    await capabilityService.execute({ protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `recurrence:${crypto.randomUUID()}`, source: 'human-ui', expectedWorkspaceRevision: workspace.revision, command })
     await refreshState(); notify(type === 'recurrence.complete' ? '本次已完成。' : '本次已跳过。')
   } catch (error) { reportStorageError(error) }
+}
+
+async function completeOccurrenceEvidence(payload: CompletionPayload) {
+  const occurrenceId = completionOccurrenceId.value
+  if (!occurrenceId || completionOccurrenceBusy.value) return
+  completionOccurrenceBusy.value = true
+  try {
+    const workspace = await capabilityService.query({ type: 'workspace.snapshot' })
+    const occurrence = workspace.occurrences.find(({ id }) => id === occurrenceId)
+    const series = occurrence ? workspace.recurrenceSeries.find(({ id }) => id === occurrence.seriesId) : undefined
+    const task = series ? workspace.tasks.find(({ id }) => id === series.taskId) : undefined
+    if (!occurrence || !task || task.mode !== 'learning') throw new Error('这次学习已变化，填写内容仍保留。')
+    await capabilityService.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+      idempotencyKey: `recurrence:${crypto.randomUUID()}`,
+      source: 'human-ui',
+      expectedWorkspaceRevision: workspace.revision,
+      command: {
+        type: 'recurrence.complete',
+        occurrenceId: occurrence.id,
+        expectedOccurrenceRevision: occurrence.revision,
+        expectedTaskRevision: task.revision,
+        ...payload,
+        reviewedOn: today.value,
+      },
+    })
+    if (completionOccurrenceId.value === occurrenceId) {
+      completionOpen.value = false
+      completionOccurrenceId.value = ''
+    }
+    try { await refreshState() }
+    catch (error) {
+      notify(`学习证据已保存，但视图刷新失败：${error instanceof Error ? error.message : String(error)}`, {
+        label: '重新加载',
+        successMessage: '学习节律已刷新。',
+        run: refreshState,
+      })
+      return
+    }
+    notify('已记录学习证据并完成本次。')
+  } catch (error) {
+    notify(error instanceof Error ? error.message : '学习证据未能保存，请重试。')
+  } finally { completionOccurrenceBusy.value = false }
 }
 
 function openOccurrenceReschedule(id: string) {
@@ -963,17 +1270,22 @@ async function bulkDeleteTasks(taskIds: string[]) {
 }
 
 async function bulkMoveTasksToToday(taskIds: string[]) {
-  try {
-    await bulkRescheduleStudyTasks(bulkTargets(taskIds), today.value, { reason: '从任务列表批量移到今天', now: new Date().toISOString() })
-    await refreshState(); selectedTaskId.value = ''; activeSmartView.value = 'today'; page.value = 'today'; notify(`已把 ${taskIds.length} 项移到今天。`)
-  } catch (error) { reportStorageError(error) }
+  await runOverdueBatchMove(taskIds, today.value, {
+    snapshot: () => capabilityService.query({ type: 'workspace.snapshot' }),
+    preview: (envelope) => capabilityService.preview(envelope),
+    execute: (envelope) => capabilityService.execute(envelope),
+    refresh: async () => { await refreshState(); selectedTaskId.value = ''; setDestination({ kind: 'today' }) },
+    notify,
+    successAction: calendarUndoAction,
+    createId: () => crypto.randomUUID(),
+  })
 }
 
 async function toggleTaskCompletion(taskId: string) {
   const task = state.value.tasks.find((item) => item.id === taskId && !item.deletedAt)
   if (!task || task.status === 'cancelled') return
   try {
-    const changed = await toggleStudyTaskCompletion(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString() })
+    const changed = await toggleStudyTaskCompletion(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString(), reviewedOn: today.value })
     await refreshState()
     notify(changed.status === 'completed' ? '任务已完成。' : '任务已重新打开。')
   } catch (error) { reportStorageError(error) }
@@ -983,7 +1295,7 @@ async function bulkCompleteTasks(taskIds: string[]) {
   try {
     for (const taskId of taskIds) {
       const task = (await loadStudyState()).tasks.find((item) => item.id === taskId && !item.deletedAt)
-      if (task && task.status !== 'completed' && task.status !== 'cancelled') await toggleStudyTaskCompletion(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString() })
+      if (task && task.status !== 'completed' && task.status !== 'cancelled') await toggleStudyTaskCompletion(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString(), reviewedOn: today.value })
     }
     await refreshState(); selectedTaskId.value = ''; notify(`已完成 ${taskIds.length} 项。`)
   } catch (error) { reportStorageError(error) }
@@ -1038,26 +1350,34 @@ function updateScratchpad(value: string) {
 
 async function completeFocus(payload: CompletionPayload) {
   if (completionReminderId.value) return completeReminderEvidence(payload)
+  if (completionOccurrenceId.value) return completeOccurrenceEvidence(payload)
   const session = activeSession.value
   const task = activeTask.value
   if (!session || !task) return
   const now = new Date().toISOString()
   try {
-    await completeStudyTask({ taskId: task.id, sessionId: session.id, learned: payload.learned, evidence: payload.evidence, blocker: payload.blocker, nextAction: payload.nextAction, mastery: payload.mastery }, { recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now })
-    await refreshState(); completionOpen.value = false; showFocus.value = false; page.value = 'today'; notify(`已记录这次学习。下一项：${weeklyNext.value}`)
+    if (completionReviewLinkId.value) await completeReviewTaskLink(completionReviewLinkId.value, 'clear', today.value, { expectedRevision: task.revision, now })
+    else await completeStudyTask({ taskId: task.id, sessionId: session.id, learned: payload.learned, evidence: payload.evidence, blocker: payload.blocker, nextAction: payload.nextAction, mastery: payload.mastery }, { recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now })
+    completionReviewLinkId.value = ''
+    await refreshState(); completionOpen.value = false; setDestination({ kind: 'today' }); notify(`已记录这次学习。下一项：${weeklyNext.value}`)
   } catch (error) { reportStorageError(error) }
 }
 
-async function rateReview(result: ReviewResult) {
-  const record = reviewQueue.value[0]
-  if (!record) return
-  try { await reviewCompletionRecord(record.id, result, today.value, { now: new Date().toISOString() }); await refreshState(); reviewRevealed.value = false; notify(result === 'clear' ? '已安排下一次回顾。' : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。') } catch (error) { reportStorageError(error) }
+async function rateReview(linkId: string, result: ReviewResult) {
+  try { await completeReviewTaskLink(linkId, result, today.value, { now: new Date().toISOString() }); await refreshState(); reviewRevealed.value = false; notify(result === 'clear' ? '已安排下一次回顾。' : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。') } catch (error) { reportStorageError(error) }
+}
+
+function openFocusCompletion(reviewLinkId?: string) {
+  completionReminderId.value = ''
+  completionOccurrenceId.value = ''
+  completionReviewLinkId.value = reviewLinkId ?? ''
+  completionOpen.value = true
 }
 
 async function createFromNextAction(recordId: string) {
   try {
     const task = await createTaskFromNextAction(recordId, { taskId: crypto.randomUUID(), eventId: crypto.randomUUID(), now: new Date().toISOString(), plannedOn: today.value })
-    await refreshState(); page.value = 'today'; selectedTaskId.value = task.id; notify('下一步已加入今天。')
+    await refreshState(); setDestination({ kind: 'today' }); selectedTaskId.value = task.id; notify('下一步已加入今天。')
   } catch (error) { reportStorageError(error) }
 }
 
@@ -1087,7 +1407,7 @@ async function archiveGroup() {
 async function archiveTopic(id: string) {
   const topic = state.value.topics.find((item) => item.id === id)
   if (!topic) return
-  try { await saveStudyTopic({ ...topic, archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); await refreshState(); selectedTopicId.value = state.value.topics.find((item) => !item.archivedAt)?.id ?? ''; if (taskTopicFilter.value === id) taskTopicFilter.value = 'all'; notify('清单已归档。') } catch (error) { reportStorageError(error) }
+  try { await saveStudyTopic({ ...topic, archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); await refreshState(); selectedTopicId.value = state.value.topics.find((item) => !item.archivedAt)?.id ?? ''; const transition = resolveArchivedListTransition(destination.value, id, taskTopicFilter.value); if (transition) setDestination(transition.destination, { topicFilter: transition.topicFilter, preservePriority: transition.preservePriority }); notify('清单已归档。') } catch (error) { reportStorageError(error) }
 }
 
 async function exportData() {
@@ -1134,9 +1454,8 @@ async function resetDemo(complete: (success: boolean) => void) {
     await refreshState()
     selectedTaskId.value = ''
     taskSearch.value = ''
-    taskTopicFilter.value = 'all'
     taskSort.value = 'manual'
-    activeSmartView.value = 'inbox'
+    setDestination({ kind: 'inbox' })
     taskPriorityFilter.value = 'all'
     notify('已恢复拾学的演示数据。')
     complete(true)
@@ -1185,7 +1504,6 @@ function resetSidebarOrder() {
 }
 
 function topicTitleFor(topicId: string | null) { return topicId ? topicMap.value.get(topicId)?.title ?? '未知主题' : '未归类' }
-function projectionReasonLabel(reason: TaskProjectionReason) { return ({ overdue: '已过期', planned: '已计划', due: '今日截止', repeating: '重复' } as const)[reason] }
 function taskStatus(task: StudyTask): TaskViewStatus { return task.status === 'planned' && !task.plannedOn ? 'backlog' : task.status }
 function toTaskView(task: StudyTask): TaskViewItem {
   const workspace = recurrenceWorkspace.value
@@ -1202,6 +1520,28 @@ function toEventView(event: TaskEvent): TaskEventViewItem {
 }
 function statusDetail(event: TaskEvent) { return event.toStatus ? `状态变为${({ inbox: '收件箱', planned: '已计划', in_progress: '进行中', blocked: '已阻塞', completed: '已完成', cancelled: '已取消' } as const)[event.toStatus]}` : '保留此次变化' }
 function recordMinutes(record: CompletionRecord) { return Math.max(1, Math.round(state.value.sessions.filter((session) => record.sessionIds.includes(session.id)).reduce((sum, session) => sum + session.elapsedSeconds, 0) / 60)) }
+function formatRhythmCadence(cadence: RecurrenceCadence, basis: RecurrenceSeries['basis']) {
+  const weekday = ['日', '一', '二', '三', '四', '五', '六']
+  const label = cadence.kind === 'daily'
+    ? cadence.interval === 1 ? '每天' : `每 ${cadence.interval} 天`
+    : cadence.kind === 'weekly'
+      ? cadence.interval === 1
+        ? `每周${cadence.weekdays.map((day) => weekday[day]).join('、')}`
+        : `每 ${cadence.interval} 周的${cadence.weekdays.map((day) => `周${weekday[day]}`).join('、')}`
+      : cadence.kind === 'monthly'
+        ? `${cadence.interval === 1 ? '每月' : `每 ${cadence.interval} 个月`} ${cadence.dayOfMonth} 日`
+        : `${cadence.interval === 1 ? '每年' : `每 ${cadence.interval} 年`} ${cadence.month} 月 ${cadence.dayOfMonth} 日`
+  return basis === 'after_completion' ? `完成后${label}` : label
+}
+function formatRhythmWeek(start: string, endExclusive: string) {
+  const end = new Date(`${endExclusive}T12:00:00.000Z`)
+  end.setUTCDate(end.getUTCDate() - 1)
+  return `${formatRhythmDay(start)}至 ${end.getUTCMonth() + 1} 月 ${end.getUTCDate()} 日`
+}
+function formatRhythmDay(value: string) {
+  const [, month, day] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) ?? []
+  return month && day ? `${Number(month)} 月 ${Number(day)} 日` : value
+}
 function formatPlanDate(value: string | null) {
   if (!value) return '待安排'
   const precise = value.length !== 10
@@ -1229,31 +1569,47 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 <template>
   <div class="shell">
     <OverlayHost />
-    <AppSidebar v-if="!showFocus" :active="page" :active-smart-view="activeSmartView" :counts="smartViewCounts" :groups="activeListGroups" :lists="listNavItems" :active-list-id="taskTopicFilter === 'all' || taskTopicFilter === 'unassigned' ? undefined : taskTopicFilter" :display-mode="sidebarPreferences.displayMode" :order="sidebarPreferences.order" @navigate="navigate" @update:display-mode="updateSidebarPreferences({ displayMode: $event })" @reorder="updateSidebarPreferences({ order: $event })" @smart-view="selectSmartView" @select-list="selectList" @create-list="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" />
+    <AppSidebar v-if="!showFocus" :active="destination" :counts="smartViewCounts" :groups="activeListGroups" :lists="listNavItems" :display-mode="sidebarPreferences.displayMode" :order="sidebarPreferences.order" @search="openGlobalSearch" @navigate="setDestination" @update:display-mode="updateSidebarPreferences({ displayMode: $event })" @reorder="updateSidebarPreferences({ order: $event })" @create-list="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" />
     <div class="workspace">
-      <header v-if="!showFocus" class="mobile-header"><div><img src="/shixue-mark.svg" alt="" /><strong>拾学</strong></div><button title="设置" :aria-current="page === 'settings' ? 'page' : undefined" @click="navigate('settings')"><Settings :size="22" /></button></header>
+      <header v-if="!showFocus" class="mobile-header"><div class="mobile-brand"><img src="/shixue-mark.svg" alt="" /><strong>拾学</strong></div><div class="mobile-actions"><button type="button" title="全局搜索" aria-label="全局搜索" aria-keyshortcuts="Control+K Meta+K" @click="openGlobalSearch"><Search :size="21" /></button><button type="button" title="设置" aria-label="设置" :aria-current="destination.kind === 'settings' ? 'page' : undefined" @click="setDestination({ kind: 'settings' })"><Settings :size="22" /></button></div></header>
       <main :class="{ 'focus-main': showFocus, 'tasks-main': (page === 'tasks' || page === 'today') && !showFocus, 'calendar-main': page === 'calendar' && !showFocus }">
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
-        <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" @back="showFocus = false" @toggle="toggleFocus" @finish="completionOpen = true" @update:scratchpad="updateScratchpad" />
-        <div v-else-if="page === 'tasks' || page === 'today'" class="tasks-layout">
-          <div class="tasks-scroll"><TasksView ref="tasksView" :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :quick-add-catalog-revision="recurrenceWorkspace?.revision" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
+        <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" :review-link-id="activeReviewLinkId || undefined" @back="showFocus = false" @toggle="toggleFocus" @finish="openFocusCompletion" @update:scratchpad="updateScratchpad" />
+        <template v-else-if="page === 'tasks' || page === 'today'">
+          <div v-if="destination.kind === 'lists'" class="lists-more">
+            <Popover v-model:open="listsMoreOpen" kind="menu" align="end" mobile-sheet mobile-sheet-label="清单更多导航">
+              <template #trigger="{ triggerProps }"><Button v-bind="triggerProps">更多清单</Button></template>
+              <nav class="lists-more-menu" aria-label="清单更多导航" role="menu">
+                <Button v-for="item in mobileMoreWorkspaceNavigation" :key="item.preferenceKey" role="menuitem" @click="setDestination(item.view)">{{ item.label }}</Button>
+              </nav>
+            </Popover>
+          </div>
+          <div class="tasks-layout">
+          <div class="tasks-scroll"><TasksView ref="tasksView" :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :quick-add-catalog-revision="recurrenceWorkspace?.revision" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @defer="openTaskAction($event, 'defer')" @cancel="openTaskAction($event, 'cancel')" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @overdue-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
           <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
-        </div>
+          </div>
+        </template>
         <SettingsView v-else-if="page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export="exportData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-appearance="setAppearance" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
-        <TopicsView v-else-if="page === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
-        <ReviewView v-else-if="page === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
+        <div v-else-if="destination.kind === 'learning'" class="route-workspace">
+          <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
+          <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
+          <LearningRhythmView v-else-if="destination.section === 'rhythm'" :items="learningRhythmItems" :totals="learningRhythmSelection.totals" @open-occurrence="openRhythmOccurrence" @open-task="openSearchTask" @edit-task="openTaskEditor" />
+          <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-summary="weeklyLearningSummary" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openSearchTask" @open-record="openSearchRecord" @open-plan-source="openWeeklyPlanSource" />
+        </div>
         <CalendarWorkspace v-if="!loading && page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :target-offset="calendarTargetOffset" :execute-command="executeCalendarCommand" @desktop-mode-selected="persistDesktopCalendarMode" />
       </main>
-      <BottomTabs v-if="!showFocus" :active="page" @navigate="navigate" @smart-view="selectSmartView" />
+      <BottomTabs v-if="!showFocus" :active="destination" @navigate="setDestination" />
     </div>
 
-    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) && reminderBusy" :task-title="reminderCompletionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''" @save="completeFocus" />
+    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || completionOccurrenceId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) ? reminderBusy : completionOccurrenceBusy" :task-title="reminderCompletionTask?.title ?? completionOccurrenceTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId || completionOccurrenceId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionOccurrenceId = ''; completionReviewLinkId = ''" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
-    <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @reminder-set="saveReminderRule" @reminder-remove="removeReminderRule" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" @recurrence-save="requestRecurrenceEdit" />
+    <TaskEditSheet :open="taskEditorOpen" :task="selectedTaskEditModel" :topics="state.topics" :tags="recurrenceWorkspace?.tags ?? []" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @manage-tags="openTagManager()" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" />
+    <GlobalSearchDialog v-model:open="globalSearchOpen" :workspace="recurrenceWorkspace" :timezone="timezone" @close="globalSearchOpen = false" @manage-tags="openTagManager(true)" @open-task="openSearchTask" @open-record="openSearchRecord" />
+    <TagManagerSheet ref="tagManager" :open="tagManagerOpen" :tags="recurrenceWorkspace?.tags ?? []" :busy="tagManagerBusy" :error="tagManagerError" @close="closeTagManager" @create="createTag" @rename="renameTag" @archive="archiveTag" />
     <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @edit-occurrence="editSingleOccurrence" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />
     <OccurrenceRescheduleSheet :open="occurrenceRescheduleOpen" :title="selectedTask?.title ?? ''" :model-value="occurrenceRescheduleValue" :timed="occurrenceRescheduleTimed" @close="occurrenceRescheduleOpen = false" @submit="rescheduleOccurrence" />
-    <div v-if="topicEditorOpen" class="editor-backdrop" @click.self="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" required placeholder="清单名称" /></label><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></div>
-    <div v-if="groupEditorOpen" class="editor-backdrop" @click.self="groupEditorOpen = false"><form class="editor-sheet compact-editor" @submit.prevent="saveGroup"><h2>{{ selectedGroupId ? '编辑分组' : '新建分组' }}</h2><label><span>名称</span><input v-model="groupTitle" required placeholder="分组名称" /></label><footer><button v-if="selectedGroupId" type="button" class="cancel danger" @click="archiveGroup">归档</button><span class="footer-spacer"></span><button type="button" class="cancel" @click="groupEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></div>
+    <Sheet :open="topicEditorOpen" :label="state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单'" size="lg" @close="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" autofocus required placeholder="清单名称" /></label><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></Sheet>
+    <Sheet :open="groupEditorOpen" :label="selectedGroupId ? '编辑分组' : '新建分组'" size="sm" @close="groupEditorOpen = false"><form class="editor-sheet compact-editor" @submit.prevent="saveGroup"><h2>{{ selectedGroupId ? '编辑分组' : '新建分组' }}</h2><label><span>名称</span><input v-model="groupTitle" autofocus required placeholder="分组名称" /></label><footer><button v-if="selectedGroupId" type="button" class="cancel danger" @click="archiveGroup">归档</button><span class="footer-spacer"></span><button type="button" class="cancel" @click="groupEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></Sheet>
     <Dialog v-model:open="reminderCenterOpen" title="任务提醒" :description="nativeDeliveryAvailable ? '系统通知仅显示标题，操作在这里完成。' : '仅应用内提醒；未启用系统通知。'">
       <p v-if="!reminderCards.length">暂时没有待处理提醒。</p>
       <p v-if="reminderMessage" role="status">{{ reminderMessage }}</p>
@@ -1267,18 +1623,24 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
       </template>
     </Dialog>
     <ToastRegion :key="toastVersion" :message="toast" :action-label="toastAction?.label" :duration="toastAction ? 6000 : 3200" :raised="compact && Boolean(selectedTaskId)" @action="runToastAction" @dismiss="dismissToast" />
-    <div v-if="storageError" class="error-banner" role="alert"><span>上一次更改未保存。拾学不会用演示数据覆盖现有记录。</span><button @click="storageError = ''">知道了</button></div>
+    <div v-if="storageError" class="error-banner" role="alert"><span>{{ errorBannerMessage }}</span><button @click="storageError = ''">知道了</button></div>
   </div>
 </template>
 
 <style scoped>
 .calendar-main { overflow: hidden; }
+.route-workspace { min-height: 100%; display: flex; flex-direction: column; }
+.route-workspace > :last-child { min-height: 0; flex: 1; }
+.learning-navigation { display: flex; gap: 8px; padding: 16px 24px 0; }
+.learning-navigation > * { min-height: 44px; }
+.lists-more { display: none; }
+.lists-more-menu { min-width: 180px; display: grid; gap: 6px; padding: 8px; }
 .shell { width: 100%; height: 100vh; height: 100dvh; display: flex; overflow: hidden; background: var(--bg); }.workspace { min-width: 0; flex: 1; height: 100%; overflow: hidden; } main { width: 100%; height: 100%; overflow-y: auto; overscroll-behavior-y: contain; scroll-behavior: smooth; scrollbar-gutter: stable; }.tasks-main { overflow: hidden; }.today-layout { min-height: 100%; display: flex; justify-content: center; }.today-layout > :first-child { flex: 1 1 auto; }.tasks-layout { height: 100%; display: flex; }.tasks-scroll { min-width: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }.focus-main { background: radial-gradient(circle at 50% -25%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 42%), var(--bg); }.mobile-header { display: none; }.loading { min-height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
-.editor-backdrop { position: fixed; z-index: var(--z-modal); inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--text) 22%, transparent); backdrop-filter: saturate(120%) blur(12px); }.editor-sheet { width: min(100%, 470px); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 28px; border: 1px solid var(--hairline); border-radius: var(--radius-2xl); background: var(--material-regular); box-shadow: var(--shadow-lg); animation: editor-in var(--motion-slow) var(--ease-spring); }.editor-sheet.compact-editor { width: min(100%, 420px); }.editor-sheet > p { margin: 0 0 5px; color: var(--accent); font-size: 11px; font-weight: 600; }.editor-sheet h2 { margin: 0 0 22px; font-size: 23px; font-weight: 650; letter-spacing: -.025em; }.editor-sheet label { display: block; margin-top: 16px; }.editor-sheet label > span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }.editor-sheet input, .editor-sheet textarea { width: 100%; min-height: 46px; padding: 11px 13px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font-size: 13px; transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); }.editor-sheet input:focus, .editor-sheet textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }.editor-sheet textarea { min-height: 88px; resize: vertical; }.duration-input { display: flex; align-items: center; gap: 9px; }.duration-input input { width: 110px; }.duration-input span { color: var(--muted); font-size: 12px; }.editor-sheet footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); }.editor-sheet footer button { min-height: 46px; padding: 0 18px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 600; }.footer-spacer { flex: 1; }.cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); }.save { border: 0; background: var(--accent); color: var(--accent-text); box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent); }
+.editor-sheet { width: 100%; }.editor-sheet.compact-editor { width: min(100%, 420px); }.editor-sheet > p { margin: 0 0 5px; color: var(--accent); font-size: 11px; font-weight: 600; }.editor-sheet h2 { margin: 0 0 22px; font-size: 23px; font-weight: 650; letter-spacing: -.025em; }.editor-sheet label { display: block; margin-top: 16px; }.editor-sheet label > span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }.editor-sheet input, .editor-sheet textarea { width: 100%; min-height: 46px; padding: 11px 13px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font-size: 13px; transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); }.editor-sheet input:focus, .editor-sheet textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }.editor-sheet textarea { min-height: 88px; resize: vertical; }.duration-input { display: flex; align-items: center; gap: 9px; }.duration-input input { width: 110px; }.duration-input span { color: var(--muted); font-size: 12px; }.editor-sheet footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); }.editor-sheet footer button { min-height: 46px; padding: 0 18px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 600; }.footer-spacer { flex: 1; }.cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); }.save { border: 0; background: var(--accent); color: var(--accent-text); box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent); }
 .error-banner { position: fixed; z-index: var(--z-toast); left: 232px; right: 16px; top: 14px; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 10px 8px 14px; border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border)); border-radius: var(--radius-lg); background: var(--material-regular); color: var(--danger); font-size: 11px; box-shadow: var(--shadow-md); backdrop-filter: saturate(130%) blur(18px); }.error-banner button { min-height: 30px; border: 0; background: transparent; color: var(--danger); font-weight: 600; }
-@keyframes editor-in { from { transform: translateY(18px) scale(.985); opacity: 0; } }
 @media (max-width: 819px) {
-  .shell { flex-direction: column; }.workspace { width: 100%; }.mobile-header { height: calc(64px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px; border-bottom: 1px solid var(--hairline); background: var(--material-thin); backdrop-filter: saturate(170%) blur(24px); -webkit-backdrop-filter: saturate(170%) blur(24px); }.mobile-header > div { display: flex; align-items: center; gap: 8px; }.mobile-header img { width: 34px; height: 34px; }.mobile-header strong { font-size: 18px; font-weight: 650; letter-spacing: .04em; }.mobile-header button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.mobile-header button:active { background: var(--control-fill); } main { height: calc(100% - 64px - env(safe-area-inset-top, 0px)); scrollbar-gutter: auto; } main.focus-main { height: 100%; }.tasks-layout { display: block; }.editor-backdrop { align-items: flex-end; padding: 0; }.editor-sheet { position: relative; max-height: 94dvh; border-width: 1px 0 0; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; padding: 32px 20px calc(22px + env(safe-area-inset-bottom, 0px)); animation-name: sheet-up; }.editor-sheet::before { content: ''; position: absolute; top: 9px; left: 50%; width: 36px; height: 5px; transform: translateX(-50%); border-radius: 999px; background: color-mix(in srgb, var(--muted) 32%, transparent); }.error-banner { left: 12px; right: 12px; top: calc(70px + env(safe-area-inset-top, 0px)); }
+  .learning-navigation { padding: 10px 16px 0; }
+  .lists-more { position: fixed; z-index: var(--z-sticky); top: calc(72px + env(safe-area-inset-top, 0px)); right: 16px; display: block; }
+  .shell { flex-direction: column; }.workspace { width: 100%; }.mobile-header { height: calc(64px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px; border-bottom: 1px solid var(--hairline); background: var(--material-thin); backdrop-filter: saturate(170%) blur(24px); -webkit-backdrop-filter: saturate(170%) blur(24px); }.mobile-header > div { display: flex; align-items: center; gap: 8px; }.mobile-header img { width: 34px; height: 34px; }.mobile-header strong { font-size: 18px; font-weight: 650; letter-spacing: .04em; }.mobile-header button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.mobile-header button:active { background: var(--control-fill); }.mobile-actions { gap: 2px !important; } main { height: calc(100% - 64px - env(safe-area-inset-top, 0px)); scrollbar-gutter: auto; } main.focus-main { height: 100%; }.tasks-layout { display: block; }.error-banner { left: 12px; right: 12px; top: calc(70px + env(safe-area-inset-top, 0px)); }
 }
-@keyframes sheet-up { from { transform: translateY(36px); opacity: .75; } }
 </style>

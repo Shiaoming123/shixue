@@ -7,6 +7,7 @@ import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { createWorkspaceExport } from '../src/storage/workspace/data-port.ts'
 import { prepareWorkspaceImport, summarizeWorkspace } from '../src/lib/workspace-data-summary.ts'
 import { currentSidebarDestination } from '../src/lib/sidebar-navigation.ts'
+import { resolveRecurrenceEditWrite, resolveReminderEditWrite } from '../src/lib/task-edit-commit.ts'
 
 // Execute the production handlers with deterministic ports; no browser or source-pattern assertions.
 function script(file: string) {
@@ -214,7 +215,7 @@ test('denied preference access does not prevent workspace initialization', async
   const messages: string[] = []
   const ports = {
     window: { addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
-    handleQuickAdd() {}, handleModuleError() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
+    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
     localStorage: { getItem() { throw Error('SecurityError') } }, notify: (message: string) => messages.push(message),
     applyTheme() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }),
     compactMedia: undefined, compact: ref(false), onCompactChange() {},
@@ -237,7 +238,7 @@ test('unmount during native initialization cannot install timers after teardown'
   const js = ts.transpileModule(`const mounted = ${callback.getText(source)}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   const ports = {
     window: { addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
-    handleQuickAdd() {}, handleModuleError() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
+    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
     localStorage: { getItem: () => null }, notify() {}, applyTheme() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }),
     compactMedia: undefined, compact: ref(false), onCompactChange() {}, refreshState: async () => {}, state: ref({ topics: [] }), selectedTopicId: ref(''), showFocus: ref(false), activeSession: ref(null),
     reportSmokePhase: async () => {},
@@ -284,13 +285,152 @@ test('failed native autostart write leaves the visible switch at the confirmed s
 
 test('ordinary task edits omit the compatibility reminder field so independently edited rules survive', async () => {
   let update: Record<string, unknown> | undefined
+  const original = { title: 'Stored', notes: '', topicId: null, plannedOn: null, dueOn: null, reminderAt: null, priority: 'none', estimateMinutes: null }
   const api = handlers('App.vue', ['saveTaskEdit'], {
     selectedTask: ref({ id: 'task', revision: 3 }), updateStudyTask: async (_id: string, value: Record<string, unknown>) => { update = value },
-    refreshState: async () => {}, taskEditorOpen: ref(true), notify() {}, reportStorageError(error: unknown) { throw error },
+    readCurrentTaskEdit: async () => ({ task: { id: 'task', revision: 3 }, value: original }), resolveTaskEditWrite: () => 'write',
+    refreshState: async () => {}, taskEditorOpen: ref(true), reminderBusy: ref(false), reminderError: ref(''), recurrenceScopeOpen: ref(false),
+    runTaskEditCommit: async (input: any, steps: any) => { await steps.saveTask(); for (const reminder of input.reminders) await steps.saveReminder(reminder); if (input.recurrence) await steps.saveRecurrence(input.recurrence) },
+    reminderCommandForCurrentState: () => null, saveReminderRuleWithoutBusyGuard: async () => {}, requestRecurrenceEdit: async () => {},
+    notify() {}, reportStorageError(error: unknown) { throw error },
   })
-  await api.saveTaskEdit({ title: 'Updated', reminderAt: null })
+  await api.saveTaskEdit({ ...original, title: 'Updated' }, { baseTask: original, reminderCommands: [] })
   assert.equal(update?.title, 'Updated')
   assert.equal(Object.hasOwn(update!, 'reminderAt'), false)
+})
+
+test('task edit retry skips an already saved task and resumes only the failed nested write', async () => {
+  const original = { title: 'Stored', notes: '', topicId: null, plannedOn: '2026-09-06', dueOn: null, reminderAt: null, priority: 'none', estimateMinutes: 15, acceptanceCriteria: [] }
+  const desired = { ...original, title: 'Updated' }
+  let current = original
+  let revision = 3
+  let taskSaves = 0
+  let reminderAttempts = 0
+  const errors: unknown[] = []
+  const api = handlers('App.vue', ['saveTaskEdit'], {
+    selectedTask: ref({ id: 'task', revision }), reminderBusy: ref(false), reminderError: ref(''), recurrenceScopeOpen: ref(false), taskEditorOpen: ref(true),
+    readCurrentTaskEdit: async () => ({ task: { id: 'task', revision }, value: current }),
+    resolveTaskEditWrite: (value: any, base: any, target: any) => JSON.stringify(value) === JSON.stringify(target) ? 'noop' : JSON.stringify(value) === JSON.stringify(base) ? 'write' : 'conflict',
+    updateStudyTask: async () => { taskSaves++; revision++; current = desired }, refreshState: async () => {},
+    runTaskEditCommit: async (input: any, steps: any) => { await steps.saveTask(); for (const reminder of input.reminders) await steps.saveReminder(reminder) },
+    reminderCommandForCurrentState: (value: any) => value,
+    saveReminderRuleWithoutBusyGuard: async () => { reminderAttempts++; if (reminderAttempts === 1) throw Error('reminder CAS') },
+    requestRecurrenceEdit: async () => {}, notify() {}, reportStorageError: (error: unknown) => errors.push(error),
+  })
+  const changes = { baseTask: original, reminderCommands: [{ type: 'reminder.set', ruleId: 'r', taskId: 'task', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true }] }
+  await api.saveTaskEdit(desired, changes)
+  await api.saveTaskEdit(desired, changes)
+  assert.equal(taskSaves, 1, 'retry must not create a second task revision after the first task save succeeded')
+  assert.equal(reminderAttempts, 2, 'retry resumes the failed reminder')
+  assert.equal(errors.length, 1)
+})
+
+test('reminder edit uses its opened base for update, remove, add, convergence, and concurrent conflict', async () => {
+  const base = { id: 'rule', taskId: 'task', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true, revision: 1 }
+  let rules: any[] = [{ ...base, revision: 3 }]
+  const api = handlers('App.vue', ['reminderCommandForCurrentState'], {
+    getWorkspaceStore: () => ({ load: async () => ({ reminderRules: rules }) }), resolveReminderEditWrite,
+  })
+  const update = { type: 'reminder.set', ruleId: 'rule', taskId: 'task', occurrenceId: null, trigger: { kind: 'before_start', minutes: 10 }, enabled: true }
+  assert.equal((await api.reminderCommandForCurrentState(update, [base])).expectedRevision, 3)
+  const remove = { ...update, trigger: base.trigger, enabled: false }
+  assert.equal((await api.reminderCommandForCurrentState(remove, [base])).expectedRevision, 3)
+  rules = []
+  const addition = { ...update, ruleId: 'new' }
+  assert.equal(Object.hasOwn(await api.reminderCommandForCurrentState(addition, []), 'expectedRevision'), false)
+  rules = [{ id: 'rule', taskId: 'task', occurrenceId: null, trigger: update.trigger, enabled: true, revision: 1 }]
+  assert.equal(await api.reminderCommandForCurrentState(update, [base]), null, 'an independently converged desired rule is complete')
+  rules = [{ ...base, trigger: { kind: 'before_start', minutes: 60 }, revision: 4 }]
+  await assert.rejects(() => api.reminderCommandForCurrentState(update, [base]), /其他位置|冲突/)
+})
+
+test('recurrence create retry detects persisted convergence and never executes or opens update scope twice', async () => {
+  const rule = { cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', end: { kind: 'never' } }
+  const task = { id: 'task', revision: 2, recurrenceSeriesId: null, schedule: { startAt: null, startOn: '2026-09-06' } }
+  let persistedSeries: any = null
+  let executes = 0
+  let refreshes = 0
+  const recurrenceScopeOpen = ref(false)
+  const taskEditorOpen = ref(true)
+  const selectedRecurrence = ref<any>(null)
+  const api = handlers('App.vue', ['requestRecurrenceEdit'], {
+    selectedRecurrence, selectedTask: ref({ id: 'task', plannedOn: '2026-09-06' }), recurrenceWorkspace: ref({ revision: 7, tasks: [task] }),
+    recurrenceExecuting: ref(false), recurrenceScopeOpen, taskEditorOpen, pendingRecurrenceRule: null,
+    clearRecurrencePreview() {}, cloneRecurrenceRuleDto: (value: any) => structuredClone(value),
+    getWorkspaceStore: () => ({ load: async () => ({ revision: persistedSeries ? 8 : 7, tasks: [{ ...task, revision: persistedSeries ? 3 : 2, recurrenceSeriesId: persistedSeries?.id ?? null }], recurrenceSeries: persistedSeries ? [persistedSeries] : [] }) }),
+    resolveRecurrenceEditWrite,
+    capabilityService: { execute: async () => { executes++; persistedSeries = { id: 'series', taskId: 'task', revision: 1, ...structuredClone(rule), timezone: 'Asia/Shanghai', anchorAt: null, anchorOn: '2026-09-06' } } },
+    CAPABILITY_PROTOCOL_VERSION: 1, crypto: { randomUUID: () => `id:${executes}` }, timezone: 'Asia/Shanghai', today: ref('2026-09-06'),
+    refreshState: async () => { refreshes++; if (refreshes === 1) throw Error('refresh failed') }, notify() {},
+  })
+  await assert.rejects(() => api.requestRecurrenceEdit(rule, null), /refresh failed/)
+  selectedRecurrence.value = persistedSeries
+  await api.requestRecurrenceEdit(rule, null)
+  assert.equal(executes, 1)
+  assert.equal(recurrenceScopeOpen.value, false)
+  assert.equal(taskEditorOpen.value, false)
+})
+
+test('recurrence create execution failure preserves the dirty editor and never opens series scope', async () => {
+  const rule = { cadence: { kind: 'daily', interval: 1 }, basis: 'fixed_schedule', end: { kind: 'never' } }
+  const taskEditorOpen = ref(true)
+  const recurrenceScopeOpen = ref(false)
+  const recurrenceExecuting = ref(false)
+  const api = handlers('App.vue', ['requestRecurrenceEdit'], {
+    selectedTask: ref({ id: 'task', plannedOn: null }), recurrenceExecuting, recurrenceScopeOpen, taskEditorOpen, pendingRecurrenceRule: null,
+    clearRecurrencePreview() {}, cloneRecurrenceRuleDto: (value: any) => structuredClone(value),
+    getWorkspaceStore: () => ({ load: async () => ({ revision: 7, tasks: [{ id: 'task', revision: 2, deletedAt: null, recurrenceSeriesId: null, schedule: { startAt: null, startOn: null } }], recurrenceSeries: [] }) }),
+    resolveRecurrenceEditWrite, capabilityService: { execute: async () => { throw Error('create CAS') } },
+    CAPABILITY_PROTOCOL_VERSION: 1, crypto: { randomUUID: () => 'id' }, timezone: 'Asia/Shanghai', today: ref('2026-09-06'),
+    refreshState: async () => assert.fail('an execution failure cannot refresh or acknowledge the create'), notify: () => assert.fail('an execution failure cannot report success'),
+  })
+  await assert.rejects(() => api.requestRecurrenceEdit(rule, null), /create CAS/)
+  assert.equal(taskEditorOpen.value, true)
+  assert.equal(recurrenceScopeOpen.value, false)
+  assert.equal(recurrenceExecuting.value, false)
+})
+
+test('recurrence three-way resolution only updates the captured base', () => {
+  const base = { cadence: { kind: 'weekly', interval: 1, weekdays: [5, 1] }, basis: 'fixed_schedule', end: { kind: 'never' } }
+  const desired = { ...base, cadence: { kind: 'weekly', interval: 2, weekdays: [1, 5] } }
+  assert.equal(resolveRecurrenceEditWrite(base as any, base as any, desired as any), 'write')
+  assert.equal(resolveRecurrenceEditWrite(desired as any, base as any, desired as any), 'noop')
+  assert.equal(resolveRecurrenceEditWrite({ ...base, basis: 'after_completion' } as any, base as any, desired as any), 'conflict')
+})
+
+test('task edit fails loud when editable task state changed externally', async () => {
+  const original = { title: 'Stored', notes: '', topicId: null, plannedOn: '2026-09-06', dueOn: null, reminderAt: null, priority: 'none', estimateMinutes: 15, acceptanceCriteria: [] }
+  const errors: unknown[] = []
+  let taskSaves = 0
+  const api = handlers('App.vue', ['saveTaskEdit'], {
+    selectedTask: ref({ id: 'task', revision: 4 }), reminderBusy: ref(false), reminderError: ref(''), recurrenceScopeOpen: ref(false), taskEditorOpen: ref(true),
+    readCurrentTaskEdit: async () => ({ task: { id: 'task', revision: 4 }, value: { ...original, title: 'External edit' } }), resolveTaskEditWrite: () => 'conflict',
+    updateStudyTask: async () => { taskSaves++ }, refreshState: async () => {},
+    runTaskEditCommit: async (_input: any, steps: any) => steps.saveTask(), reminderCommandForCurrentState: () => null,
+    saveReminderRuleWithoutBusyGuard: async () => {}, requestRecurrenceEdit: async () => {}, notify() {}, reportStorageError: (error: unknown) => errors.push(error),
+  })
+  await api.saveTaskEdit({ ...original, title: 'My draft' }, { baseTask: original, reminderCommands: [] })
+  assert.equal(taskSaves, 0)
+  assert.match(String(errors[0]), /其他位置|冲突/)
+})
+
+test('successful recurrence scope commit closes the dirty editor while failure keeps it open', async () => {
+  const preview = { accepted: true, confirmation: 'none' }
+  const envelope = { command: { scope: 'future' } }
+  for (const fails of [false, true]) {
+    const taskEditorOpen = ref(true)
+    const recurrenceScopeOpen = ref(true)
+    const errors: unknown[] = []
+    const api = handlers('App.vue', ['executeRecurrenceScope', 'clearRecurrencePreview'], {
+      recurrencePreview: ref(preview), recurrencePreviewEnvelope: envelope, recurrenceExecuting: ref(false), recurrenceScopeOpen, taskEditorOpen,
+      recurrencePreviewVersion: 0, pendingRecurrenceRule: {}, capabilityService: { execute: async () => { if (fails) throw Error('recurrence CAS') } },
+      refreshState: async () => {}, notify() {}, reportStorageError: (error: unknown) => errors.push(error),
+    })
+    await api.executeRecurrenceScope('future')
+    assert.equal(taskEditorOpen.value, fails, fails ? 'failure keeps the dirty editor open' : 'success closes the committed editor')
+    assert.equal(recurrenceScopeOpen.value, fails)
+    assert.equal(errors.length, fails ? 1 : 0)
+  }
 })
 
 test('learning reminder completion opens evidence entry without completing either task or occurrence', async () => {
@@ -299,7 +439,7 @@ test('learning reminder completion opens evidence entry without completing eithe
   const reminderCenterOpen = ref(true)
   const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'learning' }] }
   const api = handlers('App.vue', ['handleReminderAction'], {
-    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, reminderCenterOpen, nextTick: async () => {},
+    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, completionOccurrenceId: ref('stale-occurrence'), completionReviewLinkId: ref('stale-review'), reminderCenterOpen, nextTick: async () => {},
     executeReminderCommand: async () => assert.fail('no completion before evidence'),
   })
   await api.handleReminderAction({ deliveryId: 'delivery', action: 'complete' })
@@ -314,16 +454,178 @@ test('general recurring reminder completes exactly its occurrence, and snooze ch
   const before = structuredClone(workspace)
   const api = handlers('App.vue', ['handleReminderAction'], {
     reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''),
-    executeReminderCommand: async (command: unknown) => { commands.push(command) }, pollReminders: async () => {},
+    executeReminderCommand: async (command: unknown) => { commands.push(command) }, pollReminders: async () => {}, today: ref('2026-09-06'),
   })
   await api.handleReminderAction({ deliveryId: 'delivery', action: 'complete' })
-  assert.deepEqual(commands[0], { type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 2 })
+  assert.deepEqual(commands[0], { type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 2, reviewedOn: '2026-09-06' })
   const now = Date.now()
   await api.handleReminderAction({ deliveryId: 'delivery', action: 'snooze', minutes: 10 })
   assert.equal(commands[1].type, 'reminder.snooze')
   assert.equal(commands[1].deliveryId, 'delivery')
   assert.ok(Date.parse(commands[1].until) >= now + 600_000)
   assert.deepEqual(workspace, before)
+})
+
+test('learning occurrence completion from task surfaces opens evidence entry without executing', async () => {
+  const commands: any[] = []
+  const completionOpen = ref(false)
+  const completionOccurrenceId = ref('')
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['executeOccurrence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOpen, completionReminderId: ref('delivery'), completionReviewLinkId: ref('review'), nextTick: async () => {},
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' },
+    CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: { execute: async (envelope: unknown) => { commands.push(envelope) } },
+    refreshState: async () => {}, notify() {}, reportStorageError(error: unknown) { throw error },
+  })
+  await api.executeOccurrence('occurrence', 'recurrence.complete')
+  assert.deepEqual(commands, [])
+  assert.equal(completionOccurrenceId.value, 'occurrence')
+  assert.equal(completionOpen.value, true)
+})
+
+test('general occurrence completion from task surfaces remains a direct command', async () => {
+  const commands: any[] = []
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'general', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['executeOccurrence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId: ref(''), completionOpen: ref(false), completionReminderId: ref(''), completionReviewLinkId: ref(''), nextTick: async () => {},
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: { execute: async (envelope: unknown) => { commands.push(envelope) } },
+    refreshState: async () => {}, notify() {}, reportStorageError(error: unknown) { throw error },
+  })
+  await api.executeOccurrence('occurrence', 'recurrence.complete')
+  assert.deepEqual(commands[0].command, { type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 4, reviewedOn: '2026-09-06' })
+})
+
+test('task-surface learning completion writes evidence with occurrence and task revisions', async () => {
+  const envelopes: any[] = []
+  const completionOpen = ref(true)
+  const completionOccurrenceId = ref('occurrence')
+  const completionOccurrenceBusy = ref(false)
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['completeOccurrenceEvidence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOccurrenceBusy, completionOpen,
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: { query: async () => workspace, execute: async (envelope: unknown) => { envelopes.push(envelope) } },
+    refreshState: async () => {}, notify() {},
+  })
+  const payload = { learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 }
+  await api.completeOccurrenceEvidence(payload)
+  assert.deepEqual(envelopes[0], {
+    protocolVersion: 1,
+    idempotencyKey: 'recurrence:command-id',
+    source: 'human-ui',
+    expectedWorkspaceRevision: 9,
+    command: { type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 4, expectedTaskRevision: 7, ...payload, reviewedOn: '2026-09-06' },
+  })
+  assert.equal(completionOpen.value, false)
+  assert.equal(completionOccurrenceId.value, '')
+  assert.equal(completionOccurrenceBusy.value, false)
+})
+
+test('failed task-surface learning completion keeps evidence context open for retry', async () => {
+  const completionOpen = ref(true)
+  const completionOccurrenceId = ref('occurrence')
+  const completionOccurrenceBusy = ref(false)
+  const messages: string[] = []
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['completeOccurrenceEvidence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOccurrenceBusy, completionOpen,
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: { query: async () => workspace, execute: async () => { throw Error('保存失败') } }, refreshState: async () => assert.fail('failed writes must not refresh'),
+    notify: (message: string) => messages.push(message),
+  })
+  await api.completeOccurrenceEvidence({ learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 })
+  assert.equal(completionOpen.value, true)
+  assert.equal(completionOccurrenceId.value, 'occurrence')
+  assert.equal(completionOccurrenceBusy.value, false)
+  assert.deepEqual(messages, ['保存失败'])
+})
+
+test('saved task-surface learning completion closes evidence and retries only refresh', async () => {
+  const completionOpen = ref(true)
+  const completionOccurrenceId = ref('occurrence')
+  const completionOccurrenceBusy = ref(false)
+  const notices: Array<[string, any]> = []
+  let refreshes = 0
+  let executions = 0
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['completeOccurrenceEvidence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOccurrenceBusy, completionOpen,
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: { query: async () => workspace, execute: async () => { executions++ } },
+    refreshState: async () => { refreshes++; if (refreshes === 1) throw Error('读取失败') },
+    notify: (message: string, action?: unknown) => notices.push([message, action]),
+  })
+  await api.completeOccurrenceEvidence({ learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 })
+  assert.equal(executions, 1)
+  assert.equal(completionOpen.value, false)
+  assert.equal(completionOccurrenceId.value, '')
+  assert.match(notices[0][0], /已保存.*刷新失败.*读取失败/)
+  await notices[0][1].run()
+  assert.equal(refreshes, 2)
+  assert.equal(executions, 1)
+})
+
+test('an in-flight learning completion cannot close a newer evidence context', async () => {
+  const completionOpen = ref(true)
+  const completionOccurrenceId = ref('occurrence:a')
+  const completionOccurrenceBusy = ref(false)
+  let releaseExecution!: () => void
+  let markStarted!: () => void
+  const executionStarted = new Promise<void>((resolve) => { markStarted = resolve })
+  const executionGate = new Promise<void>((resolve) => { releaseExecution = resolve })
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence:a', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['completeOccurrenceEvidence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOccurrenceBusy, completionOpen,
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: {
+      query: async () => workspace,
+      execute: async () => { markStarted(); await executionGate },
+    },
+    refreshState: async () => {}, notify() {},
+  })
+
+  const submission = api.completeOccurrenceEvidence({ learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 })
+  await executionStarted
+  completionOccurrenceId.value = 'occurrence:b'
+  completionOpen.value = true
+  releaseExecution()
+  await submission
+
+  assert.equal(completionOccurrenceId.value, 'occurrence:b')
+  assert.equal(completionOpen.value, true)
+  assert.equal(completionOccurrenceBusy.value, false)
 })
 
 test('repeated learning completion sends evidence with occurrence and task revisions, never closes the parent task', async () => {
@@ -334,11 +636,11 @@ test('repeated learning completion sends evidence with occurrence and task revis
   const api = handlers('App.vue', ['completeReminderEvidence'], {
     recurrenceWorkspace: ref({ reminderDeliveries: [{ id: 'delivery', occurrenceId: 'occurrence' }], occurrences: [{ id: 'occurrence', revision: 4 }] }), completionReminderId, completionOpen,
     reminderCompletionTask: ref({ id: 'task', revision: 7 }), reminderBusy: ref(false), notify() {},
-    executeReminderCommand: async (command: unknown) => { commands.push(command) }, pollReminders: async () => { polled++ },
+    executeReminderCommand: async (command: unknown) => { commands.push(command) }, pollReminders: async () => { polled++ }, today: ref('2026-09-06'),
   })
   const payload = { learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 }
   await api.completeReminderEvidence(payload)
-  assert.deepEqual(commands, [{ type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 4, expectedTaskRevision: 7, ...payload }])
+  assert.deepEqual(commands, [{ type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 4, expectedTaskRevision: 7, ...payload, reviewedOn: '2026-09-06' }])
   assert.equal(polled, 1)
   assert.equal(completionOpen.value, false)
   assert.equal(completionReminderId.value, '')
@@ -352,7 +654,7 @@ test('failed repeated learning completion keeps the same evidence context and op
   const api = handlers('App.vue', ['completeReminderEvidence'], {
     recurrenceWorkspace: ref({ reminderDeliveries: [{ id: 'delivery', occurrenceId: 'occurrence' }], occurrences: [{ id: 'occurrence', revision: 4 }] }), completionReminderId, completionOpen,
     reminderCompletionTask: ref({ id: 'task', revision: 7 }), reminderBusy, notify: (message: string) => messages.push(message),
-    executeReminderCommand: async () => { throw Error('保存失败') }, pollReminders: async () => assert.fail('failed writes must not poll or discard evidence'),
+    executeReminderCommand: async () => { throw Error('保存失败') }, pollReminders: async () => assert.fail('failed writes must not poll or discard evidence'), today: ref('2026-09-06'),
   })
   const payload = Object.freeze({ learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 })
   await api.completeReminderEvidence(payload)

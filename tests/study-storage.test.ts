@@ -130,7 +130,7 @@ test('task commands complete the inbox-to-evidence learning loop atomically', as
   assert.equal(state.completionRecords[0].nextReviewOn, '2026-09-06')
   assert.deepEqual(
     state.taskEvents.map(({ type }) => type),
-    ['captured', 'planned', 'started', 'completed'],
+    ['captured', 'planned', 'started', 'completed', 'captured'],
   )
 })
 
@@ -376,8 +376,8 @@ test('soft-delete preserves history and evidence while safely finishing an activ
   assert.equal(state.sessions[0].state, 'finished')
   assert.equal(state.sessions[0].elapsedSeconds, 600)
   assert.equal(state.completionRecords[0].evidence, 'Restart test passed.')
-  assert.deepEqual(state.taskEvents.map(({ type }) => type), ['captured', 'planned', 'completed', 'reopened', 'started', 'deleted'])
-  assert.deepEqual(state.taskEvents.map(({ sequence }) => sequence), [1, 2, 3, 4, 5, 6])
+  assert.deepEqual(state.taskEvents.map(({ type }) => type), ['captured', 'planned', 'completed', 'captured', 'reopened', 'started', 'deleted'])
+  assert.deepEqual(state.taskEvents.map(({ sequence }) => sequence), [1, 2, 3, 4, 5, 6, 7])
   await assert.rejects(deleteStudyTask('task-1'), /TASK_ALREADY_DELETED/)
 })
 

@@ -6,6 +6,8 @@ mod agent;
 mod db;
 #[cfg(all(desktop, feature = "notification"))]
 mod reminder_scheduler;
+#[cfg(all(desktop, feature = "shortcut"))]
+mod shortcut;
 #[cfg(feature = "sync")]
 mod study_cloud;
 #[cfg(desktop)]
@@ -85,6 +87,19 @@ async fn read_legacy_reminder_deliveries(
     }
 }
 
+#[tauri::command]
+fn set_quick_add_shortcut(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    #[cfg(all(desktop, feature = "shortcut"))]
+    {
+        shortcut::set_registered(&app, enabled)
+    }
+    #[cfg(not(all(desktop, feature = "shortcut")))]
+    {
+        let _ = (app, enabled);
+        Err("Global quick capture is unavailable in this build.".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -110,7 +125,7 @@ pub fn run() {
 
     #[cfg(all(desktop, feature = "shortcut"))]
     {
-        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+        builder = builder.plugin(shortcut::plugin());
     }
 
     #[cfg(feature = "clipboard")]
@@ -138,6 +153,7 @@ pub fn run() {
             runtime_platform,
             report_ios_smoke_phase,
             read_legacy_reminder_deliveries,
+            set_quick_add_shortcut,
             agent::set_api_key,
             agent::has_api_key,
             agent::delete_api_key,
@@ -158,6 +174,7 @@ pub fn run() {
             runtime_platform,
             report_ios_smoke_phase,
             read_legacy_reminder_deliveries,
+            set_quick_add_shortcut,
             agent::set_api_key,
             agent::has_api_key,
             agent::delete_api_key,
@@ -173,6 +190,7 @@ pub fn run() {
             runtime_platform,
             report_ios_smoke_phase,
             read_legacy_reminder_deliveries,
+            set_quick_add_shortcut,
             study_cloud::study_cloud_sign_in,
             study_cloud::study_cloud_session_status,
             study_cloud::study_cloud_sign_out,
@@ -187,7 +205,8 @@ pub fn run() {
             greet,
             runtime_platform,
             report_ios_smoke_phase,
-            read_legacy_reminder_deliveries
+            read_legacy_reminder_deliveries,
+            set_quick_add_shortcut
         ]);
     }
 

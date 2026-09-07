@@ -83,6 +83,17 @@ test('v2 task parsing defaults new todo metadata and validates explicit values',
   assert.throws(() => parseStudyState(invalidReminder), /reminderAt/i)
 })
 
+test('v2 completion parsing defaults legacy tag snapshots and rejects duplicates', () => {
+  const legacy = createSeedStudyState('2026-09-04T00:00:00.000Z') as unknown as {
+    completionRecords: Array<Record<string, unknown>>
+  }
+  delete legacy.completionRecords[0]!.tagIdsSnapshot
+  assert.deepEqual(parseStudyState(legacy).completionRecords[0]?.tagIdsSnapshot, [])
+
+  legacy.completionRecords[0]!.tagIdsSnapshot = ['tag-1', 'tag-1']
+  assert.throws(() => parseStudyState(legacy), /duplicate tagIdsSnapshot/)
+})
+
 test('review dates follow the deterministic 1/3/7 calendar-day schedule', () => {
   assert.equal(nextReviewDate('2026-01-30', 0), '2026-01-31')
   assert.equal(nextReviewDate('2026-01-30', 1), '2026-02-02')

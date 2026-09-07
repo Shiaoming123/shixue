@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { validateApplicationProtocol } from '../scripts/check-app-protocol.mjs'
 import { moduleContracts, moduleIds } from '../src/modules/contract.ts'
@@ -20,10 +21,15 @@ const packageJson = {
     'rust:verify': 'node scripts/rust-verify.mjs',
     'smoke:web-persistence': 'node scripts/smoke-web-persistence.mjs',
     'smoke:ios-launch': 'node scripts/smoke-ios-launch.mjs',
+    'smoke:calendar': 'node scripts/smoke-calendar.mjs',
+    'benchmark:task-query': 'node scripts/benchmark-study-task-query.mjs',
     'smoke:windows-package': 'node scripts/smoke-windows-package.mjs',
+    'mobile:doctor': 'node scripts/mobile-doctor.mjs',
     'check:android-artifact': 'node scripts/check-android-artifact.mjs',
   },
 }
+
+const projectRoot = new URL('..', import.meta.url)
 
 function validProtocol() {
   return {
@@ -73,28 +79,40 @@ function validProtocol() {
         'recurrence-occurrence-v1',
         'offline-natural-language-v1',
         'multi-reminder-v1',
-        'calendar-workspace-v1',
+        'calendar-planning-v1',
+        'learning-search-tags-v1',
+        'derived-learning-rhythm-v1',
+        'explainable-weekly-evidence-v1',
+      ],
+      shippedEvidence: [
+        { id: 'navigation', sources: ['src/lib/workspace-view.ts'], tests: ['tests/workspace-navigation.test.ts'] },
+        { id: 'today-upcoming', sources: ['src/domain/views/today.ts', 'src/domain/views/upcoming.ts'], tests: ['tests/workspace-projections.test.ts'] },
+        { id: 'review-link', sources: ['src/domain/learning/review-task-link.ts'], tests: ['tests/review-task-link.test.ts'] },
+        { id: 'responsive-shell', sources: ['src/lib/responsive-shell.ts'], tests: ['tests/responsive-shell.test.ts', 'tests/business-sheet-mount.test.ts'] },
+        { id: 'learning-search-tags', sources: ['src/domain/capabilities/tag-commands.ts', 'src/domain/capabilities/task-commands.ts', 'src/domain/capabilities/recurrence-commands.ts', 'src/domain/search/workspace-search.ts'], tests: ['tests/tag-commands.test.ts', 'tests/capability-service.test.ts', 'tests/recurrence-learning-completion.test.ts', 'tests/workspace-search.test.ts'] },
+        { id: 'derived-learning-rhythm', sources: ['src/domain/views/learning-rhythm.ts', 'src/components/study/LearningRhythmView.vue'], tests: ['tests/learning-rhythm.test.ts', 'tests/learning-rhythm-view.test.ts'] },
+        { id: 'explainable-weekly-evidence', sources: ['src/domain/views/weekly-learning-summary.ts', 'src/components/study/ReviewView.vue'], tests: ['tests/weekly-learning-summary.test.ts', 'tests/review-weekly-summary.test.ts'] },
       ],
       planned: ['agent-behavior'],
     },
     delivery: {
-      desktopPackage: 'unverified',
+      desktopPackage: 'local-installed-acceptance',
       signing: 'unverified',
-      updater: 'template-only',
+      updater: 'configured-unverified',
       webDeployment: 'unverified',
-      mobileNative: 'local-debug',
+      mobileNative: 'source-ready',
     },
     nativeEvidence: {
       ios: {
-        maturity: 'simulator-verified',
-        nativeBuild: 'pass',
-        simulatorRun: 'pass',
+        maturity: 'source-ready',
+        nativeBuild: 'not-run',
+        simulatorRun: 'not-run',
         deviceRun: 'not-run',
       },
     },
     acceptance: {
       required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
-      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:ios-launch', 'smoke:windows-package', 'check:android-artifact'],
+      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:ios-launch', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
     },
     evolution: {
       additive: 'Add fields in a new schema version.',
@@ -103,13 +121,14 @@ function validProtocol() {
   }
 }
 
-function validate(protocol: ReturnType<typeof validProtocol>) {
+function validate(protocol: ReturnType<typeof validProtocol>, evidenceFileExists?: (path: string) => boolean) {
   return validateApplicationProtocol({
     protocol,
     packageJson,
     config: defaultModuleConfig,
     contracts: moduleContracts,
     moduleIds,
+    evidenceFileExists,
   })
 }
 
@@ -139,16 +158,108 @@ test('rejects a declared acceptance command that is not executable', () => {
   assert.match(validate(protocol).errors.join('\n'), /acceptance\.required references missing package script "missing:command"/)
 })
 
-test('rejects a mobile delivery claim stronger than the recorded local debug evidence', () => {
+test('rejects a mobile delivery claim stronger than the current source-ready evidence', () => {
   const protocol = validProtocol()
   protocol.delivery.mobileNative = 'signed'
 
   assert.match(validate(protocol).errors.join('\n'), /delivery must retain the currently evidenced release boundary/)
 })
 
-test('rejects iOS evidence that regresses the recorded simulator result', () => {
+test('rejects iOS evidence that upgrades the current tree without a current native run', () => {
   const protocol = validProtocol()
-  protocol.nativeEvidence.ios.simulatorRun = 'fail'
+  protocol.nativeEvidence.ios.simulatorRun = 'pass'
 
   assert.match(validate(protocol).errors.join('\n'), /nativeEvidence must retain the recorded iOS evidence boundary/)
+})
+
+test('rejects a protocol that omits the shipped calendar planning capability', () => {
+  const protocol = validProtocol()
+  protocol.implementation.shippedFoundation = protocol.implementation.shippedFoundation.filter((id) => id !== 'calendar-planning-v1')
+
+  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedFoundation must match the currently implemented planning foundation/)
+})
+
+test('rejects missing or unverified shipped calendar planning evidence', () => {
+  const protocol = validProtocol()
+  protocol.implementation.shippedEvidence = protocol.implementation.shippedEvidence.filter(({ id }) => id !== 'review-link')
+
+  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedEvidence must match the declared local behavioural evidence/)
+})
+
+test('rejects a protocol that omits shipped search and tag evidence', () => {
+  const protocol = validProtocol()
+  protocol.implementation.shippedEvidence = protocol.implementation.shippedEvidence.filter(({ id }) => id !== 'learning-search-tags')
+
+  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedEvidence must match the declared local behavioural evidence/)
+})
+
+test('rejects a protocol that omits the shipped derived learning rhythm', () => {
+  const missingFoundation = validProtocol()
+  missingFoundation.implementation.shippedFoundation = missingFoundation.implementation.shippedFoundation.filter((id) => id !== 'derived-learning-rhythm-v1')
+  assert.match(validate(missingFoundation).errors.join('\n'), /implementation\.shippedFoundation must match the currently implemented planning foundation/)
+
+  const missingEvidence = validProtocol()
+  missingEvidence.implementation.shippedEvidence = missingEvidence.implementation.shippedEvidence.filter(({ id }) => id !== 'derived-learning-rhythm')
+  assert.match(validate(missingEvidence).errors.join('\n'), /implementation\.shippedEvidence must match the declared local behavioural evidence/)
+})
+
+test('rejects a protocol that omits the shipped explainable weekly evidence', () => {
+  const missingFoundation = validProtocol()
+  missingFoundation.implementation.shippedFoundation = missingFoundation.implementation.shippedFoundation.filter((id) => id !== 'explainable-weekly-evidence-v1')
+  assert.match(validate(missingFoundation).errors.join('\n'), /implementation\.shippedFoundation must match the currently implemented planning foundation/)
+
+  const missingEvidence = validProtocol()
+  missingEvidence.implementation.shippedEvidence = missingEvidence.implementation.shippedEvidence.filter(({ id }) => id !== 'explainable-weekly-evidence')
+  assert.match(validate(missingEvidence).errors.join('\n'), /implementation\.shippedEvidence must match the declared local behavioural evidence/)
+})
+
+test('rejects a protocol that drops calendar acceptance commands', () => {
+  const protocol = validProtocol()
+  protocol.acceptance.conditional = protocol.acceptance.conditional.filter((command) => command !== 'smoke:calendar')
+
+  assert.match(validate(protocol).errors.join('\n'), /acceptance\.conditional must retain the calendar smoke and task-query benchmark commands/)
+})
+
+test('publishes the distinct calendar move and resize scope boundaries in both READMEs', () => {
+  const chinese = readFileSync(new URL('README.md', projectRoot), 'utf8')
+  const english = readFileSync(new URL('README.en.md', projectRoot), 'utf8')
+
+  assert.match(chinese, /日历移动支持普通任务、单次发生项、未来发生项和整个系列；调整时长仅支持普通任务或单次发生项，未来\/系列范围会被明确拒绝。/)
+  assert.match(english, /Calendar moves support a task, one occurrence, future occurrences, or the entire series\. Duration resizing supports only a task or one occurrence; future\/series resize scopes are explicitly rejected\./)
+})
+
+test('rejects equal-length duplicate replacements in declared protocol sets', () => {
+  const protocol = validProtocol()
+  protocol.implementation.shippedFoundation[protocol.implementation.shippedFoundation.length - 1] = protocol.implementation.shippedFoundation[0]
+
+  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedFoundation/)
+})
+
+test('requires unique evidence ids, source paths, and test paths', () => {
+  const duplicateId = validProtocol()
+  duplicateId.implementation.shippedEvidence[1] = structuredClone(duplicateId.implementation.shippedEvidence[0])
+  assert.match(validate(duplicateId).errors.join('\n'), /evidence ids must be unique/i)
+
+  const duplicateSource = validProtocol()
+  duplicateSource.implementation.shippedEvidence[1].sources[1] = duplicateSource.implementation.shippedEvidence[1].sources[0]
+  assert.match(validate(duplicateSource).errors.join('\n'), /source paths must be unique/i)
+
+  const duplicateTest = validProtocol()
+  duplicateTest.implementation.shippedEvidence[3].tests[1] = duplicateTest.implementation.shippedEvidence[3].tests[0]
+  assert.match(validate(duplicateTest).errors.join('\n'), /test paths must be unique/i)
+})
+
+test('rejects an evidence pointer whose declared file is missing', () => {
+  const missingPath = 'tests/review-task-link.test.ts'
+  const result = validate(validProtocol(), (path) => path !== missingPath)
+
+  assert.match(result.errors.join('\n'), /tests\/review-task-link\.test\.ts does not exist/)
+})
+
+test('accepts only the local installed-package and configured-unverified updater delivery states', () => {
+  const protocol = validProtocol()
+  assert.deepEqual(validate(protocol).errors, [])
+
+  protocol.delivery.updater = 'template-only'
+  assert.match(validate(protocol).errors.join('\n'), /delivery must retain the currently evidenced release boundary/)
 })

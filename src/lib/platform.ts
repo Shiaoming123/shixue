@@ -86,6 +86,7 @@ const DESKTOP_RUNTIME_INFO: RuntimeInfo = {
     'system-tray',
     'native-updater',
     'global-shortcut',
+    'native-clipboard',
     'native-notification',
     'autostart',
   ],

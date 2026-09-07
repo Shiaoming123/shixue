@@ -43,6 +43,7 @@ export interface StudyWriteOptions {
 
 export interface TaskCommandOptions extends StudyWriteOptions {
   eventId?: string
+  reviewedOn?: string
 }
 
 export interface BulkTaskTarget {
@@ -65,7 +66,7 @@ export type StudyTaskMetadataUpdate = Partial<Pick<StudyTask,
   | 'priority'
   | 'estimateMinutes'
   | 'acceptanceCriteria'
->> & { plannedAt?: string | null; dueAt?: string | null }
+>> & { plannedAt?: string | null; dueAt?: string | null; tagIds?: string[] }
 
 export type StudyTaskCreationInput = Pick<StudyTask, 'title'> &
   Partial<Pick<StudyTask,
@@ -441,6 +442,7 @@ export async function toggleStudyTaskCompletion(
   await executeCommand({
     type: 'task.toggle_completion', taskId, expectedRevision: options.expectedRevision,
     eventId: makeId('event', options.eventId),
+    reviewedOn: options.reviewedOn,
   }, now)
   return requireTask(await loadStudyState(), taskId)
 }
@@ -457,6 +459,25 @@ export async function reviewCompletionRecord(
   }, commandTime(options.now))
   const record = (await loadStudyState()).completionRecords.find(({ id }) => id === recordId)
   if (!record) throw new Error(`Completion record not found: ${recordId}.`)
+  return structuredClone(record)
+}
+
+export async function completeReviewTaskLink(
+  linkId: string,
+  result: ReviewResult,
+  reviewedOn: string,
+  options: TaskCommandOptions = {},
+): Promise<CompletionRecord> {
+  const store = getWorkspaceStore()
+  const before = await store.load()
+  const link = before.reviewTaskLinks.find(({ id }) => id === linkId)
+  if (!link) throw new Error(`Review task link not found: ${linkId}.`)
+  await executeCommand({
+    type: 'review.complete', linkId, result, reviewedOn,
+    expectedReviewTaskRevision: options.expectedRevision,
+  }, commandTime(options.now))
+  const record = (await store.load()).completionRecords.find(({ id }) => id === link.completionRecordId)
+  if (!record) throw new Error(`Completion record not found: ${link.completionRecordId}.`)
   return structuredClone(record)
 }
 
@@ -565,6 +586,7 @@ function taskPatch(input: StudyTaskMetadataUpdate) {
   if (input.priority !== undefined) patch.priority = input.priority
   if (input.estimateMinutes !== undefined) patch.estimateMinutes = input.estimateMinutes
   if (input.acceptanceCriteria !== undefined) patch.acceptanceCriteria = [...input.acceptanceCriteria]
+  if (input.tagIds !== undefined) patch.tagIds = [...input.tagIds]
   return patch
 }
 

@@ -27,8 +27,8 @@ The protocol deliberately summarizes rather than replaces implementation facts:
 `npm run check:protocol` reads the JSON and cross-checks the product name,
 module policy, Workspace export format/version, legacy Study input format,
 capability protocol version, default local-first/sync boundary, acceptance
-commands, maturity labels, current delivery evidence, and the recorded iOS
-native evidence boundary. Data-port and
+commands, maturity labels, shipped implementation evidence, current delivery
+evidence, and the recorded iOS native evidence boundary. Data-port and
 capability facts are compared with constants exported by the implementation;
 they are not inferred by comparing duplicated JSON fields. The checker does not
 alter configuration, load modules, contact a network endpoint, or read secrets.
@@ -39,22 +39,32 @@ alter configuration, load modules, contact a network endpoint, or read secrets.
 
 - `local-smoke`: an explicit local smoke command exists; it is not signing or
   distribution proof.
-- `template-only`: code/configuration exists but an adopter must configure and
-  verify their own delivery path.
+- `local-installed-acceptance`: an exact local package hash passed automated
+  package smoke and installed-app acceptance. It is not signing, hosted
+  distribution, or public-release proof.
+- `configured-unverified`: a real endpoint, updater public key, updater artifact
+  setting, and release workflow are configured, but an installed-client update
+  has not been exercised end to end (`NOT_RUN`).
 - `local-debug`: a generated native project has completed a local debug build
   and emulator run; it is not a signed artifact, real-device result, store
   submission, or hosted delivery channel.
+- `source-ready`: native source, preparation commands, and bounded smoke tooling
+  are committed, but the exact current tree has not completed a native build or
+  Simulator run.
 - `unverified`: no platform delivery claim has been demonstrated here.
 
-The current protocol intentionally says nothing stronger about signing, hosted
-updates, deployed Web hosting, real-device execution, or store submission.
-Native mobile delivery is `local-debug`: an unsigned debug build and a bounded
-Simulator run both passed. Runtime maturity is a separate statement. The
-current iOS record is `simulator-verified`, with native build and Simulator run
-recorded as `pass` and device execution as `not-run`; that record does not imply
-SQLite restart persistence, visual acceptance, signing, real-device execution,
-or store readiness. Desktop is the primary stable runtime path; Web and mobile
-are Beta adaptations with documented capability degradation.
+The current protocol marks `desktopPackage` as `local-installed-acceptance`.
+The exact unsigned v0.3.0 local candidate passed package smoke and installed-app
+acceptance; its versioned acceptance ledger records the artifact hashes, checks,
+and remaining `NOT_RUN` rows. This does not raise signing, hosted updates,
+deployed Web hosting, real-device execution, or store submission status.
+Native mobile delivery is `source-ready`: the iOS source and reproducible local
+commands are present, while native build, Simulator run, and device execution
+for the exact current tree are all `not-run`. The earlier Simulator result is
+retained as a dated historical snapshot in `docs/ios-development.md`; it does
+not establish current-tree runtime evidence. Desktop is the primary stable
+runtime path; Web and mobile are Beta adaptations with documented capability
+degradation.
 
 On a Tauri host, `src/main.ts` resolves the native target once and provides the
 typed `RuntimeInfo` to both module loading and the Vue shell. User-Agent data
@@ -99,19 +109,91 @@ application capability.
 
 The shipped foundation comprises WorkspaceStateV3 parsing, Study v1/v2
 migration and v3 export, capability protocol v1 with transactional command
-execution, routing of current live writes through that service, and the shared
-themed-control foundation. Recurrence occurrence v1 is also shipped: its
-date-only/timed schedule boundary, ephemeral preview handles, occurrence
-materialization, commands, and UI integration are part of the checked
-protocol. Offline natural-language quick add and multiple reminders are also
-shipped in the shared TypeScript layer: parsing, reminder rules, delivery
-ledger, capability commands, and the Windows lifecycle integration are checked.
-This does not claim reliable iOS background delivery; the iOS system scheduler
-adapter remains planned. Calendar workspace v1 is shipped in the shared/Web
-layer with day, week, month, agenda, unscheduled items, preview-first pointer
-interactions, keyboard alternatives, and capability-routed mutations. Its Web
-evidence does not establish iOS Simulator behaviour. Agent behaviour remains
-planned.
+execution, routing of current live writes through that service, the shared
+themed-control foundation, recurrence and occurrences, offline natural-language
+quick add, multiple reminders, and `calendar-planning-v1`.
+
+`learning-search-tags-v1` adds reversible tag creation, rename, and archive
+commands through the same compare-and-swap and audit boundary. Tasks can keep
+tag associations, and completion records snapshot their tags so later archive
+or rename operations do not erase historical reachability. `workspace.search`
+deterministically searches task fields, checklist items, tags, and completion
+record learning/evidence/blocker/next-action fields, with combinable result
+type, topic, status, date, and all-selected-tags filters.
+
+`derived-learning-rhythm-v1` adds a read-only Learning subview over recurrence
+occurrences, task completion events, and live completion records. Weekly
+progress and streaks count only one-to-one evidence links; missing evidence is
+shown separately and never becomes an empty habit check-in. Completing a
+learning occurrence from task surfaces opens the existing evidence form and
+uses the recurrence capability with workspace, task, and occurrence revisions.
+
+`explainable-weekly-evidence-v1` replaces the Review page's host-clock summary
+with a read-only selector driven by an injected instant, IANA timezone, and week
+start preference. It groups live completion evidence, the distinct sessions
+linked to those records, and completed review links by the completion record's
+topic snapshot. Every metric carries the exact completion-record ids used to
+derive it, so the UI can narrow the existing record history and return to the
+source task. Linked minutes are evidence-attributed minutes; they are not a
+claim that every session in the week has a complete audited end time.
+
+The same selector also exposes the current weekly plan snapshot for learning
+tasks. Ordinary tasks contribute their current schedule, while recurring tasks
+contribute occurrences without also counting the parent task. Effective
+occurrence overrides own the schedule and estimate. Completion, cancellation,
+and skip outcomes keep their exact task, occurrence, and event identities and
+exclude facts later than the injected instant; an outcome before the week still
+describes the current state of a task scheduled in the week. Occurrence status
+owns the current result after undo, and the latest canonical event sequence
+explains a completed or skipped occurrence. Generated review tasks and
+structurally cancelled recurrence occurrences are excluded. Because task events
+do not store schedule, estimate, or list snapshots, this is explicitly the
+current workspace view of the week rather than a reconstruction of an earlier
+plan.
+
+Completed-plan evidence coverage uses those current completed plan facts as its
+denominator. A plan is covered only when its selected outcome event points to a
+live completion record for the same task; absent or deleted records remain
+visible as missing evidence, while dangling, cross-task, or multiply claimed
+links fail loudly. The due-review cohort uses review links whose date-only
+`dueOn` falls inside the selected week. It classifies each link as completed,
+scheduled, due today, or overdue at the injected instant. Future completion
+timestamps do not leak into the result, multiple review stages remain distinct,
+and source records are deduplicated only for record navigation. Pending links
+open their exact review task or occurrence; completed links open their source
+completion record. These are derived views and add no persisted statistics.
+
+`calendar-planning-v1` is backed by machine-checkable source and test pointers:
+
+| Evidence id | Implemented boundary | Behavioural evidence |
+| --- | --- | --- |
+| `navigation` | `src/lib/workspace-view.ts` | `tests/workspace-navigation.test.ts` |
+| `today-upcoming` | `src/domain/views/today.ts`, `src/domain/views/upcoming.ts` | `tests/workspace-projections.test.ts` |
+| `review-link` | `src/domain/learning/review-task-link.ts` | `tests/review-task-link.test.ts` |
+| `responsive-shell` | `src/lib/responsive-shell.ts` | `tests/responsive-shell.test.ts`, `tests/business-sheet-mount.test.ts` |
+| `learning-search-tags` | `src/domain/capabilities/tag-commands.ts`, `src/domain/capabilities/task-commands.ts`, `src/domain/capabilities/recurrence-commands.ts`, `src/domain/search/workspace-search.ts` | `tests/tag-commands.test.ts`, `tests/capability-service.test.ts`, `tests/recurrence-learning-completion.test.ts`, `tests/workspace-search.test.ts` |
+| `derived-learning-rhythm` | `src/domain/views/learning-rhythm.ts`, `src/components/study/LearningRhythmView.vue` | `tests/learning-rhythm.test.ts`, `tests/learning-rhythm-view.test.ts` |
+| `explainable-weekly-evidence` | `src/domain/views/weekly-learning-summary.ts`, `src/components/study/ReviewView.vue` | `tests/weekly-learning-summary.test.ts`, `tests/review-weekly-summary.test.ts` |
+
+These entries claim the local application behaviour covered by those sources
+and tests. They do not claim an external calendar provider, hosted service,
+native-device validation, or any release channel.
+
+The conditional acceptance commands include `smoke:calendar` for the five fixed
+Web viewports and `benchmark:task-query` for deterministic Today, Upcoming, and
+calendar projection counts. These checks do not change native delivery status.
+`smoke:web-persistence` additionally exercises the global search dialog,
+reversible tag management, and a recurring learning occurrence from rule
+creation through evidence-backed completion, persisted rhythm progress,
+completed-plan evidence coverage, due-review source drilldown, and weekly
+metric drilldown at the fixed responsive viewports. It remains Web evidence rather than
+native-shell or installed-package evidence.
+
+These shared capabilities do not claim reliable iOS background delivery; the
+iOS system scheduler adapter remains planned. Web calendar and persistence
+evidence does not establish iOS Simulator behaviour.
+
+Agent behaviour remains planned.
 The command envelope reserves `source: agent`, but there is no shipped Agent
 planner or autonomous execution policy. A future Agent must use the same
 query/preview/execute boundary and cannot bypass validation or write storage

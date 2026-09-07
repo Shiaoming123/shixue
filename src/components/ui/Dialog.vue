@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { nextTick, onUnmounted, ref, useId, watch } from 'vue'
-import { releaseOverlay, useOverlay, type OverlayCloseReason } from './use-overlay'
+import { ref, useId } from 'vue'
+import { useModalOverlay, type OverlayCloseReason } from './use-overlay'
 
 const props = withDefaults(defineProps<{
   open: boolean
   title: string
   description?: string
   role?: 'dialog' | 'alertdialog'
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   closeOnOutside?: boolean
   showClose?: boolean
 }>(), {
@@ -27,94 +27,14 @@ const id = `dialog-${useId()}`
 const titleId = `${id}-title`
 const descriptionId = `${id}-description`
 const panel = ref<HTMLElement | null>(null)
-let restoreTarget: HTMLElement | null = null
-const registration = {
-  id,
-  kind: 'dialog' as const,
-  trigger: null as HTMLElement | null,
-  panel: () => panel.value,
-  close(reason: OverlayCloseReason) {
-    if (reason === 'outside' && !props.closeOnOutside) {
-      bringToFront()
-      return
-    }
-    requestClose(reason)
-  },
-}
-const { layerId, bringToFront } = useOverlay(registration)
-
-const focusableSelector = [
-  'button:not([disabled])',
-  '[href]',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',')
-
-function focusableElements() {
-  return panel.value
-    ? Array.from(panel.value.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hidden)
-    : []
-}
-
-function focusInitial() {
-  const autofocus = panel.value?.querySelector<HTMLElement>('[autofocus]')
-  ;(autofocus ?? focusableElements()[0] ?? panel.value)?.focus({ preventScroll: true })
-}
-
-function restoreFocus() {
-  const target = restoreTarget
-  restoreTarget = null
-  nextTick(() => target?.focus({ preventScroll: true }))
-}
+const { layerId } = useModalOverlay(() => props.open, panel, requestClose, {
+  closeOnOutside: () => props.closeOnOutside,
+})
 
 function requestClose(reason: OverlayCloseReason = 'select') {
-  releaseOverlay(layerId)
   emit('update:open', false)
   emit('close', reason)
 }
-
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    event.preventDefault()
-    event.stopPropagation()
-    requestClose('escape')
-    return
-  }
-  if (event.key !== 'Tab') return
-  const focusable = focusableElements()
-  if (!focusable.length) {
-    event.preventDefault()
-    panel.value?.focus()
-    return
-  }
-  const first = focusable[0]
-  const last = focusable[focusable.length - 1]
-  const active = document.activeElement
-  if (event.shiftKey && (active === first || !panel.value?.contains(active))) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && (active === last || !panel.value?.contains(active))) {
-    event.preventDefault()
-    first.focus()
-  }
-}
-
-watch(() => props.open, async (open, previous) => {
-  if (open) {
-    restoreTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    registration.trigger = restoreTarget
-    await nextTick()
-    bringToFront()
-    focusInitial()
-  } else if (previous) {
-    releaseOverlay(layerId)
-    restoreFocus()
-  }
-}, { immediate: true })
-
-onUnmounted(() => releaseOverlay(layerId))
 </script>
 
 <template>
@@ -131,7 +51,6 @@ onUnmounted(() => releaseOverlay(layerId))
           :aria-labelledby="titleId"
           :aria-describedby="description ? descriptionId : undefined"
           tabindex="-1"
-          @keydown="onKeydown"
         >
           <header class="dialog-header">
             <div>
@@ -176,6 +95,7 @@ onUnmounted(() => releaseOverlay(layerId))
 
 .dialog-panel--sm { width: min(100%, 360px); }
 .dialog-panel--lg { width: min(100%, 620px); }
+.dialog-panel--xl { width: min(100%, 900px); }
 
 .dialog-header {
   display: flex;
@@ -257,7 +177,8 @@ onUnmounted(() => releaseOverlay(layerId))
 
   .dialog-panel,
   .dialog-panel--sm,
-  .dialog-panel--lg {
+  .dialog-panel--lg,
+  .dialog-panel--xl {
     width: 100%;
     max-height: 92dvh;
     padding: var(--space-5) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom, 0px));

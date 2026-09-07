@@ -8,12 +8,13 @@ defineProps<{
   timeLabel: string
   running: boolean
   scratchpad: string
+  reviewLinkId?: string
 }>()
 
 const emit = defineEmits<{
   back: []
   toggle: []
-  finish: []
+  finish: [reviewLinkId: string | undefined]
   'update:scratchpad': [value: string]
 }>()
 
@@ -53,7 +54,7 @@ function updateScratchpad(event: Event) {
         <Play v-else :size="19" fill="currentColor" />
         {{ running ? '暂停' : '继续' }}
       </button>
-      <button class="primary" @click="emit('finish')"><Square :size="17" fill="currentColor" />完成并记录</button>
+      <button class="primary" @click="emit('finish', reviewLinkId)"><Square :size="17" fill="currentColor" />完成并记录</button>
     </div>
   </section>
 </template>

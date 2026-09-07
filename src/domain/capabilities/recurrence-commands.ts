@@ -790,7 +790,7 @@ function createOccurrenceCompletionRecord(
   return {
     id: command.recordId ?? context.id('completion'), taskId: task.id,
     topicId: task.listId === 'list:system:learning' ? null : task.listId,
-    sessionIds: [], taskTitleSnapshot: task.title,
+    sessionIds: [], tagIdsSnapshot: [...task.tagIds], taskTitleSnapshot: task.title,
     learned: command.learned!, evidence: command.evidence!, blocker: command.blocker ?? '',
     nextAction: command.nextAction!, mastery: command.mastery ?? null, completedAt: context.now,
     reviewStage: 0, nextReviewOn: reviewDate.toISOString().slice(0, 10),

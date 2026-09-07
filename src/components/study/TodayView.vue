@@ -16,7 +16,7 @@ export interface TodayTaskItem {
   plannedLabel: string
   occurrenceScheduleLabel?: string
   deadlineLabel?: string
-  reasons?: Array<'overdue' | 'planned' | 'due' | 'repeating'>
+  reasons?: Array<'overdue' | 'planned' | 'due' | 'recurring'>
   isActive: boolean
   activeLabel?: string
 }
@@ -101,7 +101,7 @@ function primaryAction(task: TodayTaskItem) {
 }
 
 function reasonLabel(reason: NonNullable<TodayTaskItem['reasons']>[number]) {
-  return ({ overdue: '逾期', planned: '计划', due: '截止', repeating: '重复' } as const)[reason]
+  return ({ overdue: '逾期', planned: '计划', due: '截止', recurring: '重复' } as const)[reason]
 }
 </script>
 

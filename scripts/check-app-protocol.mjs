@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { moduleContracts, moduleIds } from '../src/modules/contract.ts'
@@ -15,17 +15,17 @@ import { CAPABILITY_PROTOCOL_VERSION } from '../src/domain/capabilities/types.ts
 
 const EXPECTED_MATURITY = { desktop: 'stable', web: 'beta', mobile: 'beta' }
 const EXPECTED_DELIVERY = {
-  desktopPackage: 'unverified',
+  desktopPackage: 'local-installed-acceptance',
   signing: 'unverified',
-  updater: 'template-only',
+  updater: 'configured-unverified',
   webDeployment: 'unverified',
-  mobileNative: 'local-debug',
+  mobileNative: 'source-ready',
 }
 const EXPECTED_NATIVE_EVIDENCE = {
   ios: {
-    maturity: 'simulator-verified',
-    nativeBuild: 'pass',
-    simulatorRun: 'pass',
+    maturity: 'source-ready',
+    nativeBuild: 'not-run',
+    simulatorRun: 'not-run',
     deviceRun: 'not-run',
   },
 }
@@ -38,10 +38,27 @@ const EXPECTED_SHIPPED_FOUNDATION = [
   'recurrence-occurrence-v1',
   'offline-natural-language-v1',
   'multi-reminder-v1',
-  'calendar-workspace-v1',
+  'calendar-planning-v1',
+  'learning-search-tags-v1',
+  'derived-learning-rhythm-v1',
+  'explainable-weekly-evidence-v1',
 ]
 const EXPECTED_PLANNED_FEATURES = [
   'agent-behavior',
+]
+const CALENDAR_ACCEPTANCE_COMMANDS = ['smoke:calendar', 'benchmark:task-query']
+const EXPECTED_ACCEPTANCE = {
+  required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
+  conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:ios-launch', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
+}
+const EXPECTED_SHIPPED_EVIDENCE = [
+  { id: 'navigation', sources: ['src/lib/workspace-view.ts'], tests: ['tests/workspace-navigation.test.ts'] },
+  { id: 'today-upcoming', sources: ['src/domain/views/today.ts', 'src/domain/views/upcoming.ts'], tests: ['tests/workspace-projections.test.ts'] },
+  { id: 'review-link', sources: ['src/domain/learning/review-task-link.ts'], tests: ['tests/review-task-link.test.ts'] },
+  { id: 'responsive-shell', sources: ['src/lib/responsive-shell.ts'], tests: ['tests/responsive-shell.test.ts', 'tests/business-sheet-mount.test.ts'] },
+  { id: 'learning-search-tags', sources: ['src/domain/capabilities/tag-commands.ts', 'src/domain/capabilities/task-commands.ts', 'src/domain/capabilities/recurrence-commands.ts', 'src/domain/search/workspace-search.ts'], tests: ['tests/tag-commands.test.ts', 'tests/capability-service.test.ts', 'tests/recurrence-learning-completion.test.ts', 'tests/workspace-search.test.ts'] },
+  { id: 'derived-learning-rhythm', sources: ['src/domain/views/learning-rhythm.ts', 'src/components/study/LearningRhythmView.vue'], tests: ['tests/learning-rhythm.test.ts', 'tests/learning-rhythm-view.test.ts'] },
+  { id: 'explainable-weekly-evidence', sources: ['src/domain/views/weekly-learning-summary.ts', 'src/components/study/ReviewView.vue'], tests: ['tests/weekly-learning-summary.test.ts', 'tests/review-weekly-summary.test.ts'] },
 ]
 
 const IMPLEMENTATION_FACTS = {
@@ -64,6 +81,7 @@ export function validateApplicationProtocol({
   contracts,
   moduleIds: expectedModuleIds,
   implementationFacts = IMPLEMENTATION_FACTS,
+  evidenceFileExists = () => true,
 }) {
   const errors = []
   if (!isRecord(protocol)) return { errors: ['Protocol must be a JSON object.'] }
@@ -77,7 +95,7 @@ export function validateApplicationProtocol({
   validateModulePolicy(protocol.modulePolicy, config, contracts, expectedModuleIds, errors)
   validateDataBoundary(protocol.data, implementationFacts, errors)
   validateCapabilities(protocol.capabilities, implementationFacts, errors)
-  validateImplementationStatus(protocol.implementation, errors)
+  validateImplementationStatus(protocol.implementation, evidenceFileExists, errors)
   validateDelivery(protocol.delivery, errors)
   validateNativeEvidence(protocol.nativeEvidence, errors)
   validateAcceptance(protocol.acceptance, packageJson, errors)
@@ -101,7 +119,7 @@ function validateProduct(product, packageJson, errors) {
   if (product.learningSpecialization !== 'optional') {
     errors.push('product.learningSpecialization must remain optional.')
   }
-  if (!isNonEmptyStringArray(product.nonGoals)) {
+  if (!isUniqueNonEmptyStringArray(product.nonGoals)) {
     errors.push('product.nonGoals must contain at least one non-empty string.')
   }
 }
@@ -111,13 +129,13 @@ function validateTargets(targets, errors) {
     errors.push('targets must be an object.')
     return
   }
-  if (!Array.isArray(targets.primary) || !targets.primary.includes('desktop')) {
-    errors.push('targets.primary must include desktop.')
+  if (!sameStrings(targets.primary, ['desktop'])) {
+    errors.push('targets.primary must contain desktop exactly once.')
   }
   if (!sameRecord(targets.maturity, EXPECTED_MATURITY)) {
     errors.push('targets.maturity must retain the documented desktop/web/mobile maturity levels.')
   }
-  if (!isRecord(targets.degradation) || !isNonEmptyStringArray(targets.degradation.web) || !isNonEmptyStringArray(targets.degradation.mobile)) {
+  if (!isRecord(targets.degradation) || !isUniqueNonEmptyStringArray(targets.degradation.web) || !isUniqueNonEmptyStringArray(targets.degradation.mobile)) {
     errors.push('targets.degradation must describe non-empty Web and mobile fallback behaviour.')
   }
 }
@@ -161,8 +179,8 @@ function validateDataBoundary(data, implementationFacts, errors) {
   if (!isRecord(data.sync) || data.sync.enabled !== false || data.sync.provider !== 'none') {
     errors.push('data.sync must keep provider none and enabled false by default.')
   }
-  if (!isStringArray(data.exclusions) || !data.exclusions.includes('secrets') || !data.exclusions.includes('sync state')) {
-    errors.push('data.exclusions must include secrets and sync state.')
+  if (!sameStrings(data.exclusions, ['secrets', 'sync state'])) {
+    errors.push('data.exclusions must contain secrets and sync state exactly once.')
   }
   if (!sameRecord(data.recurrenceSchedule, {
     timed: 'scheduledAt', dateOnly: 'scheduledOn', mutuallyExclusive: true, dateOnlyMidnightEncoding: false,
@@ -190,13 +208,17 @@ function validateCapabilities(capabilities, implementationFacts, errors) {
   }
 }
 
-function validateImplementationStatus(implementation, errors) {
+function validateImplementationStatus(implementation, evidenceFileExists, errors) {
   if (!isRecord(implementation)) {
     errors.push('implementation must be an object.')
     return
   }
   if (!sameStrings(implementation.shippedFoundation, EXPECTED_SHIPPED_FOUNDATION)) {
     errors.push('implementation.shippedFoundation must match the currently implemented planning foundation.')
+  }
+  validateEvidenceUniquenessAndFiles(implementation.shippedEvidence, evidenceFileExists, errors)
+  if (!sameShippedEvidence(implementation.shippedEvidence, EXPECTED_SHIPPED_EVIDENCE)) {
+    errors.push('implementation.shippedEvidence must match the declared local behavioural evidence.')
   }
   if (!sameStrings(implementation.planned, EXPECTED_PLANNED_FEATURES)) {
     errors.push('implementation.planned must retain Agent behaviour as planned.')
@@ -227,6 +249,13 @@ function validateAcceptance(acceptance, packageJson, errors) {
       }
     }
   }
+  if (!sameStrings(acceptance.required, EXPECTED_ACCEPTANCE.required)
+    || !sameStrings(acceptance.conditional, EXPECTED_ACCEPTANCE.conditional)) {
+    errors.push('acceptance command sets must match the required and conditional release gates exactly once.')
+  }
+  if (!CALENDAR_ACCEPTANCE_COMMANDS.every((command) => acceptance.conditional.includes(command))) {
+    errors.push('acceptance.conditional must retain the calendar smoke and task-query benchmark commands.')
+  }
 }
 
 function validateEvolution(evolution, errors) {
@@ -251,12 +280,53 @@ function isNonEmptyStringArray(value) {
   return isStringArray(value) && value.length > 0
 }
 
+function isUniqueNonEmptyStringArray(value) {
+  return isNonEmptyStringArray(value) && new Set(value).size === value.length
+}
+
 function sameStrings(actual, expected) {
-  return Array.isArray(actual) && actual.length === expected.length && actual.every((value) => expected.includes(value))
+  return isStringArray(actual)
+    && new Set(actual).size === actual.length
+    && actual.length === expected.length
+    && actual.every((value) => expected.includes(value))
+    && expected.every((value) => actual.includes(value))
 }
 
 function sameNumbers(actual, expected) {
-  return Array.isArray(actual) && actual.length === expected.length && actual.every((value) => expected.includes(value))
+  return Array.isArray(actual)
+    && actual.every((value) => typeof value === 'number')
+    && new Set(actual).size === actual.length
+    && actual.length === expected.length
+    && actual.every((value) => expected.includes(value))
+    && expected.every((value) => actual.includes(value))
+}
+
+function validateEvidenceUniquenessAndFiles(actual, evidenceFileExists, errors) {
+  if (!Array.isArray(actual)) return
+  const ids = []
+  const sourcePaths = []
+  const testPaths = []
+  for (const entry of actual) {
+    if (!isRecord(entry)) continue
+    if (isNonEmptyString(entry.id)) ids.push(entry.id)
+    if (isStringArray(entry.sources)) sourcePaths.push(...entry.sources)
+    if (isStringArray(entry.tests)) testPaths.push(...entry.tests)
+  }
+  if (new Set(ids).size !== ids.length) errors.push('implementation.shippedEvidence evidence ids must be unique.')
+  if (new Set(sourcePaths).size !== sourcePaths.length) errors.push('implementation.shippedEvidence source paths must be unique.')
+  if (new Set(testPaths).size !== testPaths.length) errors.push('implementation.shippedEvidence test paths must be unique.')
+  for (const path of [...sourcePaths, ...testPaths]) {
+    if (!evidenceFileExists(path)) errors.push(`implementation.shippedEvidence file ${path} does not exist.`)
+  }
+}
+
+function sameShippedEvidence(actual, expected) {
+  if (!Array.isArray(actual) || actual.length !== expected.length) return false
+  if (new Set(actual.map((entry) => isRecord(entry) ? entry.id : undefined)).size !== actual.length) return false
+  return expected.every((expectedEntry) => {
+    const entry = actual.find((candidate) => isRecord(candidate) && candidate.id === expectedEntry.id)
+    return isRecord(entry) && sameStrings(entry.sources, expectedEntry.sources) && sameStrings(entry.tests, expectedEntry.tests)
+  })
 }
 
 function sameRecord(actual, expected) {
@@ -273,6 +343,13 @@ function main() {
     config: defaultModuleConfig,
     contracts: moduleContracts,
     moduleIds,
+    evidenceFileExists: (path) => {
+      try {
+        return statSync(resolve(root, path)).isFile()
+      } catch {
+        return false
+      }
+    },
   })
 
   for (const error of result.errors) console.error(`ERROR ${error}`)

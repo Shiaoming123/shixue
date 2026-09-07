@@ -23,7 +23,7 @@ const hasSafeArea = compactBlocks.some((block) =>
 const hasIconSidebar = mediumBlocks.some((block) =>
   /\.sidebar(?:\[[^\]]+\])?\{[^}]*width:72px;min-width:72px/.test(block))
 const hasOverlayDetail = mediumBlocks.some((block) =>
-  /\.detail-drawer(?:\[[^\]]+\])?\{[^}]*position:fixed/.test(block))
+  /\.(?:detail-drawer|sheet-panel--right)(?:\[[^\]]+\])?\{[^}]*position:fixed/.test(block))
 
 if (!hasMobileShell || !hasSafeArea || !hasIconSidebar || !hasOverlayDetail) {
   console.error('Built CSS is missing the locked 819/820 responsive rules.')

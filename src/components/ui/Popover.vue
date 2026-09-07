@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, useId, watch } from 'vue'
-import { releaseOverlay, useOverlay, type OverlayCloseReason, type OverlayKind } from './use-overlay'
+import { focusFirstInOverlay, releaseOverlay, useOverlay, type OverlayCloseReason, type OverlayKind } from './use-overlay'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -108,41 +108,6 @@ function syncMobileSheet() {
   registration.kind = mobileSheetActive.value ? 'sheet' : props.kind
 }
 
-const focusableSelector = [
-  'button:not([disabled])',
-  '[href]',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',')
-
-function focusableElements() {
-  return panel.value
-    ? Array.from(panel.value.querySelectorAll<HTMLElement>(focusableSelector)).filter((element) => !element.hidden)
-    : []
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (!mobileSheetActive.value || event.key !== 'Tab') return
-  const focusable = focusableElements()
-  if (!focusable.length) {
-    event.preventDefault()
-    panel.value?.focus()
-    return
-  }
-  const first = focusable[0]
-  const last = focusable[focusable.length - 1]
-  const active = document.activeElement
-  if (event.shiftKey && (active === first || !panel.value?.contains(active))) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && (active === last || !panel.value?.contains(active))) {
-    event.preventDefault()
-    first.focus()
-  }
-}
-
 watch(() => [props.open, mobileSheetActive.value] as const, async ([open, sheet]) => {
   removePositionListeners()
   if (!open) {
@@ -153,7 +118,7 @@ watch(() => [props.open, mobileSheetActive.value] as const, async ([open, sheet]
   await nextTick()
   if (!sheet && !props.inline) updatePosition()
   bringToFront()
-  if (sheet) (focusableElements()[0] ?? panel.value)?.focus({ preventScroll: true })
+  if (sheet) focusFirstInOverlay(panel.value)
   else if (!props.inline) addPositionListeners()
 }, { immediate: true })
 
@@ -188,7 +153,6 @@ defineExpose({ close: requestClose, updatePosition })
           :role="dialogPanelActive ? 'dialog' : undefined"
           :aria-modal="dialogPanelActive ? (mobileSheetActive ? 'true' : 'false') : undefined"
           :aria-label="dialogPanelActive ? mobileSheetLabel : undefined"
-          @keydown="onKeydown"
         >
           <slot :close="requestClose" :modal="mobileSheetActive" />
         </div>
