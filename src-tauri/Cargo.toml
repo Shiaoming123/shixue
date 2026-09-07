@@ -19,8 +19,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# tray-icon: 系统托盘; image-png: 让 default_window_icon() 能解码 PNG 图标
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# image-png: 让 default_window_icon() 能解码 PNG 图标
+tauri = { version = "2", default-features = false, features = ["image-png"] }
 # —— 核心能力（始终启用，是脚手架的立身之本） ——
 tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
@@ -36,7 +36,6 @@ tauri-plugin-notification = { version = "2", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock"], optional = true }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"], optional = true }
 tokio = { version = "1", features = ["time"], optional = true }
-tauri-plugin-autostart = { version = "2", optional = true }
 
 # —— Agent 能力（P2：密钥代理 + 本地推理，由 feature 门控） ——
 # keyring：OS 钥匙串（macOS Keychain / Windows Credential Manager / Linux Secret Service）
@@ -48,7 +47,7 @@ reqwest = { version = "0.12", features = ["stream", "json"], optional = true }
 futures-util = { version = "0.3", optional = true }
 
 # 功能模块开关（与前端 modules.config.ts 对应）
-# 核心能力（sqlite/store/updater/tray）始终启用，无需 feature
+# 核心能力（sqlite/store）始终启用，无需 feature
 [features]
 default = ["shortcut", "notification", "autostart"]
 shortcut = ["dep:tauri-plugin-global-shortcut"]
@@ -62,6 +61,8 @@ agent-sidecar = ["agent"]
 
 # 单实例是桌面端专有能力，移动端目标不参与编译
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = { version = "2", optional = true }
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-autostart = { version = "2", optional = true }

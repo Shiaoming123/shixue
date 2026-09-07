@@ -9,7 +9,7 @@
 | 默认 Web | Beta | `npm run build:web`、本地浏览器 IndexedDB smoke | 已部署站点、账号服务 |
 | 默认桌面 | Stable baseline | `npm run verify`、`npm run rust:verify`、Windows 无签名安装 smoke | 签名、公证、在线更新 |
 | Android | Beta | SDK/NDK/JDK/ADB doctor、模拟器 `tauri android dev`、本地 universal debug APK/AAB、干净 GitHub runner 的 x86_64 debug APK workflow | 真机、签名、Google Play、更新通道 |
-| iOS | Deferred | 代码降级与可执行开发规划 | Xcode 构建、模拟器、真机、TestFlight、App Store |
+| iOS | Compile-ready | macOS Xcode 26.6 / CocoaPods 1.17.0 工具链、`tauri ios init`、Apple Silicon Simulator 无签名 Debug 原生编译 | 成功启动模拟器、V3 SQLite 写入和重启恢复、真机、TestFlight、App Store |
 | 同步服务 | Preview foundation | 本地优先 outbox、IndexedDB 状态、allowlist、HTTPS/loopback HTTP transport 测试 | 账号、冲突产品规则、托管 API、多设备运行 |
 | 桌面更新 | Template only | 端点/公钥/CI 模板与严格 release gate | 自有端点、私钥签名、安装端更新 |
 

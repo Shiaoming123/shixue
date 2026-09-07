@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Search, Settings } from '@lucide/vue'
 import { applyTheme } from './assets/themes'
 import AppSidebar, { type StudySmartViewCounts } from './components/study/AppSidebar.vue'
@@ -55,7 +55,8 @@ import {
   type WorkspaceView,
 } from './lib/workspace-view'
 import { workspaceDestinationFromSmartView } from './lib/sidebar-navigation'
-import { detectRuntimeInfo, hasRuntimeCapability } from './lib/platform'
+import { hasRuntimeCapability, RUNTIME_INFO_KEY, runtimeInfoForNativePlatform } from './lib/platform'
+import { reportSmokePhase } from './lib/smoke'
 import {
   addTaskChecklistItem,
   archiveStudyListGroup,
@@ -185,7 +186,7 @@ let desktopCalendarModeLoaded = !calendarStartsCompact
 const defaultSidebarMenuKeys = [...desktopWorkspaceNavigation.map(({ preferenceKey }) => preferenceKey), 'page:review']
 const sidebarPreferences = ref(loadSidebarPreferences(defaultSidebarMenuKeys))
 const tasksView = ref<InstanceType<typeof TasksView> | null>(null)
-const runtime = detectRuntimeInfo()
+const runtime = inject(RUNTIME_INFO_KEY, () => runtimeInfoForNativePlatform('web'), true)
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const capabilityService = createTaskCapabilityService(getWorkspaceStore(), () => new Date().toISOString(), (kind) => `${kind}:${crypto.randomUUID()}`)
 const nativeNotificationAvailable = ref(false)
@@ -435,11 +436,15 @@ onMounted(async () => {
   compactMedia = window.matchMedia('(max-width: 819px)')
   compact.value = compactMedia.matches
   compactMedia.addEventListener('change', onCompactChange)
+  let workspaceReady = false
   try {
     await refreshState()
     selectedTopicId.value = state.value.topics.find((topic) => !topic.archivedAt)?.id ?? ''
     showFocus.value = Boolean(activeSession.value)
+    workspaceReady = true
+    await reportSmokePhase('workspace-ready')
   } catch (error) { reportStorageError(error) } finally { loading.value = false }
+  if (workspaceReady) await reportSmokePhase('frontend-ready')
   if (cloudAvailable) void refreshCloudSession()
   await initializeDeviceCapabilities()
   await initializeReminders()

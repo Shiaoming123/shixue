@@ -18,7 +18,7 @@ The protocol deliberately summarizes rather than replaces implementation facts:
 | --- | --- | --- |
 | Enabled modules | `src/modules/config.ts` | Declare the matching product policy |
 | Dependencies, platforms, capabilities, native requirements | `src/modules/contract.ts` | Point readers to the compatibility boundary |
-| Runtime selection | `src/modules/loader.ts` and `src/lib/platform.ts` | State target and fallback expectations |
+| Runtime selection | `src/main.ts`, `src/modules/loader.ts`, and `src/lib/platform.ts` | State target and fallback expectations |
 | Workspace import/export | `src/storage/workspace/data-port.ts` | State the current public format/version and legacy Study migration inputs |
 | Capability commands | `src/domain/capabilities/types.ts` | State the independent command protocol version and direct-write boundary |
 | Sync | `src/sync/` and `docs/sync.md` | State whether a provider is enabled by default |
@@ -27,8 +27,8 @@ The protocol deliberately summarizes rather than replaces implementation facts:
 `npm run check:protocol` reads the JSON and cross-checks the product name,
 module policy, Workspace export format/version, legacy Study input format,
 capability protocol version, default local-first/sync boundary, acceptance
-commands, maturity labels, shipped implementation evidence, and current
-delivery evidence. Data-port and
+commands, maturity labels, shipped implementation evidence, current delivery
+evidence, and the recorded iOS native evidence boundary. Data-port and
 capability facts are compared with constants exported by the implementation;
 they are not inferred by comparing duplicated JSON fields. The checker does not
 alter configuration, load modules, contact a network endpoint, or read secrets.
@@ -48,6 +48,9 @@ alter configuration, load modules, contact a network endpoint, or read secrets.
 - `local-debug`: a generated native project has completed a local debug build
   and emulator run; it is not a signed artifact, real-device result, store
   submission, or hosted delivery channel.
+- `source-ready`: native source, preparation commands, and bounded smoke tooling
+  are committed, but the exact current tree has not completed a native build or
+  Simulator run.
 - `unverified`: no platform delivery claim has been demonstrated here.
 
 The current protocol marks `desktopPackage` as `local-installed-acceptance`.
@@ -55,9 +58,29 @@ The exact unsigned v0.3.0 local candidate passed package smoke and installed-app
 acceptance; its versioned acceptance ledger records the artifact hashes, checks,
 and remaining `NOT_RUN` rows. This does not raise signing, hosted updates,
 deployed Web hosting, real-device execution, or store submission status.
-Native mobile delivery remains `unverified`. Runtime maturity is a separate
-statement: desktop is the primary stable runtime path; Web and mobile are Beta
-adaptations with documented capability degradation.
+Native mobile delivery is `source-ready`: the iOS source and reproducible local
+commands are present, while native build, Simulator run, and device execution
+for the exact current tree are all `not-run`. The earlier Simulator result is
+retained as a dated historical snapshot in `docs/ios-development.md`; it does
+not establish current-tree runtime evidence. Desktop is the primary stable
+runtime path; Web and mobile are Beta adaptations with documented capability
+degradation.
+
+On a Tauri host, `src/main.ts` resolves the native target once and provides the
+typed `RuntimeInfo` to both module loading and the Vue shell. User-Agent data
+may still select presentation hints, but it never selects native capabilities.
+The iOS runtime contract is limited to `native-sql` and
+`native-notification`; desktop-only modules, including autostart, remain
+excluded by platform and capability checks.
+
+The iOS launch smoke command is `npm run smoke:ios-launch -- --device <UDID>
+--app <absolute .app path>`. It is local diagnostic evidence only: it records
+install/launch commands, Simulator logs, process termination, and separate
+WebView, native-host, Vue, workspace, and frontend markers. It does not prove
+signing, device execution, SQLite persistence, or visual acceptance. The
+runner keys native marker-file evidence to a unique launch id, checks the host
+Simulator process, and succeeds only after all markers are observed and the
+process survives the stability window.
 
 ## Workspace data evolution
 
@@ -75,7 +98,9 @@ and is not read, mirrored, or migrated into the Workspace task model.
 
 ## Capability and implementation status
 
-Application schema version 2 declares capability protocol version 1. These are
+Application schema version 3 declares capability protocol version 1. Schema v3
+adds the separately checked `nativeEvidence.ios` record so a compile result
+cannot be confused with local delivery evidence. These are
 independent version lines: changing the product declaration does not change the
 command envelope. Current human UI, keyboard, and notification integrations
 must use the versioned capability service, which validates and applies a command
@@ -147,7 +172,7 @@ completion record. These are derived views and add no persisted statistics.
 | `review-link` | `src/domain/learning/review-task-link.ts` | `tests/review-task-link.test.ts` |
 | `responsive-shell` | `src/lib/responsive-shell.ts` | `tests/responsive-shell.test.ts`, `tests/business-sheet-mount.test.ts` |
 | `learning-search-tags` | `src/domain/capabilities/tag-commands.ts`, `src/domain/capabilities/task-commands.ts`, `src/domain/capabilities/recurrence-commands.ts`, `src/domain/search/workspace-search.ts` | `tests/tag-commands.test.ts`, `tests/capability-service.test.ts`, `tests/recurrence-learning-completion.test.ts`, `tests/workspace-search.test.ts` |
-| `derived-learning-rhythm` | `src/domain/views/learning-rhythm.ts`, `src/components/study/LearningRhythmView.vue`, `src/App.vue` | `tests/learning-rhythm.test.ts`, `tests/learning-rhythm-view.test.ts`, `tests/settings-behavior.test.ts`, `tests/workspace-navigation.test.ts` |
+| `derived-learning-rhythm` | `src/domain/views/learning-rhythm.ts`, `src/components/study/LearningRhythmView.vue` | `tests/learning-rhythm.test.ts`, `tests/learning-rhythm-view.test.ts` |
 | `explainable-weekly-evidence` | `src/domain/views/weekly-learning-summary.ts`, `src/components/study/ReviewView.vue` | `tests/weekly-learning-summary.test.ts`, `tests/review-weekly-summary.test.ts` |
 
 These entries claim the local application behaviour covered by those sources
@@ -163,6 +188,10 @@ creation through evidence-backed completion, persisted rhythm progress,
 completed-plan evidence coverage, due-review source drilldown, and weekly
 metric drilldown at the fixed responsive viewports. It remains Web evidence rather than
 native-shell or installed-package evidence.
+
+These shared capabilities do not claim reliable iOS background delivery; the
+iOS system scheduler adapter remains planned. Web calendar and persistence
+evidence does not establish iOS Simulator behaviour.
 
 Agent behaviour remains planned.
 The command envelope reserves `source: agent`, but there is no shipped Agent
@@ -186,6 +215,7 @@ npm run check:modules
 npm run check:modules -- web
 npm run check:modules -- mobile
 npm run verify
+npm run smoke:ios-launch -- --device <UDID> --app <absolute .app path>
 ```
 
 Run `npm run rust:verify` for Rust/Tauri changes. Web and Windows smoke checks
@@ -194,7 +224,7 @@ remain opt-in local evidence; see [web.md](./web.md) and
 
 ## Compatibility
 
-Application schema version `2` declares the general-planning, Workspace v3, and
+Application schema version `3` declares the general-planning, Workspace v3, and
 capability boundaries above. Additive fields require a checker change that
 explicitly understands the application schema version. Renaming or removing a
 module, data format, or compatibility promise is breaking: keep the old
