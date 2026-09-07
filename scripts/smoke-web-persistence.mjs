@@ -10,6 +10,7 @@ import { getNpmInvocation } from './release-kit/npm-command.mjs'
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const quickAddArtifactRoot = resolve(projectRoot, 'artifacts', 'visual-qa', 'quick-add')
 const rhythmArtifactRoot = resolve(projectRoot, 'artifacts', 'visual-qa', 'learning-rhythm')
+const weeklyEvidenceArtifactRoot = resolve(projectRoot, 'artifacts', 'visual-qa', 'weekly-evidence')
 export function webSmokeUrl(port) {
   return `http://127.0.0.1:${port}/`
 }
@@ -103,6 +104,7 @@ function stopPreview(preview) {
 async function main() {
   await mkdir(quickAddArtifactRoot, { recursive: true })
   await mkdir(rhythmArtifactRoot, { recursive: true })
+  await mkdir(weeklyEvidenceArtifactRoot, { recursive: true })
   const npm = getNpmInvocation(['run', 'build:web'])
   await runCommand(npm.command, npm.args, npm.options)
 
@@ -145,6 +147,7 @@ async function main() {
       await page.getByRole('button', { name: '确认恢复', exact: true }).click()
 
       const rhythmTaskTitle = '精听并跟读一段 3 分钟技术视频'
+      const rhythmTopicTitle = '英语：听懂 AI 技术分享'
       const rhythmLearned = '我能稳定听出重音并复述三个关键观点。'
       await page.locator('.sidebar').getByRole('button', { name: '搜索', exact: true }).click()
       const rhythmSearch = page.getByRole('dialog', { name: '搜索学习事实', exact: true })
@@ -178,6 +181,26 @@ async function main() {
       await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '节律', exact: true }).click()
       await rhythmView.locator('.recent-learned').filter({ hasText: rhythmLearned }).waitFor({ state: 'visible' })
       await rhythmView.getByText(/本周 1 \/ \d+ 次/).waitFor({ state: 'visible' })
+
+      await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '回顾', exact: true }).click()
+      const weeklySummary = page.locator('.weekly-summary')
+      await weeklySummary.getByRole('heading', { name: '本周证据', exact: true }).waitFor({ state: 'visible' })
+      const learningTopicSummary = weeklySummary.locator('.weekly-topics > article').filter({ hasText: rhythmTopicTitle })
+      await learningTopicSummary.getByRole('button', { name: /\d+\s*有证据完成/ }).click()
+      const weeklyRecord = page.locator('.record-list > article').filter({ hasText: rhythmLearned })
+      await weeklyRecord.getByText(rhythmLearned, { exact: true }).waitFor({ state: 'visible' })
+      const weeklyRecordMain = weeklyRecord.locator('.record-main')
+      if (!(await weeklyRecordMain.evaluate((element) => element === document.activeElement))) {
+        throw new Error('Weekly evidence drilldown did not focus its single source record.')
+      }
+      const openWeeklyTask = weeklyRecord.getByRole('button', { name: '查看原任务', exact: true })
+      if (!(await openWeeklyTask.isVisible())) await weeklyRecord.locator('.record-main').click()
+      await openWeeklyTask.click()
+      await page.getByRole('complementary', { name: '任务详情', exact: true }).getByRole('heading', { name: rhythmTaskTitle, exact: true }).waitFor({ state: 'visible' })
+      const taskSurface = page.locator('.tasks-view')
+      await taskSurface.getByRole('button', { name: '筛选', exact: true }).click()
+      await taskSurface.getByRole('button', { name: '清单', exact: true }).click()
+      await page.getByRole('listbox', { name: '清单', exact: true }).getByRole('option', { name: '全部清单', exact: true }).click()
       await page.reload({ waitUntil: 'networkidle' })
       await page.locator('.sidebar').getByRole('button', { name: /^学习/ }).click()
       await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '节律', exact: true }).click()
@@ -447,6 +470,24 @@ async function main() {
                 ? 'learning-rhythm-mobile-390x844.png'
                 : 'learning-rhythm-mobile-min-320x700.png'),
           })
+        }
+        await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '回顾', exact: true }).click()
+        const responsiveWeeklySummary = page.locator('.weekly-summary')
+        await responsiveWeeklySummary.getByRole('heading', { name: '本周证据', exact: true }).waitFor({ state: 'visible' })
+        const weeklyGeometry = await responsiveWeeklySummary.evaluate((element) => {
+          const box = element.getBoundingClientRect()
+          return { left: box.left, right: box.right, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, viewportWidth: document.documentElement.clientWidth, pageScrollWidth: document.documentElement.scrollWidth }
+        })
+        if (weeklyGeometry.left < -0.5 || weeklyGeometry.right > weeklyGeometry.viewportWidth + 0.5
+          || weeklyGeometry.scrollWidth > weeklyGeometry.clientWidth || weeklyGeometry.pageScrollWidth > weeklyGeometry.viewportWidth) {
+          throw new Error(`Weekly evidence overflows at ${viewport.width}px: ${JSON.stringify(weeklyGeometry)}`)
+        }
+        const undersizedWeeklyMetric = await responsiveWeeklySummary.locator('.weekly-metrics').getByRole('button').evaluateAll((buttons) => buttons
+          .map((button) => ({ label: button.textContent?.trim(), height: button.getBoundingClientRect().height }))
+          .find(({ height }) => height < 44))
+        if (undersizedWeeklyMetric) throw new Error(`Weekly evidence metric is smaller than 44px at ${viewport.width}px: ${JSON.stringify(undersizedWeeklyMetric)}`)
+        if (viewport.width === 820 || viewport.width === 390 || viewport.width === 320) {
+          await page.screenshot({ path: resolve(weeklyEvidenceArtifactRoot, `weekly-evidence-${viewport.width}x${viewport.height}.png`) })
         }
         await primaryNavigation.getByRole('button', { name: /^收件箱/ }).click()
 

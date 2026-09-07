@@ -103,6 +103,15 @@ shown separately and never becomes an empty habit check-in. Completing a
 learning occurrence from task surfaces opens the existing evidence form and
 uses the recurrence capability with workspace, task, and occurrence revisions.
 
+`explainable-weekly-evidence-v1` replaces the Review page's host-clock summary
+with a read-only selector driven by an injected instant, IANA timezone, and week
+start preference. It groups live completion evidence, the distinct sessions
+linked to those records, and completed review links by the completion record's
+topic snapshot. Every metric carries the exact completion-record ids used to
+derive it, so the UI can narrow the existing record history and return to the
+source task. Linked minutes are evidence-attributed minutes; they are not a
+claim that every session in the week has a complete audited end time.
+
 `calendar-planning-v1` is backed by machine-checkable source and test pointers:
 
 | Evidence id | Implemented boundary | Behavioural evidence |
@@ -113,6 +122,7 @@ uses the recurrence capability with workspace, task, and occurrence revisions.
 | `responsive-shell` | `src/lib/responsive-shell.ts` | `tests/responsive-shell.test.ts`, `tests/business-sheet-mount.test.ts` |
 | `learning-search-tags` | `src/domain/capabilities/tag-commands.ts`, `src/domain/capabilities/task-commands.ts`, `src/domain/capabilities/recurrence-commands.ts`, `src/domain/search/workspace-search.ts` | `tests/tag-commands.test.ts`, `tests/capability-service.test.ts`, `tests/recurrence-learning-completion.test.ts`, `tests/workspace-search.test.ts` |
 | `derived-learning-rhythm` | `src/domain/views/learning-rhythm.ts`, `src/components/study/LearningRhythmView.vue`, `src/App.vue` | `tests/learning-rhythm.test.ts`, `tests/learning-rhythm-view.test.ts`, `tests/settings-behavior.test.ts`, `tests/workspace-navigation.test.ts` |
+| `explainable-weekly-evidence` | `src/domain/views/weekly-learning-summary.ts`, `src/components/study/ReviewView.vue` | `tests/weekly-learning-summary.test.ts`, `tests/review-weekly-summary.test.ts` |
 
 These entries claim the local application behaviour covered by those sources
 and tests. They do not claim an external calendar provider, hosted service,
@@ -123,8 +133,8 @@ Web viewports and `benchmark:task-query` for deterministic Today, Upcoming, and
 calendar projection counts. These checks do not change native delivery status.
 `smoke:web-persistence` additionally exercises the global search dialog,
 reversible tag management, and a recurring learning occurrence from rule
-creation through evidence-backed completion and persisted rhythm progress at
-the fixed responsive viewports. It remains Web evidence rather than
+creation through evidence-backed completion, persisted rhythm progress, and
+weekly-evidence metric drilldown at the fixed responsive viewports. It remains Web evidence rather than
 native-shell or installed-package evidence.
 
 Agent behaviour remains planned.

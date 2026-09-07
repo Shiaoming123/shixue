@@ -14,8 +14,9 @@ test('a repeated global-search target always switches Review to records and expa
   const exported: any = {}
   new Function('require', 'exports', code)((id: string) => id === 'vue' ? Vue : {}, exported)
   const props = Vue.reactive<any>({
-    item: undefined, remaining: 0, revealed: false, weeklyCompleted: 0, weeklyMinutes: 0,
-    weeklyHighlight: '', weeklyBlocker: '', weeklyNext: '', records: [], topics: [], initialMode: 'review',
+    item: undefined, remaining: 0, revealed: false,
+    weeklySummary: { rangeStart: '2026-09-14', rangeEnd: '2026-09-21', totals: { evidenceCompletions: { value: 0, recordIds: [] }, evidenceMinutes: { value: 0, recordIds: [] }, completedReviews: { value: 0, recordIds: [] } }, topics: [] },
+    records: [], topics: [], initialMode: 'review',
     recordTarget: { id: 'record:exact', requestId: 1 },
   })
   let state: any

@@ -33,6 +33,7 @@ import { queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, typ
 import { selectToday } from './domain/views/today'
 import { selectUpcoming } from './domain/views/upcoming'
 import { selectLearningRhythms } from './domain/views/learning-rhythm'
+import { selectWeeklyLearningSummary } from './domain/views/weekly-learning-summary'
 import { defaultModuleConfig } from './modules/config'
 import { installWindowLifecycle, type WindowCloseBehavior } from './lib/window-lifecycle'
 import { createReminderRuntime, readNativeLegacyReminderRows, submitNativeReminder } from './lib/reminder-runtime'
@@ -379,12 +380,23 @@ const sidebarMenuKeys = computed(() => [
 const sidebarOrderCustomized = computed(() => sidebarPreferences.value.order.join('|') !== sidebarMenuKeys.value.join('|'))
 watch(sidebarMenuKeys, (keys) => { sidebarPreferences.value = loadSidebarPreferences(keys) }, { immediate: true })
 
-const startOfWeek = computed(() => {
-  const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - ((date.getDay() + 6) % 7)); return date.getTime()
-})
 const completedRecords = computed(() => state.value.completionRecords.filter((record) => !record.deletedAt).sort((a, b) => b.completedAt.localeCompare(a.completedAt)))
-const weeklyRecords = computed(() => completedRecords.value.filter((record) => new Date(record.completedAt).getTime() >= startOfWeek.value))
-const weeklyMinutes = computed(() => weeklyRecords.value.reduce((sum, record) => sum + recordMinutes(record), 0))
+const weeklyLearningSummary = computed(() => recurrenceWorkspace.value
+  ? selectWeeklyLearningSummary(recurrenceWorkspace.value, {
+      asOf: new Date(clock.value).toISOString(),
+      timezone,
+      weekStartsOn: planningPreferences.value.weekStartsOn,
+    })
+  : {
+      rangeStart: today.value,
+      rangeEnd: today.value,
+      totals: {
+        evidenceCompletions: { value: 0, recordIds: [] },
+        evidenceMinutes: { value: 0, recordIds: [] },
+        completedReviews: { value: 0, recordIds: [] },
+      },
+      topics: [],
+    })
 const reviewQueue = computed(() => completedRecords.value.filter((record) => record.nextReviewOn && record.nextReviewOn <= today.value).sort((a, b) => (a.nextReviewOn ?? '').localeCompare(b.nextReviewOn ?? '')))
 const reviewItems = computed<ReviewViewItem[]>(() => reviewQueue.value.flatMap((record) => {
   const link = recurrenceWorkspace.value?.reviewTaskLinks.find(({ completionRecordId, reviewStage, dueOn, completedAt }) =>
@@ -406,8 +418,6 @@ const topicViews = computed<TopicViewItem[]>(() => state.value.topics.filter((to
   }
 }))
 
-const weeklyHighlight = computed(() => weeklyRecords.value[0]?.learned || '开始建立一条可追溯的学习证据链')
-const weeklyBlocker = computed(() => weeklyRecords.value.find((record) => record.blocker)?.blocker || '还没有记录反复出现的问题')
 const weeklyNext = computed(() => liveTasks.value.find((task) => task.status === 'in_progress' || task.status === 'planned')?.title || '从收件箱选择一个下一步')
 
 onMounted(async () => {
@@ -1575,7 +1585,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
           <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
           <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
           <LearningRhythmView v-else-if="destination.section === 'rhythm'" :items="learningRhythmItems" :totals="learningRhythmSelection.totals" @open-occurrence="openRhythmOccurrence" @open-task="openSearchTask" @edit-task="openTaskEditor" />
-          <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
+          <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-summary="weeklyLearningSummary" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
         </div>
         <CalendarWorkspace v-if="!loading && page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :target-offset="calendarTargetOffset" :execute-command="executeCalendarCommand" @desktop-mode-selected="persistDesktopCalendarMode" />
       </main>
