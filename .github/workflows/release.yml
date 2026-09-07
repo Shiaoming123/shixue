@@ -39,6 +39,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Run full test suite
+        run: npm test
+
       - name: Check release configuration
         run: npm run release:check -- --mode=release
 

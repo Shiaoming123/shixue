@@ -52,6 +52,9 @@ export function validateWindowsReleaseWorkflow(workflow) {
   if (!activeWorkflow.includes('- name: Require version tag source') || !activeWorkflow.includes("github.ref_type != 'tag'")) {
     errors.push('Windows release workflow must reject branch-based manual dispatches')
   }
+  if (!activeWorkflow.includes('- name: Run full test suite') || !activeWorkflow.includes('run: npm test')) {
+    errors.push('Windows release workflow must run the full npm test suite')
+  }
   const stageIndex = activeWorkflow.indexOf('- name: Stage portable Windows EXE')
   const uploadIndex = activeWorkflow.indexOf('- name: Upload portable Windows EXE')
   const verifyIndex = activeWorkflow.indexOf('- name: Verify portable Windows release asset')

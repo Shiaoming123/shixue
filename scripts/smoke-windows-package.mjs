@@ -29,11 +29,12 @@ export function createWindowsSmokeReport(now = new Date()) {
     automatedResult: 'NOT_RUN',
     stages: [
       ['manifest-audit', 'Load the versioned candidate manifest and verify the exact NSIS bytes by SHA-256.'],
-      ['silent-install', 'Install the manifest-selected NSIS package into an isolated target directory.'],
+      ['product-data-preflight', 'Verify the real Windows product data directories are absent before launch.'],
+      ['silent-install', 'Install the manifest-selected NSIS package into a dedicated target directory.'],
       ['installed-launch', 'Launch the installed executable and observe that it stays alive for two seconds.'],
       ['installed-relaunch', 'Launch the same installed executable again after the first process exits.'],
       ['silent-uninstall', 'Run the installed candidate uninstaller and verify the executable is removed.'],
-      ['cleanup', 'Remove the isolated smoke directory and installer registry residue.'],
+      ['cleanup', 'Remove the owned smoke directory, product data, and installer registry residue.'],
     ].map(([id, description]) => ({ id, verification: 'automated', status: 'NOT_RUN', description })),
   }
 }
@@ -70,6 +71,121 @@ export function assertSmokePath(targetRoot, candidate) {
     throw new Error(`Smoke path must stay inside ${resolvedRoot}: ${resolvedCandidate}`)
   }
   return resolvedCandidate
+}
+
+export function resolveWindowsProductDataPaths(roamingRoot, localRoot, identifier) {
+  if (typeof roamingRoot !== 'string' || !roamingRoot.trim() || typeof localRoot !== 'string' || !localRoot.trim()) {
+    throw new Error('Windows product data roots are unavailable.')
+  }
+  if (typeof identifier !== 'string' || !identifier.trim() || identifier !== identifier.trim() || /[\\/]/.test(identifier) || identifier === '.' || identifier === '..') {
+    throw new Error(`Invalid Windows product identifier: ${identifier}`)
+  }
+  const resolvedRoamingRoot = resolve(roamingRoot)
+  const resolvedLocalRoot = resolve(localRoot)
+  return {
+    identifier,
+    roamingRoot: resolvedRoamingRoot,
+    localRoot: resolvedLocalRoot,
+    roaming: resolve(resolvedRoamingRoot, identifier),
+    local: resolve(resolvedLocalRoot, identifier),
+  }
+}
+
+function queryWindowsKnownFolder(name) {
+  if (!['ApplicationData', 'LocalApplicationData'].includes(name)) {
+    return Promise.reject(new Error(`Unsupported Windows Known Folder: ${name}`))
+  }
+  return new Promise((resolveFolder, rejectFolder) => {
+    const child = spawn('powershell.exe', [
+      '-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
+      `[Environment]::GetFolderPath('${name}')`,
+    ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => { stdout += chunk })
+    child.stderr.on('data', (chunk) => { stderr += chunk })
+    child.once('error', rejectFolder)
+    child.once('exit', (code, signal) => {
+      if (code !== 0) {
+        rejectFolder(new Error(`Could not resolve Windows Known Folder ${name}: ${stderr.trim() || signal || code}`))
+        return
+      }
+      const path = stdout.trim()
+      if (!path) rejectFolder(new Error(`Windows Known Folder ${name} is empty.`))
+      else resolveFolder(path)
+    })
+  })
+}
+
+export async function loadWindowsKnownFolderRoots({ query = queryWindowsKnownFolder } = {}) {
+  const roaming = await query('ApplicationData')
+  const local = await query('LocalApplicationData')
+  if (typeof roaming !== 'string' || !roaming.trim() || typeof local !== 'string' || !local.trim()) {
+    throw new Error('Windows Known Folder roots are unavailable.')
+  }
+  return { roaming: roaming.trim(), local: local.trim() }
+}
+
+function assertWindowsProductDataPath(paths, candidate, root) {
+  const expected = resolve(root, paths.identifier)
+  const resolvedCandidate = resolve(candidate)
+  if (resolvedCandidate !== expected) {
+    throw new Error(`Windows product data path must match the exact application identity: ${resolvedCandidate}`)
+  }
+  return resolvedCandidate
+}
+
+export async function assertWindowsProductDataAbsent(
+  paths,
+  { exists = async (path) => {
+    try {
+      await stat(path)
+      return true
+    } catch (error) {
+      if (error && typeof error === 'object' && error.code === 'ENOENT') return false
+      throw error
+    }
+  } } = {},
+) {
+  for (const [candidate, root] of [[paths.roaming, paths.roamingRoot], [paths.local, paths.localRoot]]) {
+    const exact = assertWindowsProductDataPath(paths, candidate, root)
+    if (await exists(exact)) {
+      throw new Error(`BLOCKED: existing product data must be preserved before Windows package smoke: ${exact}`)
+    }
+  }
+}
+
+export async function claimWindowsProductData(
+  paths,
+  {
+    create = (path) => mkdir(path),
+    remove = (path) => rm(path, { recursive: true, force: true }),
+  } = {},
+) {
+  const created = []
+  try {
+    for (const [candidate, root] of [[paths.roaming, paths.roamingRoot], [paths.local, paths.localRoot]]) {
+      const exact = assertWindowsProductDataPath(paths, candidate, root)
+      await create(exact)
+      created.push(exact)
+    }
+  } catch (error) {
+    for (const path of [...created].reverse()) await remove(path)
+    if (error && typeof error === 'object' && error.code === 'EEXIST') {
+      throw new Error('BLOCKED: existing product data appeared during Windows package smoke preflight.')
+    }
+    throw error
+  }
+}
+
+export async function removeWindowsProductData(
+  paths,
+  { remove = (path) => rm(path, { recursive: true, force: true }) } = {},
+) {
+  await remove(assertWindowsProductDataPath(paths, paths.roaming, paths.roamingRoot))
+  await remove(assertWindowsProductDataPath(paths, paths.local, paths.localRoot))
 }
 
 export async function loadCandidateNsisArtifact(root, version) {
@@ -223,11 +339,11 @@ async function main() {
     await mkdtemp(resolve(tauriTargetRoot, 'meow-windows-package-smoke-')),
   )
   const installPath = assertSmokePath(smokeRoot, resolve(smokeRoot, 'install'))
-  const appDataPath = assertSmokePath(smokeRoot, resolve(smokeRoot, 'appdata'))
-  const localAppDataPath = assertSmokePath(smokeRoot, resolve(smokeRoot, 'localappdata'))
   let application
   let installerRegistryKey
   let executablePath
+  let productDataPaths
+  let ownsProductData = false
   let activeStage = 'manifest-audit'
   let failure
 
@@ -264,8 +380,16 @@ async function main() {
     }
     updateSmokeStage(report, 'manifest-audit', 'PASS', `Verified ${candidate.file} SHA-256 ${candidate.sha256}.`)
 
+    activeStage = 'product-data-preflight'
+    const knownFolders = await loadWindowsKnownFolderRoots()
+    productDataPaths = resolveWindowsProductDataPaths(knownFolders.roaming, knownFolders.local, candidate.manifest.identifier)
+    await assertWindowsProductDataAbsent(productDataPaths)
+    await claimWindowsProductData(productDataPaths)
+    ownsProductData = true
+    updateSmokeStage(report, 'product-data-preflight', 'PASS', 'The real Windows product data directories were absent; this smoke run owns any directories it creates there.')
+
     activeStage = 'silent-install'
-    await Promise.all([mkdir(installPath), mkdir(appDataPath), mkdir(localAppDataPath)])
+    await mkdir(installPath)
     await runCommand(candidate.path, createNsisInstallArgs(candidate.path, installPath))
     updateSmokeStage(report, 'silent-install', 'PASS', `Installed ${candidate.file} into the isolated smoke directory.`)
 
@@ -280,11 +404,7 @@ async function main() {
     application = spawn(executablePath, [], {
       cwd: installPath,
       windowsHide: true,
-      env: {
-        ...process.env,
-        APPDATA: appDataPath,
-        LOCALAPPDATA: localAppDataPath,
-      },
+      env: { ...process.env },
     })
     await waitForChildToStayAlive(application, 2_000)
     updateSmokeStage(report, 'installed-launch', 'PASS', 'The installed executable stayed alive for the two-second automated probe.')
@@ -295,7 +415,7 @@ async function main() {
     application = spawn(executablePath, [], {
       cwd: installPath,
       windowsHide: true,
-      env: { ...process.env, APPDATA: appDataPath, LOCALAPPDATA: localAppDataPath },
+      env: { ...process.env },
     })
     await waitForChildToStayAlive(application, 2_000)
     updateSmokeStage(report, 'installed-relaunch', 'PASS', 'The same installed executable stayed alive after relaunch.')
@@ -316,19 +436,24 @@ async function main() {
       registryKey: installerRegistryKey,
       exists: async () => false,
     })
-    updateSmokeStage(report, 'cleanup', 'PASS', 'Removed the isolated smoke root and installer registry residue.')
+    if (ownsProductData) await removeWindowsProductData(productDataPaths)
+    ownsProductData = false
+    updateSmokeStage(report, 'cleanup', 'PASS', 'Removed the owned smoke root, product data, and installer registry residue.')
     report.automatedResult = 'PASS'
     console.log(`Windows package automated smoke passed: ${candidate.path}`)
   } catch (error) {
-    updateSmokeStage(report, activeStage, 'FAIL', error instanceof Error ? error.message : String(error))
-    report.automatedResult = 'FAIL'
+    const status = error instanceof Error && error.message.startsWith('BLOCKED:') ? 'BLOCKED' : 'FAIL'
+    updateSmokeStage(report, activeStage, status, error instanceof Error ? error.message : String(error))
+    report.automatedResult = status
     failure = error
   } finally {
     try {
       await terminateChild(application)
       if (report.stages.find((stage) => stage.id === 'cleanup')?.status !== 'PASS') {
         await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath, { registryKey: installerRegistryKey })
-        if (activeStage !== 'cleanup') updateSmokeStage(report, 'cleanup', 'PASS', 'Cleaned the isolated smoke state after an earlier stage failed.')
+        if (ownsProductData) await removeWindowsProductData(productDataPaths)
+        ownsProductData = false
+        if (activeStage !== 'cleanup') updateSmokeStage(report, 'cleanup', 'PASS', 'Cleaned the owned smoke state after an earlier stage failed.')
       }
     } catch (cleanupError) {
       updateSmokeStage(report, 'cleanup', 'FAIL', cleanupError instanceof Error ? cleanupError.message : String(cleanupError))
