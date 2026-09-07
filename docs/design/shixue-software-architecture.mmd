@@ -1,0 +1,122 @@
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 34, "rankSpacing": 56}}}%%
+%% Shixue current software architecture. Keep labels bilingual for both READMEs.
+flowchart TB
+  subgraph PRODUCT["拾学运行与数据架构 / Shixue runtime & data architecture"]
+    direction LR
+
+    subgraph SURFACES["01 · 运行界面 / Runtime surfaces"]
+      direction TB
+      WEB["Web 浏览器<br/>Web browser"]
+      DESKTOP["Windows / macOS / Linux<br/>Tauri desktop"]
+      MOBILE["Android / iOS<br/>Tauri mobile"]
+    end
+
+    subgraph COMPOSITION["02 · 启动与装配 / Bootstrap & assembly"]
+      direction TB
+      RUNTIME["RuntimeInfo<br/>平台与能力探测"]
+      NATIVE["Rust 原生宿主<br/>IPC · plugins · migrations"]
+      LOADER["Module loader<br/>兼容性筛选 · 拓扑装配"]
+    end
+
+    subgraph INPUTS["03 · 表现与输入 / Presentation & inputs"]
+      direction TB
+      UI["Vue 3 应用壳与视图<br/>Tasks · Today · Calendar · Learning"]
+      IMPORT["Workspace JSON v3 + Study v1/v2<br/>校验 → 迁移 → 再校验"]
+    end
+
+    subgraph APPLICATION["04 · 应用与领域 / Application & domain"]
+      direction TB
+      ENVELOPE["Capability CommandEnvelope v1<br/>版本 · 幂等 · 来源 · revision"]
+      CAPABILITY["TaskCapabilityService<br/>query · preview · execute"]
+      ROUTER["领域命令模块<br/>任务 · 日历 · 重复 · 提醒 · 学习"]
+      STATE["WorkspaceStateV3<br/>工作区单一事实"]
+      READS["派生只读模型<br/>Today · Upcoming · Search<br/>Rhythm · Weekly review"]
+      AUDIT["回执 · 事件 · 补偿撤销<br/>Receipts · events · undo"]
+    end
+
+    subgraph DATA["05 · 本地数据与交换 / Local data & exchange"]
+      direction TB
+      STORE["WorkspaceStore seam<br/>load · save(expectedUpdatedAt?)<br/>实时写入使用 CAS"]
+      MEMORY["安全内存回退<br/>Safe fallback · 非持久化"]
+      IDB[("Web IndexedDB<br/>meow-study · studyState/current")]
+      SQLITE[("Native SQLite<br/>study.db · study_state(id=1)")]
+      BACKUP["适配器内迁移备份<br/>Adapter-local migration backup"]
+      JSON["Workspace JSON v3<br/>完整可恢复备份"]
+      MARKDOWN["Learning Markdown<br/>只读证据投影"]
+    end
+  end
+
+  subgraph GOVERNANCE["平台能力、验证与交付 / Platform capabilities, verification & delivery"]
+    direction LR
+
+    subgraph NATIVE_CAPS["06 · 平台能力 / Platform capabilities"]
+      direction TB
+      SHARED["共享原生插件<br/>SQL · dialog · opener · process · store"]
+      DESKTOP_CAPS["桌面专属<br/>tray · single-instance · updater<br/>shortcut · autostart · scheduler"]
+      MOBILE_CAPS["移动端装配<br/>native SQL · notification"]
+      OPTIONAL["默认关闭的扩展<br/>Sync 远端导入 → 能力服务<br/>Agent planned · MCP 独立模块"]
+    end
+
+    subgraph DELIVERY["07 · 验证与交付 / Verification & delivery"]
+      direction TB
+      SOURCE["Git source · commit"]
+      TAG["Version tag · v*.*.*"]
+      CI["ci.yml<br/>npm test · app protocol v5 · modules<br/>build · Rust fmt/clippy/test/check"]
+      ANDROID["android-debug.yml<br/>APK identity · Activity · 5 readiness<br/>process restart · SQLite recovery"]
+      WINDOWS["Windows Release Kit<br/>NSIS · MSI · Portable<br/>hash/header audit · NSIS lifecycle smoke"]
+      RELEASE["release.yml<br/>tag gate · draft assets · publish"]
+      GAPS["未验证边界 / Not verified<br/>Android 真机与模拟器重启 · 当前 iOS<br/>原生通知 · Authenticode · 移动签名/商店<br/>installed updater E2E · Web 部署 · Windows 200%/Narrator"]
+    end
+  end
+
+  WEB -->|"Web context"| RUNTIME
+  DESKTOP -->|"runtime_platform"| RUNTIME
+  MOBILE -->|"runtime_platform"| RUNTIME
+  DESKTOP -->|"native host"| NATIVE
+  MOBILE -->|"native host"| NATIVE
+  RUNTIME -->|"platform + capabilities"| LOADER
+  NATIVE -->|"available native modules"| LOADER
+  LOADER -->|"setup before mount"| UI
+
+  UI -->|"versioned writes"| ENVELOPE
+  UI -->|"queries"| CAPABILITY
+  IMPORT -->|"workspace.import"| ENVELOPE
+  ENVELOPE -->|"envelope + revision validation"| CAPABILITY
+  CAPABILITY -->|"clone + route"| ROUTER
+  ROUTER --> STATE
+  STATE -->|"UI projections"| READS
+  STATE --> AUDIT
+
+  CAPABILITY -->|"full-state parse + CAS"| STORE
+  UI -. "read-only refresh" .-> STORE
+  STORE -->|"Web adapter"| IDB
+  STORE -->|"Desktop / mobile adapter"| SQLITE
+  STORE -. "safe fallback" .-> MEMORY
+  IDB -. "legacy migration / guarded repair only" .-> BACKUP
+  SQLITE -. "legacy migration / guarded repair only" .-> BACKUP
+  STORE -->|"validated snapshot"| JSON
+  STORE -->|"validated snapshot"| MARKDOWN
+
+  SOURCE -.-> CI
+  SOURCE -.-> ANDROID
+  SOURCE -.-> WINDOWS
+  TAG -.-> RELEASE
+  CI -. "不证明 / does not prove" .-> GAPS
+  ANDROID -. "不证明 / does not prove" .-> GAPS
+  WINDOWS -. "不证明 / does not prove" .-> GAPS
+  RELEASE -. "不证明 / does not prove" .-> GAPS
+
+  PRODUCT ~~~ GOVERNANCE
+
+  classDef surface fill:#eef4fb,stroke:#446783,color:#163047,stroke-width:1.5px;
+  classDef application fill:#f2f7f1,stroke:#53745b,color:#1d3923,stroke-width:1.5px;
+  classDef data fill:#fff8e8,stroke:#9b742c,color:#4c3610,stroke-width:1.5px;
+  classDef capability fill:#f7f1fb,stroke:#795b8f,color:#382446,stroke-width:1.5px;
+  classDef delivery fill:#eef7f7,stroke:#4d7d7d,color:#173b3b,stroke-width:1.5px;
+  classDef gap fill:#fff0f0,stroke:#b24c4c,color:#5d2020,stroke-width:1.5px,stroke-dasharray:6 4;
+  class WEB,DESKTOP,MOBILE,RUNTIME,NATIVE,LOADER,UI,IMPORT surface;
+  class ENVELOPE,CAPABILITY,ROUTER,STATE,READS,AUDIT application;
+  class STORE,MEMORY,IDB,SQLITE,BACKUP,JSON,MARKDOWN data;
+  class SHARED,DESKTOP_CAPS,MOBILE_CAPS,OPTIONAL capability;
+  class SOURCE,TAG,CI,ANDROID,WINDOWS,RELEASE delivery;
+  class GAPS gap;

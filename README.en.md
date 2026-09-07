@@ -131,24 +131,15 @@ Multiple reminders, in-app actions, notification permission, and close lifecycle
 
 ## Architecture
 
-```text
-Vue 3 general-todo and optional-learning interface
-          │
-          ▼
-Domain commands and task state machine
-          │
-          ▼
-Workspace data port
-     ┌────┴──────────────┐
-     ▼                   ▼
-SQLite (Tauri/Windows)   IndexedDB (Web)
-```
+[![Shixue software architecture: runtimes, domain, local storage, platform capabilities, and delivery verification](./docs/design/shixue-software-architecture.svg)](./docs/design/shixue-software-architecture.svg)
 
-- **Application shell:** Tauri 2 owns the Windows window, SQLite integration, and optional system capabilities.
+Solid lines show current runtime or data flow. Dashed lines show conditional fallback, verification relationships, or evidence boundaries that have not been delivered. Every live workspace business write passes through `TaskCapabilityService`; Web uses IndexedDB, while Tauri desktop and mobile use SQLite. Legacy migration and guarded repair first preserve and verify the original snapshot. If a durable adapter fails to assemble, the app reports the error and falls back to an in-memory store for that run. Sync, Agent, and MCP are disabled by default: Sync remote-state import passes through the capability service, Agent remains planned, and MCP keeps an independent module boundary. Open the [editable Mermaid source](./docs/design/shixue-software-architecture.mmd).
+
+- **Application shell:** Tauri 2 provides the desktop and mobile native hosts, SQLite integration, and platform-specific system capabilities. Web stays inside the browser boundary.
 - **Interface:** Vue 3, TypeScript, and Vite share one business component system across desktop and mobile widths.
-- **Domain layer:** The task model in `WorkspaceState` is the single source of truth. UI code uses application capabilities and domain commands instead of mutating persisted state around the state machine.
+- **Domain layer:** `WorkspaceStateV3` is the single source of truth for a workspace. UI code uses application capabilities and domain commands instead of mutating persisted state around the state machine.
 - **Storage layer:** IndexedDB and SQLite implement the same data port. Migration, backup, validation, and replacement fail closed.
-- **Release layer:** GitHub Actions builds Windows Releases. The local Release Kit additionally assembles and audits a complete delivery directory.
+- **Verification and release layer:** GitHub Actions provides separate regular CI, manual Android native-smoke, and version-tagged Windows release workflows. The local Release Kit additionally assembles and audits a complete delivery directory; its installation lifecycle smoke covers NSIS only. The red boundaries in the diagram remain unverified by those automated checks.
 
 Read more: [application protocol](./docs/application-protocol.md) · [development guide](./docs/development.md) · [design system](./docs/design-system.md) · [modular architecture](./docs/modular-architecture.md)
 
