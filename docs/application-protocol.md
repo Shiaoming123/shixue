@@ -126,6 +126,18 @@ do not store schedule, estimate, or list snapshots, this is explicitly the
 current workspace view of the week rather than a reconstruction of an earlier
 plan.
 
+Completed-plan evidence coverage uses those current completed plan facts as its
+denominator. A plan is covered only when its selected outcome event points to a
+live completion record for the same task; absent or deleted records remain
+visible as missing evidence, while dangling, cross-task, or multiply claimed
+links fail loudly. The due-review cohort uses review links whose date-only
+`dueOn` falls inside the selected week. It classifies each link as completed,
+scheduled, due today, or overdue at the injected instant. Future completion
+timestamps do not leak into the result, multiple review stages remain distinct,
+and source records are deduplicated only for record navigation. Pending links
+open their exact review task or occurrence; completed links open their source
+completion record. These are derived views and add no persisted statistics.
+
 `calendar-planning-v1` is backed by machine-checkable source and test pointers:
 
 | Evidence id | Implemented boundary | Behavioural evidence |
@@ -147,8 +159,9 @@ Web viewports and `benchmark:task-query` for deterministic Today, Upcoming, and
 calendar projection counts. These checks do not change native delivery status.
 `smoke:web-persistence` additionally exercises the global search dialog,
 reversible tag management, and a recurring learning occurrence from rule
-creation through evidence-backed completion, persisted rhythm progress, and
-weekly-evidence metric drilldown at the fixed responsive viewports. It remains Web evidence rather than
+creation through evidence-backed completion, persisted rhythm progress,
+completed-plan evidence coverage, due-review source drilldown, and weekly
+metric drilldown at the fixed responsive viewports. It remains Web evidence rather than
 native-shell or installed-package evidence.
 
 Agent behaviour remains planned.

@@ -76,6 +76,9 @@ function zeroCurrentPlans() {
   return {
     planned: { value: 0, facts: [] }, completed: { value: 0, facts: [] }, cancelled: { value: 0, facts: [] },
     skipped: { value: 0, facts: [] }, estimatedMinutes: { value: 0, facts: [] }, unestimatedCount: 0,
+    evidenceCoverage: {
+      eligible: { value: 0, facts: [] }, covered: { value: 0, facts: [] }, missing: { value: 0, facts: [] },
+    },
   }
 }
 
@@ -113,6 +116,16 @@ test('uses the injected timezone and Sunday boundary for evidence-backed weekly 
     evidenceMinutes: { value: 2, recordIds: ['record:early'] },
     completedReviews: { value: 1, recordIds: ['record:early'] },
     completedReviewFacts: [{ id: 'review:done', recordId: 'record:early', completedAt: '2026-09-14T05:00:00.000Z', reviewedOn: '2026-09-13', result: 'clear' }],
+    reviewCoverage: {
+      due: { value: 2, recordIds: ['record:early', 'record:late'], facts: [
+        { id: 'review:done', recordId: 'record:early', reviewTaskId: 'review-task:1', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-13', sourceTitle: 'record:early', state: 'completed', completedAt: '2026-09-14T05:00:00.000Z', reviewedOn: '2026-09-13', result: 'clear' },
+        { id: 'review:pending', recordId: 'record:late', reviewTaskId: 'review-task:2', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-13', sourceTitle: 'record:late', state: 'overdue', completedAt: null, reviewedOn: null, result: null },
+      ] },
+      completed: { value: 1, recordIds: ['record:early'], facts: [
+        { id: 'review:done', recordId: 'record:early', reviewTaskId: 'review-task:1', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-13', sourceTitle: 'record:early', state: 'completed', completedAt: '2026-09-14T05:00:00.000Z', reviewedOn: '2026-09-13', result: 'clear' },
+      ] },
+      scheduledCount: 0, dueTodayCount: 0, overdueCount: 1,
+    },
     currentPlans: zeroCurrentPlans(),
   })
 })
@@ -208,8 +221,8 @@ test('excludes completion and review facts later than the injected asOf instant'
     record('record:future', '2026-09-14T07:00:00.000Z'),
   )
   workspace.reviewTaskLinks.push(
-    { id: 'review:past', completionRecordId: 'record:past', reviewTaskId: 'review-task:past', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-14', completedAt: '2026-09-14T05:30:00.000Z', completion: { result: 'fuzzy', reviewedOn: '2026-09-14' }, createdAt: AT, updatedAt: AT },
-    { id: 'review:future', completionRecordId: 'record:past', reviewTaskId: 'review-task:future', occurrenceId: null, reviewStage: 1, dueOn: '2026-09-14', completedAt: '2026-09-14T06:30:00.000Z', completion: { result: 'clear', reviewedOn: '2026-09-14' }, createdAt: AT, updatedAt: AT },
+    { id: 'review:past', completionRecordId: 'record:past', reviewTaskId: 'review-task:past', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-14', completedAt: '2026-09-14T05:30:00.000Z', completion: { result: 'fuzzy', reviewedOn: '2026-09-14' }, createdAt: '2026-09-14T05:10:00.000Z', updatedAt: AT },
+    { id: 'review:future', completionRecordId: 'record:past', reviewTaskId: 'review-task:future', occurrenceId: null, reviewStage: 1, dueOn: '2026-09-14', completedAt: '2026-09-14T06:30:00.000Z', completion: { result: 'clear', reviewedOn: '2026-09-14' }, createdAt: '2026-09-14T05:20:00.000Z', updatedAt: AT },
   )
 
   const result = selectWeeklyLearningSummary(workspace, { asOf: '2026-09-14T06:00:00.000Z', timezone: 'UTC', weekStartsOn: 1 })
@@ -267,9 +280,9 @@ test('derives current weekly plans from tasks or occurrences once and keeps esti
   assert.deepEqual(topic.planned, {
     value: 3,
     facts: [
-      { id: 'occurrence:occurrence:one', taskId: 'task:recurring', occurrenceId: 'occurrence:one', title: '重复学习', scheduledAt: null, scheduledOn: '2026-09-14', scheduledDate: '2026-09-14', scheduledTime: null, estimateMinutes: 60, status: 'pending', outcomeEventId: null },
-      { id: 'occurrence:occurrence:estimate-only', taskId: 'task:recurring', occurrenceId: 'occurrence:estimate-only', title: '重复学习', scheduledAt: null, scheduledOn: '2026-09-15', scheduledDate: '2026-09-15', scheduledTime: null, estimateMinutes: 25, status: 'pending', outcomeEventId: null },
-      { id: 'occurrence:occurrence:null-estimate', taskId: 'task:recurring', occurrenceId: 'occurrence:null-estimate', title: '重复学习', scheduledAt: null, scheduledOn: '2026-09-17', scheduledDate: '2026-09-17', scheduledTime: null, estimateMinutes: null, status: 'pending', outcomeEventId: null },
+      { id: 'occurrence:occurrence:one', taskId: 'task:recurring', occurrenceId: 'occurrence:one', title: '重复学习', scheduledAt: null, scheduledOn: '2026-09-14', scheduledDate: '2026-09-14', scheduledTime: null, estimateMinutes: 60, status: 'pending', outcomeEventId: null, completionRecordId: null },
+      { id: 'occurrence:occurrence:estimate-only', taskId: 'task:recurring', occurrenceId: 'occurrence:estimate-only', title: '重复学习', scheduledAt: null, scheduledOn: '2026-09-15', scheduledDate: '2026-09-15', scheduledTime: null, estimateMinutes: 25, status: 'pending', outcomeEventId: null, completionRecordId: null },
+      { id: 'occurrence:occurrence:null-estimate', taskId: 'task:recurring', occurrenceId: 'occurrence:null-estimate', title: '重复学习', scheduledAt: null, scheduledOn: '2026-09-17', scheduledDate: '2026-09-17', scheduledTime: null, estimateMinutes: null, status: 'pending', outcomeEventId: null, completionRecordId: null },
     ],
   })
   assert.deepEqual(topic.estimatedMinutes, { value: 85, facts: topic.planned.facts.slice(0, 2) })
@@ -394,6 +407,141 @@ test('excludes structural recurrence cancellations and honors current occurrence
   ])
   assert.equal(current.planned.facts.find(({ id }: any) => id === 'occurrence:occurrence:undone').status, 'pending')
   assert.equal(current.cancelled.value, 0)
+})
+
+test('explains completed-plan evidence only through the exact live completion record', () => {
+  const workspace = state()
+  workspace.tasks.push(
+    task('task:covered', { status: 'completed' }),
+    task('task:missing', { status: 'completed' }),
+    task('task:deleted-record', { status: 'completed' }),
+  )
+  workspace.completionRecords.push(
+    record('record:covered', '2026-09-13T08:00:00.000Z', { taskId: 'task:covered' }),
+    record('record:deleted', '2026-09-14T08:00:00.000Z', { taskId: 'task:deleted-record', deletedAt: AT }),
+  )
+  workspace.taskEvents.push(
+    event('event:covered', 'task:covered', 'completed', '2026-09-13T08:00:00.000Z', { completionRecordId: 'record:covered' }),
+    event('event:missing', 'task:missing', 'completed', '2026-09-14T08:00:00.000Z', { sequence: 2 }),
+    event('event:deleted', 'task:deleted-record', 'completed', '2026-09-14T09:00:00.000Z', { sequence: 3, completionRecordId: 'record:deleted' }),
+  )
+
+  const coverage = plans(selectWeeklyLearningSummary(workspace, { asOf: AT, timezone: 'UTC', weekStartsOn: 1 }), 'topic:a').evidenceCoverage
+  assert.equal(coverage.eligible.value, 3)
+  assert.deepEqual(coverage.covered.facts.map(({ id, completionRecordId }: any) => [id, completionRecordId]), [
+    ['task:task:covered', 'record:covered'],
+  ])
+  assert.deepEqual(coverage.missing.facts.map(({ id, completionRecordId }: any) => [id, completionRecordId]), [
+    ['task:task:deleted-record', null],
+    ['task:task:missing', null],
+  ])
+})
+
+test('fails loud for invalid or multiply claimed plan evidence', () => {
+  const missing = state()
+  missing.tasks.push(task('task:missing-record', { status: 'completed' }))
+  missing.taskEvents.push(event('event:missing-record', 'task:missing-record', 'completed', '2026-09-14T08:00:00.000Z', { completionRecordId: 'record:nope' }))
+  assert.throws(
+    () => selectWeeklyLearningSummary(missing, { asOf: AT, timezone: 'UTC', weekStartsOn: 1 }),
+    /event:missing-record.*record:nope/,
+  )
+
+  const mismatched = state()
+  mismatched.tasks.push(task('task:owner', { status: 'completed' }))
+  mismatched.completionRecords.push(record('record:other', '2026-09-14T08:00:00.000Z', { taskId: 'task:other' }))
+  mismatched.taskEvents.push(event('event:mismatch', 'task:owner', 'completed', '2026-09-14T08:00:00.000Z', { completionRecordId: 'record:other' }))
+  assert.throws(
+    () => selectWeeklyLearningSummary(mismatched, { asOf: AT, timezone: 'UTC', weekStartsOn: 1 }),
+    /event:mismatch.*another task/,
+  )
+
+  const duplicate = state()
+  duplicate.tasks.push(task('task:repeat', { recurrenceSeriesId: 'series:repeat' }))
+  duplicate.recurrenceSeries.push(series('series:repeat', 'task:repeat'))
+  duplicate.occurrences.push(
+    occurrence('occurrence:one', 'series:repeat', '2026-09-14', { status: 'completed', completedAt: '2026-09-14T08:00:00.000Z' }),
+    occurrence('occurrence:two', 'series:repeat', '2026-09-15', { ordinal: 2, status: 'completed', completedAt: '2026-09-15T08:00:00.000Z' }),
+  )
+  duplicate.completionRecords.push(record('record:shared', '2026-09-14T08:00:00.000Z', { taskId: 'task:repeat' }))
+  duplicate.taskEvents.push(
+    event('event:one', 'task:repeat', 'completed', '2026-09-14T08:00:00.000Z', { occurrenceId: 'occurrence:one', completionRecordId: 'record:shared' }),
+    event('event:two', 'task:repeat', 'completed', '2026-09-15T08:00:00.000Z', { sequence: 2, occurrenceId: 'occurrence:two', completionRecordId: 'record:shared' }),
+  )
+  assert.throws(
+    () => selectWeeklyLearningSummary(duplicate, { asOf: AT, timezone: 'UTC', weekStartsOn: 1 }),
+    /record:shared.*occurrence:occurrence:one.*occurrence:occurrence:two/,
+  )
+})
+
+test('derives this-week due review coverage as of the injected instant', () => {
+  const workspace = state()
+  workspace.completionRecords.push(record('record:source', '2026-09-01T08:00:00.000Z'))
+  const link = (id: string, dueOn: string, reviewStage: 0 | 1 | 2 | 3, completedAt: string | null, result: 'clear' | 'fuzzy' | 'relearn' | null) => ({
+    id, completionRecordId: 'record:source', reviewTaskId: `task:${id}`, occurrenceId: `occurrence:${id}`,
+    reviewStage, dueOn, completedAt, completion: result ? { result, reviewedOn: dueOn } : null, createdAt: AT, updatedAt: AT,
+  })
+  workspace.reviewTaskLinks.push(
+    link('review:overdue', '2026-09-14', 0, null, null),
+    link('review:due', '2026-09-16', 1, null, null),
+    link('review:scheduled', '2026-09-18', 2, null, null),
+    link('review:completed-early', '2026-09-15', 3, '2026-09-13T08:00:00.000Z', 'clear'),
+    link('review:future-result', '2026-09-14', 1, '2026-09-17T08:00:00.000Z', 'fuzzy'),
+    link('review:outside-due', '2026-09-21', 2, '2026-09-15T08:00:00.000Z', 'relearn'),
+  )
+
+  const topic = selectWeeklyLearningSummary(workspace, { asOf: AT, timezone: 'UTC', weekStartsOn: 1 }).topics[0]!
+  assert.deepEqual(topic.reviewCoverage.due.facts.map(({ id, state }: any) => [id, state]), [
+    ['review:overdue', 'overdue'],
+    ['review:future-result', 'overdue'],
+    ['review:completed-early', 'completed'],
+    ['review:due', 'due'],
+    ['review:scheduled', 'scheduled'],
+  ])
+  assert.deepEqual(topic.reviewCoverage.due.recordIds, ['record:source'])
+  assert.deepEqual(topic.reviewCoverage.completed.facts.map(({ id }: any) => id), ['review:completed-early'])
+  assert.deepEqual(
+    [topic.reviewCoverage.due.value, topic.reviewCoverage.completed.value, topic.reviewCoverage.scheduledCount, topic.reviewCoverage.dueTodayCount, topic.reviewCoverage.overdueCount],
+    [5, 1, 1, 1, 2],
+  )
+  assert.deepEqual(topic.completedReviewFacts.map(({ id }) => id), ['review:outside-due'])
+})
+
+test('does not leak review sources or links created after the injected instant', () => {
+  const workspace = state()
+  workspace.completionRecords.push(
+    record('record:future-created', '2026-09-15T08:00:00.000Z', { createdAt: '2026-09-17T08:00:00.000Z' }),
+    record('record:future-completed', '2026-09-17T08:00:00.000Z'),
+    record('record:existing', '2026-09-01T08:00:00.000Z'),
+  )
+  workspace.reviewTaskLinks.push(
+    { id: 'review:future-record-created', completionRecordId: 'record:future-created', reviewTaskId: 'task:one', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-16', completedAt: null, completion: null, createdAt: '2026-09-15T08:00:00.000Z', updatedAt: AT },
+    { id: 'review:future-record-completed', completionRecordId: 'record:future-completed', reviewTaskId: 'task:two', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-16', completedAt: null, completion: null, createdAt: '2026-09-15T08:00:00.000Z', updatedAt: AT },
+    { id: 'review:future-link', completionRecordId: 'record:existing', reviewTaskId: 'task:three', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-16', completedAt: null, completion: null, createdAt: '2026-09-17T08:00:00.000Z', updatedAt: '2026-09-17T08:00:00.000Z' },
+  )
+
+  const result = selectWeeklyLearningSummary(workspace, { asOf: AT, timezone: 'UTC', weekStartsOn: 1 })
+  assert.equal(result.topics.some(({ reviewCoverage }) => reviewCoverage.due.value > 0), false)
+})
+
+test('excludes deleted review sources, preserves archived source topics, and rejects impossible pending results', () => {
+  const workspace = state()
+  workspace.completionRecords.push(
+    record('record:archived-review', '2026-09-01T08:00:00.000Z', { topicId: 'topic:archived' }),
+    record('record:deleted-review', '2026-09-01T08:00:00.000Z', { deletedAt: AT }),
+  )
+  workspace.reviewTaskLinks.push(
+    { id: 'review:archived', completionRecordId: 'record:archived-review', reviewTaskId: 'task:archived-review', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-16', completedAt: null, completion: null, createdAt: AT, updatedAt: AT },
+    { id: 'review:deleted', completionRecordId: 'record:deleted-review', reviewTaskId: 'task:deleted-review', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-16', completedAt: null, completion: null, createdAt: AT, updatedAt: AT },
+  )
+  const result = selectWeeklyLearningSummary(workspace, { asOf: AT, timezone: 'UTC', weekStartsOn: 1 })
+  assert.equal(result.topics.find(({ topicId }) => topicId === 'topic:archived')?.reviewCoverage.due.value, 1)
+  assert.equal(result.topics.some(({ topicId }) => topicId === 'topic:a'), false)
+
+  workspace.reviewTaskLinks[0]!.completion = { result: 'clear', reviewedOn: '2026-09-16' }
+  assert.throws(
+    () => selectWeeklyLearningSummary(workspace, { asOf: AT, timezone: 'UTC', weekStartsOn: 1 }),
+    /review:archived.*result without a completion time/,
+  )
 })
 
 test('returns stable cloned results without mutating workspace order and rejects invalid query values', () => {

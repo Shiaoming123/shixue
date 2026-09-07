@@ -123,6 +123,19 @@ async function main() {
     const { chromium } = await import('playwright-core')
     const browser = await chromium.launch({ executablePath, headless: true })
     const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' })
+    const hostNow = new Date()
+    const smokeClock = new Date(hostNow)
+    smokeClock.setDate(hostNow.getDate() - ((hostNow.getDay() + 6) % 7))
+    smokeClock.setHours(12, 0, 0, 0)
+    const smokeNow = smokeClock.toISOString()
+    await context.addInitScript(({ now }) => {
+      const NativeDate = Date
+      const fixedTime = NativeDate.parse(now)
+      globalThis.Date = class extends NativeDate {
+        constructor(...args) { super(...(args.length ? args : [fixedTime])) }
+        static now() { return fixedTime }
+      }
+    }, { now: smokeNow })
     const page = await context.newPage()
     const consoleErrors = []
     const consoleWarnings = []
@@ -186,7 +199,32 @@ async function main() {
       const weeklySummary = page.locator('.weekly-summary')
       await weeklySummary.getByRole('heading', { name: '本周证据', exact: true }).waitFor({ state: 'visible' })
       const learningTopicSummary = weeklySummary.locator('.weekly-topics > article').filter({ hasText: rhythmTopicTitle })
-      await learningTopicSummary.getByRole('button', { name: /\d+\s*计划\s*预计/ }).click()
+      const evidenceCoverageMetric = learningTopicSummary.getByRole('button', { name: /1 \/ 1\s*已留证据/ })
+      await evidenceCoverageMetric.waitFor({ state: 'visible' })
+      const dueReviewMetric = learningTopicSummary.getByRole('button', { name: /\d+\s*本周应复习/ })
+      await dueReviewMetric.click()
+      const dueReviewSource = weeklySummary.locator('.due-review-row').filter({ hasText: rhythmTaskTitle }).first()
+      await dueReviewSource.waitFor({ state: 'visible' })
+      if (!(await dueReviewSource.getAttribute('data-due-review-id'))?.startsWith('review-link:')) {
+        throw new Error('Weekly review coverage did not expose the exact review-link source.')
+      }
+      if (!/^(本周稍后|今日到期|已逾期|已完成)，/.test(await dueReviewSource.getAttribute('aria-label') ?? '')) {
+        throw new Error('Weekly due-review source did not expose its state in text.')
+      }
+      await dueReviewSource.click()
+      await rhythmTaskDetail.getByRole('heading', { name: `复习 · ${rhythmTaskTitle}`, exact: true }).waitFor({ state: 'visible' })
+      await rhythmTaskDetail.getByRole('button', { name: '关闭任务详情', exact: true }).click()
+      await page.locator('.sidebar').getByRole('button', { name: /^学习/ }).click()
+      await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '回顾', exact: true }).click()
+      await weeklySummary.getByRole('heading', { name: '本周证据', exact: true }).waitFor({ state: 'visible' })
+      const restoredLearningTopicSummary = weeklySummary.locator('.weekly-topics > article').filter({ hasText: rhythmTopicTitle })
+      const restoredDueReviewMetric = restoredLearningTopicSummary.getByRole('button', { name: /\d+\s*本周应复习/ })
+      await restoredDueReviewMetric.click()
+      await weeklySummary.locator('.due-review-scope').getByRole('button', { name: '返回本周证据', exact: true }).click()
+      if (!(await restoredDueReviewMetric.evaluate((element) => element === document.activeElement))) {
+        throw new Error('Weekly due-review drilldown did not restore metric focus.')
+      }
+      await restoredLearningTopicSummary.getByRole('button', { name: /\d+\s*计划\s*预计/ }).click()
       const planSources = weeklySummary.locator('.plan-source-row').filter({ hasText: rhythmTaskTitle })
       await planSources.first().waitFor({ state: 'visible' })
       const focusedPlanTarget = await page.evaluate(() => document.activeElement?.className ?? '')
@@ -206,8 +244,29 @@ async function main() {
       await page.locator('.sidebar').getByRole('button', { name: /^学习/ }).click()
       await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '回顾', exact: true }).click()
       await weeklySummary.getByRole('heading', { name: '本周证据', exact: true }).waitFor({ state: 'visible' })
+      const activeReviewCard = page.locator('.review-card')
+      await activeReviewCard.getByRole('button', { name: '想过了，查看证据', exact: true }).click()
+      await activeReviewCard.getByRole('button', { name: '记得清楚', exact: true }).click()
+      await page.getByText('已安排下一次回顾。', { exact: true }).waitFor({ state: 'visible' })
+      const completedDueMetric = weeklySummary.locator('.coverage-metrics button:not([disabled])').filter({ hasText: '已完成到期复习' }).first()
+      await completedDueMetric.click()
+      const completedDueSource = weeklySummary.locator('.due-review-row').filter({ hasText: '已完成' }).first()
+      await completedDueSource.waitFor({ state: 'visible' })
+      const completedDueRecordId = await completedDueSource.getAttribute('data-record-id')
+      if (!completedDueRecordId) throw new Error('Completed due-review source did not retain its completion record identity.')
+      await completedDueSource.click()
+      const completedDueRecord = page.locator(`.record-main[data-record-id="${completedDueRecordId}"]`)
+      await completedDueRecord.waitFor({ state: 'visible' })
+      if (!(await completedDueRecord.evaluate((element) => element === document.activeElement))) {
+        throw new Error('Completed due-review source did not focus its exact completion record.')
+      }
+      await page.reload({ waitUntil: 'networkidle' })
+      await page.locator('.sidebar').getByRole('button', { name: /^学习/ }).click()
+      await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '回顾', exact: true }).click()
+      await weeklySummary.getByRole('heading', { name: '本周证据', exact: true }).waitFor({ state: 'visible' })
+      await weeklySummary.locator('.coverage-metrics').getByRole('button', { name: /[1-9]\d*\s*已完成到期复习/ }).first().waitFor({ state: 'visible' })
       const refreshedLearningTopicSummary = weeklySummary.locator('.weekly-topics > article').filter({ hasText: rhythmTopicTitle })
-      await refreshedLearningTopicSummary.getByRole('button', { name: /\d+\s*有证据完成/ }).click()
+      await refreshedLearningTopicSummary.getByRole('button', { name: /1 \/ 1\s*已留证据/ }).click()
       const weeklyRecord = page.locator('.record-list > article').filter({ hasText: rhythmLearned })
       await weeklyRecord.getByText(rhythmLearned, { exact: true }).waitFor({ state: 'visible' })
       const weeklyRecordMain = weeklyRecord.locator('.record-main')
@@ -291,6 +350,11 @@ async function main() {
       await scheduleEditor.getByRole('button', { name: '应用', exact: true }).click()
       await quickAdd.getByRole('button', { name: /编辑计划.*14:00/ }).waitFor({ state: 'visible' })
       await quickAdd.getByRole('button', { name: '添加', exact: true }).click()
+      const quickAddInput = quickAdd.getByRole('textbox', { name: '新建任务' })
+      await page.waitForFunction(() => document.querySelector('.quick-add-composer input')?.value === '' || document.querySelector('.quick-add-message.error'))
+      if (await quickAddInput.inputValue()) {
+        throw new Error(`Quick add failed: ${await quickAdd.locator('.quick-add-message').textContent()}`)
+      }
 
       await page.reload({ waitUntil: 'networkidle' })
       await page.getByRole('button', { name: /^最近 7 天/ }).click()
@@ -389,7 +453,7 @@ async function main() {
       await page.getByRole('button', { name: '编辑任务' }).click()
       await page.getByRole('dialog', { name: '编辑任务' }).getByLabel('任务标题').fill(editedMarker)
       await page.getByRole('dialog', { name: '编辑任务' }).getByLabel('任务备注').fill('持久化编辑验证')
-      const today = new Date().toLocaleDateString('sv-SE')
+      const today = smokeClock.toLocaleDateString('sv-SE')
       await page.getByRole('dialog', { name: '编辑任务' }).getByRole('button', { name: '日期', exact: true }).click()
       await page.getByRole('gridcell', { name: today, exact: true }).click()
       await page.getByRole('dialog', { name: '编辑任务' }).getByRole('button', { name: '优先级', exact: true }).click()
@@ -511,16 +575,60 @@ async function main() {
           .map((button) => ({ label: button.textContent?.trim(), height: button.getBoundingClientRect().height }))
           .find(({ height }) => height < 44))
         if (undersizedPlanMetric) throw new Error(`Weekly plan metric is smaller than 44px at ${viewport.width}px: ${JSON.stringify(undersizedPlanMetric)}`)
+        const undersizedCoverageMetric = await responsiveWeeklySummary.locator('.coverage-metrics').getByRole('button').evaluateAll((buttons) => buttons
+          .map((button) => ({ label: button.textContent?.trim(), height: button.getBoundingClientRect().height }))
+          .find(({ height }) => height < 44))
+        if (undersizedCoverageMetric) throw new Error(`Weekly coverage metric is smaller than 44px at ${viewport.width}px: ${JSON.stringify(undersizedCoverageMetric)}`)
         const responsiveTopicSummary = responsiveWeeklySummary.locator('.weekly-topics > article').filter({ hasText: rhythmTopicTitle })
         const planGridColumns = await responsiveTopicSummary.locator('.plan-metrics').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length)
+        const coverageGridColumns = await responsiveTopicSummary.locator('.coverage-metrics').first().evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length)
         if (viewport.width === 820 && planGridColumns !== 2) {
           throw new Error(`Weekly plan metrics are not two columns at 820px: ${planGridColumns}`)
+        }
+        if (viewport.width === 820 && coverageGridColumns !== 2) {
+          throw new Error(`Weekly coverage metrics are not two columns at 820px: ${coverageGridColumns}`)
         }
         if ((viewport.width === 390 || viewport.width === 320) && planGridColumns !== 1) {
           throw new Error(`Weekly plan metrics are not one column at ${viewport.width}px: ${planGridColumns}`)
         }
+        if ((viewport.width === 390 || viewport.width === 320) && coverageGridColumns !== 1) {
+          throw new Error(`Weekly coverage metrics are not one column at ${viewport.width}px: ${coverageGridColumns}`)
+        }
         if (viewport.width === 820 || viewport.width === 390 || viewport.width === 320) {
           await page.screenshot({ path: resolve(weeklyEvidenceArtifactRoot, `weekly-evidence-${viewport.width}x${viewport.height}.png`) })
+          const responsiveDueMetric = responsiveTopicSummary.getByRole('button', { name: /\d+\s*本周应复习/ })
+          await responsiveDueMetric.scrollIntoViewIfNeeded()
+          await responsiveDueMetric.click()
+          const responsiveDueScope = responsiveWeeklySummary.locator('.due-review-scope')
+          const responsiveDueSource = responsiveWeeklySummary.locator('.due-review-row').filter({ hasText: rhythmTaskTitle }).first()
+          await responsiveDueSource.scrollIntoViewIfNeeded()
+          const expandedDueGeometry = await responsiveWeeklySummary.evaluate((element) => {
+            const row = element.querySelector('.due-review-row')
+            const back = element.querySelector('.due-review-scope button')
+            const rowBox = row?.getBoundingClientRect()
+            const backBox = back?.getBoundingClientRect()
+            return {
+              viewportWidth: document.documentElement.clientWidth,
+              pageScrollWidth: document.documentElement.scrollWidth,
+              summaryScrollWidth: element.scrollWidth,
+              summaryClientWidth: element.clientWidth,
+              row: rowBox ? { left: rowBox.left, right: rowBox.right, height: rowBox.height } : null,
+              back: backBox ? { left: backBox.left, right: backBox.right, height: backBox.height } : null,
+            }
+          })
+          if (!expandedDueGeometry.row || !expandedDueGeometry.back
+            || expandedDueGeometry.row.left < -0.5 || expandedDueGeometry.row.right > expandedDueGeometry.viewportWidth + 0.5
+            || expandedDueGeometry.back.left < -0.5 || expandedDueGeometry.back.right > expandedDueGeometry.viewportWidth + 0.5
+            || expandedDueGeometry.row.height < 44 || expandedDueGeometry.back.height < 44
+            || expandedDueGeometry.summaryScrollWidth > expandedDueGeometry.summaryClientWidth
+            || expandedDueGeometry.pageScrollWidth > expandedDueGeometry.viewportWidth) {
+            throw new Error(`Expanded weekly due reviews are not reachable at ${viewport.width}px: ${JSON.stringify(expandedDueGeometry)}`)
+          }
+          await page.screenshot({ path: resolve(weeklyEvidenceArtifactRoot, `weekly-due-reviews-${viewport.width}x${viewport.height}.png`) })
+          await responsiveDueScope.getByRole('button', { name: '返回本周证据', exact: true }).click()
+          if (!(await responsiveDueMetric.evaluate((element) => element === document.activeElement))) {
+            throw new Error(`Weekly due-review drilldown did not restore metric focus at ${viewport.width}px.`)
+          }
           const responsivePlanMetric = responsiveTopicSummary.getByRole('button', { name: /\d+\s*计划\s*预计/ })
           await responsivePlanMetric.scrollIntoViewIfNeeded()
           await responsivePlanMetric.click()
