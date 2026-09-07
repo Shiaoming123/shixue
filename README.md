@@ -119,11 +119,13 @@ npm run smoke:windows-package
 
 | 项目 | 当前证据 |
 | --- | --- |
-| Windows 基础安装包 | v0.3.0 无签名本地候选的 NSIS 自动 smoke 和已安装应用基础验收为 `PASS`，覆盖可见启动、单实例、深色重启、真实 Win32 快捷键、四种日历视图和卸载清理。它尚未发布；最终重建 SHA 的复习完成 UI、提醒动作、托盘动作、MSI 安装、退出后不再投递、200% 缩放和 Narrator 仍为 `NOT_RUN`。 |
+| Windows 基础安装包 | v0.3.0 无签名 Release 已于 2026-09-07 发布，包含 Portable、NSIS 和 MSI。其候选的 NSIS 自动 smoke 与已安装应用基础验收为 `PASS`；发布后合入 `main` 的功能不会自动进入 v0.3.0。最终重建 SHA 的复习完成 UI、提醒动作、托盘动作、MSI 安装、退出后不再投递、200% 缩放和 Narrator 仍为 `NOT_RUN`。 |
 | Authenticode | `NOT_RUN`；当前 Windows 包未签名，Tauri updater `.sig` 和 SHA-256 都不代表 Windows 发布者签名。 |
 | 已发布版本自动更新 | `NOT_RUN`；仓库有 updater 元数据与载荷签名构建链路，但尚无安装端跨已发布版本的端到端升级证据。 |
 | Windows 原生缩放与读屏 | 系统 200% 缩放和 Narrator 均为 `NOT_RUN`；Web 的 CSS zoom、等效回流和 Edge 截图不能替代原生证据。 |
-| 移动原生 | iOS、iPadOS、Android 模拟器/真机的当前产品验收及原生通知均为 `NOT_RUN`；320–819px Web 截图只证明响应式布局。 |
+| Android 模拟器 | `2ce9e34` 的 x86_64 debug APK 在隔离的 API 36 模拟器中通过包名/版本/ABI 校验、显式 Activity 启动、前台检查、五阶段 readiness 与稳定 PID smoke。 |
+| Android 真机与发布 | 真机、SQLite 重启恢复、原生通知、签名、Google Play 和商店交付均为 `NOT_RUN`。 |
+| iOS / iPadOS | 当前树的 Simulator 与设备运行均为 `NOT_RUN`；历史快照不升级当前证据。320–819px Web 截图只证明响应式布局。 |
 
 多提醒、应用内动作、通知权限与关闭行为已有源码和 Web/自动化证据。未知旧提醒记录会阻止投递并报告错误；发送与确认之间崩溃不承诺恰好一次。逐项提醒证据见 [PR4 产品审查](./docs/design/2026-09-05-pr4-product-audit.md)。视觉合同保持用户批准的 `LOCKED / NAVIGATION AMENDED` 状态，验收边界见 [VISUAL_QA.md](./VISUAL_QA.md)。
 
@@ -156,9 +158,10 @@ SQLite（Tauri/Windows） IndexedDB（Web）
 npm run verify
 npm run rust:verify
 npm run smoke:web-persistence
+npm run smoke:android-launch -- --device <adb-serial> --apk <absolute-apk-path>
 ```
 
-`verify` 包含领域与存储测试、应用协议、CSP、桌面/Web/移动模块契约、类型检查、桌面/Web 构建、移动布局和文档链接检查。Web smoke 与日历 smoke 证明浏览器路径和响应式行为；它们不证明 Tauri 原生壳、Windows 安装包、系统通知、原生缩放、Narrator 或移动原生运行时。
+`verify` 包含领域与存储测试、应用协议、CSP、桌面/Web/移动模块契约、类型检查、桌面/Web 构建、移动布局和文档链接检查。Web smoke 与日历 smoke 证明浏览器路径和响应式行为；Android 原生运行另由显式的 APK/模拟器 smoke 验证。上述检查仍不证明 Windows 安装包、系统通知、原生缩放、Narrator、Android 真机或移动端发布。
 
 Windows 本地交付另运行 `npm run smoke:windows-package`：它在隔离目录中安装 NSIS 包、启动应用、确认进程存活，再清理本次测试目录。此结果证明本地包生命周期可运行，不等同于 Authenticode 签名、SmartScreen 信誉或商店审核。
 

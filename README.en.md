@@ -119,11 +119,13 @@ See the [application protocol](./docs/application-protocol.md) for the detailed 
 
 | Item | Current evidence |
 | --- | --- |
-| Basic Windows package | The v0.3.0 unsigned local candidate passed NSIS smoke and baseline installed-app acceptance for visible launch, single instance, dark-theme restart, a real Win32 shortcut, all four calendar views, and uninstall cleanup. It remains unreleased; installed review completion, reminder and tray actions on the final rebuilt SHA, MSI installation, no delivery after quit, 200% scaling, and Narrator are `NOT_RUN`. |
+| Basic Windows package | The unsigned v0.3.0 Release was published on 2026-09-07 with Portable, NSIS, and MSI assets. Its candidate passed NSIS smoke and baseline installed-app acceptance; features merged into `main` after publication are not automatically part of v0.3.0. Installed review completion, reminder and tray actions on a final rebuilt SHA, MSI installation, no delivery after quit, 200% scaling, and Narrator are `NOT_RUN`. |
 | Authenticode | `NOT_RUN`; current Windows packages are unsigned. Tauri updater `.sig` files and SHA-256 hashes do not establish a Windows publisher signature. |
 | Updates between published versions | `NOT_RUN`; the repository builds updater metadata and signed payloads, but there is no end-to-end installed-client upgrade evidence across published versions. |
 | Native Windows scaling and screen reader | System 200% scaling and Narrator are `NOT_RUN`. Web CSS zoom, equivalent reflow, and Edge screenshots do not substitute for native evidence. |
-| Native mobile | Current product acceptance and native notifications on iOS, iPadOS, and Android simulators/devices are `NOT_RUN`. Web screenshots at 320–819px prove responsive layout only. |
+| Android emulator | The x86_64 debug APK from `2ce9e34` passed package/version/ABI validation, explicit Activity launch, foreground inspection, all five readiness phases, and stable PID smoke in an isolated API 36 emulator. |
+| Android device and delivery | Physical devices, SQLite restart recovery, native notifications, signing, Google Play, and store delivery are `NOT_RUN`. |
+| iOS / iPadOS | Simulator and device execution for the current tree are `NOT_RUN`; historical snapshots do not upgrade current evidence. Web screenshots at 320–819px prove responsive layout only. |
 
 Multiple reminders, in-app actions, notification permission, and close lifecycle wiring have source and Web/automated evidence. Unknown legacy reminder records block delivery with an error; a crash between submission and acknowledgement has no exactly-once guarantee. See the itemized [PR4 product audit](./docs/design/2026-09-05-pr4-product-audit.md). The visual contract remains in the user-approved `LOCKED / NAVIGATION AMENDED` state; [VISUAL_QA.md](./VISUAL_QA.md) defines its evidence boundaries.
 
@@ -156,9 +158,10 @@ Read more: [application protocol](./docs/application-protocol.md) · [developmen
 npm run verify
 npm run rust:verify
 npm run smoke:web-persistence
+npm run smoke:android-launch -- --device <adb-serial> --apk <absolute-apk-path>
 ```
 
-`verify` covers domain and storage tests, the application protocol, CSP, desktop/Web/mobile module contracts, type checking, desktop and Web builds, the mobile layout contract, and documentation links. Web and calendar smoke tests prove browser paths and responsive behavior; they do not prove the Tauri native shell, Windows installers, system notifications, native scaling, Narrator, or native mobile runtimes.
+`verify` covers domain and storage tests, the application protocol, CSP, desktop/Web/mobile module contracts, type checking, desktop and Web builds, the mobile layout contract, and documentation links. Android native execution has a separate explicit APK/emulator smoke. These checks still do not prove Windows installers, system notifications, native scaling, Narrator, Android devices, or mobile delivery.
 
 For the local Windows package, `npm run smoke:windows-package` installs the NSIS build into an isolated directory, launches it, checks process liveness, and cleans only that test directory. This demonstrates a working local package lifecycle; it does not prove Authenticode signing, SmartScreen reputation, or store acceptance.
 

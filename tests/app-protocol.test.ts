@@ -107,9 +107,9 @@ function validProtocol() {
     },
     nativeEvidence: {
       android: {
-        maturity: 'source-ready',
-        nativeBuild: 'not-run',
-        emulatorRun: 'not-run',
+        maturity: 'local-debug',
+        nativeBuild: 'pass',
+        emulatorRun: 'pass',
         deviceRun: 'not-run',
       },
       ios: {
@@ -174,9 +174,9 @@ test('rejects a mobile delivery claim stronger than the current source-ready evi
   assert.match(validate(protocol).errors.join('\n'), /delivery must retain the currently evidenced release boundary/)
 })
 
-test('rejects native evidence that upgrades the current tree without a current native run', () => {
+test('rejects native evidence that overstates or rewrites the recorded native runs', () => {
   const androidProtocol = validProtocol()
-  androidProtocol.nativeEvidence.android.emulatorRun = 'pass'
+  androidProtocol.nativeEvidence.android.deviceRun = 'pass'
   assert.match(validate(androidProtocol).errors.join('\n'), /nativeEvidence must retain the recorded Android and iOS evidence boundaries/)
 
   const protocol = validProtocol()

@@ -23,9 +23,9 @@ const EXPECTED_DELIVERY = {
 }
 const EXPECTED_NATIVE_EVIDENCE = {
   android: {
-    maturity: 'source-ready',
-    nativeBuild: 'not-run',
-    emulatorRun: 'not-run',
+    maturity: 'local-debug',
+    nativeBuild: 'pass',
+    emulatorRun: 'pass',
     deviceRun: 'not-run',
   },
   ios: {
