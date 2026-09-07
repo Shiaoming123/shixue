@@ -135,8 +135,13 @@ test('estimate-only occurrence override preserves its original schedule in Today
 
 test('future split with an estimate-only override keeps the successor occurrence schedule projected', async () => {
   let nextId = 0
+  const isolated = parseWorkspaceStateOrMigrate(createSeedStudyState('2026-09-05T00:00:00.000Z'))
+  Object.assign(isolated, {
+    tasks: [], recurrenceSeries: [], occurrences: [], reminderRules: [], reminderDeliveries: [],
+    studySessions: [], taskEvents: [], completionRecords: [], reviewTaskLinks: [], commandReceipts: [],
+  })
   const service = createTaskCapabilityService(
-    createInMemoryWorkspaceStore(),
+    createInMemoryWorkspaceStore(isolated),
     () => '2026-09-05T00:00:00.000Z',
     (kind) => `${kind}:future-estimate:${++nextId}`,
   )
