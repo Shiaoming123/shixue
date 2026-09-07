@@ -21,6 +21,36 @@ export interface WeeklyLearningReviewFact {
   result: 'clear' | 'fuzzy' | 'relearn'
 }
 
+export type WeeklyLearningDueReviewState = 'scheduled' | 'due' | 'overdue' | 'completed'
+
+export interface WeeklyLearningDueReviewFact {
+  id: string
+  recordId: string
+  reviewTaskId: string
+  occurrenceId: string | null
+  reviewStage: 0 | 1 | 2 | 3
+  dueOn: string
+  sourceTitle: string
+  state: WeeklyLearningDueReviewState
+  completedAt: string | null
+  reviewedOn: string | null
+  result: 'clear' | 'fuzzy' | 'relearn' | null
+}
+
+export interface WeeklyLearningReviewCoverageMetric {
+  value: number
+  recordIds: string[]
+  facts: WeeklyLearningDueReviewFact[]
+}
+
+export interface WeeklyLearningReviewCoverage {
+  due: WeeklyLearningReviewCoverageMetric
+  completed: WeeklyLearningReviewCoverageMetric
+  scheduledCount: number
+  dueTodayCount: number
+  overdueCount: number
+}
+
 export type WeeklyLearningPlanStatus = 'pending' | 'completed' | 'cancelled' | 'skipped'
 
 export interface WeeklyLearningPlanFact {
@@ -35,6 +65,7 @@ export interface WeeklyLearningPlanFact {
   estimateMinutes: number | null
   status: WeeklyLearningPlanStatus
   outcomeEventId: string | null
+  completionRecordId: string | null
 }
 
 export interface WeeklyLearningPlanMetric {
@@ -49,6 +80,11 @@ export interface WeeklyLearningCurrentPlans {
   skipped: WeeklyLearningPlanMetric
   estimatedMinutes: WeeklyLearningPlanMetric
   unestimatedCount: number
+  evidenceCoverage: {
+    eligible: WeeklyLearningPlanMetric
+    covered: WeeklyLearningPlanMetric
+    missing: WeeklyLearningPlanMetric
+  }
 }
 
 export interface WeeklyLearningTopicSummary {
@@ -58,6 +94,7 @@ export interface WeeklyLearningTopicSummary {
   evidenceMinutes: WeeklyLearningMetric
   completedReviews: WeeklyLearningMetric
   completedReviewFacts: WeeklyLearningReviewFact[]
+  reviewCoverage: WeeklyLearningReviewCoverage
   currentPlans: WeeklyLearningCurrentPlans
 }
 
@@ -81,7 +118,14 @@ interface MutableTopicSummary {
   reviewRecordIds: Set<string>
   completedReviewCount: number
   reviewFacts: WeeklyLearningReviewFact[]
+  dueReviewFacts: WeeklyLearningDueReviewFact[]
   planFacts: WeeklyLearningPlanFact[]
+}
+
+interface PlanOutcome {
+  status: WeeklyLearningPlanStatus
+  eventId: string | null
+  completionRecordId: string | null
 }
 
 export function selectWeeklyLearningSummary(
@@ -121,19 +165,25 @@ export function selectWeeklyLearningSummary(
     topic.evidenceSeconds += recordSeconds
   }
 
-  const completedLinks = state.reviewTaskLinks
-    .filter((link) => link.completedAt !== null && inRange(link.completedAt, instant, query.timezone, range.start, range.end))
-    .sort((left, right) => compare(left.completedAt!, right.completedAt!) || compare(left.id, right.id))
-  for (const link of completedLinks) {
+  const reviewLinks = [...state.reviewTaskLinks].sort(compareReviewLinks)
+  for (const link of reviewLinks) {
     const record = liveRecords.get(link.completionRecordId)
-    if (!record) continue
-    if (!link.completedAt || !link.completion) {
-      throw new Error(`Completed review ${link.id} is missing its completion fact.`)
+    if (!record
+      || Date.parse(record.createdAt) > instant.getTime()
+      || Date.parse(record.completedAt) > instant.getTime()
+      || Date.parse(link.createdAt) > instant.getTime()) continue
+    if (link.completedAt !== null && !link.completion) throw new Error(`Completed review ${link.id} is missing its completion fact.`)
+    if (link.completedAt === null && link.completion !== null) throw new Error(`Review ${link.id} has a result without a completion time.`)
+    if (link.dueOn >= range.start && link.dueOn < range.end) {
+      requireTopic(topics, record.topicId, topicTitles).dueReviewFacts.push(dueReviewFact(link, record, instant, today))
     }
-    const topic = requireTopic(topics, record.topicId, topicTitles)
-    topic.completedReviewCount += 1
-    topic.reviewRecordIds.add(record.id)
-    topic.reviewFacts.push(reviewFact({ ...link, completedAt: link.completedAt, completion: link.completion }))
+    if (link.completedAt !== null && inRange(link.completedAt, instant, query.timezone, range.start, range.end)) {
+      if (!link.completion) throw new Error(`Completed review ${link.id} is missing its completion fact.`)
+      const topic = requireTopic(topics, record.topicId, topicTitles)
+      topic.completedReviewCount += 1
+      topic.reviewRecordIds.add(record.id)
+      topic.reviewFacts.push(reviewFact({ ...link, completedAt: link.completedAt, completion: link.completion }))
+    }
   }
 
   for (const { topicId, fact } of selectCurrentPlanFacts(state, instant, query.timezone, range.start, range.end)) {
@@ -184,6 +234,7 @@ function requireTopic(
       reviewRecordIds: new Set(),
       completedReviewCount: 0,
       reviewFacts: [],
+      dueReviewFacts: [],
       planFacts: [],
     }
     topics.set(key, topic)
@@ -199,6 +250,7 @@ function toTopicSummary(topic: MutableTopicSummary, evidenceMinutes: number): We
     evidenceMinutes: metric(evidenceMinutes, [...topic.minuteRecordIds]),
     completedReviews: metric(topic.completedReviewCount, [...topic.reviewRecordIds]),
     completedReviewFacts: [...topic.reviewFacts].sort(compareReviewFacts),
+    reviewCoverage: reviewCoverage(topic.dueReviewFacts),
     currentPlans: currentPlans(topic.planFacts),
   }
 }
@@ -270,7 +322,7 @@ function planFact(
   schedule: { scheduledAt: string | null; scheduledOn: string | null },
   scheduled: { date: string; time: string | null },
   estimateMinutes: number | null,
-  outcome: { status: WeeklyLearningPlanStatus; eventId: string | null },
+  outcome: PlanOutcome,
 ): WeeklyLearningPlanFact {
   return {
     id: occurrence ? `occurrence:${occurrence.id}` : `task:${task.id}`,
@@ -283,6 +335,7 @@ function planFact(
     estimateMinutes,
     status: outcome.status,
     outcomeEventId: outcome.eventId,
+    completionRecordId: outcome.completionRecordId,
   }
 }
 
@@ -290,16 +343,20 @@ function taskOutcome(
   events: readonly TaskEvent[],
   asOf: Date,
   records: ReadonlyMap<string, CompletionRecord>,
-): { status: WeeklyLearningPlanStatus; eventId: string | null } {
+): PlanOutcome {
   const eligible = events.filter((event) => !event.occurrenceId && Date.parse(event.occurredAt) <= asOf.getTime())
   const last = eligible[eligible.length - 1]
-  if (!last || (last.type !== 'completed' && last.type !== 'cancelled')) return { status: 'pending', eventId: null }
+  if (!last || (last.type !== 'completed' && last.type !== 'cancelled')) return pendingOutcome()
   const semanticTime = last.type === 'completed' && last.completionRecordId
     ? records.get(last.completionRecordId)?.completedAt ?? last.occurredAt
     : last.occurredAt
   return Date.parse(semanticTime) <= asOf.getTime()
-    ? { status: last.type, eventId: last.id }
-    : { status: 'pending', eventId: null }
+    ? {
+        status: last.type,
+        eventId: last.id,
+        completionRecordId: last.type === 'completed' ? resolveCompletionRecordId(last, records) : null,
+      }
+    : pendingOutcome()
 }
 
 function occurrenceOutcome(
@@ -307,11 +364,11 @@ function occurrenceOutcome(
   events: readonly TaskEvent[],
   asOf: Date,
   records: ReadonlyMap<string, CompletionRecord>,
-): { status: WeeklyLearningPlanStatus; eventId: string | null } {
-  if (occurrence.status === 'pending' || occurrence.status === 'cancelled') return { status: 'pending', eventId: null }
+): PlanOutcome {
+  if (occurrence.status === 'pending' || occurrence.status === 'cancelled') return pendingOutcome()
   const terminal = events.filter((event) => event.occurrenceId === occurrence.id && (event.type === 'completed' || event.type === 'cancelled'))
   const event = terminal[terminal.length - 1]
-  if (!event || Date.parse(event.occurredAt) > asOf.getTime()) return { status: 'pending', eventId: null }
+  if (!event || Date.parse(event.occurredAt) > asOf.getTime()) return pendingOutcome()
   const expectedType = occurrence.status === 'completed' ? 'completed' : 'cancelled'
   if (event.type !== expectedType) {
     throw new Error(`Occurrence ${occurrence.id} status does not match its latest terminal outcome event.`)
@@ -319,9 +376,23 @@ function occurrenceOutcome(
   const semanticTime = event.type === 'completed' && event.completionRecordId
     ? records.get(event.completionRecordId)?.completedAt ?? event.occurredAt
     : event.occurredAt
-  if (Date.parse(semanticTime) > asOf.getTime()) return { status: 'pending', eventId: null }
-  if (event.type === 'completed') return { status: 'completed', eventId: event.id }
-  return { status: 'skipped', eventId: event.id }
+  if (Date.parse(semanticTime) > asOf.getTime()) return pendingOutcome()
+  if (event.type === 'completed') {
+    return { status: 'completed', eventId: event.id, completionRecordId: resolveCompletionRecordId(event, records) }
+  }
+  return { status: 'skipped', eventId: event.id, completionRecordId: null }
+}
+
+function pendingOutcome(): PlanOutcome {
+  return { status: 'pending', eventId: null, completionRecordId: null }
+}
+
+function resolveCompletionRecordId(event: TaskEvent, records: ReadonlyMap<string, CompletionRecord>): string | null {
+  if (!event.completionRecordId) return null
+  const record = records.get(event.completionRecordId)
+  if (!record) throw new Error(`Outcome event ${event.id} references missing completion record ${event.completionRecordId}.`)
+  if (record.taskId !== event.taskId) throw new Error(`Outcome event ${event.id} references a completion record for another task.`)
+  return record.deletedAt === null ? record.id : null
 }
 
 function occurrenceSchedule(occurrence: TaskOccurrence): { scheduledAt: string | null; scheduledOn: string | null } {
@@ -354,6 +425,16 @@ function currentPlans(facts: readonly WeeklyLearningPlanFact[]): WeeklyLearningC
   const cancelled = ordered.filter(({ status }) => status === 'cancelled')
   const skipped = ordered.filter(({ status }) => status === 'skipped')
   const estimated = ordered.filter((fact) => fact.estimateMinutes !== null)
+  const covered = completed.filter(({ completionRecordId }) => completionRecordId !== null)
+  const missing = completed.filter(({ completionRecordId }) => completionRecordId === null)
+  const recordOwners = new Map<string, string>()
+  for (const fact of covered) {
+    const owner = recordOwners.get(fact.completionRecordId!)
+    if (owner && owner !== fact.id) {
+      throw new Error(`Completion record ${fact.completionRecordId} is claimed by weekly plans ${owner} and ${fact.id}.`)
+    }
+    recordOwners.set(fact.completionRecordId!, fact.id)
+  }
   return {
     planned,
     completed: planMetric(completed.length, completed),
@@ -361,6 +442,11 @@ function currentPlans(facts: readonly WeeklyLearningPlanFact[]): WeeklyLearningC
     skipped: planMetric(skipped.length, skipped),
     estimatedMinutes: planMetric(estimated.reduce((sum, fact) => sum + fact.estimateMinutes!, 0), estimated),
     unestimatedCount: ordered.length - estimated.length,
+    evidenceCoverage: {
+      eligible: planMetric(completed.length, completed),
+      covered: planMetric(covered.length, covered),
+      missing: planMetric(missing.length, missing),
+    },
   }
 }
 
@@ -415,8 +501,69 @@ function reviewFact(link: ReviewTaskLink & { completedAt: string; completion: No
   }
 }
 
+function dueReviewFact(
+  link: ReviewTaskLink,
+  record: CompletionRecord,
+  asOf: Date,
+  today: string,
+): WeeklyLearningDueReviewFact {
+  const completed = link.completedAt !== null && Date.parse(link.completedAt) <= asOf.getTime()
+  if (completed && !link.completion) throw new Error(`Completed review ${link.id} is missing its completion fact.`)
+  const state: WeeklyLearningDueReviewState = completed
+    ? 'completed'
+    : link.dueOn < today
+      ? 'overdue'
+      : link.dueOn === today
+        ? 'due'
+        : 'scheduled'
+  return {
+    id: link.id,
+    recordId: record.id,
+    reviewTaskId: link.reviewTaskId,
+    occurrenceId: link.occurrenceId,
+    reviewStage: link.reviewStage,
+    dueOn: link.dueOn,
+    sourceTitle: record.taskTitleSnapshot,
+    state,
+    completedAt: completed ? link.completedAt : null,
+    reviewedOn: completed ? link.completion!.reviewedOn : null,
+    result: completed ? link.completion!.result : null,
+  }
+}
+
+function reviewCoverage(facts: readonly WeeklyLearningDueReviewFact[]): WeeklyLearningReviewCoverage {
+  const ordered = [...facts].sort(compareDueReviewFacts)
+  const completed = ordered.filter(({ state }) => state === 'completed')
+  return {
+    due: reviewCoverageMetric(ordered.length, ordered),
+    completed: reviewCoverageMetric(completed.length, completed),
+    scheduledCount: ordered.filter(({ state }) => state === 'scheduled').length,
+    dueTodayCount: ordered.filter(({ state }) => state === 'due').length,
+    overdueCount: ordered.filter(({ state }) => state === 'overdue').length,
+  }
+}
+
+function reviewCoverageMetric(
+  value: number,
+  facts: readonly WeeklyLearningDueReviewFact[],
+): WeeklyLearningReviewCoverageMetric {
+  return {
+    value,
+    recordIds: [...new Set(facts.map(({ recordId }) => recordId))].sort(compare),
+    facts: facts.map((fact) => ({ ...fact })),
+  }
+}
+
 function compareReviewFacts(left: WeeklyLearningReviewFact, right: WeeklyLearningReviewFact): number {
   return compare(left.completedAt, right.completedAt) || compare(left.id, right.id)
+}
+
+function compareReviewLinks(left: ReviewTaskLink, right: ReviewTaskLink): number {
+  return compare(left.dueOn, right.dueOn) || left.reviewStage - right.reviewStage || compare(left.id, right.id)
+}
+
+function compareDueReviewFacts(left: WeeklyLearningDueReviewFact, right: WeeklyLearningDueReviewFact): number {
+  return compare(left.dueOn, right.dueOn) || left.reviewStage - right.reviewStage || compare(left.id, right.id)
 }
 
 function comparePlanFacts(left: WeeklyLearningPlanFact, right: WeeklyLearningPlanFact): number {

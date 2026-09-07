@@ -44,5 +44,5 @@ test('App resets Review on navigation before assigning a new search target', () 
 test('Review source links use canonical task and occurrence navigation', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(app, /function openWeeklyPlanSource\(taskId: string, occurrenceId: string \| null\) \{\s*if \(occurrenceId\) openRhythmOccurrence\(occurrenceId\)\s*else openSearchTask\(taskId\)/)
-  assert.match(app, /<ReviewView\b[^>]*@open-task="openSearchTask"[^>]*@open-plan-source="openWeeklyPlanSource"/)
+  assert.match(app, /<ReviewView\b[^>]*@open-task="openSearchTask"[^>]*@open-record="openSearchRecord"[^>]*@open-plan-source="openWeeklyPlanSource"/)
 })
