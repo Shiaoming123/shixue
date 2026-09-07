@@ -223,8 +223,7 @@ function normalizeText(value: string): string {
     :open="open"
     title="搜索学习事实"
     description="同时查找任务内容、检查项，以及完成时留下的收获、证据和下一步。"
-    size="lg"
-    class="global-search-dialog"
+    size="xl"
     @update:open="emit('update:open', $event)"
     @close="emit('close')"
   >
@@ -340,16 +339,6 @@ function normalizeText(value: string): string {
 </template>
 
 <style scoped>
-.global-search-dialog :deep(.dialog-panel--lg) {
-  width: min(100%, 900px);
-  padding-bottom: var(--space-4);
-}
-
-:global(.dialog-panel--lg.global-search-dialog) {
-  width: min(100%, 900px);
-  padding-bottom: var(--space-4);
-}
-
 .search-box {
   min-height: 52px;
   display: grid;
@@ -497,7 +486,6 @@ function normalizeText(value: string): string {
 .result-limit { margin: var(--space-4) 0 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.5; }
 
 @media (max-width: 819px) {
-  .global-search-dialog :deep(.dialog-panel--lg) { width: 100%; }
   .search-layout { grid-template-columns: 1fr; gap: var(--space-4); }
   .filters { padding: 0 0 var(--space-4); border-right: 0; border-bottom: 1px solid var(--hairline); }
   .results { max-height: none; overflow: visible; }

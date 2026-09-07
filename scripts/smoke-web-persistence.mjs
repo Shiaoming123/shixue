@@ -121,9 +121,13 @@ async function main() {
     const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' })
     const page = await context.newPage()
     const consoleErrors = []
+    const consoleWarnings = []
     const pageErrors = []
     page.on('console', (message) => {
       if (message.type() === 'error') consoleErrors.push(message.text())
+      if (message.type() === 'warning' && message.text().includes('Extraneous non-props attributes')) {
+        consoleWarnings.push(message.text())
+      }
     })
     page.on('pageerror', (error) => pageErrors.push(error.message))
 
@@ -406,6 +410,9 @@ async function main() {
           || searchGeometry.pageScrollWidth > searchGeometry.viewportWidth) {
           throw new Error(`Global search overflows at ${viewport.width}px: ${JSON.stringify(searchGeometry)}`)
         }
+        if (viewport.width === 820 && searchGeometry.width < 760) {
+          throw new Error(`Global search did not use the wide desktop dialog at ${viewport.width}px: ${JSON.stringify(searchGeometry)}`)
+        }
         if (viewport.width === 390 || viewport.width === 320) {
           await page.screenshot({
             path: resolve(quickAddArtifactRoot, viewport.width === 390 ? 'global-search-mobile-390x844.png' : 'global-search-mobile-min-320x700.png'),
@@ -582,13 +589,14 @@ async function main() {
         .click()
       await page.getByRole('heading', { name: '清单与主题' }).waitFor({ state: 'visible' })
 
-      if (consoleErrors.length > 0 || pageErrors.length > 0) {
+      if (consoleErrors.length > 0 || consoleWarnings.length > 0 || pageErrors.length > 0) {
         throw new Error(`Web preview emitted errors:\n${[
           ...consoleErrors.map((message) => `console: ${message}`),
+          ...consoleWarnings.map((message) => `warning: ${message}`),
           ...pageErrors.map((message) => `page: ${message}`),
         ].join('\n')}`)
       }
-      console.log(`Fresh browser errors: console=${consoleErrors.length}, page=${pageErrors.length}`)
+      console.log(`Fresh browser errors: console=${consoleErrors.length}, warnings=${consoleWarnings.length}, page=${pageErrors.length}`)
       console.log(`Study Web persistence and responsive smoke passed: ${marker}`)
     } finally {
       await context.close()

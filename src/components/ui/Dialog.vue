@@ -7,7 +7,7 @@ const props = withDefaults(defineProps<{
   title: string
   description?: string
   role?: 'dialog' | 'alertdialog'
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   closeOnOutside?: boolean
   showClose?: boolean
 }>(), {
@@ -95,6 +95,7 @@ function requestClose(reason: OverlayCloseReason = 'select') {
 
 .dialog-panel--sm { width: min(100%, 360px); }
 .dialog-panel--lg { width: min(100%, 620px); }
+.dialog-panel--xl { width: min(100%, 900px); }
 
 .dialog-header {
   display: flex;
@@ -176,7 +177,8 @@ function requestClose(reason: OverlayCloseReason = 'select') {
 
   .dialog-panel,
   .dialog-panel--sm,
-  .dialog-panel--lg {
+  .dialog-panel--lg,
+  .dialog-panel--xl {
     width: 100%;
     max-height: 92dvh;
     padding: var(--space-5) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
