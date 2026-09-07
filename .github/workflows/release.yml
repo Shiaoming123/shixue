@@ -28,7 +28,7 @@ jobs:
           exit 1
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -49,7 +49,7 @@ jobs:
         run: npm run release:provenance
 
       - name: Build and release
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # 更新签名：私钥内容（或路径），公钥需填入 tauri.conf.json 的 plugins.updater.pubkey
@@ -68,11 +68,11 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: --bundles nsis,msi
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
           # 让 Windows 优先分发 NSIS 安装包（.exe）而不是 MSI
           updaterJsonPreferNsis: true
           # 中文 productName 在 GitHub asset 名称中会被清洗；使用稳定 ASCII 名称保证签名匹配和 latest.json 生成。
-          assetNamePattern: 'Shixue_[version]_[arch][setup][ext]'
+          releaseAssetNamePattern: 'Shixue_[version]_[arch][setup][ext]'
 
       - name: Stage portable Windows EXE
         id: portable

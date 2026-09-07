@@ -59,6 +59,10 @@ sync = ["dep:keyring", "dep:reqwest"]
 agent = ["dep:keyring", "dep:reqwest", "dep:futures-util"]
 agent-sidecar = ["agent"]
 
+# 移动端需要 wry 提供 Android/iOS 的运行时绑定与默认 Runtime 类型
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri = { version = "2", features = ["wry"] }
+
 # 单实例是桌面端专有能力，移动端目标不参与编译
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
