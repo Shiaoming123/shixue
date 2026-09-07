@@ -131,9 +131,9 @@ npm run smoke:windows-package
 
 ## 架构
 
-[![拾学软件架构：运行时、领域、本地存储、平台能力与交付验证](./docs/design/shixue-software-architecture.svg)](./docs/design/shixue-software-architecture.svg)
+[![拾学软件架构总览：运行环境、应用领域与本地存储](./docs/design/shixue-architecture-overview.svg)](./docs/architecture.md)
 
-图中实线表示当前运行或数据流，虚线表示条件回退、验证关系或尚未交付的证据边界。所有实时工作区业务写入都经过 `TaskCapabilityService`；Web 使用 IndexedDB，Tauri 桌面端与移动端使用 SQLite，旧版迁移或受控修复会先保存并核验原始快照。持久化适配器未能装配时会显式报告错误并退回本次运行有效的内存存储。Sync、Agent 与 MCP 默认关闭；Sync 的远端状态导入经过能力服务，Agent 仍处于规划状态，MCP 保持独立模块边界。查看 [可编辑 Mermaid 图源](./docs/design/shixue-software-architecture.mmd)。
+上图保留 README 中需要直接读懂的主链路；点击可查看分层详图、验证边界和完整全景图。所有实时工作区业务写入都经过 `TaskCapabilityService`；Web 使用 IndexedDB，Tauri 桌面端与移动端使用 SQLite，旧版迁移或受控修复会先保存并核验原始快照。持久化适配器未能装配时会显式报告错误并退回本次运行有效的内存存储。Sync、Agent、Clipboard 与 MCP 默认关闭；Sync 的远端状态导入经过能力服务，Agent 仍处于规划状态，MCP 是依赖 Agent 的独立模块。
 
 - **应用外壳**：Tauri 2，负责桌面与移动原生宿主、SQLite 和按平台装配的系统能力；Web 保持浏览器运行边界。
 - **界面**：Vue 3 + TypeScript + Vite，桌面与移动宽度共享同一套业务组件。
@@ -141,7 +141,7 @@ npm run smoke:windows-package
 - **存储层**：IndexedDB 与 SQLite 实现同一数据端口；迁移、备份、校验和替换遵循失败不覆盖原则。
 - **验证与发布层**：GitHub Actions 分别提供常规 CI、手动 Android 原生 smoke 和版本标签触发的 Windows Release 工作流；本地 Release Kit 额外生成并审计完整交付目录，其中安装生命周期 smoke 只覆盖 NSIS。图中的红色边界不会被这些自动化结果升级为已验证。
 
-进一步阅读：[应用协议](./docs/application-protocol.md) · [开发指南](./docs/development.md) · [设计系统](./docs/design-system.md) · [模块化架构](./docs/modular-architecture.md)
+进一步阅读：[完整软件架构](./docs/architecture.md) · [可缩放全景 SVG](./docs/design/shixue-software-architecture.svg) · [总览图源](./docs/design/shixue-architecture-overview.mmd) · [应用协议](./docs/application-protocol.md) · [模块化架构](./docs/modular-architecture.md)
 
 ## 验证
 

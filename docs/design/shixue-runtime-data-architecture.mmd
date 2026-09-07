@@ -1,0 +1,73 @@
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 38, "rankSpacing": 54}}}%%
+%% Detailed runtime and local-data architecture. Keep labels bilingual.
+flowchart TB
+  subgraph SURFACES["01 · 运行环境 / Runtime surfaces"]
+    direction LR
+    WEB["Web 浏览器<br/>Web browser"]
+    DESKTOP["Windows / macOS / Linux<br/>Tauri desktop"]
+    MOBILE["Android / iOS<br/>Tauri mobile"]
+  end
+
+  subgraph ASSEMBLY["02 · 启动与装配 / Bootstrap & assembly"]
+    direction LR
+    RUNTIME["RuntimeInfo<br/>平台与能力探测"]
+    NATIVE["Rust 原生宿主<br/>IPC · plugins · migrations"]
+    LOADER["Module loader<br/>兼容性筛选 · 拓扑装配"]
+    UI["Vue 3 应用壳与视图<br/>Tasks · Today · Calendar · Learning"]
+  end
+
+  subgraph APPLICATION["03 · 应用与领域 / Application & domain"]
+    direction LR
+    IMPORT["Workspace JSON v3：校验<br/>Study v1/v2：校验 → 迁移 → 再校验"]
+    ENVELOPE["Capability CommandEnvelope v1<br/>版本 · 幂等 · 来源 · revision"]
+    CAPABILITY["TaskCapabilityService<br/>query · preview · execute"]
+    ROUTER["领域命令模块<br/>任务 · 日历 · 重复 · 提醒 · 学习"]
+    STATE["WorkspaceStateV3<br/>已校验的事务快照"]
+    READS["派生只读模型<br/>Today · Upcoming · Search<br/>Rhythm · Weekly review"]
+    AUDIT["回执 · 事件 · 补偿撤销<br/>Receipts · events · undo"]
+  end
+
+  subgraph DATA["04 · 本地数据与交换 / Local data & exchange"]
+    direction LR
+    STORE["WorkspaceStore seam<br/>load · save(expectedUpdatedAt?)<br/>实时写入使用 CAS"]
+    IDB[("Web IndexedDB<br/>meow-study · studyState/current")]
+    SQLITE[("Native SQLite<br/>study.db · study_state(id=1)")]
+    MEMORY["安全内存回退<br/>Safe fallback · 非持久化"]
+    BACKUP["适配器内迁移备份<br/>仅旧版迁移 / 受控修复"]
+    JSON["Workspace JSON v3<br/>完整可恢复备份"]
+    MARKDOWN["Learning Markdown<br/>只读证据投影"]
+  end
+
+  WEB -->|"Web context"| RUNTIME
+  DESKTOP -->|"native host"| NATIVE
+  MOBILE -->|"native host"| NATIVE
+  NATIVE -->|"runtime_platform IPC"| RUNTIME
+  RUNTIME -->|"platform + capabilities"| LOADER
+  LOADER -->|"setup before mount"| UI
+
+  UI -->|"versioned writes"| ENVELOPE
+  UI -->|"queries"| CAPABILITY
+  IMPORT -->|"workspace.import"| ENVELOPE
+  ENVELOPE -->|"envelope + revision validation"| CAPABILITY
+  CAPABILITY -->|"clone + route"| ROUTER
+  ROUTER --> STATE
+  STATE -->|"UI projections"| READS
+  STATE --> AUDIT
+
+  CAPABILITY <-->|"load validated snapshot / validated CAS save"| STORE
+  UI -. "read-only refresh" .-> STORE
+  STORE -->|"Web adapter"| IDB
+  STORE -->|"Desktop / mobile adapter"| SQLITE
+  MEMORY -. "registry default until adapter setup" .-> STORE
+  IDB -. "legacy migration / guarded repair" .-> BACKUP
+  SQLITE -. "legacy migration / guarded repair" .-> BACKUP
+  STORE -->|"validated snapshot"| JSON
+  STORE -->|"validated snapshot"| MARKDOWN
+  JSON -->|"manual restore"| IMPORT
+
+  classDef runtime fill:#eef4fb,stroke:#446783,color:#163047,stroke-width:1.5px;
+  classDef application fill:#f2f7f1,stroke:#53745b,color:#1d3923,stroke-width:1.5px;
+  classDef data fill:#fff8e8,stroke:#9b742c,color:#4c3610,stroke-width:1.5px;
+  class WEB,DESKTOP,MOBILE,RUNTIME,NATIVE,LOADER,UI runtime;
+  class IMPORT,ENVELOPE,CAPABILITY,ROUTER,STATE,READS,AUDIT application;
+  class STORE,IDB,SQLITE,MEMORY,BACKUP,JSON,MARKDOWN data;

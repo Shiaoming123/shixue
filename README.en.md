@@ -131,9 +131,9 @@ Multiple reminders, in-app actions, notification permission, and close lifecycle
 
 ## Architecture
 
-[![Shixue software architecture: runtimes, domain, local storage, platform capabilities, and delivery verification](./docs/design/shixue-software-architecture.svg)](./docs/design/shixue-software-architecture.svg)
+[![Shixue software architecture overview: runtimes, application domain, and local storage](./docs/design/shixue-architecture-overview.svg)](./docs/architecture.en.md)
 
-Solid lines show current runtime or data flow. Dashed lines show conditional fallback, verification relationships, or evidence boundaries that have not been delivered. Every live workspace business write passes through `TaskCapabilityService`; Web uses IndexedDB, while Tauri desktop and mobile use SQLite. Legacy migration and guarded repair first preserve and verify the original snapshot. If a durable adapter fails to assemble, the app reports the error and falls back to an in-memory store for that run. Sync, Agent, and MCP are disabled by default: Sync remote-state import passes through the capability service, Agent remains planned, and MCP keeps an independent module boundary. Open the [editable Mermaid source](./docs/design/shixue-software-architecture.mmd).
+The overview keeps the main path readable at README width. Click it for layered detail diagrams, evidence boundaries, and the complete panorama. Every live workspace business write passes through `TaskCapabilityService`; Web uses IndexedDB, while Tauri desktop and mobile use SQLite. Legacy migration and guarded repair first preserve and verify the original snapshot. If a durable adapter fails to assemble, the app reports the error and falls back to an in-memory store for that run. Sync, Agent, Clipboard, and MCP are disabled by default: Sync remote-state import passes through the capability service, Agent remains planned, and MCP is a separate module that depends on Agent.
 
 - **Application shell:** Tauri 2 provides the desktop and mobile native hosts, SQLite integration, and platform-specific system capabilities. Web stays inside the browser boundary.
 - **Interface:** Vue 3, TypeScript, and Vite share one business component system across desktop and mobile widths.
@@ -141,7 +141,7 @@ Solid lines show current runtime or data flow. Dashed lines show conditional fal
 - **Storage layer:** IndexedDB and SQLite implement the same data port. Migration, backup, validation, and replacement fail closed.
 - **Verification and release layer:** GitHub Actions provides separate regular CI, manual Android native-smoke, and version-tagged Windows release workflows. The local Release Kit additionally assembles and audits a complete delivery directory; its installation lifecycle smoke covers NSIS only. The red boundaries in the diagram remain unverified by those automated checks.
 
-Read more: [application protocol](./docs/application-protocol.md) · [development guide](./docs/development.md) · [design system](./docs/design-system.md) · [modular architecture](./docs/modular-architecture.md)
+Read more: [complete software architecture](./docs/architecture.en.md) · [scalable panorama SVG](./docs/design/shixue-software-architecture.svg) · [overview source](./docs/design/shixue-architecture-overview.mmd) · [application protocol](./docs/application-protocol.md) · [modular architecture](./docs/modular-architecture.md)
 
 ## Verification
 

@@ -21,7 +21,7 @@ flowchart TB
     subgraph INPUTS["03 · 表现与输入 / Presentation & inputs"]
       direction TB
       UI["Vue 3 应用壳与视图<br/>Tasks · Today · Calendar · Learning"]
-      IMPORT["Workspace JSON v3 + Study v1/v2<br/>校验 → 迁移 → 再校验"]
+      IMPORT["Workspace JSON v3：校验<br/>Study v1/v2：校验 → 迁移 → 再校验"]
     end
 
     subgraph APPLICATION["04 · 应用与领域 / Application & domain"]
@@ -54,7 +54,7 @@ flowchart TB
       SHARED["共享原生插件<br/>SQL · dialog · opener · process · store"]
       DESKTOP_CAPS["桌面专属<br/>tray · single-instance · updater<br/>shortcut · autostart · scheduler"]
       MOBILE_CAPS["移动端装配<br/>native SQL · notification"]
-      OPTIONAL["默认关闭的扩展<br/>Sync 远端导入 → 能力服务<br/>Agent planned · MCP 独立模块"]
+      OPTIONAL["默认关闭的扩展<br/>Sync 远端导入 → 能力服务<br/>Agent planned · Clipboard · MCP → Agent"]
     end
 
     subgraph DELIVERY["07 · 验证与交付 / Verification & delivery"]
@@ -70,12 +70,10 @@ flowchart TB
   end
 
   WEB -->|"Web context"| RUNTIME
-  DESKTOP -->|"runtime_platform"| RUNTIME
-  MOBILE -->|"runtime_platform"| RUNTIME
   DESKTOP -->|"native host"| NATIVE
   MOBILE -->|"native host"| NATIVE
+  NATIVE -->|"runtime_platform IPC"| RUNTIME
   RUNTIME -->|"platform + capabilities"| LOADER
-  NATIVE -->|"available native modules"| LOADER
   LOADER -->|"setup before mount"| UI
 
   UI -->|"versioned writes"| ENVELOPE
@@ -87,15 +85,16 @@ flowchart TB
   STATE -->|"UI projections"| READS
   STATE --> AUDIT
 
-  CAPABILITY -->|"full-state parse + CAS"| STORE
+  CAPABILITY <-->|"load validated snapshot / validated CAS save"| STORE
   UI -. "read-only refresh" .-> STORE
   STORE -->|"Web adapter"| IDB
   STORE -->|"Desktop / mobile adapter"| SQLITE
-  STORE -. "safe fallback" .-> MEMORY
+  MEMORY -. "registry default until adapter setup" .-> STORE
   IDB -. "legacy migration / guarded repair only" .-> BACKUP
   SQLITE -. "legacy migration / guarded repair only" .-> BACKUP
   STORE -->|"validated snapshot"| JSON
   STORE -->|"validated snapshot"| MARKDOWN
+  JSON -->|"manual restore"| IMPORT
 
   SOURCE -.-> CI
   SOURCE -.-> ANDROID
