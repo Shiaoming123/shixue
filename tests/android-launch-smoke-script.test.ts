@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { resolve } from 'node:path'
 import test from 'node:test'
 
 const { runAndroidLaunchSmoke } = await import('../scripts/smoke-android-launch.mjs') as {
@@ -20,6 +21,7 @@ const successEvidence = [
   '[shixue:smoke] run-1 workspace-ready',
   '[shixue:smoke] run-1 frontend-ready',
 ].join('\n')
+const absoluteApk = resolve('artifacts', 'app-x86_64-debug.apk')
 
 test('Android launch smoke installs, seeds a unique run, launches the Activity, and requires readiness plus stable foreground liveness', async () => {
   const calls: Array<{ command: string; args: string[] }> = []
@@ -48,7 +50,7 @@ test('Android launch smoke installs, seeds a unique run, launches the Activity, 
 
   const report = await runAndroidLaunchSmoke({
     device: 'emulator-5554',
-    apk: 'C:\\artifacts\\app-x86_64-debug.apk',
+    apk: absoluteApk,
     runCommand,
     runId: 'run-1',
     sleep: async () => undefined,
@@ -65,7 +67,7 @@ test('Android launch smoke installs, seeds a unique run, launches the Activity, 
     workspaceReady: true,
     frontendReady: true,
   })
-  assert.ok(calls.some(({ args }) => args.includes('install') && args.includes('C:\\artifacts\\app-x86_64-debug.apk')))
+  assert.ok(calls.some(({ args }) => args.includes('install') && args.includes(absoluteApk)))
   assert.ok(calls.some(({ args }) => args.join(' ').includes('printf %s run-1')))
   assert.ok(calls.some(({ args }) => args.join(' ').includes('am start -W -S -n com.shiaoming123.shixue/.MainActivity')))
 })
@@ -73,7 +75,7 @@ test('Android launch smoke installs, seeds a unique run, launches the Activity, 
 test('Android launch smoke fails closed when the launched process exits before readiness', async () => {
   const report = await runAndroidLaunchSmoke({
     device: 'emulator-5554',
-    apk: 'C:\\artifacts\\app-x86_64-debug.apk',
+    apk: absoluteApk,
     runCommand: async (_command: string, args: string[]) => {
       const joined = args.join(' ')
       if (joined.includes('check-android-artifact.mjs')) return { status: 0, stdout: 'Android APK verified\n', stderr: '', signal: null }
@@ -123,7 +125,7 @@ test('Android launch smoke does not accept readiness from another run id', async
   let now = 0
   const report = await runAndroidLaunchSmoke({
     device: 'emulator-5554',
-    apk: 'C:\\artifacts\\app-x86_64-debug.apk',
+    apk: absoluteApk,
     runCommand: async (_command: string, args: string[]) => {
       const joined = args.join(' ')
       if (joined.includes('check-android-artifact.mjs')) return { status: 0, stdout: 'Android APK verified\n', stderr: '', signal: null }
