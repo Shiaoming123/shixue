@@ -55,13 +55,17 @@ test('native runtime platform is exposed to the WebView before module routing', 
   assert.match(entry, /generate_handler!\[\s*greet,\s*runtime_platform,\s*report_ios_smoke_phase,\s*read_legacy_reminder_deliveries,\s*set_quick_add_shortcut\s*\]/)
 })
 
-test('does not enable Tauri desktop defaults for the shared mobile dependency', () => {
+test('keeps shared Tauri defaults disabled and restores the mobile wry runtime', () => {
   const manifest = readFileSync(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')
   const desktopDependencies = manifest.slice(manifest.indexOf('[target.'))
 
   assert.match(
     manifest,
     /tauri = \{ version = "2", default-features = false, features = \["image-png"\] \}/,
+  )
+  assert.match(
+    manifest,
+    /\[target\.'cfg\(any\(target_os = "android", target_os = "ios"\)\)'\.dependencies\]\s+tauri = \{ version = "2", features = \["wry"\] \}/,
   )
   assert.match(desktopDependencies, /tauri-plugin-autostart = \{ version = "2", optional = true \}/)
 })
