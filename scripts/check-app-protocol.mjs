@@ -33,6 +33,7 @@ const EXPECTED_SHIPPED_FOUNDATION = [
   'calendar-planning-v1',
   'learning-search-tags-v1',
   'derived-learning-rhythm-v1',
+  'explainable-weekly-evidence-v1',
 ]
 const EXPECTED_PLANNED_FEATURES = [
   'agent-behavior',
@@ -49,6 +50,7 @@ const EXPECTED_SHIPPED_EVIDENCE = [
   { id: 'responsive-shell', sources: ['src/lib/responsive-shell.ts'], tests: ['tests/responsive-shell.test.ts', 'tests/business-sheet-mount.test.ts'] },
   { id: 'learning-search-tags', sources: ['src/domain/capabilities/tag-commands.ts', 'src/domain/capabilities/task-commands.ts', 'src/domain/capabilities/recurrence-commands.ts', 'src/domain/search/workspace-search.ts'], tests: ['tests/tag-commands.test.ts', 'tests/capability-service.test.ts', 'tests/recurrence-learning-completion.test.ts', 'tests/workspace-search.test.ts'] },
   { id: 'derived-learning-rhythm', sources: ['src/domain/views/learning-rhythm.ts', 'src/components/study/LearningRhythmView.vue'], tests: ['tests/learning-rhythm.test.ts', 'tests/learning-rhythm-view.test.ts'] },
+  { id: 'explainable-weekly-evidence', sources: ['src/domain/views/weekly-learning-summary.ts', 'src/components/study/ReviewView.vue'], tests: ['tests/weekly-learning-summary.test.ts', 'tests/review-weekly-summary.test.ts'] },
 ]
 
 const IMPLEMENTATION_FACTS = {

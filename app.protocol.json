@@ -77,7 +77,8 @@
       "multi-reminder-v1",
       "calendar-planning-v1",
       "learning-search-tags-v1",
-      "derived-learning-rhythm-v1"
+      "derived-learning-rhythm-v1",
+      "explainable-weekly-evidence-v1"
     ],
     "shippedEvidence": [
       {
@@ -109,6 +110,11 @@
         "id": "derived-learning-rhythm",
         "sources": ["src/domain/views/learning-rhythm.ts", "src/components/study/LearningRhythmView.vue"],
         "tests": ["tests/learning-rhythm.test.ts", "tests/learning-rhythm-view.test.ts"]
+      },
+      {
+        "id": "explainable-weekly-evidence",
+        "sources": ["src/domain/views/weekly-learning-summary.ts", "src/components/study/ReviewView.vue"],
+        "tests": ["tests/weekly-learning-summary.test.ts", "tests/review-weekly-summary.test.ts"]
       }
     ],
     "planned": [
