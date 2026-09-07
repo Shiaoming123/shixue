@@ -36,7 +36,7 @@ jobs:
         run: |
           echo no | avdmanager create avd --force --name shixue-ci-api35 --package "system-images;android-35;google_apis;x86_64" --device medium_phone
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
-          nohup emulator @shixue-ci-api35 -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect > "$RUNNER_TEMP/shixue-emulator.log" 2>&1 &
+          nohup "$ANDROID_HOME/emulator/emulator" @shixue-ci-api35 -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect > "$RUNNER_TEMP/shixue-emulator.log" 2>&1 &
           timeout 180 adb -s emulator-5554 wait-for-device
           timeout 180 bash -c 'until [ "$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = "1" ]; do sleep 2; done'
           test "$(adb -s emulator-5554 shell getprop ro.kernel.qemu | tr -d '\r')" = "1"
