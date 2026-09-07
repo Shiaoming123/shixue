@@ -60,12 +60,14 @@ and remaining `NOT_RUN` rows. This does not raise signing, hosted updates,
 deployed Web hosting, real-device execution, or store submission status.
 Aggregate native mobile delivery remains `source-ready` because iOS has not
 been rerun on the exact current tree. Android has separate `local-debug`
-evidence: implementation commit `2ce9e34` produced an x86_64 debug APK whose
+evidence: implementation commit `42cc204` produced an x86_64 debug APK whose
 identity passed metadata validation and whose isolated API 36 emulator run
 reached all five readiness phases while the resolved Activity stayed foreground
-and its PID survived the bounded stability window. Android physical-device,
-SQLite restart, native-notification, signing, and store evidence remain
-`not-run`. The earlier iOS Simulator result remains a dated historical snapshot
+and its PID survived the bounded stability window. The same APK wrote a unique
+task through the capability service, confirmed complete process termination,
+and recovered that task plus its creation receipt and event from SQLite in a new
+process. Android physical-device, emulator-reboot, native-notification, signing,
+and store evidence remain `not-run`. The earlier iOS Simulator result remains a dated historical snapshot
 in `docs/ios-development.md`; it does not establish current-tree runtime
 evidence. Desktop is the primary stable runtime path; Web and mobile are Beta
 adaptations with documented capability degradation.
@@ -96,6 +98,17 @@ present while the Activity is foreground and the app PID remains alive for the
 stability window. This does not prove a physical device, restart persistence,
 native notifications, signing, or store delivery.
 
+The Android persistence smoke command is `npm run smoke:android-persistence --
+--device <adb-serial> --launch-report <absolute launch-report path>`. It accepts
+only a successful launch report for the same emulator, package, Activity, and
+absolute APK. The first app process creates one run-scoped task through
+`TaskCapabilityService`; after `adb force-stop` and observed PID absence, a new
+process must recover the exact task, `task.create` receipt, and event from the
+native SQLite store. Run-scoped JSON evidence, foreground state, and stable
+liveness must all match. This proves application-process restart recovery on
+the tested emulator; it does not prove recovery across an emulator reboot, a
+physical device, native notifications, signing, or store delivery.
+
 ## Workspace data evolution
 
 Restorable backups use `meow-study/workspace-export` version 3. `WorkspaceStateV3`
@@ -119,10 +132,10 @@ and is not read, mirrored, or migrated into the Workspace task model.
 
 ## Capability and implementation status
 
-Application schema version 4 declares capability protocol version 1. Schema v4
-adds a separately checked `nativeEvidence.android` record alongside the iOS
-record so an Android compile result cannot be confused with emulator readiness
-or physical-device evidence. These are
+Application schema version 5 declares capability protocol version 1. Schema v5
+adds separately checked process-restart persistence evidence to the Android and
+iOS native records, so a build or launch result cannot be confused with SQLite
+recovery evidence. These are
 independent version lines: changing the product declaration does not change the
 command envelope. Current human UI, keyboard, and notification integrations
 must use the versioned capability service, which validates and applies a command

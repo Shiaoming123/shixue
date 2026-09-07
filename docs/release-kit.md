@@ -12,7 +12,7 @@ The Release Kit makes a checkout diagnosable and validates release configuration
 | macOS notarization | Deferred | Workflow accepts optional Apple signing/notarization inputs | Apple account, certificates, notarization submission, and installed-artifact validation |
 | Updater signing/delivery | Configured for GitHub Releases | Real HTTPS endpoint and application-specific public key are committed; the private key remains outside Git | Hosted signed updater artifacts and update-path validation |
 | Windows distribution | v0.3.0 unsigned Release | The published Release contains NSIS, zh-CN MSI, portable EXE, hashes, updater metadata, and signatures; the candidate also has automated package lifecycle evidence and baseline installed-app acceptance | Installed review/reminder/tray actions, no-delivery-after-quit observation, 200% scaling, Narrator, Authenticode certificate, and SmartScreen reputation |
-| Android package | Local debug evidence | The x86_64 debug APK from `2ce9e34` passed identity metadata, explicit Activity launch, five readiness markers, foreground inspection, and stable PID smoke on an isolated API 36 emulator | Physical-device smoke, SQLite restart recovery, native notifications, signing, Play Console, and store submission |
+| Android package | Local debug evidence | The x86_64 debug APK from `42cc204` passed identity metadata, explicit Activity launch, five readiness markers, foreground inspection, and stable PID smoke on an isolated API 36 emulator; the same APK created a unique task through the capability service and recovered the task, receipt, and event from SQLite after confirmed process termination | Physical-device smoke, emulator-reboot recovery, native notifications, signing, Play Console, and store submission |
 | iOS package and store | Source-ready | Native source, preparation commands, and historical Simulator evidence | Exact-current Simulator run, accounts, certificates, device testing, and store submission |
 | Web deployment | Deferred | `npm run build:web` creates a static build | Select/configure a provider and validate a deployed site |
 
@@ -32,9 +32,14 @@ check its package identity, version, SDK metadata, and included ABI list. Then
 run `npm run smoke:android-launch -- --device <adb-serial> --apk <absolute-path>`
 against a dedicated emulator. The smoke clears the old installation, uses a
 unique run id, launches the resolved Activity, and requires all five native
-readiness phases plus foreground and stable process evidence. The manual
-`android-debug` workflow performs the same sequence and uploads both the debug
-APK and bounded diagnostics; it deliberately does not sign or publish anything.
+readiness phases plus foreground and stable process evidence. Then run
+`npm run smoke:android-persistence -- --device <adb-serial> --launch-report
+<absolute-launch-report-path>` without reinstalling the APK. It creates a
+run-scoped task through the capability service, confirms process death, and
+requires a new process to recover the exact task, receipt, and event from
+SQLite. The manual `android-debug` workflow performs both sequences and uploads
+the debug APK, both JSON reports, and bounded diagnostics; it deliberately does
+not sign or publish anything.
 
 ## Local release preparation
 

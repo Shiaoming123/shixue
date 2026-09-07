@@ -10,7 +10,7 @@
 | 维度 | 现状 | 目标 |
 |---|---|---|
 | 桌面端 | ✅ macOS / Windows / Linux 为主要 CI 与发布目标 | 保持 |
-| 移动端 | 🟡 M1–M2 已完成；Android 当前树已有本地模拟器启动证据，iOS 仅保留历史快照 | 补真机、持久化、通知、签名与商店证据 |
+| 移动端 | 🟡 M1–M2 已完成；Android 当前树已有本地模拟器启动与应用进程重启后的 SQLite 恢复证据，iOS 仅保留历史快照 | 补真机、模拟器重启恢复、通知、签名与商店证据 |
 | 前端 | ✅ 桌面侧边栏 + 移动端底部 tab | 保持响应式与安全区适配 |
 | 桌面专属能力 | tray / single-instance / updater | 移动端安全降级 |
 
@@ -225,7 +225,7 @@ compact（< 820px）：底部 tab bar + 内容区
 
 ## 6. 分阶段实施
 
-> **成熟度：Beta。** M1–M2 已在浏览器构建产物中验证；Android M3 的 `2ce9e34` 已生成 x86_64 debug APK，并在隔离 API 36 模拟器通过显式 Activity 启动、五阶段 readiness、前台与稳定 PID smoke。iOS 仅保留历史 Simulator 快照，当前树仍是 `Source-ready`。M5 的持久化重启、原生通知、签名、真机与商店部分仍未验证。
+> **成熟度：Beta。** M1–M2 已在浏览器构建产物中验证；Android M3 的 `42cc204` 已生成 x86_64 debug APK，并在隔离 API 36 模拟器通过显式 Activity 启动、五阶段 readiness、前台与稳定 PID smoke；同一 APK 还通过能力服务写入唯一任务，在确认应用进程终止后从 SQLite 恢复任务、创建回执和事件。iOS 仅保留历史 Simulator 快照，当前树仍是 `Source-ready`。M5 的模拟器重启恢复、原生通知、签名、真机与商店部分仍未验证。
 
 | 阶段 | 内容 | 前置 | 可独立验证 |
 |---|---|---|---|
@@ -255,5 +255,5 @@ compact（< 820px）：底部 tab bar + 内容区
 
 1. **框架层面**：Tauri 2 原生支持移动端，脚手架只需补「初始化 + 降级 + 响应式」三步。
 2. **代码层面（M1-M2）**：已经完成，并由构建产物检查持续验证窄屏布局与底部安全区。
-3. **工程层面**：Android M3 与无签名 debug APK 的本地构建、模拟器启动和五阶段 readiness 已有精确提交证据；iOS 当前树仍未重跑 Simulator。
-4. **下一步**：Android 先补真机安装、SQLite 重启恢复和原生通知，再独立处理签名；iOS 从当前树 Simulator 重跑开始恢复证据链。iOS 与 PR2–PR6 的并行顺序、工程边界和验收模板见 [iOS 开发规划与执行指引](./ios-development.md)，交付成熟度见 [delivery-path.md](./delivery-path.md)。
+3. **工程层面**：Android M3 与无签名 debug APK 的本地构建、模拟器启动、五阶段 readiness 和应用进程重启后的 SQLite 恢复已有精确提交证据；iOS 当前树仍未重跑 Simulator。
+4. **下一步**：Android 先补真机安装、模拟器重启后的 SQLite 恢复和原生通知，再独立处理签名；iOS 从当前树 Simulator 重跑开始恢复证据链。iOS 与 PR2–PR6 的并行顺序、工程边界和验收模板见 [iOS 开发规划与执行指引](./ios-development.md)，交付成熟度见 [delivery-path.md](./delivery-path.md)。
