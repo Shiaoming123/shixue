@@ -80,6 +80,7 @@ function validProtocol() {
         'multi-reminder-v1',
         'calendar-planning-v1',
         'learning-search-tags-v1',
+        'derived-learning-rhythm-v1',
       ],
       shippedEvidence: [
         { id: 'navigation', sources: ['src/lib/workspace-view.ts'], tests: ['tests/workspace-navigation.test.ts'] },
@@ -87,6 +88,7 @@ function validProtocol() {
         { id: 'review-link', sources: ['src/domain/learning/review-task-link.ts'], tests: ['tests/review-task-link.test.ts'] },
         { id: 'responsive-shell', sources: ['src/lib/responsive-shell.ts'], tests: ['tests/responsive-shell.test.ts', 'tests/business-sheet-mount.test.ts'] },
         { id: 'learning-search-tags', sources: ['src/domain/capabilities/tag-commands.ts', 'src/domain/capabilities/task-commands.ts', 'src/domain/capabilities/recurrence-commands.ts', 'src/domain/search/workspace-search.ts'], tests: ['tests/tag-commands.test.ts', 'tests/capability-service.test.ts', 'tests/recurrence-learning-completion.test.ts', 'tests/workspace-search.test.ts'] },
+        { id: 'derived-learning-rhythm', sources: ['src/domain/views/learning-rhythm.ts', 'src/components/study/LearningRhythmView.vue'], tests: ['tests/learning-rhythm.test.ts', 'tests/learning-rhythm-view.test.ts'] },
       ],
       planned: ['agent-behavior'],
     },
@@ -171,6 +173,16 @@ test('rejects a protocol that omits shipped search and tag evidence', () => {
   protocol.implementation.shippedEvidence = protocol.implementation.shippedEvidence.filter(({ id }) => id !== 'learning-search-tags')
 
   assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedEvidence must match the declared local behavioural evidence/)
+})
+
+test('rejects a protocol that omits the shipped derived learning rhythm', () => {
+  const missingFoundation = validProtocol()
+  missingFoundation.implementation.shippedFoundation = missingFoundation.implementation.shippedFoundation.filter((id) => id !== 'derived-learning-rhythm-v1')
+  assert.match(validate(missingFoundation).errors.join('\n'), /implementation\.shippedFoundation must match the currently implemented planning foundation/)
+
+  const missingEvidence = validProtocol()
+  missingEvidence.implementation.shippedEvidence = missingEvidence.implementation.shippedEvidence.filter(({ id }) => id !== 'derived-learning-rhythm')
+  assert.match(validate(missingEvidence).errors.join('\n'), /implementation\.shippedEvidence must match the declared local behavioural evidence/)
 })
 
 test('rejects a protocol that drops calendar acceptance commands', () => {

@@ -9,6 +9,7 @@ import { getNpmInvocation } from './release-kit/npm-command.mjs'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const quickAddArtifactRoot = resolve(projectRoot, 'artifacts', 'visual-qa', 'quick-add')
+const rhythmArtifactRoot = resolve(projectRoot, 'artifacts', 'visual-qa', 'learning-rhythm')
 export function webSmokeUrl(port) {
   return `http://127.0.0.1:${port}/`
 }
@@ -101,6 +102,7 @@ function stopPreview(preview) {
 
 async function main() {
   await mkdir(quickAddArtifactRoot, { recursive: true })
+  await mkdir(rhythmArtifactRoot, { recursive: true })
   const npm = getNpmInvocation(['run', 'build:web'])
   await runCommand(npm.command, npm.args, npm.options)
 
@@ -141,6 +143,46 @@ async function main() {
       await page.getByRole('button', { name: '设置', exact: true }).click()
       await page.getByRole('button', { name: /恢复演示内容/ }).click()
       await page.getByRole('button', { name: '确认恢复', exact: true }).click()
+
+      const rhythmTaskTitle = '精听并跟读一段 3 分钟技术视频'
+      const rhythmLearned = '我能稳定听出重音并复述三个关键观点。'
+      await page.locator('.sidebar').getByRole('button', { name: '搜索', exact: true }).click()
+      const rhythmSearch = page.getByRole('dialog', { name: '搜索学习事实', exact: true })
+      await rhythmSearch.getByRole('searchbox', { name: '搜索任务与完成记录', exact: true }).fill(rhythmTaskTitle)
+      await rhythmSearch.locator('.result-row').filter({ hasText: rhythmTaskTitle }).click()
+      const rhythmTaskDetail = page.getByRole('complementary', { name: '任务详情', exact: true })
+      await rhythmTaskDetail.getByRole('heading', { name: rhythmTaskTitle, exact: true }).waitFor({ state: 'visible' })
+      await rhythmTaskDetail.getByRole('button', { name: '编辑任务', exact: true }).click()
+      const rhythmTaskEditor = page.getByRole('dialog', { name: '编辑任务', exact: true })
+      await rhythmTaskEditor.getByRole('button', { name: '保存重复', exact: true }).click()
+      await rhythmTaskEditor.getByRole('button', { name: '保存', exact: true }).click()
+      await rhythmTaskEditor.waitFor({ state: 'hidden' })
+
+      await page.locator('.sidebar').getByRole('button', { name: /^学习/ }).click()
+      await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '节律', exact: true }).click()
+      const rhythmView = page.locator('.rhythm-view')
+      const rhythmRow = rhythmView.locator('.rhythm-row').filter({ hasText: rhythmTaskTitle })
+      await rhythmRow.getByText(rhythmTaskTitle, { exact: true }).waitFor({ state: 'visible' })
+      await rhythmRow.getByText(/本周 0 \/ \d+ 次/).waitFor({ state: 'visible' })
+      await page.screenshot({ path: resolve(rhythmArtifactRoot, 'learning-rhythm-desktop-before-1440x960.png') })
+      await rhythmRow.getByRole('button', { name: '继续本次', exact: true }).click()
+      await rhythmTaskDetail.getByText('本次计划', { exact: true }).waitFor({ state: 'visible' })
+      await rhythmTaskDetail.locator('.primary').getByText('完成本次', { exact: true }).click()
+      const completionSheet = page.getByRole('dialog', { name: '把时间变成证据', exact: true })
+      await completionSheet.getByLabel('今天真正弄懂了什么？', { exact: true }).fill(rhythmLearned)
+      await completionSheet.getByLabel('成果或证据在哪里？', { exact: true }).fill('Web smoke：节律实例完成链路')
+      await completionSheet.getByLabel('下一步具体做什么？', { exact: true }).fill('下一次继续跟读并对照录音')
+      await completionSheet.getByRole('button', { name: '保存学习记录', exact: true }).click()
+      await completionSheet.waitFor({ state: 'hidden' })
+      await page.locator('.sidebar').getByRole('button', { name: /^学习/ }).click()
+      await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '节律', exact: true }).click()
+      await rhythmView.locator('.recent-learned').filter({ hasText: rhythmLearned }).waitFor({ state: 'visible' })
+      await rhythmView.getByText(/本周 1 \/ \d+ 次/).waitFor({ state: 'visible' })
+      await page.reload({ waitUntil: 'networkidle' })
+      await page.locator('.sidebar').getByRole('button', { name: /^学习/ }).click()
+      await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '节律', exact: true }).click()
+      await rhythmView.locator('.recent-learned').filter({ hasText: rhythmLearned }).waitFor({ state: 'visible' })
+      await rhythmView.getByText(/本周 1 \/ \d+ 次/).waitFor({ state: 'visible' })
 
       const managedTag = `烟测标签-${Date.now()}`
       const renamedManagedTag = `${managedTag}-已改名`
@@ -369,6 +411,44 @@ async function main() {
             throw new Error(`Medium layout does not use the 72px icon sidebar at ${viewport.width}px: ${JSON.stringify(sidebarBox)}`)
           }
         }
+
+        const primaryNavigation = viewport.hasBottomNav ? mobileNav : page.locator('.sidebar')
+        await primaryNavigation.getByRole('button', { name: /^学习/ }).click()
+        await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '节律', exact: true }).click()
+        const responsiveRhythm = page.locator('.rhythm-view')
+        await responsiveRhythm.getByText(rhythmTaskTitle, { exact: true }).waitFor({ state: 'visible' })
+        const rhythmGeometry = await responsiveRhythm.evaluate((element) => {
+          const box = element.getBoundingClientRect()
+          return {
+            left: box.left,
+            right: box.right,
+            width: box.width,
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+            viewportWidth: document.documentElement.clientWidth,
+            pageScrollWidth: document.documentElement.scrollWidth,
+          }
+        })
+        if (rhythmGeometry.left < -0.5 || rhythmGeometry.right > rhythmGeometry.viewportWidth + 0.5
+          || rhythmGeometry.scrollWidth > rhythmGeometry.clientWidth || rhythmGeometry.pageScrollWidth > rhythmGeometry.viewportWidth) {
+          throw new Error(`Learning rhythm overflows at ${viewport.width}px: ${JSON.stringify(rhythmGeometry)}`)
+        }
+        const undersizedRhythmAction = await responsiveRhythm.getByRole('button').evaluateAll((buttons) => buttons
+          .map((button) => ({ label: button.textContent?.trim(), height: button.getBoundingClientRect().height }))
+          .find(({ height }) => height < 44))
+        if (undersizedRhythmAction) {
+          throw new Error(`Learning rhythm action is smaller than 44px at ${viewport.width}px: ${JSON.stringify(undersizedRhythmAction)}`)
+        }
+        if (viewport.width === 820 || viewport.width === 390 || viewport.width === 320) {
+          await page.screenshot({
+            path: resolve(rhythmArtifactRoot, viewport.width === 820
+              ? 'learning-rhythm-medium-820x844.png'
+              : viewport.width === 390
+                ? 'learning-rhythm-mobile-390x844.png'
+                : 'learning-rhythm-mobile-min-320x700.png'),
+          })
+        }
+        await primaryNavigation.getByRole('button', { name: /^收件箱/ }).click()
 
         const searchTrigger = viewport.hasBottomNav
           ? page.getByRole('button', { name: '全局搜索', exact: true })
