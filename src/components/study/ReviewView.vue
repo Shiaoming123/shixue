@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
 import { Brain, CheckCircle2, ChevronRight, FileCheck2, RotateCcw, Search, Sparkles } from '@lucide/vue'
-import type { WeeklyLearningReviewFact, WeeklyLearningSummary } from '../../domain/views/weekly-learning-summary.ts'
+import type { WeeklyLearningPlanFact, WeeklyLearningPlanStatus, WeeklyLearningReviewFact, WeeklyLearningSummary } from '../../domain/views/weekly-learning-summary.ts'
 import Button from '../ui/Button.vue'
 import Listbox from '../ui/Listbox.vue'
 
@@ -38,6 +38,7 @@ const emit = defineEmits<{
   rate: [linkId: string, result: 'clear' | 'fuzzy' | 'relearn']
   createTask: [recordId: string]
   openTask: [taskId: string]
+  openPlanSource: [taskId: string, occurrenceId: string | null]
 }>()
 
 const mode = ref<'review' | 'records'>(props.initialMode ?? 'review')
@@ -49,7 +50,14 @@ const weeklyFilterLabel = ref('')
 const weeklyReviewFacts = ref<WeeklyLearningReviewFact[]>([])
 const recordScope = ref<HTMLElement | null>(null)
 const recordButtons = new Map<string, HTMLButtonElement>()
+const weeklyPlanFacts = ref<WeeklyLearningPlanFact[] | null>(null)
+const weeklyPlanFilterLabel = ref('')
+const weeklyPlanTriggerKey = ref('')
+const planScope = ref<HTMLElement | null>(null)
+const planButtons = new Map<string, HTMLButtonElement>()
+const planMetricButtons = new Map<string, HTMLButtonElement>()
 const reviewResultLabels = { clear: '记得清楚', fuzzy: '有点模糊', relearn: '需要重学' } as const
+const planStatusLabels: Record<WeeklyLearningPlanStatus, string> = { pending: '待完成', completed: '已完成', cancelled: '已取消', skipped: '已跳过' }
 watch(() => props.initialMode, (value) => { if (value) mode.value = value })
 watch(() => props.recordTarget, async (target) => {
   if (!target) return
@@ -69,6 +77,24 @@ watch(() => props.recordTarget, async (target) => {
 function setRecordButton(id: string, value: Element | ComponentPublicInstance | null) {
   if (value instanceof HTMLButtonElement) recordButtons.set(id, value)
   else recordButtons.delete(id)
+}
+
+function resolveButton(value: Element | ComponentPublicInstance | null): HTMLButtonElement | null {
+  if (value instanceof HTMLButtonElement) return value
+  const element = value && '$el' in value ? value.$el : null
+  return element instanceof HTMLButtonElement ? element : null
+}
+
+function setPlanButton(id: string, value: Element | ComponentPublicInstance | null) {
+  const button = resolveButton(value)
+  if (button) planButtons.set(id, button)
+  else planButtons.delete(id)
+}
+
+function setPlanMetricButton(key: string, value: Element | ComponentPublicInstance | null) {
+  const button = resolveButton(value)
+  if (button) planMetricButtons.set(key, button)
+  else planMetricButtons.delete(key)
 }
 
 const topicOptions = computed(() => [
@@ -112,6 +138,33 @@ function showAllRecords() {
   selectedRecordId.value = ''
 }
 
+function planMetricKey(topicId: string | null, status: WeeklyLearningPlanStatus | 'planned'): string {
+  return `${topicId ?? 'unassigned'}:${status}`
+}
+
+async function showWeeklyPlans(facts: readonly WeeklyLearningPlanFact[], label: string, triggerKey: string) {
+  if (!facts.length) return
+  weeklyPlanFacts.value = [...facts]
+  weeklyPlanFilterLabel.value = label
+  weeklyPlanTriggerKey.value = triggerKey
+  await nextTick()
+  if (facts.length === 1) planButtons.get(facts[0]!.id)?.focus({ preventScroll: true })
+  else planScope.value?.focus({ preventScroll: true })
+}
+
+async function hideWeeklyPlans() {
+  const triggerKey = weeklyPlanTriggerKey.value
+  weeklyPlanFacts.value = null
+  weeklyPlanFilterLabel.value = ''
+  weeklyPlanTriggerKey.value = ''
+  await nextTick()
+  planMetricButtons.get(triggerKey)?.focus({ preventScroll: true })
+}
+
+function openPlanSource(fact: WeeklyLearningPlanFact) {
+  emit('openPlanSource', fact.taskId, fact.occurrenceId)
+}
+
 function formatRange(start: string, endExclusive: string): string {
   const end = new Date(`${endExclusive}T12:00:00.000Z`)
   end.setUTCDate(end.getUTCDate() - 1)
@@ -119,12 +172,20 @@ function formatRange(start: string, endExclusive: string): string {
 }
 
 function formatDay(value: string): string {
-  const [, month, day] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) ?? []
+  const [, , month, day] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) ?? []
   return month && day ? `${Number(month)} 月 ${Number(day)} 日` : value
 }
 
 function reviewResultLabel(result: WeeklyLearningReviewFact['result']): string {
   return result ? reviewResultLabels[result] : '结果未记录'
+}
+
+function formatPlanSchedule(fact: WeeklyLearningPlanFact): string {
+  return `${formatDay(fact.scheduledDate)} · ${fact.scheduledTime ?? '全天'}`
+}
+
+function planSourceLabel(fact: WeeklyLearningPlanFact): string {
+  return `${planStatusLabels[fact.status]}，${fact.title}，${formatPlanSchedule(fact)}，${fact.estimateMinutes === null ? '未估时' : `预计 ${fact.estimateMinutes} 分钟`}`
 }
 </script>
 
@@ -154,13 +215,33 @@ function reviewResultLabel(result: WeeklyLearningReviewFact['result']): string {
       <article v-else class="empty"><CheckCircle2 :size="34" :stroke-width="1.5" /><h2>今天的回顾完成了</h2><p>重要的知识会在下一次到期时再次出现。</p></article>
       <section class="weekly-summary">
         <header><div><h2>本周证据</h2><p>{{ formatRange(weeklySummary.rangeStart, weeklySummary.rangeEnd) }}</p></div><p>完成 <strong>{{ weeklySummary.totals.evidenceCompletions.value }}</strong> 次 · 有证据专注 <strong>{{ weeklySummary.totals.evidenceMinutes.value }}</strong> 分钟 · 回顾 <strong>{{ weeklySummary.totals.completedReviews.value }}</strong> 次</p></header>
-        <div v-if="weeklySummary.topics.length" class="weekly-topics">
+        <template v-if="weeklyPlanFacts">
+          <div ref="planScope" class="plan-scope" tabindex="-1">
+            <span>正在查看：{{ weeklyPlanFilterLabel }}</span>
+            <Button variant="ghost" size="sm" @click="hideWeeklyPlans">返回本周证据</Button>
+          </div>
+          <div class="plan-source-list">
+            <button v-for="fact in weeklyPlanFacts" :key="fact.id" :ref="(value) => setPlanButton(fact.id, value)" class="plan-source-row" :data-plan-source-id="fact.id" :aria-label="planSourceLabel(fact)" @click="openPlanSource(fact)">
+              <span class="plan-source-state">{{ planStatusLabels[fact.status] }}</span>
+              <span><strong>{{ fact.title }}</strong><small>{{ formatPlanSchedule(fact) }} · {{ fact.estimateMinutes === null ? '未估时' : `预计 ${fact.estimateMinutes} 分钟` }}</small></span>
+              <ChevronRight :size="18" aria-hidden="true" />
+            </button>
+          </div>
+        </template>
+        <div v-else-if="weeklySummary.topics.length" class="weekly-topics">
           <article v-for="topic in weeklySummary.topics" :key="topic.topicId ?? 'unassigned'">
             <h3>{{ topic.topicTitle }}</h3>
             <div class="weekly-metrics">
               <Button variant="secondary" :disabled="!topic.evidenceCompletions.recordIds.length" @click="showWeeklyRecords(topic.evidenceCompletions.recordIds, `${topic.topicTitle} · 有证据完成`)"><strong>{{ topic.evidenceCompletions.value }}</strong><span>有证据完成</span></Button>
               <Button variant="secondary" :disabled="!topic.evidenceMinutes.recordIds.length" @click="showWeeklyRecords(topic.evidenceMinutes.recordIds, `${topic.topicTitle} · 有证据专注`)"><strong>{{ topic.evidenceMinutes.value }}</strong><span>有证据专注分钟</span></Button>
               <Button variant="secondary" :disabled="!topic.completedReviews.recordIds.length" @click="showWeeklyRecords(topic.completedReviews.recordIds, `${topic.topicTitle} · 已完成回顾`, topic.completedReviewFacts)"><strong>{{ topic.completedReviews.value }}</strong><span>完成回顾</span></Button>
+            </div>
+            <h4 class="plan-heading">本周计划现状</h4>
+            <div class="plan-metrics">
+              <Button :ref="(value) => setPlanMetricButton(planMetricKey(topic.topicId, 'planned'), value)" variant="secondary" :disabled="!topic.currentPlans.planned.facts.length" @click="showWeeklyPlans(topic.currentPlans.planned.facts, `${topic.topicTitle} · 全部计划`, planMetricKey(topic.topicId, 'planned'))"><strong>{{ topic.currentPlans.planned.value }}</strong><span>计划</span><small>预计 {{ topic.currentPlans.estimatedMinutes.value }} 分钟<template v-if="topic.currentPlans.unestimatedCount"> · {{ topic.currentPlans.unestimatedCount }} 项未估时</template></small></Button>
+              <Button :ref="(value) => setPlanMetricButton(planMetricKey(topic.topicId, 'completed'), value)" variant="secondary" :disabled="!topic.currentPlans.completed.facts.length" @click="showWeeklyPlans(topic.currentPlans.completed.facts, `${topic.topicTitle} · 已完成计划`, planMetricKey(topic.topicId, 'completed'))"><strong>{{ topic.currentPlans.completed.value }}</strong><span>完成</span></Button>
+              <Button :ref="(value) => setPlanMetricButton(planMetricKey(topic.topicId, 'cancelled'), value)" variant="secondary" :disabled="!topic.currentPlans.cancelled.facts.length" @click="showWeeklyPlans(topic.currentPlans.cancelled.facts, `${topic.topicTitle} · 已取消计划`, planMetricKey(topic.topicId, 'cancelled'))"><strong>{{ topic.currentPlans.cancelled.value }}</strong><span>取消</span></Button>
+              <Button :ref="(value) => setPlanMetricButton(planMetricKey(topic.topicId, 'skipped'), value)" variant="secondary" :disabled="!topic.currentPlans.skipped.facts.length" @click="showWeeklyPlans(topic.currentPlans.skipped.facts, `${topic.topicTitle} · 已跳过计划`, planMetricKey(topic.topicId, 'skipped'))"><strong>{{ topic.currentPlans.skipped.value }}</strong><span>跳过</span></Button>
             </div>
           </article>
         </div>
@@ -210,6 +291,7 @@ function reviewResultLabel(result: WeeklyLearningReviewFact['result']): string {
 .page-header { padding-bottom: 24px; border-bottom: 1px solid var(--border); }.page-header p { margin: 0 0 8px; color: var(--accent); font-size: 12px; font-weight: 600; }.page-header h1 { margin: 0 0 9px; font-size: 22px; line-height: 1.25; font-weight: 650; letter-spacing: -.02em; }.page-header > span { color: var(--muted); font-size: 13px; }
 .review-card { margin-top: 28px; padding: 27px 29px; border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border)); border-radius: 18px; background: var(--surface); box-shadow: 0 10px 32px color-mix(in srgb, var(--text) 6%, transparent); }.review-meta { display: flex; align-items: center; gap: 9px; color: var(--accent); font-size: 12px; font-weight: 600; } blockquote { margin: 25px 0; padding-left: 18px; border-left: 2px solid var(--accent); font-size: 18px; line-height: 1.5; font-weight: 570; letter-spacing: -.01em; }.question { margin: 0; padding-top: 19px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }.reveal { width: 100%; min-height: 50px; margin-top: 18px; border: 0; border-radius: 12px; background: var(--accent); color: var(--accent-text); font-size: 14px; font-weight: 600; }.evidence { padding: 16px 17px; border-radius: 12px; background: var(--surface-alt); }.evidence small { color: var(--muted); font-size: 10px; }.evidence p { margin: 6px 0 0; font-size: 13px; }.prompt { margin: 20px 0 10px; font-size: 13px; font-weight: 600; }.rating-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }.rating-actions button { min-height: 47px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-alt); color: var(--text); font-size: 12px; }.rating-actions .clear { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }.rating-actions .fuzzy { color: var(--warning); }.rating-actions .relearn { color: var(--danger); }
 .weekly-summary { margin-top: 38px; padding-top: 24px; border-top: 1px solid var(--border); }.weekly-summary > header { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }.weekly-summary h2 { margin: 0 0 5px; font-size: 18px; }.weekly-summary header p { margin: 0; color: var(--muted); font-size: 12px; }.weekly-summary header > p { text-align: right; }.weekly-summary strong { color: var(--accent); font-variant-numeric: tabular-nums; }.weekly-topics { margin-top: var(--space-4); border-bottom: 1px solid var(--border); }.weekly-topics > article { padding: var(--space-4) 0; border-top: 1px solid var(--border); }.weekly-topics h3 { margin: 0 0 var(--space-3); font-size: var(--text-sm); font-weight: 620; }.weekly-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }.weekly-metrics :deep(.btn) { min-height: 64px; align-items: flex-start; flex-direction: column; gap: 5px; text-align: left; }.weekly-metrics :deep(.btn strong) { font-size: var(--text-md); }.weekly-metrics :deep(.btn span) { color: var(--muted); font-size: var(--text-xs); }.weekly-empty { margin: var(--space-4) 0 0; color: var(--muted); font-size: var(--text-sm); }.record-scope { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-4); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); outline: none; background: var(--surface-alt); color: var(--muted); font-size: var(--text-xs); }.record-scope:focus-visible { box-shadow: var(--focus-ring); }.record-scope > div { min-width: 0; }.review-facts { display: grid; gap: var(--space-1); margin: var(--space-2) 0 0; padding: 0; list-style: none; }.review-facts li { display: flex; flex-wrap: wrap; gap: var(--space-2); }.review-facts code { overflow-wrap: anywhere; color: var(--text); }
+.plan-heading { margin: var(--space-4) 0 var(--space-2); color: var(--muted); font-size: var(--text-xs); font-weight: 600; }.plan-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }.plan-metrics :deep(.btn) { min-width: 0; min-height: 58px; align-items: flex-start; flex-direction: column; gap: 4px; text-align: left; white-space: normal; }.plan-metrics :deep(.btn strong) { font-size: var(--text-md); }.plan-metrics :deep(.btn span), .plan-metrics :deep(.btn small) { color: var(--muted); font-size: var(--text-xs); line-height: 1.35; }.plan-scope { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-4); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); outline: none; background: var(--surface-alt); color: var(--muted); font-size: var(--text-xs); }.plan-scope:focus-visible { box-shadow: var(--focus-ring); }.plan-scope :deep(.btn) { min-height: 44px; }.plan-source-list { margin-top: var(--space-3); border-bottom: 1px solid var(--border); }.plan-source-row { width: 100%; min-height: 68px; display: grid; grid-template-columns: max-content minmax(0, 1fr) 18px; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-2); border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--text); text-align: left; }.plan-source-row:hover { background: color-mix(in srgb, var(--control-fill) 70%, transparent); }.plan-source-row:focus-visible { border-radius: var(--radius-md); box-shadow: var(--focus-ring); outline: 0; }.plan-source-state { padding: 4px 7px; border-radius: 999px; background: var(--surface-alt); color: var(--muted); font-size: 10px; }.plan-source-row > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; gap: 5px; }.plan-source-row strong, .plan-source-row small { overflow-wrap: anywhere; }.plan-source-row strong { color: var(--text); font-size: var(--text-sm); }.plan-source-row small { color: var(--muted); font-size: var(--text-xs); }.plan-source-row > svg { color: var(--muted); }
 .record-tools { display: grid; grid-template-columns: 1fr 180px; gap: 12px; padding: 22px 0 16px; }.record-tools label { min-height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); }.record-tools input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 12px; }
 .record-list { border-bottom: 1px solid var(--border); }.record-list > article { border-top: 1px solid var(--border); }.record-main { width: 100%; min-height: 86px; display: grid; grid-template-columns: 34px 1fr 20px; align-items: center; gap: 12px; padding: 11px 6px; border: 0; background: transparent; color: var(--text); text-align: left; }.record-icon { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--accent); border-radius: 50%; color: var(--accent); }.record-main > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; gap: 5px; }.record-main small, .record-main b { overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }.record-main strong { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }.record-main > svg { color: var(--muted); transition: transform var(--motion-fast) var(--ease); }.expanded .record-main > svg { transform: rotate(90deg); }.record-detail { padding: 0 8px 18px 46px; }.record-detail dl { margin: 0; padding: 13px 15px; border-radius: 11px; background: var(--surface-alt); }.record-detail dl div { display: grid; grid-template-columns: 80px 1fr; gap: 12px; padding: 7px 0; font-size: 11px; }.record-detail dt { color: var(--muted); }.record-detail dd { margin: 0; }.record-detail footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 11px; }.record-detail footer button { min-height: 38px; padding: 0 13px; border: 1px solid var(--border); border-radius: 9px; background: transparent; color: var(--text); font-size: 11px; }.record-detail footer .create { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
 .empty { min-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 42px 22px; text-align: center; }.empty > svg { color: var(--accent); }.empty h2 { margin: 14px 0 6px; font-size: 18px; }.empty p { margin: 0; color: var(--muted); font-size: 12px; }.empty button { min-height: 40px; margin-top: 16px; padding: 0 14px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--surface); color: var(--accent); }
@@ -217,5 +299,5 @@ function reviewResultLabel(result: WeeklyLearningReviewFact['result']): string {
 .record-tools label { min-height: 44px; border-color: var(--hairline); border-radius: var(--radius-lg); background: var(--control-fill); transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease); }.record-tools label:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
 .record-main { border-radius: var(--radius-md); }.record-main:hover { background: color-mix(in srgb, var(--control-fill) 70%, transparent); }
 @media (max-width: 819px) { .review-view { padding: 27px 20px 126px; }.segmented { width: 100%; }.segmented button { flex: 1; }.review-card { padding: 22px 20px; }.rating-actions { grid-template-columns: 1fr; }.weekly-summary > header { align-items: flex-start; flex-direction: column; }.weekly-summary header > p { text-align: left; }.record-tools { grid-template-columns: 1fr; }.record-main { min-height: 92px; }.record-detail { padding-left: 0; }.record-detail footer { align-items: stretch; flex-direction: column; }.record-detail footer button { min-height: 44px; } }
-@media (max-width: 439px) { .weekly-metrics { grid-template-columns: 1fr; }.weekly-metrics :deep(.btn) { width: 100%; min-height: 58px; }.record-scope { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 439px) { .weekly-metrics, .plan-metrics { grid-template-columns: 1fr; }.weekly-metrics :deep(.btn), .plan-metrics :deep(.btn) { width: 100%; min-height: 58px; }.record-scope, .plan-scope { align-items: flex-start; flex-direction: column; }.plan-scope :deep(.btn) { width: 100%; }.plan-source-row { grid-template-columns: 1fr 18px; }.plan-source-state { width: max-content; grid-column: 1 / -1; } }
 </style>

@@ -822,6 +822,10 @@ function openRhythmOccurrence(occurrenceId: string) {
   openSearchTask(series.taskId)
   selectedOccurrenceId.value = occurrence.id
 }
+function openWeeklyPlanSource(taskId: string, occurrenceId: string | null) {
+  if (occurrenceId) openRhythmOccurrence(occurrenceId)
+  else openSearchTask(taskId)
+}
 function openSearchRecord(recordId: string) {
   const record = recurrenceWorkspace.value?.completionRecords.find((item) => item.id === recordId && item.deletedAt === null)
   if (!record) { notify('这条完成记录已不存在，搜索结果已刷新。'); return }
@@ -1585,7 +1589,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
           <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
           <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
           <LearningRhythmView v-else-if="destination.section === 'rhythm'" :items="learningRhythmItems" :totals="learningRhythmSelection.totals" @open-occurrence="openRhythmOccurrence" @open-task="openSearchTask" @edit-task="openTaskEditor" />
-          <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-summary="weeklyLearningSummary" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
+          <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-summary="weeklyLearningSummary" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openSearchTask" @open-plan-source="openWeeklyPlanSource" />
         </div>
         <CalendarWorkspace v-if="!loading && page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :target-offset="calendarTargetOffset" :execute-command="executeCalendarCommand" @desktop-mode-selected="persistDesktopCalendarMode" />
       </main>

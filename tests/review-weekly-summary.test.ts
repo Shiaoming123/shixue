@@ -17,6 +17,10 @@ function loadSetup() {
 }
 
 function summary() {
+  const plannedFacts = [
+    { id: 'task:plan', taskId: 'task:plan', occurrenceId: null, title: '整理笔记', scheduledAt: null, scheduledOn: '2026-09-15', scheduledDate: '2026-09-15', scheduledTime: null, estimateMinutes: 25, status: 'pending', outcomeEventId: null },
+    { id: 'occurrence:done', taskId: 'task:series', occurrenceId: 'occurrence:done', title: '复习卡片', scheduledAt: '2026-09-16T11:30:00.000Z', scheduledOn: null, scheduledDate: '2026-09-16', scheduledTime: '19:30', estimateMinutes: null, status: 'completed', outcomeEventId: 'event:done' },
+  ]
   return {
     rangeStart: '2026-09-14', rangeEnd: '2026-09-21',
     totals: {
@@ -30,6 +34,14 @@ function summary() {
       evidenceMinutes: { value: 45, recordIds: ['record:a'] },
       completedReviews: { value: 1, recordIds: ['record:b'] },
       completedReviewFacts: [{ id: 'review:1', recordId: 'record:b', completedAt: '2026-09-14T08:00:00.000Z', reviewedOn: '2026-09-14', result: 'clear' }],
+      currentPlans: {
+        planned: { value: 2, facts: plannedFacts },
+        completed: { value: 1, facts: [plannedFacts[1]] },
+        cancelled: { value: 0, facts: [] },
+        skipped: { value: 0, facts: [] },
+        estimatedMinutes: { value: 25, facts: [plannedFacts[0]] },
+        unestimatedCount: 1,
+      },
     }],
   }
 }
@@ -89,7 +101,62 @@ test('weekly evidence uses labelled shared buttons and responsive touch targets 
   assert.match(template, /reviewResultLabel\(fact\.result\)/)
   assert.match(template, /ref="recordScope"[\s\S]*tabindex="-1"/)
   assert.match(template, /显示全部记录/)
+  assert.match(template, /本周计划现状/)
+  assert.match(template, /topic\.currentPlans\.planned\.facts/)
+  assert.match(template, /topic\.currentPlans\.completed\.facts/)
+  assert.match(template, /topic\.currentPlans\.cancelled\.facts/)
+  assert.match(template, /topic\.currentPlans\.skipped\.facts/)
+  assert.equal(template.match(/:disabled="!topic\.currentPlans\.(?:planned|completed|cancelled|skipped)\.facts\.length"/g)?.length, 4)
+  assert.match(template, /预计.*topic\.currentPlans\.estimatedMinutes\.value.*分钟/)
+  assert.match(template, /topic\.currentPlans\.unestimatedCount/)
+  assert.match(template, /data-plan-source-id/)
+  assert.match(source, /emit\('openPlanSource', fact\.taskId, fact\.occurrenceId\)/)
+  assert.match(template, /返回本周证据/)
   assert.match(css, /weekly-metrics[\s\S]*min-height:\s*64px/)
+  assert.match(css, /plan-metrics[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
+  assert.match(css, /plan-metrics[\s\S]*min-height:\s*(?:44|5\d|6\d)px/)
+  assert.match(css, /plan-scope\s+:deep\(\.btn\)\s*\{[^}]*min-height:\s*44px/)
   assert.match(css, /@media\s*\(max-width:\s*439px\)/)
+  assert.match(css, /@media\s*\(max-width:\s*439px\)[\s\S]*plan-metrics[\s\S]*grid-template-columns:\s*1fr/)
   assert.doesNotMatch(source, /kind:\s*'weekly-summary'|section:\s*'summary'/)
+})
+
+test('weekly plan drilldown focuses its source, emits exact identity, and restores its metric focus', async () => {
+  const { Component } = loadSetup()
+  const props = Vue.reactive<any>({
+    item: undefined, remaining: 0, revealed: false, weeklySummary: summary(),
+    records: [], topics: [], initialMode: 'review', recordTarget: undefined,
+  })
+  const events: unknown[][] = []
+  let state: any
+  const renderer = Vue.createRenderer({ createElement: () => ({}), createText: () => ({}), createComment: () => ({}), insert() {}, remove() {}, setText() {}, setElementText() {}, parentNode: () => null, nextSibling: () => null, patchProp() {} })
+  const app = renderer.createApp({ setup() { state = Component.setup(props, { expose() {}, emit: (...args: unknown[]) => events.push(args) }); return () => Vue.h('div') } })
+  app.mount({})
+
+  const plans = summary().topics[0].currentPlans.planned.facts
+  let focused = ''
+  state.planButtons.set(plans[0].id, { focus() { focused = 'source' } })
+  await state.showWeeklyPlans([plans[0]], 'Agent 系统 · 计划', 'topic:a:planned')
+  assert.equal(state.weeklyPlanFilterLabel.value, 'Agent 系统 · 计划')
+  assert.equal(state.weeklyPlanFacts.value[0].id, 'task:plan')
+  assert.equal(focused, 'source')
+  assert.equal(state.planSourceLabel(plans[0]), '待完成，整理笔记，9 月 15 日 · 全天，预计 25 分钟')
+  assert.equal(state.planSourceLabel(plans[1]), '已完成，复习卡片，9 月 16 日 · 19:30，未估时')
+
+  state.openPlanSource(plans[0])
+  state.openPlanSource(plans[1])
+  assert.deepEqual(events, [
+    ['openPlanSource', 'task:plan', null],
+    ['openPlanSource', 'task:series', 'occurrence:done'],
+  ])
+
+  state.planScope.value = { focus() { focused = 'scope' } }
+  await state.showWeeklyPlans(plans, 'Agent 系统 · 全部计划', 'topic:a:planned')
+  assert.equal(focused, 'scope')
+
+  state.planMetricButtons.set('topic:a:planned', { focus() { focused = 'metric' } })
+  await state.hideWeeklyPlans()
+  assert.equal(state.weeklyPlanFacts.value, null)
+  assert.equal(focused, 'metric')
+  app.unmount()
 })
