@@ -108,6 +108,40 @@ test('new learning evidence creates a visible review target and undo leaves no a
   assert.notEqual(undone.completionRecords.find(({ id }) => id === 'completion:new-evidence')?.deletedAt, null)
 })
 
+for (const kind of ['single', 'batch'] as const) {
+  test(`${kind} deletion cannot remove a pending review target`, async () => {
+    const { store, execute } = await setup()
+    const before = await store.load()
+    const link = before.reviewTaskLinks[0]!
+    const reviewTask = before.tasks.find(({ id }) => id === link.reviewTaskId)!
+    const command: CapabilityCommand = kind === 'single'
+      ? { type: 'task.delete', taskId: reviewTask.id, expectedRevision: reviewTask.revision }
+      : { type: 'task.batch_delete', taskIds: [reviewTask.id], expectedRevisions: { [reviewTask.id]: reviewTask.revision } }
+
+    await assert.rejects(execute(command), /references deleted evidence/)
+    assert.deepEqual(await store.load(), before)
+  })
+}
+
+test('a batch containing ordinary work and a pending review target fails atomically', async () => {
+  const { store, execute } = await setup()
+  const before = await store.load()
+  const link = before.reviewTaskLinks[0]!
+  const reviewTask = before.tasks.find(({ id }) => id === link.reviewTaskId)!
+  const ordinaryTask = before.tasks.find(({ id, deletedAt }) => deletedAt === null && id !== reviewTask.id &&
+    !before.reviewTaskLinks.some(({ reviewTaskId }) => reviewTaskId === id))!
+
+  await assert.rejects(execute({
+    type: 'task.batch_delete',
+    taskIds: [ordinaryTask.id, reviewTask.id],
+    expectedRevisions: {
+      [ordinaryTask.id]: ordinaryTask.revision,
+      [reviewTask.id]: reviewTask.revision,
+    },
+  }), /references deleted evidence/)
+  assert.deepEqual(await store.load(), before)
+})
+
 test('workspace validation rejects duplicate or stale pending review targets', async () => {
   const { store } = await setup()
   const state = await store.load()

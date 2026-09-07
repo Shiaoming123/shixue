@@ -93,17 +93,21 @@ On Windows, `npm run smoke:windows-package` reads the current version's
 `release-artifacts/windows/<version>/manifest.json`, selects its single NSIS
 artifact, and verifies the exact file size and SHA-256 before installation. It
 refuses to continue when the real product registry identity already exists. It
-then silently installs beneath a fresh
-`src-tauri/target/meow-windows-package-smoke-*` directory, redirects `APPDATA`
-and `LOCALAPPDATA` there, probes the installed process, stops and relaunches the
-same executable, runs the uninstaller, and removes the validated temporary and
-registry state.
+also refuses to launch when either real Windows product-data directory already
+exists. Tauri resolves those directories through Windows Known Folders, so
+overriding child-process `APPDATA` and `LOCALAPPDATA` is not an isolation
+boundary. After the preflight passes, the command silently installs beneath a
+fresh `src-tauri/target/meow-windows-package-smoke-*` directory, probes the
+installed process, stops and relaunches the same executable, runs the
+uninstaller, and removes the exact temporary, product-data, and registry state
+owned by that smoke run.
 
 The command does not rebuild or substitute the candidate selected by the
 manifest and does not need a signing private key for an `unsigned-local`
 candidate. It is deliberately not signed-release, updater-delivery,
-double-click UI, tray graceful-exit, notification UI, store, or macOS/Linux
-package evidence.
+double-click UI, successful workspace-load UI, tray graceful-exit,
+notification UI, store, or macOS/Linux package evidence. Use a clean Windows
+user or VM for this smoke when the real application already has local data.
 
 ## Windows delivery package
 

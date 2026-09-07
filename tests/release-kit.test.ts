@@ -288,6 +288,8 @@ args: --bundles nsis,msi
 releaseDraft: true
 - name: Require version tag source
   if: github.ref_type != 'tag'
+- name: Run full test suite
+  run: npm test
 - name: Stage portable Windows EXE
   run: node scripts/stage-windows-portable.mjs
 - name: Upload portable Windows EXE
@@ -315,6 +317,8 @@ args: --bundles nsis,msi
 releaseDraft: true
 - name: Require version tag source
   if: github.ref_type != 'tag'
+- name: Run full test suite
+  run: npm test
 - name: Stage portable Windows EXE
   run: node scripts/stage-windows-portable.mjs
 - name: Upload portable Windows EXE
@@ -344,6 +348,10 @@ releaseDraft: true
   assert.match(
     validateWindowsReleaseWorkflow(validWorkflow.replace("github.ref_type != 'tag'", "github.ref_type == 'branch'")).join('\n'),
     /reject branch-based manual dispatches/,
+  )
+  assert.match(
+    validateWindowsReleaseWorkflow(validWorkflow.replace('run: npm test', '# full tests omitted')).join('\n'),
+    /run the full npm test suite/,
   )
   assert.match(
     validateWindowsReleaseWorkflow(validWorkflow.replace('$portableAsset.digest', '$portableAsset.name')).join('\n'),

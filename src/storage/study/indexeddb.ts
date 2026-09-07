@@ -1,5 +1,8 @@
 import { DEFAULT_WEB_DATABASE_NAME, openMeowDatabase } from '../indexeddb/database.ts'
-import { parseWorkspaceStateOrMigrate } from '../../domain/workspace/migrate.ts'
+import {
+  parseWorkspaceStateOrMigrate,
+  repairLegacyDeletedPendingReviewTasks,
+} from '../../domain/workspace/migrate.ts'
 import { parseWorkspaceState } from '../../domain/workspace/parse.ts'
 import {
   createSeedStudyState,
@@ -14,6 +17,7 @@ const CURRENT_STUDY_STATE = 'current'
 export const V1_STUDY_STATE_BACKUP_KEY = 'backup-v1-before-v2'
 export const V1_WORKSPACE_STATE_BACKUP_KEY = 'backup-v1-before-v3'
 export const V2_WORKSPACE_STATE_BACKUP_KEY = 'backup-v2-before-v3'
+export const V3_REVIEW_REPAIR_BACKUP_KEY = 'backup-v3-before-review-link-repair'
 
 export interface IndexedDbStudyStoreOptions {
   databaseName?: string
@@ -91,8 +95,32 @@ export function createIndexedDbWorkspaceStore(
         return structuredClone(seed)
       }
       if (record.state.version === 3) {
-        await transaction.done
-        return parseWorkspaceState(record.state)
+        try {
+          const parsed = parseWorkspaceState(record.state)
+          await transaction.done
+          return parsed
+        } catch (originalError) {
+          const original = structuredClone(record.state)
+          const repaired = repairLegacyDeletedPendingReviewTasks(original)
+          if (!repaired) {
+            await transaction.done
+            throw originalError
+          }
+          const existingBackup = await transaction.store.get(V3_REVIEW_REPAIR_BACKUP_KEY)
+          if (existingBackup && !sameValue(existingBackup.state, original)) {
+            throw new Error('Workspace v3 review repair backup key contains a different payload.')
+          }
+          if (!existingBackup) {
+            await transaction.store.put({ key: V3_REVIEW_REPAIR_BACKUP_KEY, state: original })
+          }
+          const backup = await transaction.store.get(V3_REVIEW_REPAIR_BACKUP_KEY)
+          if (!backup || !sameValue(backup.state, original)) {
+            throw new Error('Workspace v3 review repair backup proof does not match the stored payload.')
+          }
+          await transaction.store.put({ key: CURRENT_STUDY_STATE, state: repaired })
+          await transaction.done
+          return repaired
+        }
       }
 
       const original = structuredClone(record.state)

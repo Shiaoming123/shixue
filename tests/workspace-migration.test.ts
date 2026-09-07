@@ -15,6 +15,7 @@ import {
   createIndexedDbStudyStore,
   createIndexedDbWorkspaceStore,
   V2_WORKSPACE_STATE_BACKUP_KEY,
+  V3_REVIEW_REPAIR_BACKUP_KEY,
 } from '../src/storage/study/indexeddb.ts'
 import {
   BACKUP_LEGACY_WORKSPACE_STATE_SQL,
@@ -28,9 +29,35 @@ import type {
   StudyState,
   StudyStateV1,
 } from '../src/storage/study/types.ts'
+import { createSeedStudyState } from '../src/storage/study/types.ts'
 import type { WorkspaceStore } from '../src/storage/workspace/types.ts'
 
 const MIGRATED_AT = '2026-09-04T12:00:00.000Z'
+const REPAIRED_AT = '2026-09-07T12:00:00.000Z'
+
+function legacyDeletedPendingReviewWorkspace() {
+  const state = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
+  const link = state.reviewTaskLinks[0]!
+  delete (link as Partial<typeof link>).completion
+  const reviewTask = state.tasks.find(({ id }) => id === link.reviewTaskId)!
+  reviewTask.deletedAt = '2026-09-06T03:02:11.657Z'
+  reviewTask.updatedAt = reviewTask.deletedAt
+  reviewTask.revision += 1
+  state.taskEvents.push({
+    id: 'event:legacy-review-delete',
+    sequence: state.taskEvents.length + 1,
+    taskId: reviewTask.id,
+    type: 'deleted',
+    occurredAt: reviewTask.deletedAt,
+    fromStatus: reviewTask.status,
+    toStatus: reviewTask.status,
+    reason: null,
+    completionRecordId: null,
+  })
+  state.revision += 1
+  state.updatedAt = reviewTask.deletedAt
+  return state
+}
 
 function v2Fixture(): StudyState {
   const completedAt = '2026-09-03T10:45:00.000Z'
@@ -442,6 +469,168 @@ test('SQLite replaces v2 only after a byte-identical backup is independently ver
   assert.equal(calls[1].sql, REPLACE_LEGACY_AFTER_BACKUP_SQL)
   assert.equal(backups.get(String(calls[0].binds?.[0]))?.payload, originalPayload)
   assert.equal(current.version, 3)
+})
+
+test('SQLite backs up and restores a legacy v3 pending review whose task was deleted', async () => {
+  const legacy = legacyDeletedPendingReviewWorkspace()
+  const originalPayload = JSON.stringify(legacy)
+  let current = { version: 3, payload: originalPayload }
+  const backups = new Map<string, { version: number; payload: string }>()
+  const store = createTauriSqliteWorkspaceStore(async () => ({
+    async select<T>(sql: string, binds?: unknown[]): Promise<T> {
+      if (sql === VERIFY_LEGACY_WORKSPACE_STATE_BACKUP_SQL) {
+        const backup = backups.get(String(binds?.[0]))
+        return (backup ? [backup] : []) as T
+      }
+      return [current] as T
+    },
+    async execute(sql: string, binds?: unknown[]) {
+      if (sql === BACKUP_LEGACY_WORKSPACE_STATE_SQL) {
+        backups.set(String(binds?.[0]), {
+          version: Number(binds?.[1]), payload: String(binds?.[2]),
+        })
+        return { rowsAffected: 1 }
+      }
+      if (sql === REPLACE_LEGACY_AFTER_BACKUP_SQL) {
+        const backup = backups.get(String(binds?.[0]))
+        if (!backup || backup.version !== current.version || backup.payload !== current.payload) {
+          return { rowsAffected: 0 }
+        }
+        current = { version: Number(binds?.[3]), payload: String(binds?.[4]) }
+        return { rowsAffected: 1 }
+      }
+      return { rowsAffected: 0 }
+    },
+  }), undefined, () => REPAIRED_AT)
+
+  const repaired = await store.load()
+  const originalLink = legacy.reviewTaskLinks[0]!
+  const record = repaired.completionRecords.find(({ id }) => id === originalLink.completionRecordId)!
+  const deletedTask = repaired.tasks.find(({ id }) => id === originalLink.reviewTaskId)!
+  assert.equal(repaired.reviewTaskLinks.some(({ id }) => id === originalLink.id), true)
+  assert.equal(record.nextReviewOn, originalLink.dueOn)
+  assert.equal(deletedTask.deletedAt, null)
+  assert.equal(repaired.reviewTaskLinks.find(({ id }) => id === originalLink.id)?.completion, null)
+  assert.equal(repaired.taskEvents.some(({ id }) => id === 'event:legacy-review-delete'), true)
+  assert.equal([...backups.values()][0]?.payload, originalPayload)
+  assert.notEqual(current.payload, originalPayload)
+  assert.deepEqual(await store.load(), repaired)
+  assert.equal(backups.size, 1)
+})
+
+test('IndexedDB backs up and restores a legacy v3 pending review whose task was deleted', async () => {
+  const databaseName = `meow-workspace-review-repair-${Date.now()}`
+  await deleteDB(databaseName)
+  const legacy = legacyDeletedPendingReviewWorkspace()
+  const database = await openDB(databaseName, 2, {
+    upgrade(db) {
+      const todos = db.createObjectStore('todos', { keyPath: 'id', autoIncrement: true })
+      todos.createIndex('by-created-at', 'created_at')
+      db.createObjectStore('studyState', { keyPath: 'key' })
+    },
+  })
+  await database.put('studyState', { key: 'current', state: legacy })
+  database.close()
+
+  const repaired = await createIndexedDbWorkspaceStore({ databaseName }).load()
+  const originalLink = legacy.reviewTaskLinks[0]!
+  assert.equal(repaired.reviewTaskLinks.some(({ id }) => id === originalLink.id), true)
+  assert.equal(
+    repaired.completionRecords.find(({ id }) => id === originalLink.completionRecordId)?.nextReviewOn,
+    originalLink.dueOn,
+  )
+  assert.equal(repaired.tasks.find(({ id }) => id === originalLink.reviewTaskId)?.deletedAt, null)
+  const verification = await openDB(databaseName, 2)
+  assert.deepEqual(
+    (await verification.get('studyState', 'backup-v3-before-review-link-repair')).state,
+    legacy,
+  )
+  assert.deepEqual((await verification.get('studyState', 'current')).state, repaired)
+  verification.close()
+})
+
+for (const failure of ['backup insert', 'backup proof', 'replacement'] as const) {
+  test(`SQLite legacy v3 review repair leaves the original bytes when ${failure} fails`, async () => {
+    const originalPayload = JSON.stringify(legacyDeletedPendingReviewWorkspace())
+    let currentPayload = originalPayload
+    let backup: { version: number; payload: string } | undefined
+    const store = createTauriSqliteWorkspaceStore(async () => ({
+      async select<T>(sql: string): Promise<T> {
+        if (sql === VERIFY_LEGACY_WORKSPACE_STATE_BACKUP_SQL) {
+          return (failure === 'backup proof' || !backup ? [] : [backup]) as T
+        }
+        return [{ version: 3, payload: currentPayload }] as T
+      },
+      async execute(sql: string, binds?: unknown[]) {
+        if (sql === BACKUP_LEGACY_WORKSPACE_STATE_SQL) {
+          if (failure === 'backup insert') return { rowsAffected: 0 }
+          backup = { version: Number(binds?.[1]), payload: String(binds?.[2]) }
+          return { rowsAffected: 1 }
+        }
+        if (sql === REPLACE_LEGACY_AFTER_BACKUP_SQL) {
+          if (failure === 'replacement') return { rowsAffected: 0 }
+          currentPayload = String(binds?.[4])
+          return { rowsAffected: 1 }
+        }
+        return { rowsAffected: 0 }
+      },
+    }), undefined, () => REPAIRED_AT)
+
+    const expectedError = failure === 'replacement' ? /not replaced/i : new RegExp(failure.replace(' ', '.*'), 'i')
+    await assert.rejects(store.load(), expectedError)
+    assert.equal(currentPayload, originalPayload)
+  })
+}
+
+test('IndexedDB legacy v3 review repair refuses a conflicting backup without replacing current', async () => {
+  const databaseName = `meow-workspace-review-repair-conflict-${Date.now()}`
+  await deleteDB(databaseName)
+  const legacy = legacyDeletedPendingReviewWorkspace()
+  const conflicting = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
+  const database = await openDB(databaseName, 2, {
+    upgrade(db) {
+      const todos = db.createObjectStore('todos', { keyPath: 'id', autoIncrement: true })
+      todos.createIndex('by-created-at', 'created_at')
+      db.createObjectStore('studyState', { keyPath: 'key' })
+    },
+  })
+  await database.put('studyState', { key: 'current', state: legacy })
+  await database.put('studyState', { key: V3_REVIEW_REPAIR_BACKUP_KEY, state: conflicting })
+  database.close()
+
+  await assert.rejects(createIndexedDbWorkspaceStore({ databaseName }).load(), /different payload/i)
+  const verification = await openDB(databaseName, 2)
+  assert.deepEqual((await verification.get('studyState', 'current')).state, legacy)
+  verification.close()
+})
+
+test('SQLite empty-row load returns a strictly valid default workspace without writing', async () => {
+  const store = createTauriSqliteWorkspaceStore(async () => ({
+    async select<T>(): Promise<T> { return [] as T },
+    async execute() { assert.fail('an empty-row load must not write') },
+  }), createSeedStudyState(MIGRATED_AT), () => REPAIRED_AT)
+
+  const state = await store.load()
+  for (const link of state.reviewTaskLinks.filter(({ completedAt }) => completedAt === null)) {
+    assert.equal(state.completionRecords.find(({ id }) => id === link.completionRecordId)?.deletedAt, null)
+    assert.equal(state.tasks.find(({ id }) => id === link.reviewTaskId)?.deletedAt, null)
+  }
+})
+
+test('SQLite does not repair an invalid deletion timestamp or write a backup', async () => {
+  const legacy = legacyDeletedPendingReviewWorkspace()
+  const link = legacy.reviewTaskLinks[0]!
+  const reviewTask = legacy.tasks.find(({ id }) => id === link.reviewTaskId)!
+  reviewTask.deletedAt = 'not-an-iso-date'
+  reviewTask.updatedAt = reviewTask.deletedAt
+  let executions = 0
+  const store = createTauriSqliteWorkspaceStore(async () => ({
+    async select<T>(): Promise<T> { return [{ version: 3, payload: JSON.stringify(legacy) }] as T },
+    async execute() { executions += 1; return { rowsAffected: 1 } },
+  }))
+
+  await assert.rejects(store.load(), /ISO datetime/i)
+  assert.equal(executions, 0)
 })
 
 test('SQLite refuses replacement when the inserted backup cannot be read back exactly', async () => {

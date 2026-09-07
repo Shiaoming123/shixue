@@ -5,7 +5,10 @@ import {
   type StudyState,
   type StudyStore,
 } from './types.ts'
-import { parseWorkspaceStateOrMigrate } from '../../domain/workspace/migrate.ts'
+import {
+  parseWorkspaceStateOrMigrate,
+  repairLegacyDeletedPendingReviewTasks,
+} from '../../domain/workspace/migrate.ts'
 import { parseWorkspaceState } from '../../domain/workspace/parse.ts'
 import type { WorkspaceStore } from '../workspace/types.ts'
 
@@ -216,7 +219,37 @@ export function createTauriSqliteWorkspaceStore(
       if (rows.length === 0) return structuredClone(initial)
       const stored = parsePayload(rows[0].payload)
       assertPayloadVersion(stored, rows[0].version)
-      if (rows[0].version === 3) return parseWorkspaceState(stored)
+      if (rows[0].version === 3) {
+        try {
+          return parseWorkspaceState(stored)
+        } catch (originalError) {
+          const repairedAt = now()
+          const repaired = repairLegacyDeletedPendingReviewTasks(stored, repairedAt)
+          if (!repaired) throw originalError
+          const sourcePayload = rows[0].payload
+          const backupKey = `workspace-state-v3-review-repair:${crypto.randomUUID()}`
+          const backup = await database.execute(BACKUP_LEGACY_WORKSPACE_STATE_SQL, [
+            backupKey, 3, sourcePayload, repairedAt,
+          ])
+          if (rowsAffected(backup) < 1) {
+            throw new Error('Workspace state v3 review repair backup insert failed.')
+          }
+          const proof = await database.select<StudyStateBackupRow[]>(
+            VERIFY_LEGACY_WORKSPACE_STATE_BACKUP_SQL,
+            [backupKey],
+          )
+          if (proof.length !== 1 || proof[0].version !== 3 || proof[0].payload !== sourcePayload) {
+            throw new Error('Workspace state v3 review repair backup proof is missing or mismatched.')
+          }
+          const replaced = await database.execute(REPLACE_LEGACY_AFTER_BACKUP_SQL, [
+            backupKey, 3, sourcePayload, repaired.version, JSON.stringify(repaired), repaired.updatedAt,
+          ])
+          if (rowsAffected(replaced) < 1) {
+            throw new Error('Workspace state v3 review repair was not replaced after backup proof.')
+          }
+          return repaired
+        }
+      }
       if (rows[0].version !== 1 && rows[0].version !== 2) {
         throw new Error(`Unsupported stored Workspace state version: ${rows[0].version}.`)
       }

@@ -23,7 +23,7 @@ test('reports automated and manual Windows evidence without promoting unobserved
   updateSmokeStage(report, 'manifest-audit', 'PASS', 'checksum verified')
   assert.equal(report.generatedAt, '2026-09-05T00:00:00.000Z')
   assert.deepEqual(report.stages.map((stage) => stage.id), [
-    'manifest-audit', 'silent-install', 'installed-launch', 'installed-relaunch', 'silent-uninstall', 'cleanup',
+    'manifest-audit', 'product-data-preflight', 'silent-install', 'installed-launch', 'installed-relaunch', 'silent-uninstall', 'cleanup',
     'permission-first-reminder', 'two-reminders-one-task', 'snooze-one', 'complete-one',
     'hide-to-tray', 'reopen-from-tray', 'quit-from-tray', 'no-delivery-after-quit',
     'windows-display-scaling-200', 'native-notification-action-buttons',
@@ -166,4 +166,83 @@ test('rejects a successful uninstall while the NSIS product metadata key remains
     windowsSmoke.assertWindowsInstallerRegistryKeyAbsent('HKLM\\Software\\Shiaoming123\\拾学', { query: async () => 1 }),
     /unexpected Windows installer registry key/i,
   )
+})
+
+test('uses the real Windows product data locations and blocks an existing identity', async () => {
+  const paths = windowsSmoke.resolveWindowsProductDataPaths(
+    'C:/Users/test/AppData/Roaming',
+    'C:/Users/test/AppData/Local',
+    'com.shiaoming123.shixue',
+  )
+  assert.deepEqual(paths, {
+    identifier: 'com.shiaoming123.shixue',
+    roamingRoot: resolve('C:/Users/test/AppData/Roaming'),
+    localRoot: resolve('C:/Users/test/AppData/Local'),
+    roaming: resolve('C:/Users/test/AppData/Roaming/com.shiaoming123.shixue'),
+    local: resolve('C:/Users/test/AppData/Local/com.shiaoming123.shixue'),
+  })
+  await assert.rejects(
+    windowsSmoke.assertWindowsProductDataAbsent(paths, {
+      exists: async (path: string) => path === paths.roaming,
+    }),
+    /BLOCKED: existing product data/i,
+  )
+  await windowsSmoke.assertWindowsProductDataAbsent(paths, { exists: async () => false })
+  assert.throws(
+    () => windowsSmoke.resolveWindowsProductDataPaths('C:/Users/test/AppData/Roaming', 'C:/Users/test/AppData/Local', '../escape'),
+    /invalid Windows product identifier/i,
+  )
+})
+
+test('loads product data roots from Windows Known Folders', async () => {
+  const requested: string[] = []
+  const roots = await windowsSmoke.loadWindowsKnownFolderRoots({
+    query: async (name: string) => {
+      requested.push(name)
+      return name === 'ApplicationData'
+        ? 'C:/Users/test/AppData/Roaming'
+        : 'C:/Users/test/AppData/Local'
+    },
+  })
+  assert.deepEqual(requested, ['ApplicationData', 'LocalApplicationData'])
+  assert.deepEqual(roots, {
+    roaming: 'C:/Users/test/AppData/Roaming',
+    local: 'C:/Users/test/AppData/Local',
+  })
+})
+
+test('removes only the exact product data directories owned by a fresh smoke run', async () => {
+  const paths = windowsSmoke.resolveWindowsProductDataPaths(
+    'C:/Users/test/AppData/Roaming',
+    'C:/Users/test/AppData/Local',
+    'com.shiaoming123.shixue',
+  )
+  const removed: string[] = []
+  await windowsSmoke.removeWindowsProductData(paths, {
+    remove: async (path: string) => { removed.push(path) },
+  })
+  assert.deepEqual(removed, [paths.roaming, paths.local])
+})
+
+test('claims both product data directories atomically and rolls back a partial claim', async () => {
+  const paths = windowsSmoke.resolveWindowsProductDataPaths(
+    'C:/Users/test/AppData/Roaming',
+    'C:/Users/test/AppData/Local',
+    'com.shiaoming123.shixue',
+  )
+  const created: string[] = []
+  const removed: string[] = []
+  await assert.rejects(windowsSmoke.claimWindowsProductData(paths, {
+    create: async (path: string) => {
+      if (path === paths.local) {
+        const error = new Error('exists') as NodeJS.ErrnoException
+        error.code = 'EEXIST'
+        throw error
+      }
+      created.push(path)
+    },
+    remove: async (path: string) => { removed.push(path) },
+  }), /BLOCKED: existing product data/i)
+  assert.deepEqual(created, [paths.roaming])
+  assert.deepEqual(removed, [paths.roaming])
 })
