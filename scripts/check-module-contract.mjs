@@ -81,6 +81,9 @@ function main() {
   const capabilities = JSON.parse(
     readFileSync(new URL('src-tauri/capabilities/default.json', root), 'utf8'),
   )
+  capabilities.push(JSON.parse(
+    readFileSync(new URL('src-tauri/capabilities/autostart.json', root), 'utf8'),
+  ))
   const result = auditModuleContract({
     contracts: Object.values(moduleContracts),
     config: defaultModuleConfig,
