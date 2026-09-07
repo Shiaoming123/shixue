@@ -55,3 +55,17 @@ test('settings exposes only connected appearance, navigation, quick add, data, r
   assert.match(settings, /当前窗口使用图标侧栏；展开偏好会在宽屏生效。/)
   assert.doesNotMatch(settings, /<select\b/)
 })
+
+test('settings separates the lossless JSON backup from the readable Markdown export', () => {
+  const app = appSource()
+  const settings = studySource('SettingsView.vue')
+
+  assert.match(settings, /exportJson: \[\]/)
+  assert.match(settings, /exportMarkdown: \[\]/)
+  assert.match(settings, /导出 JSON 备份/)
+  assert.match(settings, /可重新导入拾学/)
+  assert.match(settings, /导出 Markdown 阅读版/)
+  assert.match(settings, /无需拾学也能阅读/)
+  assert.match(app, /@export-json="exportJsonData"/)
+  assert.match(app, /@export-markdown="exportMarkdownData"/)
+})

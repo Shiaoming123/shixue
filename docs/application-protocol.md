@@ -84,7 +84,7 @@ process survives the stability window.
 
 ## Workspace data evolution
 
-New exports use `meow-study/workspace-export` version 3. `WorkspaceStateV3`
+Restorable backups use `meow-study/workspace-export` version 3. `WorkspaceStateV3`
 supports general personal tasks and keeps learning-specific evidence as an
 optional specialization on the same task model. The importer continues to
 accept `meow-study/study-export` version 1 and version 2 payloads. Legacy input
@@ -92,6 +92,13 @@ is validated, migrated in memory, validated again as a complete v3 workspace,
 and only then replaces current state. Web IndexedDB and desktop SQLite preserve
 a pre-migration snapshot through their documented fail-closed replacement
 paths.
+
+The separate Markdown export is a deterministic, human-readable projection of
+live completion records. It orders records by completion time and stable id,
+keeps completion-time task titles and tag associations, and resolves current
+topic and tag labels including archived ones. Deleted completion records are
+omitted, while deleting the source task does not remove its historical record.
+Markdown is not a restore format; JSON remains the lossless importable backup.
 
 The legacy generic Todo store remains a compatibility boundary for the starter
 and is not read, mirrored, or migrated into the Workspace task model.
@@ -112,6 +119,9 @@ migration and v3 export, capability protocol v1 with transactional command
 execution, routing of current live writes through that service, the shared
 themed-control foundation, recurrence and occurrences, offline natural-language
 quick add, multiple reminders, and `calendar-planning-v1`.
+The local data boundary also includes `learning-records-markdown-export-v1`,
+which exposes the completion evidence in a readable file without changing the
+Workspace schema or import protocol.
 
 `learning-search-tags-v1` adds reversible tag creation, rename, and archive
 commands through the same compare-and-swap and audit boundary. Tasks can keep
@@ -174,6 +184,7 @@ completion record. These are derived views and add no persisted statistics.
 | `learning-search-tags` | `src/domain/capabilities/tag-commands.ts`, `src/domain/capabilities/task-commands.ts`, `src/domain/capabilities/recurrence-commands.ts`, `src/domain/search/workspace-search.ts` | `tests/tag-commands.test.ts`, `tests/capability-service.test.ts`, `tests/recurrence-learning-completion.test.ts`, `tests/workspace-search.test.ts` |
 | `derived-learning-rhythm` | `src/domain/views/learning-rhythm.ts`, `src/components/study/LearningRhythmView.vue` | `tests/learning-rhythm.test.ts`, `tests/learning-rhythm-view.test.ts` |
 | `explainable-weekly-evidence` | `src/domain/views/weekly-learning-summary.ts`, `src/components/study/ReviewView.vue` | `tests/weekly-learning-summary.test.ts`, `tests/review-weekly-summary.test.ts` |
+| `learning-records-markdown-export` | `src/domain/export/learning-records-markdown.ts`, `src/lib/study.ts`, `src/components/study/SettingsView.vue`, `src/App.vue` | `tests/learning-records-markdown.test.ts`, `tests/sidebar-settings-ui.test.ts`, `tests/settings-behavior.test.ts` |
 
 These entries claim the local application behaviour covered by those sources
 and tests. They do not claim an external calendar provider, hosted service,

@@ -5,6 +5,7 @@ import {
 } from '../domain/capabilities/types.ts'
 import { SYSTEM_LEARNING_LIST_ID } from '../domain/workspace/migrate.ts'
 import type { Task, WorkspaceStateV3 } from '../domain/workspace/types.ts'
+import { createLearningRecordsMarkdown } from '../domain/export/learning-records-markdown.ts'
 import { parseZonedDateTime } from '../domain/recurrence/timezone.ts'
 import { createWorkspaceExport, parseWorkspaceExport } from '../storage/workspace/data-port.ts'
 import { getWorkspaceStore } from '../storage/workspace/registry.ts'
@@ -497,6 +498,10 @@ export async function createTaskFromNextAction(
 
 export async function exportStudyState(exportedAt?: string): Promise<string> {
   return JSON.stringify(createWorkspaceExport(await getWorkspaceStore().load(), exportedAt))
+}
+
+export async function exportLearningRecordsMarkdown(): Promise<string> {
+  return createLearningRecordsMarkdown(await getWorkspaceStore().load())
 }
 
 export async function importStudyState(content: string): Promise<StudyState> {

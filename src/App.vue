@@ -65,6 +65,7 @@ import {
   completeReviewTaskLink,
   createTaskFromNextAction,
   deleteStudyTask,
+  exportLearningRecordsMarkdown,
   exportStudyState,
   importStudyState,
   loadStudyState,
@@ -1410,8 +1411,19 @@ async function archiveTopic(id: string) {
   try { await saveStudyTopic({ ...topic, archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }); await refreshState(); selectedTopicId.value = state.value.topics.find((item) => !item.archivedAt)?.id ?? ''; const transition = resolveArchivedListTransition(destination.value, id, taskTopicFilter.value); if (transition) setDestination(transition.destination, { topicFilter: transition.topicFilter, preservePriority: transition.preservePriority }); notify('清单已归档。') } catch (error) { reportStorageError(error) }
 }
 
-async function exportData() {
-  try { const content = await exportStudyState(); const url = URL.createObjectURL(new Blob([content], { type: 'application/json' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `拾学记录-${today.value}.json`; anchor.click(); URL.revokeObjectURL(url); notify('学习记录已导出。') } catch (error) { reportStorageError(error) }
+function downloadData(content: string, type: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([content], { type }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+async function exportJsonData() {
+  try { downloadData(await exportStudyState(), 'application/json', `拾学记录-${today.value}.json`); notify('JSON 备份已导出。') } catch (error) { reportStorageError(error) }
+}
+async function exportMarkdownData() {
+  try { downloadData(await exportLearningRecordsMarkdown(), 'text/markdown;charset=utf-8', `拾学学习记录-${today.value}.md`); notify('Markdown 学习记录已导出。') } catch (error) { reportStorageError(error) }
 }
 async function importData(content: string, complete: (success: boolean) => void) {
   try {
@@ -1589,7 +1601,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
           <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
           </div>
         </template>
-        <SettingsView v-else-if="page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export="exportData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-appearance="setAppearance" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
+        <SettingsView v-else-if="page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export-json="exportJsonData" @export-markdown="exportMarkdownData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-appearance="setAppearance" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
         <div v-else-if="destination.kind === 'learning'" class="route-workspace">
           <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
           <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />

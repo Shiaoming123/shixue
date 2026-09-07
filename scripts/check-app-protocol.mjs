@@ -42,6 +42,7 @@ const EXPECTED_SHIPPED_FOUNDATION = [
   'learning-search-tags-v1',
   'derived-learning-rhythm-v1',
   'explainable-weekly-evidence-v1',
+  'learning-records-markdown-export-v1',
 ]
 const EXPECTED_PLANNED_FEATURES = [
   'agent-behavior',
@@ -59,6 +60,7 @@ const EXPECTED_SHIPPED_EVIDENCE = [
   { id: 'learning-search-tags', sources: ['src/domain/capabilities/tag-commands.ts', 'src/domain/capabilities/task-commands.ts', 'src/domain/capabilities/recurrence-commands.ts', 'src/domain/search/workspace-search.ts'], tests: ['tests/tag-commands.test.ts', 'tests/capability-service.test.ts', 'tests/recurrence-learning-completion.test.ts', 'tests/workspace-search.test.ts'] },
   { id: 'derived-learning-rhythm', sources: ['src/domain/views/learning-rhythm.ts', 'src/components/study/LearningRhythmView.vue'], tests: ['tests/learning-rhythm.test.ts', 'tests/learning-rhythm-view.test.ts'] },
   { id: 'explainable-weekly-evidence', sources: ['src/domain/views/weekly-learning-summary.ts', 'src/components/study/ReviewView.vue'], tests: ['tests/weekly-learning-summary.test.ts', 'tests/review-weekly-summary.test.ts'] },
+  { id: 'learning-records-markdown-export', sources: ['src/domain/export/learning-records-markdown.ts', 'src/lib/study.ts', 'src/components/study/SettingsView.vue', 'src/App.vue'], tests: ['tests/learning-records-markdown.test.ts', 'tests/sidebar-settings-ui.test.ts', 'tests/settings-behavior.test.ts'] },
 ]
 
 const IMPLEMENTATION_FACTS = {

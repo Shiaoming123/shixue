@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef } from 'vue'
 import {
-  Bell, Cloud, Download, Eye, FileJson, Moon, PanelLeft, RotateCcw, ShieldCheck,
+  Bell, Cloud, Download, Eye, FileJson, FileText, Moon, PanelLeft, RotateCcw, ShieldCheck,
   Sun, Upload,
 } from '@lucide/vue'
 import type { PlanningPreferences } from '../../lib/planning-preferences'
@@ -41,7 +41,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  export: []
+  exportJson: []
+  exportMarkdown: []
   import: [content: string, complete: (success: boolean) => void]
   resetDemo: [complete: (success: boolean) => void]
   resetSidebarOrder: []
@@ -219,7 +220,8 @@ onMounted(() => pageTitle.value?.focus())
       <section class="settings-section settings-section--wide">
         <div class="section-title"><Download :size="18" /><div><h2>本地数据</h2><p>备份、迁移或恢复这台设备上的记录。</p></div></div>
         <div class="data-actions">
-          <button class="action-row" type="button" @click="emit('export')"><Download :size="18" /><span><strong>导出学习记录</strong><small>保存为可读的 JSON 文件</small></span></button>
+          <button class="action-row" type="button" :disabled="!workspace" @click="emit('exportJson')"><FileJson :size="18" /><span><strong>导出 JSON 备份</strong><small>完整备份，可重新导入拾学</small></span></button>
+          <button class="action-row" type="button" :disabled="!workspace" @click="emit('exportMarkdown')"><FileText :size="18" /><span><strong>导出 Markdown 阅读版</strong><small>只含完成记录，无需拾学也能阅读</small></span></button>
           <input ref="importInput" class="file-input" type="file" accept="application/json,.json" tabindex="-1" @change="selectImport" />
           <button v-if="!importFileName" class="action-row" type="button" :disabled="dataBusy || !workspace" @click="importInput?.click()"><Upload :size="18" /><span><strong>导入学习记录</strong><small>完整验证后替换本地记录</small></span></button>
           <div v-else class="confirm-row" :role="importError ? 'alert' : 'status'">
@@ -300,7 +302,7 @@ onMounted(() => pageTitle.value?.focus())
 .action-row > svg { flex: 0 0 auto; color: var(--accent); }
 .action-row:hover { color: var(--accent); }
 .action-row:disabled { cursor: default; opacity: .5; }
-.data-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 var(--space-6); }
+.data-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--space-6); }
 .file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .confirm-row { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); padding: var(--space-4) 0; border-bottom: 1px solid var(--border); }
 .confirm-row p { min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); margin: 0; }
