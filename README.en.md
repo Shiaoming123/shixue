@@ -123,8 +123,8 @@ See the [application protocol](./docs/application-protocol.md) for the detailed 
 | Authenticode | `NOT_RUN`; current Windows packages are unsigned. Tauri updater `.sig` files and SHA-256 hashes do not establish a Windows publisher signature. |
 | Updates between published versions | `NOT_RUN`; the repository builds updater metadata and signed payloads, but there is no end-to-end installed-client upgrade evidence across published versions. |
 | Native Windows scaling and screen reader | System 200% scaling and Narrator are `NOT_RUN`. Web CSS zoom, equivalent reflow, and Edge screenshots do not substitute for native evidence. |
-| Android emulator | The x86_64 debug APK from `2ce9e34` passed package/version/ABI validation, explicit Activity launch, foreground inspection, all five readiness phases, and stable PID smoke in an isolated API 36 emulator. |
-| Android device and delivery | Physical devices, SQLite restart recovery, native notifications, signing, Google Play, and store delivery are `NOT_RUN`. |
+| Android emulator | The x86_64 debug APK from `42cc204` passed package/version/ABI validation, explicit Activity launch, foreground inspection, all five readiness phases, and stable PID smoke in an isolated API 36 emulator. The same APK created a unique task through the capability service, terminated the app process, restarted it, and recovered the task, creation receipt, and event from SQLite. |
+| Android device and delivery | Physical devices, recovery across an emulator reboot, native notifications, signing, Google Play, and store delivery are `NOT_RUN`. |
 | iOS / iPadOS | Simulator and device execution for the current tree are `NOT_RUN`; historical snapshots do not upgrade current evidence. Web screenshots at 320–819px prove responsive layout only. |
 
 Multiple reminders, in-app actions, notification permission, and close lifecycle wiring have source and Web/automated evidence. Unknown legacy reminder records block delivery with an error; a crash between submission and acknowledgement has no exactly-once guarantee. See the itemized [PR4 product audit](./docs/design/2026-09-05-pr4-product-audit.md). The visual contract remains in the user-approved `LOCKED / NAVIGATION AMENDED` state; [VISUAL_QA.md](./VISUAL_QA.md) defines its evidence boundaries.
@@ -159,9 +159,10 @@ npm run verify
 npm run rust:verify
 npm run smoke:web-persistence
 npm run smoke:android-launch -- --device <adb-serial> --apk <absolute-apk-path>
+npm run smoke:android-persistence -- --device <adb-serial> --launch-report <absolute-launch-report-path>
 ```
 
-`verify` covers domain and storage tests, the application protocol, CSP, desktop/Web/mobile module contracts, type checking, desktop and Web builds, the mobile layout contract, and documentation links. Android native execution has a separate explicit APK/emulator smoke. These checks still do not prove Windows installers, system notifications, native scaling, Narrator, Android devices, or mobile delivery.
+`verify` covers domain and storage tests, the application protocol, CSP, desktop/Web/mobile module contracts, type checking, desktop and Web builds, the mobile layout contract, and documentation links. Android native execution has a separate explicit APK/emulator launch smoke; the persistence smoke binds that exact APK evidence and verifies SQLite recovery after an app-process restart. These checks still do not prove Windows installers, system notifications, native scaling, Narrator, Android devices, emulator-reboot recovery, or mobile delivery.
 
 For the local Windows package, `npm run smoke:windows-package` installs the NSIS build into an isolated directory, launches it, checks process liveness, and cleans only that test directory. This demonstrates a working local package lifecycle; it does not prove Authenticode signing, SmartScreen reputation, or store acceptance.
 

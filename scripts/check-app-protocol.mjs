@@ -26,12 +26,14 @@ const EXPECTED_NATIVE_EVIDENCE = {
     maturity: 'local-debug',
     nativeBuild: 'pass',
     emulatorRun: 'pass',
+    persistenceRestart: 'pass',
     deviceRun: 'not-run',
   },
   ios: {
     maturity: 'source-ready',
     nativeBuild: 'not-run',
     simulatorRun: 'not-run',
+    persistenceRestart: 'not-run',
     deviceRun: 'not-run',
   },
 }
@@ -56,7 +58,7 @@ const EXPECTED_PLANNED_FEATURES = [
 const CALENDAR_ACCEPTANCE_COMMANDS = ['smoke:calendar', 'benchmark:task-query']
 const EXPECTED_ACCEPTANCE = {
   required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
-  conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:ios-launch', 'smoke:android-launch', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
+  conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:ios-launch', 'smoke:android-launch', 'smoke:android-persistence', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
 }
 const EXPECTED_SHIPPED_EVIDENCE = [
   { id: 'navigation', sources: ['src/lib/workspace-view.ts'], tests: ['tests/workspace-navigation.test.ts'] },
@@ -94,8 +96,8 @@ export function validateApplicationProtocol({
   const errors = []
   if (!isRecord(protocol)) return { errors: ['Protocol must be a JSON object.'] }
 
-  if (protocol.schemaVersion !== 4) {
-    errors.push('schemaVersion must be 4.')
+  if (protocol.schemaVersion !== 5) {
+    errors.push('schemaVersion must be 5.')
   }
 
   validateProduct(protocol.product, packageJson, errors)

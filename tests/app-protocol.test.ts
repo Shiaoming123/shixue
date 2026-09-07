@@ -22,6 +22,7 @@ const packageJson = {
     'smoke:web-persistence': 'node scripts/smoke-web-persistence.mjs',
     'smoke:ios-launch': 'node scripts/smoke-ios-launch.mjs',
     'smoke:android-launch': 'node scripts/smoke-android-launch.mjs',
+    'smoke:android-persistence': 'node scripts/smoke-android-persistence.mjs',
     'smoke:calendar': 'node scripts/smoke-calendar.mjs',
     'benchmark:task-query': 'node scripts/benchmark-study-task-query.mjs',
     'smoke:windows-package': 'node scripts/smoke-windows-package.mjs',
@@ -34,7 +35,7 @@ const projectRoot = new URL('..', import.meta.url)
 
 function validProtocol() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     product: {
       name: 'meow-study',
       goal: 'Build a local-first cross-platform application.',
@@ -110,18 +111,20 @@ function validProtocol() {
         maturity: 'local-debug',
         nativeBuild: 'pass',
         emulatorRun: 'pass',
+        persistenceRestart: 'pass',
         deviceRun: 'not-run',
       },
       ios: {
         maturity: 'source-ready',
         nativeBuild: 'not-run',
         simulatorRun: 'not-run',
+        persistenceRestart: 'not-run',
         deviceRun: 'not-run',
       },
     },
     acceptance: {
       required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
-      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:ios-launch', 'smoke:android-launch', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
+      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:ios-launch', 'smoke:android-launch', 'smoke:android-persistence', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
     },
     evolution: {
       additive: 'Add fields in a new schema version.',
@@ -183,6 +186,16 @@ test('rejects native evidence that overstates or rewrites the recorded native ru
   protocol.nativeEvidence.ios.simulatorRun = 'pass'
 
   assert.match(validate(protocol).errors.join('\n'), /nativeEvidence must retain the recorded Android and iOS evidence boundaries/)
+})
+
+test('rejects removing Android restart persistence or attributing it to the current iOS tree', () => {
+  const androidProtocol = validProtocol()
+  androidProtocol.nativeEvidence.android.persistenceRestart = 'not-run'
+  assert.match(validate(androidProtocol).errors.join('\n'), /nativeEvidence must retain the recorded Android and iOS evidence boundaries/)
+
+  const iosProtocol = validProtocol()
+  iosProtocol.nativeEvidence.ios.persistenceRestart = 'pass'
+  assert.match(validate(iosProtocol).errors.join('\n'), /nativeEvidence must retain the recorded Android and iOS evidence boundaries/)
 })
 
 test('rejects a protocol that omits the shipped calendar planning capability', () => {

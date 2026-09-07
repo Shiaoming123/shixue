@@ -66,10 +66,14 @@ jobs:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.1.12297006
         run: npm run smoke:android-launch -- --device emulator-5554 --apk "$GITHUB_WORKSPACE/$SHIXUE_ANDROID_APK" --output src-tauri/target/android-launch/ci.json
 
+      - name: Smoke Android SQLite persistence across process restart
+        timeout-minutes: 3
+        run: npm run smoke:android-persistence -- --device emulator-5554 --launch-report "$GITHUB_WORKSPACE/src-tauri/target/android-launch/ci.json" --output src-tauri/target/android-persistence/ci.json
+
       - name: Capture Android diagnostics
         if: always()
         run: |
-          mkdir -p src-tauri/target/android-launch
+          mkdir -p src-tauri/target/android-launch src-tauri/target/android-persistence
           timeout 30 adb -s emulator-5554 logcat -d -t 1000 > src-tauri/target/android-launch/logcat.txt || true
           cp "$RUNNER_TEMP/shixue-emulator.log" src-tauri/target/android-launch/emulator.log || true
 
@@ -87,5 +91,7 @@ jobs:
         if: always()
         with:
           name: shixue-android-emulator-evidence
-          path: src-tauri/target/android-launch/
+          path: |
+            src-tauri/target/android-launch/
+            src-tauri/target/android-persistence/
           if-no-files-found: error
