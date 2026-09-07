@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "product": {
     "name": "meow-study",
     "goal": "Help one person capture, plan, execute, and review general personal tasks locally, with an optional learning specialization for evidence and review workflows.",
@@ -135,6 +135,12 @@
     "mobileNative": "source-ready"
   },
   "nativeEvidence": {
+    "android": {
+      "maturity": "local-debug",
+      "nativeBuild": "pass",
+      "emulatorRun": "pass",
+      "deviceRun": "not-run"
+    },
     "ios": {
       "maturity": "source-ready",
       "nativeBuild": "not-run",
@@ -144,7 +150,7 @@
   },
   "acceptance": {
     "required": ["test", "check:protocol", "check:csp", "typecheck", "build", "build:web", "check:modules", "check:docs"],
-    "conditional": ["rust:verify", "smoke:web-persistence", "smoke:calendar", "benchmark:task-query", "smoke:ios-launch", "smoke:windows-package", "mobile:doctor", "check:android-artifact"]
+    "conditional": ["rust:verify", "smoke:web-persistence", "smoke:calendar", "benchmark:task-query", "smoke:ios-launch", "smoke:android-launch", "smoke:windows-package", "mobile:doctor", "check:android-artifact"]
   },
   "evolution": {
     "additive": "Add fields only in an application schema version that the checker explicitly understands; capability protocol versions evolve independently.",

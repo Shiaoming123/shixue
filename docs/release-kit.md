@@ -7,30 +7,34 @@ The Release Kit makes a checkout diagnosable and validates release configuration
 | Stage | Current maturity | What is available now | Still required |
 | --- | --- | --- | --- |
 | Local checks | Available | `npm run doctor`, `npm run verify`, and `npm run release:check` | Project-specific platform validation |
-| Desktop build/package | v0.3.0 local candidate verified | `npm run package:windows` built and audited an unsigned x64 NSIS installer, zh-CN MSI, and portable EXE; package smoke and baseline installed-app acceptance verified the manifest-selected NSIS | Final-SHA review/reminder/tray interaction, MSI installation, code signing, and public distribution remain separate |
+| Desktop build/package | v0.3.0 published unsigned | `npm run package:windows` built and audited an unsigned x64 NSIS installer, zh-CN MSI, and portable EXE; package smoke and baseline installed-app acceptance verified the manifest-selected NSIS; the assets were published on 2026-09-07 | Final-SHA review/reminder/tray interaction, MSI installation, and code signing remain separate |
 | Desktop code signing | Deferred | Workflow accepts optional signing inputs | Certificate ownership, secret provisioning, signed-artifact verification |
 | macOS notarization | Deferred | Workflow accepts optional Apple signing/notarization inputs | Apple account, certificates, notarization submission, and installed-artifact validation |
 | Updater signing/delivery | Configured for GitHub Releases | Real HTTPS endpoint and application-specific public key are committed; the private key remains outside Git | Hosted signed updater artifacts and update-path validation |
-| Windows distribution | v0.3.0 unsigned local evidence | The current candidate produced NSIS, zh-CN MSI, portable EXE, hashes, audit, automated package lifecycle evidence, and baseline installed-app acceptance | Installed review/reminder/tray actions, no-delivery-after-quit observation, 200% scaling, Narrator, Authenticode certificate, and SmartScreen reputation |
-| Android package | Local debug evidence | Android emulator `tauri android dev` and local universal debug APK/AAB build have completed | Recreate the ignored generated project on a clean checkout; real-device smoke, signing, Play Console, and store submission |
-| iOS package and store | Deferred | Responsive UI and desktop-capability degradation only | Native project initialization, Xcode/CocoaPods, accounts, certificates, device testing, and store submission |
+| Windows distribution | v0.3.0 unsigned Release | The published Release contains NSIS, zh-CN MSI, portable EXE, hashes, updater metadata, and signatures; the candidate also has automated package lifecycle evidence and baseline installed-app acceptance | Installed review/reminder/tray actions, no-delivery-after-quit observation, 200% scaling, Narrator, Authenticode certificate, and SmartScreen reputation |
+| Android package | Local debug evidence | The x86_64 debug APK from `2ce9e34` passed identity metadata, explicit Activity launch, five readiness markers, foreground inspection, and stable PID smoke on an isolated API 36 emulator | Physical-device smoke, SQLite restart recovery, native notifications, signing, Play Console, and store submission |
+| iOS package and store | Source-ready | Native source, preparation commands, and historical Simulator evidence | Exact-current Simulator run, accounts, certificates, device testing, and store submission |
 | Web deployment | Deferred | `npm run build:web` creates a static build | Select/configure a provider and validate a deployed site |
 
 An unsigned desktop artifact is not evidence of a signed, notarized, store-ready, or auto-updatable release. Likewise, a responsive mobile interface is not an APK, AAB, IPA, TestFlight build, or store submission.
 
-The current candidate status is tracked in the
-[v0.3.0 acceptance ledger](./releases/v0.3.0-acceptance.md). Evidence from an
-earlier local candidate remains historical and does not validate v0.3.0.
+The v0.3.0 candidate evidence and remaining gaps are tracked in the
+[v0.3.0 acceptance ledger](./releases/v0.3.0-acceptance.md). Post-release
+changes on `main`, including the Android emulator work recorded here, are not
+part of the published v0.3.0 assets.
 
 `src-tauri/gen/` is intentionally ignored. The Android Gradle project and its
 debug APK/AAB are local build outputs, so a clean checkout must regenerate it
 with `npm run tauri -- android init --ci` before rebuilding. The verified local
 debug artifacts do not carry an upload keystore or prove Google Play acceptance.
 After a debug build, run `npm run check:android-artifact -- --apk <path>` to
-check its package identity, version, SDK metadata, and included ABI list. The
-manual `android-debug` workflow runs the same check and uploads its debug APK;
-it deliberately does not sign or publish anything. Its clean-runner path has
-been executed successfully once for the current Android debug baseline.
+check its package identity, version, SDK metadata, and included ABI list. Then
+run `npm run smoke:android-launch -- --device <adb-serial> --apk <absolute-path>`
+against a dedicated emulator. The smoke clears the old installation, uses a
+unique run id, launches the resolved Activity, and requires all five native
+readiness phases plus foreground and stable process evidence. The manual
+`android-debug` workflow performs the same sequence and uploads both the debug
+APK and bounded diagnostics; it deliberately does not sign or publish anything.
 
 ## Local release preparation
 

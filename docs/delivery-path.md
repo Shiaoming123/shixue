@@ -8,8 +8,8 @@
 | --- | --- | --- | --- |
 | 默认 Web | Beta | `npm run build:web`、本地浏览器 IndexedDB smoke | 已部署站点、账号服务 |
 | 默认桌面 | Stable baseline | `npm run verify`、`npm run rust:verify`、Windows 无签名安装 smoke | 签名、公证、在线更新 |
-| Android | Beta | SDK/NDK/JDK/ADB doctor、模拟器 `tauri android dev`、本地 universal debug APK/AAB、干净 GitHub runner 的 x86_64 debug APK workflow | 真机、签名、Google Play、更新通道 |
-| iOS | Compile-ready | macOS Xcode 26.6 / CocoaPods 1.17.0 工具链、`tauri ios init`、Apple Silicon Simulator 无签名 Debug 原生编译 | 成功启动模拟器、V3 SQLite 写入和重启恢复、真机、TestFlight、App Store |
+| Android | Beta / local-debug | `2ce9e34` 的 x86_64 debug APK 已在隔离 API 36 模拟器通过身份校验、显式 Activity 启动、五阶段 readiness、前台与稳定 PID smoke | 真机、SQLite 重启恢复、原生通知、签名、Google Play、更新通道 |
+| iOS | Source-ready | iOS 源码、生成/编译/启动 smoke 命令与历史 Simulator 快照 | 当前树 Simulator、V3 SQLite 写入和重启恢复、真机、TestFlight、App Store |
 | 同步服务 | Preview foundation | 本地优先 outbox、IndexedDB 状态、allowlist、HTTPS/loopback HTTP transport 测试 | 账号、冲突产品规则、托管 API、多设备运行 |
 | 桌面更新 | Template only | 端点/公钥/CI 模板与严格 release gate | 自有端点、私钥签名、安装端更新 |
 
@@ -35,13 +35,13 @@
 ```powershell
 npm run mobile:doctor
 npm run tauri -- android init --ci
-npm run tauri -- android dev
-npm run tauri -- android build --debug
+npm run tauri -- android build --debug --target x86_64 --apk
 npm run check:android-artifact -- --apk src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+npm run smoke:android-launch -- --device emulator-5554 --apk <absolute-apk-path>
 ```
 
-最后一条会在忽略的 `src-tauri/gen/android/` 树中生成 debug APK/AAB。它适合本地安装和 ABI/启动验证；不能替代 release signing。Windows 还需要 Developer Mode（或创建符号链接的等效权限）。
-GitHub 上也提供手动触发的 `android-debug` workflow：它在干净环境生成工程、构建 x86_64 debug APK、核验元数据并保存调试产物。该工作流已在 `cc0507d` 的首次手动运行中成功；它不是商店发布工作流。
+构建会在忽略的 `src-tauri/gen/android/` 树中生成 debug APK。smoke 只接受绝对 APK 路径和显式 ADB serial，并先验证包名、版本、SDK 与 ABI；随后在模拟器中清理旧安装，以唯一 run id 收集 WebView、原生宿主、Vue、工作区与前端五阶段标记，最后要求 Activity 在前台且 PID 稳定存活。Windows 还需要 Developer Mode（或创建符号链接的等效权限）。
+GitHub 上的手动 `android-debug` workflow 会在干净 runner 中生成工程、冷启动隔离 API 35 x86_64 模拟器、构建和核验 APK、执行同一启动 smoke，并保存 APK、JSON 证据与有限诊断日志。它不是签名或商店发布工作流。
 
 ## 发布前的人工输入
 

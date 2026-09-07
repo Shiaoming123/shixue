@@ -106,6 +106,6 @@ test('application emits separate WebView, host, Vue, workspace, and frontend rea
   assert.match(mainSource, /reportSmokePhase\('vue-mounted'\)/)
   assert.match(appSource, /reportSmokePhase\('workspace-ready'\)/)
   assert.match(appSource, /reportSmokePhase\('frontend-ready'\)/)
-  assert.match(nativeSource, /fn report_ios_smoke_phase/)
-  assert.match(nativeSource, /cfg\(all\(target_os = "ios", debug_assertions\)\)/)
+  assert.match(nativeSource, /fn report_native_smoke_phase/)
+  assert.match(nativeSource, /cfg\(all\(any\(target_os = "android", target_os = "ios"\), debug_assertions\)\)/)
 })

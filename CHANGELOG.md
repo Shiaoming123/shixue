@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- 新增 Android Emulator 原生启动 smoke：校验当前 APK 身份，隔离安装并显式启动 Activity，要求五阶段 readiness、前台状态与稳定 PID 同时通过；手动 Android workflow 保存 APK、JSON 证据和有限诊断日志。
+
 ## [0.3.0] - 2026-09-07
 
 ### Added

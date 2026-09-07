@@ -28,7 +28,7 @@ The protocol deliberately summarizes rather than replaces implementation facts:
 module policy, Workspace export format/version, legacy Study input format,
 capability protocol version, default local-first/sync boundary, acceptance
 commands, maturity labels, shipped implementation evidence, current delivery
-evidence, and the recorded iOS native evidence boundary. Data-port and
+evidence, and the recorded Android/iOS native evidence boundaries. Data-port and
 capability facts are compared with constants exported by the implementation;
 they are not inferred by comparing duplicated JSON fields. The checker does not
 alter configuration, load modules, contact a network endpoint, or read secrets.
@@ -58,13 +58,17 @@ The exact unsigned v0.3.0 local candidate passed package smoke and installed-app
 acceptance; its versioned acceptance ledger records the artifact hashes, checks,
 and remaining `NOT_RUN` rows. This does not raise signing, hosted updates,
 deployed Web hosting, real-device execution, or store submission status.
-Native mobile delivery is `source-ready`: the iOS source and reproducible local
-commands are present, while native build, Simulator run, and device execution
-for the exact current tree are all `not-run`. The earlier Simulator result is
-retained as a dated historical snapshot in `docs/ios-development.md`; it does
-not establish current-tree runtime evidence. Desktop is the primary stable
-runtime path; Web and mobile are Beta adaptations with documented capability
-degradation.
+Aggregate native mobile delivery remains `source-ready` because iOS has not
+been rerun on the exact current tree. Android has separate `local-debug`
+evidence: implementation commit `2ce9e34` produced an x86_64 debug APK whose
+identity passed metadata validation and whose isolated API 36 emulator run
+reached all five readiness phases while the resolved Activity stayed foreground
+and its PID survived the bounded stability window. Android physical-device,
+SQLite restart, native-notification, signing, and store evidence remain
+`not-run`. The earlier iOS Simulator result remains a dated historical snapshot
+in `docs/ios-development.md`; it does not establish current-tree runtime
+evidence. Desktop is the primary stable runtime path; Web and mobile are Beta
+adaptations with documented capability degradation.
 
 On a Tauri host, `src/main.ts` resolves the native target once and provides the
 typed `RuntimeInfo` to both module loading and the Vue shell. User-Agent data
@@ -81,6 +85,16 @@ signing, device execution, SQLite persistence, or visual acceptance. The
 runner keys native marker-file evidence to a unique launch id, checks the host
 Simulator process, and succeeds only after all markers are observed and the
 process survives the stability window.
+
+The Android launch smoke command is `npm run smoke:android-launch -- --device
+<adb-serial> --apk <absolute APK path>`. It first verifies the APK package,
+version, SDK, and ABI metadata; requires a fully booted emulator; clears the old
+installation and log state; resolves and explicitly launches the real Activity;
+then reads run-id-scoped native markers from the debug app cache. It succeeds
+only when the WebView, native host, Vue, workspace, and frontend markers are all
+present while the Activity is foreground and the app PID remains alive for the
+stability window. This does not prove a physical device, restart persistence,
+native notifications, signing, or store delivery.
 
 ## Workspace data evolution
 
@@ -105,9 +119,10 @@ and is not read, mirrored, or migrated into the Workspace task model.
 
 ## Capability and implementation status
 
-Application schema version 3 declares capability protocol version 1. Schema v3
-adds the separately checked `nativeEvidence.ios` record so a compile result
-cannot be confused with local delivery evidence. These are
+Application schema version 4 declares capability protocol version 1. Schema v4
+adds a separately checked `nativeEvidence.android` record alongside the iOS
+record so an Android compile result cannot be confused with emulator readiness
+or physical-device evidence. These are
 independent version lines: changing the product declaration does not change the
 command envelope. Current human UI, keyboard, and notification integrations
 must use the versioned capability service, which validates and applies a command
@@ -227,6 +242,7 @@ npm run check:modules -- web
 npm run check:modules -- mobile
 npm run verify
 npm run smoke:ios-launch -- --device <UDID> --app <absolute .app path>
+npm run smoke:android-launch -- --device <adb-serial> --apk <absolute APK path>
 ```
 
 Run `npm run rust:verify` for Rust/Tauri changes. Web and Windows smoke checks
@@ -235,7 +251,7 @@ remain opt-in local evidence; see [web.md](./web.md) and
 
 ## Compatibility
 
-Application schema version `3` declares the general-planning, Workspace v3, and
+Application schema version `4` declares the general-planning, Workspace v3, and
 capability boundaries above. Additive fields require a checker change that
 explicitly understands the application schema version. Renaming or removing a
 module, data format, or compatibility promise is breaking: keep the old
