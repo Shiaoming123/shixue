@@ -112,6 +112,20 @@ derive it, so the UI can narrow the existing record history and return to the
 source task. Linked minutes are evidence-attributed minutes; they are not a
 claim that every session in the week has a complete audited end time.
 
+The same selector also exposes the current weekly plan snapshot for learning
+tasks. Ordinary tasks contribute their current schedule, while recurring tasks
+contribute occurrences without also counting the parent task. Effective
+occurrence overrides own the schedule and estimate. Completion, cancellation,
+and skip outcomes keep their exact task, occurrence, and event identities and
+exclude facts later than the injected instant; an outcome before the week still
+describes the current state of a task scheduled in the week. Occurrence status
+owns the current result after undo, and the latest canonical event sequence
+explains a completed or skipped occurrence. Generated review tasks and
+structurally cancelled recurrence occurrences are excluded. Because task events
+do not store schedule, estimate, or list snapshots, this is explicitly the
+current workspace view of the week rather than a reconstruction of an earlier
+plan.
+
 `calendar-planning-v1` is backed by machine-checkable source and test pointers:
 
 | Evidence id | Implemented boundary | Behavioural evidence |

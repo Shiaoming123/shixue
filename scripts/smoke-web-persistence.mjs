@@ -186,7 +186,28 @@ async function main() {
       const weeklySummary = page.locator('.weekly-summary')
       await weeklySummary.getByRole('heading', { name: '本周证据', exact: true }).waitFor({ state: 'visible' })
       const learningTopicSummary = weeklySummary.locator('.weekly-topics > article').filter({ hasText: rhythmTopicTitle })
-      await learningTopicSummary.getByRole('button', { name: /\d+\s*有证据完成/ }).click()
+      await learningTopicSummary.getByRole('button', { name: /\d+\s*计划\s*预计/ }).click()
+      const planSources = weeklySummary.locator('.plan-source-row').filter({ hasText: rhythmTaskTitle })
+      await planSources.first().waitFor({ state: 'visible' })
+      const focusedPlanTarget = await page.evaluate(() => document.activeElement?.className ?? '')
+      if (!String(focusedPlanTarget).includes((await planSources.count()) === 1 ? 'plan-source-row' : 'plan-scope')) {
+        throw new Error('Weekly plan drilldown did not focus its source list.')
+      }
+      if (!(await planSources.first().getAttribute('data-plan-source-id'))?.startsWith('occurrence:')) {
+        throw new Error('Weekly recurring plan did not expose an occurrence source.')
+      }
+      if (!/^(待完成|已完成|已取消|已跳过)，/.test(await planSources.first().getAttribute('aria-label') ?? '')) {
+        throw new Error('Weekly plan source did not expose its status in text.')
+      }
+      await planSources.first().click()
+      await rhythmTaskDetail.getByRole('heading', { name: rhythmTaskTitle, exact: true }).waitFor({ state: 'visible' })
+      await rhythmTaskDetail.getByText('本次计划', { exact: true }).waitFor({ state: 'visible' })
+      await rhythmTaskDetail.getByRole('button', { name: '关闭任务详情', exact: true }).click()
+      await page.locator('.sidebar').getByRole('button', { name: /^学习/ }).click()
+      await page.getByRole('navigation', { name: '学习导航', exact: true }).getByRole('button', { name: '回顾', exact: true }).click()
+      await weeklySummary.getByRole('heading', { name: '本周证据', exact: true }).waitFor({ state: 'visible' })
+      const refreshedLearningTopicSummary = weeklySummary.locator('.weekly-topics > article').filter({ hasText: rhythmTopicTitle })
+      await refreshedLearningTopicSummary.getByRole('button', { name: /\d+\s*有证据完成/ }).click()
       const weeklyRecord = page.locator('.record-list > article').filter({ hasText: rhythmLearned })
       await weeklyRecord.getByText(rhythmLearned, { exact: true }).waitFor({ state: 'visible' })
       const weeklyRecordMain = weeklyRecord.locator('.record-main')
@@ -486,8 +507,53 @@ async function main() {
           .map((button) => ({ label: button.textContent?.trim(), height: button.getBoundingClientRect().height }))
           .find(({ height }) => height < 44))
         if (undersizedWeeklyMetric) throw new Error(`Weekly evidence metric is smaller than 44px at ${viewport.width}px: ${JSON.stringify(undersizedWeeklyMetric)}`)
+        const undersizedPlanMetric = await responsiveWeeklySummary.locator('.plan-metrics').getByRole('button').evaluateAll((buttons) => buttons
+          .map((button) => ({ label: button.textContent?.trim(), height: button.getBoundingClientRect().height }))
+          .find(({ height }) => height < 44))
+        if (undersizedPlanMetric) throw new Error(`Weekly plan metric is smaller than 44px at ${viewport.width}px: ${JSON.stringify(undersizedPlanMetric)}`)
+        const responsiveTopicSummary = responsiveWeeklySummary.locator('.weekly-topics > article').filter({ hasText: rhythmTopicTitle })
+        const planGridColumns = await responsiveTopicSummary.locator('.plan-metrics').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length)
+        if (viewport.width === 820 && planGridColumns !== 2) {
+          throw new Error(`Weekly plan metrics are not two columns at 820px: ${planGridColumns}`)
+        }
+        if ((viewport.width === 390 || viewport.width === 320) && planGridColumns !== 1) {
+          throw new Error(`Weekly plan metrics are not one column at ${viewport.width}px: ${planGridColumns}`)
+        }
         if (viewport.width === 820 || viewport.width === 390 || viewport.width === 320) {
           await page.screenshot({ path: resolve(weeklyEvidenceArtifactRoot, `weekly-evidence-${viewport.width}x${viewport.height}.png`) })
+          const responsivePlanMetric = responsiveTopicSummary.getByRole('button', { name: /\d+\s*计划\s*预计/ })
+          await responsivePlanMetric.scrollIntoViewIfNeeded()
+          await responsivePlanMetric.click()
+          const responsivePlanScope = responsiveWeeklySummary.locator('.plan-scope')
+          const responsivePlanSource = responsiveWeeklySummary.locator('.plan-source-row').filter({ hasText: rhythmTaskTitle }).first()
+          await responsivePlanSource.scrollIntoViewIfNeeded()
+          const expandedPlanGeometry = await responsiveWeeklySummary.evaluate((element) => {
+            const row = element.querySelector('.plan-source-row')
+            const back = element.querySelector('.plan-scope button')
+            const rowBox = row?.getBoundingClientRect()
+            const backBox = back?.getBoundingClientRect()
+            return {
+              viewportWidth: document.documentElement.clientWidth,
+              pageScrollWidth: document.documentElement.scrollWidth,
+              summaryScrollWidth: element.scrollWidth,
+              summaryClientWidth: element.clientWidth,
+              row: rowBox ? { left: rowBox.left, right: rowBox.right, height: rowBox.height } : null,
+              back: backBox ? { left: backBox.left, right: backBox.right, height: backBox.height } : null,
+            }
+          })
+          if (!expandedPlanGeometry.row || !expandedPlanGeometry.back
+            || expandedPlanGeometry.row.left < -0.5 || expandedPlanGeometry.row.right > expandedPlanGeometry.viewportWidth + 0.5
+            || expandedPlanGeometry.back.left < -0.5 || expandedPlanGeometry.back.right > expandedPlanGeometry.viewportWidth + 0.5
+            || expandedPlanGeometry.row.height < 44 || expandedPlanGeometry.back.height < 44
+            || expandedPlanGeometry.summaryScrollWidth > expandedPlanGeometry.summaryClientWidth
+            || expandedPlanGeometry.pageScrollWidth > expandedPlanGeometry.viewportWidth) {
+            throw new Error(`Expanded weekly plan is not reachable at ${viewport.width}px: ${JSON.stringify(expandedPlanGeometry)}`)
+          }
+          await page.screenshot({ path: resolve(weeklyEvidenceArtifactRoot, `weekly-plan-sources-${viewport.width}x${viewport.height}.png`) })
+          await responsivePlanScope.getByRole('button', { name: '返回本周证据', exact: true }).click()
+          if (!(await responsivePlanMetric.evaluate((element) => element === document.activeElement))) {
+            throw new Error(`Weekly plan drilldown did not restore metric focus at ${viewport.width}px.`)
+          }
         }
         await primaryNavigation.getByRole('button', { name: /^收件箱/ }).click()
 
