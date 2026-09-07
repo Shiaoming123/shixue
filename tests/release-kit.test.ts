@@ -283,9 +283,11 @@ test('accepts a non-placeholder HTTPS updater endpoint', async (t) => {
   await mkdir(join(fixtureRoot, '.github', 'workflows'), { recursive: true })
   await writeFile(join(fixtureRoot, '.github', 'workflows', 'release.yml'), `
 runs-on: windows-latest
-uses: tauri-apps/tauri-action@v0
+uses: tauri-apps/tauri-action@v1
 args: --bundles nsis,msi
 releaseDraft: true
+uploadUpdaterJson: true
+releaseAssetNamePattern: 'Shixue_[version]_[arch][setup][ext]'
 - name: Require version tag source
   if: github.ref_type != 'tag'
 - name: Run full test suite
@@ -312,9 +314,11 @@ releaseDraft: true
 test('formal Windows releases require staging, uploading, and verifying the portable EXE', () => {
   const validWorkflow = `
 runs-on: windows-latest
-uses: tauri-apps/tauri-action@v0
+uses: tauri-apps/tauri-action@v1
 args: --bundles nsis,msi
 releaseDraft: true
+uploadUpdaterJson: true
+releaseAssetNamePattern: 'Shixue_[version]_[arch][setup][ext]'
 - name: Require version tag source
   if: github.ref_type != 'tag'
 - name: Run full test suite
@@ -352,6 +356,20 @@ releaseDraft: true
   assert.match(
     validateWindowsReleaseWorkflow(validWorkflow.replace('run: npm test', '# full tests omitted')).join('\n'),
     /run the full npm test suite/,
+  )
+  assert.match(
+    validateWindowsReleaseWorkflow(
+      validWorkflow
+        .replace('uploadUpdaterJson:', 'includeUpdaterJson:')
+        .replace('releaseAssetNamePattern:', 'assetNamePattern:'),
+    ).join('\n'),
+    /must use the tauri-action v1 updater and asset-name inputs/,
+  )
+  assert.match(
+    validateWindowsReleaseWorkflow(
+      `${validWorkflow}\nincludeUpdaterJson: true\nassetNamePattern: legacy`,
+    ).join('\n'),
+    /must not use removed tauri-action v0 input names/,
   )
   assert.match(
     validateWindowsReleaseWorkflow(validWorkflow.replace('$portableAsset.digest', '$portableAsset.name')).join('\n'),
