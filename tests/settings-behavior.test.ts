@@ -215,7 +215,7 @@ test('denied preference access does not prevent workspace initialization', async
   const messages: string[] = []
   const ports = {
     window: { addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
-    handleQuickAdd() {}, handleModuleError() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
+    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
     localStorage: { getItem() { throw Error('SecurityError') } }, notify: (message: string) => messages.push(message),
     applyTheme() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }),
     compactMedia: undefined, compact: ref(false), onCompactChange() {},
@@ -237,7 +237,7 @@ test('unmount during native initialization cannot install timers after teardown'
   const js = ts.transpileModule(`const mounted = ${callback.getText(source)}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   const ports = {
     window: { addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
-    handleQuickAdd() {}, handleModuleError() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
+    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
     localStorage: { getItem: () => null }, notify() {}, applyTheme() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }),
     compactMedia: undefined, compact: ref(false), onCompactChange() {}, refreshState: async () => {}, state: ref({ topics: [] }), selectedTopicId: ref(''), showFocus: ref(false), activeSession: ref(null),
     reportStorageError(error: unknown) { throw error }, loading: ref(true), cloudAvailable: false, runtime: { platform: 'desktop' },

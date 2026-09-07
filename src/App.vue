@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Settings } from '@lucide/vue'
+import { Search, Settings } from '@lucide/vue'
 import { applyTheme } from './assets/themes'
 import AppSidebar, { type StudySmartViewCounts } from './components/study/AppSidebar.vue'
 import BottomTabs from './components/study/BottomTabs.vue'
@@ -14,6 +14,8 @@ import type { ReminderSetValue } from './components/study/ReminderEditor.vue'
 import TaskActionSheet, { type TaskActionMode, type TaskActionPayload } from './components/study/TaskActionSheet.vue'
 import TaskDetailDrawer, { type TaskEventViewItem } from './components/study/TaskDetailDrawer.vue'
 import TaskEditSheet, { type TaskEditChanges, type TaskEditValue } from './components/study/TaskEditSheet.vue'
+import TagManagerSheet from './components/study/TagManagerSheet.vue'
+import GlobalSearchDialog from './components/study/GlobalSearchDialog.vue'
 import RecurrenceScopeDialog, { type RecurrenceRuleScope } from './components/study/RecurrenceScopeDialog.vue'
 import OccurrenceRescheduleSheet from './components/study/OccurrenceRescheduleSheet.vue'
 import { type RecurrenceRule } from './components/study/RecurrenceEditor.vue'
@@ -89,10 +91,12 @@ import {
 import { createSeedStudyState } from './storage/study/types'
 import { getWorkspaceStore } from './storage/workspace/registry'
 import { createTaskCapabilityService } from './domain/capabilities/service'
-import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef } from './domain/capabilities/types'
+import { CAPABILITY_PROTOCOL_VERSION, type CapabilityCommand, type CommandEnvelope, type CommandPreview, type EntityRef, type TagCapabilityCommand } from './domain/capabilities/types'
 import type { CalendarCapabilityCommand } from './domain/capabilities/calendar-commands'
 import { createCalendarUndoAction, runCalendarCommand } from './lib/calendar-command-handler'
 import { runOverdueBatchMove } from './lib/overdue-batch-command'
+import { runTagCommand } from './lib/tag-command-handler'
+import { destinationForSearchTask } from './lib/search-result-navigation'
 import { resolveRecurrenceEditWrite, resolveReminderEditWrite, resolveTaskEditWrite, runTaskEditCommit } from './lib/task-edit-commit'
 import type { Task, WorkspaceStateV3 } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
@@ -131,6 +135,11 @@ const listsMoreOpen = ref(false)
 const taskActionMode = ref<TaskActionMode>('plan')
 const taskActionTaskId = ref('')
 const taskEditorOpen = ref(false)
+const globalSearchOpen = ref(false)
+const tagManagerOpen = ref(false)
+const tagManagerBusy = ref(false)
+const tagManagerError = ref('')
+const tagManager = ref<InstanceType<typeof TagManagerSheet> | null>(null)
 const recurrenceWorkspace = ref<WorkspaceStateV3 | null>(null)
 const recurrenceScopeOpen = ref(false)
 const recurrencePreview = ref<CommandPreview | null>(null)
@@ -146,6 +155,8 @@ let recurrencePreviewEnvelope: RecurrenceUpdateEnvelope | null = null
 let recurrencePreviewVersion = 0
 const reviewRevealed = ref(false)
 const reviewMode = ref<'review' | 'records'>('review')
+const recordTarget = ref<{ id: string; requestId: number }>()
+let recordTargetRequestId = 0
 const appearanceDark = ref(false)
 const compact = ref(false)
 const clock = ref(Date.now())
@@ -367,6 +378,7 @@ const weeklyNext = computed(() => liveTasks.value.find((task) => task.status ===
 onMounted(async () => {
   window.addEventListener('shixue:quick-add', handleQuickAdd)
   window.addEventListener('shixue:module-error', handleModuleError)
+  window.addEventListener('keydown', handleGlobalSearchShortcut)
   try {
     appearanceDark.value = localStorage.getItem('meow-study-appearance') === 'dark'
     remindersEnabled.value = localStorage.getItem('meow-study-reminders') === 'enabled'
@@ -405,6 +417,7 @@ onUnmounted(() => {
   compactMedia?.removeEventListener('change', onCompactChange)
   window.removeEventListener('shixue:quick-add', handleQuickAdd)
   window.removeEventListener('shixue:module-error', handleModuleError)
+  window.removeEventListener('keydown', handleGlobalSearchShortcut)
 })
 
 async function notificationAdapter() { return import('./modules/notification') }
@@ -735,6 +748,59 @@ function isLearningDestinationActive(view: WorkspaceView) {
 function openTopicEditor(topic?: StudyTopic) { topicEditorOpen.value = true; selectedTopicId.value = topic?.id ?? ''; topicTitle.value = topic?.title ?? ''; topicGoal.value = topic?.goal ?? ''; topicMinutes.value = topic?.weeklyTargetMinutes ?? 120; topicGroupId.value = topic?.groupId ?? '' }
 function openGroupEditor(group?: StudyListGroup) { groupEditorOpen.value = true; selectedGroupId.value = group?.id ?? ''; groupTitle.value = group?.title ?? '' }
 function openTask(taskId: string) { if (page.value !== 'tasks' && page.value !== 'today') setDestination({ kind: 'inbox' }); selectedOccurrenceId.value = ''; selectedTaskId.value = taskId; showFocus.value = false }
+function openGlobalSearch() { globalSearchOpen.value = true }
+function handleGlobalSearchShortcut(event: KeyboardEvent) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLocaleLowerCase() !== 'k') return
+  event.preventDefault()
+  if (document.querySelector('[aria-modal="true"]')) return
+  openGlobalSearch()
+}
+function openSearchTask(taskId: string) {
+  const workspace = recurrenceWorkspace.value
+  const task = workspace?.tasks.find((item) => item.id === taskId && item.deletedAt === null)
+  if (!workspace || !task) { notify('这条任务已不存在，搜索结果已刷新。'); return }
+  const activeListIds = workspace.lists.filter((list) => list.archivedAt === null).map((list) => list.id)
+  setDestination(destinationForSearchTask(task, activeListIds))
+  selectedOccurrenceId.value = ''
+  selectedTaskId.value = task.id
+  showFocus.value = false
+}
+function openSearchRecord(recordId: string) {
+  const record = recurrenceWorkspace.value?.completionRecords.find((item) => item.id === recordId && item.deletedAt === null)
+  if (!record) { notify('这条完成记录已不存在，搜索结果已刷新。'); return }
+  reviewMode.value = 'records'
+  recordTarget.value = { id: record.id, requestId: ++recordTargetRequestId }
+  setDestination({ kind: 'learning', section: 'review' })
+}
+function openTagManager() { tagManagerError.value = ''; tagManagerOpen.value = true }
+async function executeTagMutation(command: TagCapabilityCommand, successMessage: string, completed: 'created' | 'renamed' | 'archived') {
+  if (tagManagerBusy.value) return
+  tagManagerBusy.value = true
+  tagManagerError.value = ''
+  try {
+    await runTagCommand({
+      snapshotRevision: async () => (await capabilityService.query({ type: 'workspace.snapshot' })).revision,
+      execute: (expectedWorkspaceRevision) => capabilityService.execute({
+        protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+        idempotencyKey: `tag-ui:${crypto.randomUUID()}`,
+        source: 'human-ui',
+        expectedWorkspaceRevision,
+        command,
+      }),
+      refresh: refreshState,
+      notify,
+      successAction: calendarUndoAction,
+      successMessage,
+    })
+    if (completed === 'created') tagManager.value?.created()
+    if (completed === 'renamed') tagManager.value?.renamed()
+  } catch (error) {
+    tagManagerError.value = error instanceof Error ? error.message : String(error)
+  } finally { tagManagerBusy.value = false }
+}
+function createTag(title: string) { return executeTagMutation({ type: 'tag.create', title }, '标签已创建。', 'created') }
+function renameTag(tagId: string, title: string) { return executeTagMutation({ type: 'tag.rename', tagId, title }, '标签已重命名。', 'renamed') }
+function archiveTag(tagId: string) { return executeTagMutation({ type: 'tag.archive', tagId }, '标签已归档；历史关联仍然保留。', 'archived') }
 function openOccurrence(occurrenceId: string) {
   const workspace = recurrenceWorkspace.value
   const occurrence = workspace?.occurrences.find((item) => item.id === occurrenceId)
@@ -1349,9 +1415,9 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 <template>
   <div class="shell">
     <OverlayHost />
-    <AppSidebar v-if="!showFocus" :active="destination" :counts="smartViewCounts" :groups="activeListGroups" :lists="listNavItems" :display-mode="sidebarPreferences.displayMode" :order="sidebarPreferences.order" @navigate="setDestination" @update:display-mode="updateSidebarPreferences({ displayMode: $event })" @reorder="updateSidebarPreferences({ order: $event })" @create-list="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" />
+    <AppSidebar v-if="!showFocus" :active="destination" :counts="smartViewCounts" :groups="activeListGroups" :lists="listNavItems" :display-mode="sidebarPreferences.displayMode" :order="sidebarPreferences.order" @search="openGlobalSearch" @navigate="setDestination" @update:display-mode="updateSidebarPreferences({ displayMode: $event })" @reorder="updateSidebarPreferences({ order: $event })" @create-list="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" />
     <div class="workspace">
-      <header v-if="!showFocus" class="mobile-header"><div><img src="/shixue-mark.svg" alt="" /><strong>拾学</strong></div><button title="设置" :aria-current="destination.kind === 'settings' ? 'page' : undefined" @click="setDestination({ kind: 'settings' })"><Settings :size="22" /></button></header>
+      <header v-if="!showFocus" class="mobile-header"><div class="mobile-brand"><img src="/shixue-mark.svg" alt="" /><strong>拾学</strong></div><div class="mobile-actions"><button type="button" title="全局搜索" aria-label="全局搜索" aria-keyshortcuts="Control+K Meta+K" @click="openGlobalSearch"><Search :size="21" /></button><button type="button" title="设置" aria-label="设置" :aria-current="destination.kind === 'settings' ? 'page' : undefined" @click="setDestination({ kind: 'settings' })"><Settings :size="22" /></button></div></header>
       <main :class="{ 'focus-main': showFocus, 'tasks-main': (page === 'tasks' || page === 'today') && !showFocus, 'calendar-main': page === 'calendar' && !showFocus }">
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
         <FocusView v-else-if="showFocus && activeSession && activeTask" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" :review-link-id="activeReviewLinkId || undefined" @back="showFocus = false" @toggle="toggleFocus" @finish="openFocusCompletion" @update:scratchpad="updateScratchpad" />
@@ -1373,7 +1439,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
         <div v-else-if="destination.kind === 'learning'" class="route-workspace">
           <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
           <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
-          <ReviewView v-else :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
+          <ReviewView v-else :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
         </div>
         <CalendarWorkspace v-if="!loading && page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :target-offset="calendarTargetOffset" :execute-command="executeCalendarCommand" @desktop-mode-selected="persistDesktopCalendarMode" />
       </main>
@@ -1382,7 +1448,9 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 
     <CompletionSheet :open="completionOpen" :context-id="completionReminderId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) && reminderBusy" :task-title="reminderCompletionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionReviewLinkId = ''" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
-    <TaskEditSheet :open="taskEditorOpen" :task="selectedTaskEditModel" :topics="state.topics" :tags="recurrenceWorkspace?.tags ?? []" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" />
+    <TaskEditSheet :open="taskEditorOpen" :task="selectedTaskEditModel" :topics="state.topics" :tags="recurrenceWorkspace?.tags ?? []" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @manage-tags="openTagManager" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" />
+    <GlobalSearchDialog v-model:open="globalSearchOpen" :workspace="recurrenceWorkspace" :timezone="timezone" @close="globalSearchOpen = false" @manage-tags="openTagManager" @open-task="openSearchTask" @open-record="openSearchRecord" />
+    <TagManagerSheet ref="tagManager" :open="tagManagerOpen" :tags="recurrenceWorkspace?.tags ?? []" :busy="tagManagerBusy" :error="tagManagerError" @close="tagManagerOpen = false" @create="createTag" @rename="renameTag" @archive="archiveTag" />
     <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @edit-occurrence="editSingleOccurrence" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />
     <OccurrenceRescheduleSheet :open="occurrenceRescheduleOpen" :title="selectedTask?.title ?? ''" :model-value="occurrenceRescheduleValue" :timed="occurrenceRescheduleTimed" @close="occurrenceRescheduleOpen = false" @submit="rescheduleOccurrence" />
     <Sheet :open="topicEditorOpen" :label="state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单'" size="lg" @close="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" autofocus required placeholder="清单名称" /></label><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></Sheet>
@@ -1418,6 +1486,6 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 @media (max-width: 819px) {
   .learning-navigation { padding: 10px 16px 0; }
   .lists-more { position: fixed; z-index: var(--z-sticky); top: calc(72px + env(safe-area-inset-top, 0px)); right: 16px; display: block; }
-  .shell { flex-direction: column; }.workspace { width: 100%; }.mobile-header { height: calc(64px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px; border-bottom: 1px solid var(--hairline); background: var(--material-thin); backdrop-filter: saturate(170%) blur(24px); -webkit-backdrop-filter: saturate(170%) blur(24px); }.mobile-header > div { display: flex; align-items: center; gap: 8px; }.mobile-header img { width: 34px; height: 34px; }.mobile-header strong { font-size: 18px; font-weight: 650; letter-spacing: .04em; }.mobile-header button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.mobile-header button:active { background: var(--control-fill); } main { height: calc(100% - 64px - env(safe-area-inset-top, 0px)); scrollbar-gutter: auto; } main.focus-main { height: 100%; }.tasks-layout { display: block; }.error-banner { left: 12px; right: 12px; top: calc(70px + env(safe-area-inset-top, 0px)); }
+  .shell { flex-direction: column; }.workspace { width: 100%; }.mobile-header { height: calc(64px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; justify-content: space-between; padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 8px; border-bottom: 1px solid var(--hairline); background: var(--material-thin); backdrop-filter: saturate(170%) blur(24px); -webkit-backdrop-filter: saturate(170%) blur(24px); }.mobile-header > div { display: flex; align-items: center; gap: 8px; }.mobile-header img { width: 34px; height: 34px; }.mobile-header strong { font-size: 18px; font-weight: 650; letter-spacing: .04em; }.mobile-header button { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.mobile-header button:active { background: var(--control-fill); }.mobile-actions { gap: 2px !important; } main { height: calc(100% - 64px - env(safe-area-inset-top, 0px)); scrollbar-gutter: auto; } main.focus-main { height: 100%; }.tasks-layout { display: block; }.error-banner { left: 12px; right: 12px; top: calc(70px + env(safe-area-inset-top, 0px)); }
 }
 </style>

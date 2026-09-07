@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue'
 import { Brain, CheckCircle2, ChevronRight, FileCheck2, RotateCcw, Search, Sparkles } from '@lucide/vue'
 import Listbox from '../ui/Listbox.vue'
 
@@ -32,6 +32,7 @@ const props = defineProps<{
   records: CompletionRecordViewItem[]
   topics: RecordTopicOption[]
   initialMode?: 'review' | 'records'
+  recordTarget?: { id: string; requestId: number }
 }>()
 
 const emit = defineEmits<{
@@ -45,7 +46,24 @@ const mode = ref<'review' | 'records'>(props.initialMode ?? 'review')
 const query = ref('')
 const topicId = ref('')
 const selectedRecordId = ref('')
+const recordButtons = new Map<string, HTMLButtonElement>()
 watch(() => props.initialMode, (value) => { if (value) mode.value = value })
+watch(() => props.recordTarget, async (target) => {
+  if (!target) return
+  mode.value = 'records'
+  query.value = ''
+  topicId.value = ''
+  selectedRecordId.value = target.id
+  await nextTick()
+  const button = recordButtons.get(target.id)
+  button?.scrollIntoView({ block: 'nearest' })
+  button?.focus({ preventScroll: true })
+}, { immediate: true })
+
+function setRecordButton(id: string, value: Element | ComponentPublicInstance | null) {
+  if (value instanceof HTMLButtonElement) recordButtons.set(id, value)
+  else recordButtons.delete(id)
+}
 
 const topicOptions = computed(() => [
   { value: '', label: '全部主题' },
@@ -96,7 +114,7 @@ const filteredRecords = computed(() => {
       </div>
       <div v-if="filteredRecords.length" class="record-list">
         <article v-for="record in filteredRecords" :key="record.id" :class="{ expanded: selectedRecordId === record.id }">
-          <button class="record-main" @click="selectedRecordId = selectedRecordId === record.id ? '' : record.id">
+          <button :ref="(value) => setRecordButton(record.id, value)" class="record-main" :data-record-id="record.id" @click="selectedRecordId = selectedRecordId === record.id ? '' : record.id">
             <span class="record-icon"><FileCheck2 :size="18" /></span>
             <span><small class="tabular-numbers">{{ record.completedLabel }} · {{ record.topic }} · {{ record.minutes }} 分钟</small><strong>{{ record.learned }}</strong><b>证据：{{ record.evidence }}</b></span>
             <ChevronRight :size="18" />
