@@ -96,6 +96,13 @@ deterministically searches task fields, checklist items, tags, and completion
 record learning/evidence/blocker/next-action fields, with combinable result
 type, topic, status, date, and all-selected-tags filters.
 
+`derived-learning-rhythm-v1` adds a read-only Learning subview over recurrence
+occurrences, task completion events, and live completion records. Weekly
+progress and streaks count only one-to-one evidence links; missing evidence is
+shown separately and never becomes an empty habit check-in. Completing a
+learning occurrence from task surfaces opens the existing evidence form and
+uses the recurrence capability with workspace, task, and occurrence revisions.
+
 `calendar-planning-v1` is backed by machine-checkable source and test pointers:
 
 | Evidence id | Implemented boundary | Behavioural evidence |
@@ -105,6 +112,7 @@ type, topic, status, date, and all-selected-tags filters.
 | `review-link` | `src/domain/learning/review-task-link.ts` | `tests/review-task-link.test.ts` |
 | `responsive-shell` | `src/lib/responsive-shell.ts` | `tests/responsive-shell.test.ts`, `tests/business-sheet-mount.test.ts` |
 | `learning-search-tags` | `src/domain/capabilities/tag-commands.ts`, `src/domain/capabilities/task-commands.ts`, `src/domain/capabilities/recurrence-commands.ts`, `src/domain/search/workspace-search.ts` | `tests/tag-commands.test.ts`, `tests/capability-service.test.ts`, `tests/recurrence-learning-completion.test.ts`, `tests/workspace-search.test.ts` |
+| `derived-learning-rhythm` | `src/domain/views/learning-rhythm.ts`, `src/components/study/LearningRhythmView.vue`, `src/App.vue` | `tests/learning-rhythm.test.ts`, `tests/learning-rhythm-view.test.ts`, `tests/settings-behavior.test.ts`, `tests/workspace-navigation.test.ts` |
 
 These entries claim the local application behaviour covered by those sources
 and tests. They do not claim an external calendar provider, hosted service,
@@ -113,9 +121,11 @@ native-device validation, or any release channel.
 The conditional acceptance commands include `smoke:calendar` for the five fixed
 Web viewports and `benchmark:task-query` for deterministic Today, Upcoming, and
 calendar projection counts. These checks do not change native delivery status.
-`smoke:web-persistence` additionally exercises the global search dialog and
-reversible tag management at the fixed responsive viewports; it remains Web
-evidence rather than native-shell or installed-package evidence.
+`smoke:web-persistence` additionally exercises the global search dialog,
+reversible tag management, and a recurring learning occurrence from rule
+creation through evidence-backed completion and persisted rhythm progress at
+the fixed responsive viewports. It remains Web evidence rather than
+native-shell or installed-package evidence.
 
 Agent behaviour remains planned.
 The command envelope reserves `source: agent`, but there is no shipped Agent

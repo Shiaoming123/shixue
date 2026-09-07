@@ -437,7 +437,7 @@ test('learning reminder completion opens evidence entry without completing eithe
   const reminderCenterOpen = ref(true)
   const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'learning' }] }
   const api = handlers('App.vue', ['handleReminderAction'], {
-    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, reminderCenterOpen, nextTick: async () => {},
+    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, completionOccurrenceId: ref('stale-occurrence'), completionReviewLinkId: ref('stale-review'), reminderCenterOpen, nextTick: async () => {},
     executeReminderCommand: async () => assert.fail('no completion before evidence'),
   })
   await api.handleReminderAction({ deliveryId: 'delivery', action: 'complete' })
@@ -464,19 +464,166 @@ test('general recurring reminder completes exactly its occurrence, and snooze ch
   assert.deepEqual(workspace, before)
 })
 
-test('occurrence completion from task surfaces passes the injected local review date', async () => {
+test('learning occurrence completion from task surfaces opens evidence entry without executing', async () => {
   const commands: any[] = []
-  const workspace = { revision: 9, occurrences: [{ id: 'occurrence', revision: 4 }] }
+  const completionOpen = ref(false)
+  const completionOccurrenceId = ref('')
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+  }
   const api = handlers('App.vue', ['executeOccurrence'], {
-    recurrenceWorkspace: ref(workspace), today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' },
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOpen, completionReminderId: ref('delivery'), completionReviewLinkId: ref('review'), nextTick: async () => {},
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' },
     CAPABILITY_PROTOCOL_VERSION: 1,
     capabilityService: { execute: async (envelope: unknown) => { commands.push(envelope) } },
     refreshState: async () => {}, notify() {}, reportStorageError(error: unknown) { throw error },
   })
   await api.executeOccurrence('occurrence', 'recurrence.complete')
-  assert.deepEqual(commands[0].command, {
-    type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 4, reviewedOn: '2026-09-06',
+  assert.deepEqual(commands, [])
+  assert.equal(completionOccurrenceId.value, 'occurrence')
+  assert.equal(completionOpen.value, true)
+})
+
+test('general occurrence completion from task surfaces remains a direct command', async () => {
+  const commands: any[] = []
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'general', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['executeOccurrence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId: ref(''), completionOpen: ref(false), completionReminderId: ref(''), completionReviewLinkId: ref(''), nextTick: async () => {},
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: { execute: async (envelope: unknown) => { commands.push(envelope) } },
+    refreshState: async () => {}, notify() {}, reportStorageError(error: unknown) { throw error },
   })
+  await api.executeOccurrence('occurrence', 'recurrence.complete')
+  assert.deepEqual(commands[0].command, { type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 4, reviewedOn: '2026-09-06' })
+})
+
+test('task-surface learning completion writes evidence with occurrence and task revisions', async () => {
+  const envelopes: any[] = []
+  const completionOpen = ref(true)
+  const completionOccurrenceId = ref('occurrence')
+  const completionOccurrenceBusy = ref(false)
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['completeOccurrenceEvidence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOccurrenceBusy, completionOpen,
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: { query: async () => workspace, execute: async (envelope: unknown) => { envelopes.push(envelope) } },
+    refreshState: async () => {}, notify() {},
+  })
+  const payload = { learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 }
+  await api.completeOccurrenceEvidence(payload)
+  assert.deepEqual(envelopes[0], {
+    protocolVersion: 1,
+    idempotencyKey: 'recurrence:command-id',
+    source: 'human-ui',
+    expectedWorkspaceRevision: 9,
+    command: { type: 'recurrence.complete', occurrenceId: 'occurrence', expectedOccurrenceRevision: 4, expectedTaskRevision: 7, ...payload, reviewedOn: '2026-09-06' },
+  })
+  assert.equal(completionOpen.value, false)
+  assert.equal(completionOccurrenceId.value, '')
+  assert.equal(completionOccurrenceBusy.value, false)
+})
+
+test('failed task-surface learning completion keeps evidence context open for retry', async () => {
+  const completionOpen = ref(true)
+  const completionOccurrenceId = ref('occurrence')
+  const completionOccurrenceBusy = ref(false)
+  const messages: string[] = []
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['completeOccurrenceEvidence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOccurrenceBusy, completionOpen,
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: { query: async () => workspace, execute: async () => { throw Error('保存失败') } }, refreshState: async () => assert.fail('failed writes must not refresh'),
+    notify: (message: string) => messages.push(message),
+  })
+  await api.completeOccurrenceEvidence({ learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 })
+  assert.equal(completionOpen.value, true)
+  assert.equal(completionOccurrenceId.value, 'occurrence')
+  assert.equal(completionOccurrenceBusy.value, false)
+  assert.deepEqual(messages, ['保存失败'])
+})
+
+test('saved task-surface learning completion closes evidence and retries only refresh', async () => {
+  const completionOpen = ref(true)
+  const completionOccurrenceId = ref('occurrence')
+  const completionOccurrenceBusy = ref(false)
+  const notices: Array<[string, any]> = []
+  let refreshes = 0
+  let executions = 0
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['completeOccurrenceEvidence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOccurrenceBusy, completionOpen,
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: { query: async () => workspace, execute: async () => { executions++ } },
+    refreshState: async () => { refreshes++; if (refreshes === 1) throw Error('读取失败') },
+    notify: (message: string, action?: unknown) => notices.push([message, action]),
+  })
+  await api.completeOccurrenceEvidence({ learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 })
+  assert.equal(executions, 1)
+  assert.equal(completionOpen.value, false)
+  assert.equal(completionOccurrenceId.value, '')
+  assert.match(notices[0][0], /已保存.*刷新失败.*读取失败/)
+  await notices[0][1].run()
+  assert.equal(refreshes, 2)
+  assert.equal(executions, 1)
+})
+
+test('an in-flight learning completion cannot close a newer evidence context', async () => {
+  const completionOpen = ref(true)
+  const completionOccurrenceId = ref('occurrence:a')
+  const completionOccurrenceBusy = ref(false)
+  let releaseExecution!: () => void
+  let markStarted!: () => void
+  const executionStarted = new Promise<void>((resolve) => { markStarted = resolve })
+  const executionGate = new Promise<void>((resolve) => { releaseExecution = resolve })
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence:a', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'task' }],
+    tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+  }
+  const api = handlers('App.vue', ['completeOccurrenceEvidence'], {
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOccurrenceBusy, completionOpen,
+    today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
+    capabilityService: {
+      query: async () => workspace,
+      execute: async () => { markStarted(); await executionGate },
+    },
+    refreshState: async () => {}, notify() {},
+  })
+
+  const submission = api.completeOccurrenceEvidence({ learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: 4 })
+  await executionStarted
+  completionOccurrenceId.value = 'occurrence:b'
+  completionOpen.value = true
+  releaseExecution()
+  await submission
+
+  assert.equal(completionOccurrenceId.value, 'occurrence:b')
+  assert.equal(completionOpen.value, true)
+  assert.equal(completionOccurrenceBusy.value, false)
 })
 
 test('repeated learning completion sends evidence with occurrence and task revisions, never closes the parent task', async () => {

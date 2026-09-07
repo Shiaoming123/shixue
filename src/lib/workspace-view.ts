@@ -1,4 +1,4 @@
-export type LearningSection = 'topics' | 'review'
+export type LearningSection = 'topics' | 'rhythm' | 'review'
 
 export type WorkspaceView =
   | { kind: 'inbox' }
@@ -11,7 +11,7 @@ export type WorkspaceView =
   | { kind: 'learning'; section: LearningSection }
 
 export type ShellDestination = WorkspaceView | { kind: 'settings' }
-export type WorkspaceRenderPage = 'today' | 'tasks' | 'calendar' | 'topics' | 'review' | 'settings'
+export type WorkspaceRenderPage = 'today' | 'tasks' | 'calendar' | 'topics' | 'rhythm' | 'review' | 'settings'
 
 export function renderPageForDestination(destination: ShellDestination): WorkspaceRenderPage {
   if (destination.kind === 'settings') return 'settings'
@@ -89,6 +89,7 @@ export const mobileMoreWorkspaceNavigation = desktopWorkspaceNavigation.filter((
 
 export const learningWorkspaceNavigation: readonly WorkspaceNavigationDescriptor[] = [
   { label: '主题', preferenceKey: 'page:topics', view: { kind: 'learning', section: 'topics' } },
+  { label: '节律', preferenceKey: 'page:rhythm', view: { kind: 'learning', section: 'rhythm' } },
   { label: '回顾', preferenceKey: 'page:review', view: { kind: 'learning', section: 'review' } },
 ]
 
@@ -100,6 +101,7 @@ const staticRoutes: Readonly<Record<string, WorkspaceView>> = {
   '/lists': { kind: 'lists' },
   '/completed': { kind: 'completed' },
   '/learning/topics': { kind: 'learning', section: 'topics' },
+  '/learning/rhythm': { kind: 'learning', section: 'rhythm' },
   '/learning/review': { kind: 'learning', section: 'review' },
 }
 

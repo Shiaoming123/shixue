@@ -16,6 +16,7 @@ import TaskDetailDrawer, { type TaskEventViewItem } from './components/study/Tas
 import TaskEditSheet, { type TaskEditChanges, type TaskEditValue } from './components/study/TaskEditSheet.vue'
 import TagManagerSheet from './components/study/TagManagerSheet.vue'
 import GlobalSearchDialog from './components/study/GlobalSearchDialog.vue'
+import LearningRhythmView, { type LearningRhythmViewItem } from './components/study/LearningRhythmView.vue'
 import RecurrenceScopeDialog, { type RecurrenceRuleScope } from './components/study/RecurrenceScopeDialog.vue'
 import OccurrenceRescheduleSheet from './components/study/OccurrenceRescheduleSheet.vue'
 import { type RecurrenceRule } from './components/study/RecurrenceEditor.vue'
@@ -31,6 +32,7 @@ import Sheet from './components/ui/Sheet.vue'
 import { queryStudyTasks, selectStudyTaskSmartView, type StudyTaskQuerySort, type StudyTaskSmartView } from './lib/study-task-query'
 import { selectToday } from './domain/views/today'
 import { selectUpcoming } from './domain/views/upcoming'
+import { selectLearningRhythms } from './domain/views/learning-rhythm'
 import { defaultModuleConfig } from './modules/config'
 import { installWindowLifecycle, type WindowCloseBehavior } from './lib/window-lifecycle'
 import { createReminderRuntime, readNativeLegacyReminderRows, submitNativeReminder } from './lib/reminder-runtime'
@@ -98,7 +100,7 @@ import { runOverdueBatchMove } from './lib/overdue-batch-command'
 import { runTagCommand } from './lib/tag-command-handler'
 import { destinationForSearchTask } from './lib/search-result-navigation'
 import { resolveRecurrenceEditWrite, resolveReminderEditWrite, resolveTaskEditWrite, runTaskEditCommit } from './lib/task-edit-commit'
-import type { Task, WorkspaceStateV3 } from './domain/workspace/types'
+import type { RecurrenceCadence, RecurrenceSeries, Task, WorkspaceStateV3 } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
 const destination = ref<ShellDestination>({ kind: 'today' })
@@ -108,6 +110,8 @@ const loading = ref(true)
 const showFocus = ref(false)
 const completionOpen = ref(false)
 const completionReviewLinkId = ref('')
+const completionOccurrenceId = ref('')
+const completionOccurrenceBusy = ref(false)
 const topicEditorOpen = ref(false)
 const groupEditorOpen = ref(false)
 const topicTitle = ref('')
@@ -220,6 +224,12 @@ const reminderCompletionTask = computed(() => {
   const rule = workspace?.reminderRules.find(({ id }) => id === delivery?.reminderRuleId)
   return workspace?.tasks.find(({ id }) => id === rule?.taskId)
 })
+const completionOccurrenceTask = computed(() => {
+  const workspace = recurrenceWorkspace.value
+  const occurrence = workspace?.occurrences.find(({ id }) => id === completionOccurrenceId.value)
+  const series = workspace?.recurrenceSeries.find(({ id }) => id === occurrence?.seriesId)
+  return workspace?.tasks.find(({ id }) => id === series?.taskId)
+})
 const cloudConfig = import.meta.env.VITE_STUDY_SUPABASE_URL?.trim() && import.meta.env.VITE_STUDY_SUPABASE_PUBLISHABLE_KEY?.trim() ? {
   provider: 'supabase' as const,
   projectUrl: import.meta.env.VITE_STUDY_SUPABASE_URL.trim(),
@@ -317,6 +327,30 @@ const occurrenceViews = computed<OccurrenceViewItem[]>(() => {
     const scheduled = occurrence.override?.scheduledOn ?? occurrence.override?.scheduledAt ?? occurrence.scheduledOn ?? occurrence.scheduledAt
     return task && visibleTaskIds.has(task.id) ? { id: `occurrence:${occurrence.id}`, title: task.title, scheduledLabel: formatPlanDate(scheduled), deadlineLabel: task.dueOn ? formatPlanDate(task.dueOn) : '', reasons: ['recurring'], occurrence } : null
   }).filter((item): item is OccurrenceViewItem => item !== null)
+})
+const learningRhythmSelection = computed(() => recurrenceWorkspace.value
+  ? selectLearningRhythms(recurrenceWorkspace.value, {
+      asOf: new Date(clock.value).toISOString(),
+      weekStartsOn: planningPreferences.value.weekStartsOn,
+    })
+  : { items: [], totals: { planned: 0, completedWithEvidence: 0, completedMissingEvidence: 0, skipped: 0, cancelled: 0 } })
+const learningRhythmItems = computed<LearningRhythmViewItem[]>(() => {
+  const workspace = recurrenceWorkspace.value
+  if (!workspace) return []
+  const tasks = new Map(workspace.tasks.map((task) => [task.id, task]))
+  const lists = new Map(workspace.lists.map((list) => [list.id, list]))
+  return learningRhythmSelection.value.items.flatMap((item) => {
+    const task = tasks.get(item.taskId)
+    if (!task) return []
+    return [{
+      ...item,
+      title: task.title,
+      topic: lists.get(item.listId)?.title ?? '未归类',
+      cadenceLabel: formatRhythmCadence(item.cadence, item.basis),
+      weekLabel: formatRhythmWeek(item.rangeStart, item.rangeEnd),
+      nextLabel: item.nextScheduled ? formatPlanDate(item.nextScheduled) : '',
+    }]
+  })
 })
 
 const smartViewCounts = computed<StudySmartViewCounts>(() => ({
@@ -520,7 +554,9 @@ async function handleReminderAction(action: ReminderCardAction) {
     return
   }
   if (action.action === 'complete' && task.mode === 'learning') {
+    completionOccurrenceId.value = ''
     completionReminderId.value = delivery.id
+    completionReviewLinkId.value = ''
     reminderCenterOpen.value = false
     await nextTick()
     completionOpen.value = true
@@ -767,6 +803,14 @@ function openSearchTask(taskId: string) {
   selectedOccurrenceId.value = ''
   selectedTaskId.value = task.id
   showFocus.value = false
+}
+function openRhythmOccurrence(occurrenceId: string) {
+  const workspace = recurrenceWorkspace.value
+  const occurrence = workspace?.occurrences.find((item) => item.id === occurrenceId)
+  const series = occurrence ? workspace?.recurrenceSeries.find((item) => item.id === occurrence.seriesId) : undefined
+  if (!occurrence || !series) { notify('这次学习已不存在，节律视图已刷新。'); return }
+  openSearchTask(series.taskId)
+  selectedOccurrenceId.value = occurrence.id
 }
 function openSearchRecord(recordId: string) {
   const record = recurrenceWorkspace.value?.completionRecords.find((item) => item.id === recordId && item.deletedAt === null)
@@ -1079,7 +1123,17 @@ function clearRecurrencePreview() { recurrencePreviewVersion += 1; recurrencePre
 async function executeOccurrence(id: string, type: 'recurrence.complete' | 'recurrence.skip') {
   const workspace = recurrenceWorkspace.value
   const occurrence = workspace?.occurrences.find((item) => item.id === id)
+  const series = occurrence ? workspace?.recurrenceSeries.find((item) => item.id === occurrence.seriesId) : undefined
+  const task = series ? workspace?.tasks.find((item) => item.id === series.taskId) : undefined
   if (!workspace || !occurrence) return
+  if (type === 'recurrence.complete' && task?.mode === 'learning') {
+    completionReminderId.value = ''
+    completionReviewLinkId.value = ''
+    completionOccurrenceId.value = occurrence.id
+    await nextTick()
+    completionOpen.value = true
+    return
+  }
   try {
     const command = type === 'recurrence.complete'
       ? { type, occurrenceId: occurrence.id, expectedOccurrenceRevision: occurrence.revision, reviewedOn: today.value }
@@ -1087,6 +1141,49 @@ async function executeOccurrence(id: string, type: 'recurrence.complete' | 'recu
     await capabilityService.execute({ protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `recurrence:${crypto.randomUUID()}`, source: 'human-ui', expectedWorkspaceRevision: workspace.revision, command })
     await refreshState(); notify(type === 'recurrence.complete' ? '本次已完成。' : '本次已跳过。')
   } catch (error) { reportStorageError(error) }
+}
+
+async function completeOccurrenceEvidence(payload: CompletionPayload) {
+  const occurrenceId = completionOccurrenceId.value
+  if (!occurrenceId || completionOccurrenceBusy.value) return
+  completionOccurrenceBusy.value = true
+  try {
+    const workspace = await capabilityService.query({ type: 'workspace.snapshot' })
+    const occurrence = workspace.occurrences.find(({ id }) => id === occurrenceId)
+    const series = occurrence ? workspace.recurrenceSeries.find(({ id }) => id === occurrence.seriesId) : undefined
+    const task = series ? workspace.tasks.find(({ id }) => id === series.taskId) : undefined
+    if (!occurrence || !task || task.mode !== 'learning') throw new Error('这次学习已变化，填写内容仍保留。')
+    await capabilityService.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+      idempotencyKey: `recurrence:${crypto.randomUUID()}`,
+      source: 'human-ui',
+      expectedWorkspaceRevision: workspace.revision,
+      command: {
+        type: 'recurrence.complete',
+        occurrenceId: occurrence.id,
+        expectedOccurrenceRevision: occurrence.revision,
+        expectedTaskRevision: task.revision,
+        ...payload,
+        reviewedOn: today.value,
+      },
+    })
+    if (completionOccurrenceId.value === occurrenceId) {
+      completionOpen.value = false
+      completionOccurrenceId.value = ''
+    }
+    try { await refreshState() }
+    catch (error) {
+      notify(`学习证据已保存，但视图刷新失败：${error instanceof Error ? error.message : String(error)}`, {
+        label: '重新加载',
+        successMessage: '学习节律已刷新。',
+        run: refreshState,
+      })
+      return
+    }
+    notify('已记录学习证据并完成本次。')
+  } catch (error) {
+    notify(error instanceof Error ? error.message : '学习证据未能保存，请重试。')
+  } finally { completionOccurrenceBusy.value = false }
 }
 
 function openOccurrenceReschedule(id: string) {
@@ -1234,6 +1331,7 @@ function updateScratchpad(value: string) {
 
 async function completeFocus(payload: CompletionPayload) {
   if (completionReminderId.value) return completeReminderEvidence(payload)
+  if (completionOccurrenceId.value) return completeOccurrenceEvidence(payload)
   const session = activeSession.value
   const task = activeTask.value
   if (!session || !task) return
@@ -1251,6 +1349,8 @@ async function rateReview(linkId: string, result: ReviewResult) {
 }
 
 function openFocusCompletion(reviewLinkId?: string) {
+  completionReminderId.value = ''
+  completionOccurrenceId.value = ''
   completionReviewLinkId.value = reviewLinkId ?? ''
   completionOpen.value = true
 }
@@ -1401,6 +1501,28 @@ function toEventView(event: TaskEvent): TaskEventViewItem {
 }
 function statusDetail(event: TaskEvent) { return event.toStatus ? `状态变为${({ inbox: '收件箱', planned: '已计划', in_progress: '进行中', blocked: '已阻塞', completed: '已完成', cancelled: '已取消' } as const)[event.toStatus]}` : '保留此次变化' }
 function recordMinutes(record: CompletionRecord) { return Math.max(1, Math.round(state.value.sessions.filter((session) => record.sessionIds.includes(session.id)).reduce((sum, session) => sum + session.elapsedSeconds, 0) / 60)) }
+function formatRhythmCadence(cadence: RecurrenceCadence, basis: RecurrenceSeries['basis']) {
+  const weekday = ['日', '一', '二', '三', '四', '五', '六']
+  const label = cadence.kind === 'daily'
+    ? cadence.interval === 1 ? '每天' : `每 ${cadence.interval} 天`
+    : cadence.kind === 'weekly'
+      ? cadence.interval === 1
+        ? `每周${cadence.weekdays.map((day) => weekday[day]).join('、')}`
+        : `每 ${cadence.interval} 周的${cadence.weekdays.map((day) => `周${weekday[day]}`).join('、')}`
+      : cadence.kind === 'monthly'
+        ? `${cadence.interval === 1 ? '每月' : `每 ${cadence.interval} 个月`} ${cadence.dayOfMonth} 日`
+        : `${cadence.interval === 1 ? '每年' : `每 ${cadence.interval} 年`} ${cadence.month} 月 ${cadence.dayOfMonth} 日`
+  return basis === 'after_completion' ? `完成后${label}` : label
+}
+function formatRhythmWeek(start: string, endExclusive: string) {
+  const end = new Date(`${endExclusive}T12:00:00.000Z`)
+  end.setUTCDate(end.getUTCDate() - 1)
+  return `${formatRhythmDay(start)}至 ${end.getUTCMonth() + 1} 月 ${end.getUTCDate()} 日`
+}
+function formatRhythmDay(value: string) {
+  const [, month, day] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) ?? []
+  return month && day ? `${Number(month)} 月 ${Number(day)} 日` : value
+}
 function formatPlanDate(value: string | null) {
   if (!value) return '待安排'
   const precise = value.length !== 10
@@ -1452,14 +1574,15 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
         <div v-else-if="destination.kind === 'learning'" class="route-workspace">
           <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
           <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
-          <ReviewView v-else :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
+          <LearningRhythmView v-else-if="destination.section === 'rhythm'" :items="learningRhythmItems" :totals="learningRhythmSelection.totals" @open-occurrence="openRhythmOccurrence" @open-task="openSearchTask" @edit-task="openTaskEditor" />
+          <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-completed="weeklyRecords.length" :weekly-minutes="weeklyMinutes" :weekly-highlight="weeklyHighlight" :weekly-blocker="weeklyBlocker" :weekly-next="weeklyNext" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openTask" />
         </div>
         <CalendarWorkspace v-if="!loading && page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :target-offset="calendarTargetOffset" :execute-command="executeCalendarCommand" @desktop-mode-selected="persistDesktopCalendarMode" />
       </main>
       <BottomTabs v-if="!showFocus" :active="destination" @navigate="setDestination" />
     </div>
 
-    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) && reminderBusy" :task-title="reminderCompletionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionReviewLinkId = ''" @save="completeFocus" />
+    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || completionOccurrenceId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) ? reminderBusy : completionOccurrenceBusy" :task-title="reminderCompletionTask?.title ?? completionOccurrenceTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId || completionOccurrenceId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionOccurrenceId = ''; completionReviewLinkId = ''" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
     <TaskEditSheet :open="taskEditorOpen" :task="selectedTaskEditModel" :topics="state.topics" :tags="recurrenceWorkspace?.tags ?? []" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @manage-tags="openTagManager()" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" />
     <GlobalSearchDialog v-model:open="globalSearchOpen" :workspace="recurrenceWorkspace" :timezone="timezone" @close="globalSearchOpen = false" @manage-tags="openTagManager(true)" @open-task="openSearchTask" @open-record="openSearchRecord" />

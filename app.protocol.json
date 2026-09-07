@@ -76,7 +76,8 @@
       "offline-natural-language-v1",
       "multi-reminder-v1",
       "calendar-planning-v1",
-      "learning-search-tags-v1"
+      "learning-search-tags-v1",
+      "derived-learning-rhythm-v1"
     ],
     "shippedEvidence": [
       {
@@ -103,6 +104,11 @@
         "id": "learning-search-tags",
         "sources": ["src/domain/capabilities/tag-commands.ts", "src/domain/capabilities/task-commands.ts", "src/domain/capabilities/recurrence-commands.ts", "src/domain/search/workspace-search.ts"],
         "tests": ["tests/tag-commands.test.ts", "tests/capability-service.test.ts", "tests/recurrence-learning-completion.test.ts", "tests/workspace-search.test.ts"]
+      },
+      {
+        "id": "derived-learning-rhythm",
+        "sources": ["src/domain/views/learning-rhythm.ts", "src/components/study/LearningRhythmView.vue"],
+        "tests": ["tests/learning-rhythm.test.ts", "tests/learning-rhythm-view.test.ts"]
       }
     ],
     "planned": [

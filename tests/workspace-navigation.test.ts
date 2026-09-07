@@ -27,6 +27,7 @@ test('workspace routes safely round-trip every canonical view', () => {
     { kind: 'list', listId: '课程 / 复习?day=1#top%done' },
     { kind: 'completed' },
     { kind: 'learning', section: 'topics' },
+    { kind: 'learning', section: 'rhythm' },
     { kind: 'learning', section: 'review' },
   ]
 
@@ -60,6 +61,7 @@ test('task topic filters become explicit typed navigation transitions', () => {
   assert.equal(renderPageForDestination({ kind: 'lists' }), 'tasks')
   assert.equal(renderPageForDestination({ kind: 'list', listId: 'list:a' }), 'tasks')
   assert.equal(renderPageForDestination({ kind: 'learning', section: 'topics' }), 'topics')
+  assert.equal(renderPageForDestination({ kind: 'learning', section: 'rhythm' }), 'rhythm')
 })
 
 test('archiving a list only leaves the active list destination', () => {
@@ -107,6 +109,7 @@ test('desktop and mobile navigation expose the contracted destinations in order'
   assert.deepEqual(mobileMoreWorkspaceNavigation.map(({ view }) => view.kind), ['upcoming', 'completed'])
   assert.deepEqual(learningWorkspaceNavigation.map(({ view }) => view), [
     { kind: 'learning', section: 'topics' },
+    { kind: 'learning', section: 'rhythm' },
     { kind: 'learning', section: 'review' },
   ])
 })
