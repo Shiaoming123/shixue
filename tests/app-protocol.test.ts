@@ -20,6 +20,7 @@ const packageJson = {
     'check:protocol': 'node scripts/check-app-protocol.mjs',
     'rust:verify': 'node scripts/rust-verify.mjs',
     'smoke:web-persistence': 'node scripts/smoke-web-persistence.mjs',
+    'smoke:ios-launch': 'node scripts/smoke-ios-launch.mjs',
     'smoke:calendar': 'node scripts/smoke-calendar.mjs',
     'benchmark:task-query': 'node scripts/benchmark-study-task-query.mjs',
     'smoke:windows-package': 'node scripts/smoke-windows-package.mjs',
@@ -32,7 +33,7 @@ const projectRoot = new URL('..', import.meta.url)
 
 function validProtocol() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     product: {
       name: 'meow-study',
       goal: 'Build a local-first cross-platform application.',
@@ -99,11 +100,19 @@ function validProtocol() {
       signing: 'unverified',
       updater: 'configured-unverified',
       webDeployment: 'unverified',
-      mobileNative: 'unverified',
+      mobileNative: 'source-ready',
+    },
+    nativeEvidence: {
+      ios: {
+        maturity: 'source-ready',
+        nativeBuild: 'not-run',
+        simulatorRun: 'not-run',
+        deviceRun: 'not-run',
+      },
     },
     acceptance: {
       required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
-      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
+      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:ios-launch', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
     },
     evolution: {
       additive: 'Add fields in a new schema version.',
@@ -149,11 +158,18 @@ test('rejects a declared acceptance command that is not executable', () => {
   assert.match(validate(protocol).errors.join('\n'), /acceptance\.required references missing package script "missing:command"/)
 })
 
-test('rejects a mobile delivery claim that does not match recorded local evidence', () => {
+test('rejects a mobile delivery claim stronger than the current source-ready evidence', () => {
   const protocol = validProtocol()
-  protocol.delivery.mobileNative = 'local-debug'
+  protocol.delivery.mobileNative = 'signed'
 
   assert.match(validate(protocol).errors.join('\n'), /delivery must retain the currently evidenced release boundary/)
+})
+
+test('rejects iOS evidence that upgrades the current tree without a current native run', () => {
+  const protocol = validProtocol()
+  protocol.nativeEvidence.ios.simulatorRun = 'pass'
+
+  assert.match(validate(protocol).errors.join('\n'), /nativeEvidence must retain the recorded iOS evidence boundary/)
 })
 
 test('rejects a protocol that omits the shipped calendar planning capability', () => {

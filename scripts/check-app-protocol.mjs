@@ -19,7 +19,15 @@ const EXPECTED_DELIVERY = {
   signing: 'unverified',
   updater: 'configured-unverified',
   webDeployment: 'unverified',
-  mobileNative: 'unverified',
+  mobileNative: 'source-ready',
+}
+const EXPECTED_NATIVE_EVIDENCE = {
+  ios: {
+    maturity: 'source-ready',
+    nativeBuild: 'not-run',
+    simulatorRun: 'not-run',
+    deviceRun: 'not-run',
+  },
 }
 const EXPECTED_SHIPPED_FOUNDATION = [
   'workspace-state-v3',
@@ -41,7 +49,7 @@ const EXPECTED_PLANNED_FEATURES = [
 const CALENDAR_ACCEPTANCE_COMMANDS = ['smoke:calendar', 'benchmark:task-query']
 const EXPECTED_ACCEPTANCE = {
   required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
-  conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
+  conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:ios-launch', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
 }
 const EXPECTED_SHIPPED_EVIDENCE = [
   { id: 'navigation', sources: ['src/lib/workspace-view.ts'], tests: ['tests/workspace-navigation.test.ts'] },
@@ -78,8 +86,8 @@ export function validateApplicationProtocol({
   const errors = []
   if (!isRecord(protocol)) return { errors: ['Protocol must be a JSON object.'] }
 
-  if (protocol.schemaVersion !== 2) {
-    errors.push('schemaVersion must be 2.')
+  if (protocol.schemaVersion !== 3) {
+    errors.push('schemaVersion must be 3.')
   }
 
   validateProduct(protocol.product, packageJson, errors)
@@ -89,6 +97,7 @@ export function validateApplicationProtocol({
   validateCapabilities(protocol.capabilities, implementationFacts, errors)
   validateImplementationStatus(protocol.implementation, evidenceFileExists, errors)
   validateDelivery(protocol.delivery, errors)
+  validateNativeEvidence(protocol.nativeEvidence, errors)
   validateAcceptance(protocol.acceptance, packageJson, errors)
   validateEvolution(protocol.evolution, errors)
 
@@ -219,6 +228,12 @@ function validateImplementationStatus(implementation, evidenceFileExists, errors
 function validateDelivery(delivery, errors) {
   if (!sameRecord(delivery, EXPECTED_DELIVERY)) {
     errors.push('delivery must retain the currently evidenced release boundary.')
+  }
+}
+
+function validateNativeEvidence(nativeEvidence, errors) {
+  if (!sameRecord(nativeEvidence, EXPECTED_NATIVE_EVIDENCE)) {
+    errors.push('nativeEvidence must retain the recorded iOS evidence boundary.')
   }
 }
 

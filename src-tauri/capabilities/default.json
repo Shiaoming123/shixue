@@ -10,7 +10,6 @@
       "core:window:allow-show",
       "core:window:allow-set-focus",
       "notification:default",
-      "autostart:default",
       "opener:default",
       "sql:default",
       "sql:allow-execute",

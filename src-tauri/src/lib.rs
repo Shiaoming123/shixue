@@ -19,6 +19,58 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+/// Reports the compile target to the WebView so module routing does not rely
+/// on a browser user agent (notably iPadOS desktop-mode user agents).
+#[tauri::command]
+fn runtime_platform() -> &'static str {
+    if cfg!(target_os = "android") {
+        "android"
+    } else if cfg!(target_os = "ios") {
+        "ios"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    }
+}
+
+#[tauri::command]
+fn report_ios_smoke_phase(phase: &str) -> Result<(), String> {
+    #[cfg(all(target_os = "ios", debug_assertions))]
+    {
+        use std::fs::OpenOptions;
+        use std::io::Write;
+
+        const PHASES: [&str; 5] = [
+            "webview-created",
+            "native-host-ready",
+            "vue-mounted",
+            "workspace-ready",
+            "frontend-ready",
+        ];
+        if !PHASES.contains(&phase) {
+            return Err(format!("Unknown iOS smoke phase: {phase}"));
+        }
+        let Ok(run_id) = std::env::var("SHIXUE_IOS_SMOKE_RUN_ID") else {
+            return Ok(());
+        };
+        let path = std::env::temp_dir().join("shixue-ios-launch-smoke.log");
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(|error| error.to_string())?;
+        writeln!(file, "[shixue:smoke] {run_id} {phase}").map_err(|error| error.to_string())?;
+    }
+
+    #[cfg(not(all(target_os = "ios", debug_assertions)))]
+    let _ = phase;
+
+    Ok(())
+}
+
 #[tauri::command]
 async fn read_legacy_reminder_deliveries(
     app: tauri::AppHandle,
@@ -98,6 +150,8 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
+            report_ios_smoke_phase,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut,
             agent::set_api_key,
@@ -117,6 +171,8 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
+            report_ios_smoke_phase,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut,
             agent::set_api_key,
@@ -131,6 +187,8 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
+            report_ios_smoke_phase,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut,
             study_cloud::study_cloud_sign_in,
@@ -145,6 +203,8 @@ pub fn run() {
     {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
+            runtime_platform,
+            report_ios_smoke_phase,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut
         ]);

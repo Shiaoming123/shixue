@@ -19,6 +19,7 @@ const commands = [
   ['clippy', '--manifest-path', 'src-tauri/Cargo.toml', '--all-targets', '--all-features', '--', '-D', 'warnings'],
   ['test', '--manifest-path', 'src-tauri/Cargo.toml', '--all-features'],
   ['check', '--manifest-path', 'src-tauri/Cargo.toml', '--all-features'],
+  ['check', '--manifest-path', 'src-tauri/Cargo.toml', '--no-default-features'],
 ]
 
 for (const args of commands) {
