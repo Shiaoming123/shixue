@@ -14,7 +14,7 @@ test('shortcut setup controls native registration without exposing the plugin ca
     () => sortModules([module.default]),
     /Module "shortcut" requires disabled or missing module "tray"/,
   )
-  assert.match(main, /\.catch\([\s\S]*\.finally\(\(\) => \{[\s\S]*app\.mount\("#app"\)/)
+  assert.match(main, /await mountModules\([\s\S]*\.catch\([\s\S]*\);\s*app\.mount\("#app"\)/)
 
   const transitions: boolean[] = []
   const configured = createShortcutModule(async () => ({
