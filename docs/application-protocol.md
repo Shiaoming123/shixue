@@ -104,7 +104,7 @@ type, topic, status, date, and all-selected-tags filters.
 | `today-upcoming` | `src/domain/views/today.ts`, `src/domain/views/upcoming.ts` | `tests/workspace-projections.test.ts` |
 | `review-link` | `src/domain/learning/review-task-link.ts` | `tests/review-task-link.test.ts` |
 | `responsive-shell` | `src/lib/responsive-shell.ts` | `tests/responsive-shell.test.ts`, `tests/business-sheet-mount.test.ts` |
-| `learning-search-tags` | `src/domain/capabilities/tag-commands.ts`, `src/domain/search/workspace-search.ts` | `tests/tag-commands.test.ts`, `tests/workspace-search.test.ts` |
+| `learning-search-tags` | `src/domain/capabilities/tag-commands.ts`, `src/domain/capabilities/task-commands.ts`, `src/domain/capabilities/recurrence-commands.ts`, `src/domain/search/workspace-search.ts` | `tests/tag-commands.test.ts`, `tests/capability-service.test.ts`, `tests/recurrence-learning-completion.test.ts`, `tests/workspace-search.test.ts` |
 
 These entries claim the local application behaviour covered by those sources
 and tests. They do not claim an external calendar provider, hosted service,

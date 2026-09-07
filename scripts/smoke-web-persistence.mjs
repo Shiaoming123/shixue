@@ -163,6 +163,11 @@ async function main() {
       await tagManager.getByRole('button', { name: `归档标签 ${renamedManagedTag}`, exact: true }).click()
       await tagManager.getByText(renamedManagedTag, { exact: true }).waitFor({ state: 'visible' })
       await tagManager.getByRole('button', { name: '关闭标签管理', exact: true }).click()
+      await desktopGlobalSearch.waitFor({ state: 'visible' })
+      if (!(await desktopGlobalSearchInput.evaluate((element) => element === document.activeElement))) {
+        throw new Error('Closing tag management did not restore the global search context and focus.')
+      }
+      await page.keyboard.press('Escape')
       await page.getByRole('button', { name: '撤销', exact: true }).click()
       await page.getByText('已撤销。', { exact: true }).waitFor({ state: 'visible' })
       await page.locator('.sidebar').getByRole('button', { name: '搜索', exact: true }).click()
@@ -171,6 +176,8 @@ async function main() {
       const activeTagSection = reopenedTagManager.getByRole('heading', { name: '正在使用', exact: true }).locator('..').locator('..')
       await activeTagSection.getByText(renamedManagedTag, { exact: true }).waitFor({ state: 'visible' })
       await reopenedTagManager.getByRole('button', { name: '关闭标签管理', exact: true }).click()
+      await desktopGlobalSearch.waitFor({ state: 'visible' })
+      await page.keyboard.press('Escape')
 
       const quickAddTitle = '明天下午3点 复习线代 #数学 p1'
       const quickAdd = page.locator('.quick-add-composer')
@@ -368,6 +375,23 @@ async function main() {
         await globalSearch.getByRole('searchbox', { name: '搜索任务与完成记录', exact: true }).fill('持久化')
         await globalSearch.getByRole('heading', { name: /^任务/ }).waitFor({ state: 'visible' })
         await globalSearch.getByRole('heading', { name: /^完成记录/ }).waitFor({ state: 'visible' })
+        if (viewport.width === 820 || viewport.width === 390) {
+          const searchDateTrigger = globalSearch.getByRole('button', { name: '开始日期', exact: true })
+          await searchDateTrigger.click()
+          const searchDatePicker = page.getByRole('dialog', { name: '开始日期', exact: true })
+          await searchDatePicker.waitFor({ state: 'visible' })
+          if ((await searchDatePicker.getAttribute('aria-modal')) !== String(viewport.hasBottomNav)) {
+            throw new Error(`Global search date picker modality is wrong at ${viewport.width}px.`)
+          }
+          if (await searchDatePicker.getByRole('gridcell').count() !== 42) {
+            throw new Error(`Global search date picker did not expose 42 day targets at ${viewport.width}px.`)
+          }
+          await page.keyboard.press('Escape')
+          await searchDatePicker.waitFor({ state: 'hidden' })
+          if (!(await searchDateTrigger.evaluate((element) => element === document.activeElement))) {
+            throw new Error(`Global search date picker did not restore focus at ${viewport.width}px.`)
+          }
+        }
         const searchGeometry = await globalSearch.evaluate((element) => {
           const box = element.getBoundingClientRect()
           return {

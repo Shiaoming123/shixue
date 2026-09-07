@@ -86,7 +86,7 @@ function validProtocol() {
         { id: 'today-upcoming', sources: ['src/domain/views/today.ts', 'src/domain/views/upcoming.ts'], tests: ['tests/workspace-projections.test.ts'] },
         { id: 'review-link', sources: ['src/domain/learning/review-task-link.ts'], tests: ['tests/review-task-link.test.ts'] },
         { id: 'responsive-shell', sources: ['src/lib/responsive-shell.ts'], tests: ['tests/responsive-shell.test.ts', 'tests/business-sheet-mount.test.ts'] },
-        { id: 'learning-search-tags', sources: ['src/domain/capabilities/tag-commands.ts', 'src/domain/search/workspace-search.ts'], tests: ['tests/tag-commands.test.ts', 'tests/workspace-search.test.ts'] },
+        { id: 'learning-search-tags', sources: ['src/domain/capabilities/tag-commands.ts', 'src/domain/capabilities/task-commands.ts', 'src/domain/capabilities/recurrence-commands.ts', 'src/domain/search/workspace-search.ts'], tests: ['tests/tag-commands.test.ts', 'tests/capability-service.test.ts', 'tests/recurrence-learning-completion.test.ts', 'tests/workspace-search.test.ts'] },
       ],
       planned: ['agent-behavior'],
     },

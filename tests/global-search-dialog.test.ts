@@ -15,6 +15,12 @@ function mountDialog() {
   const calls: any[][] = []
   const searchWorkspace = (...args: any[]) => {
     calls.push(args)
+    if (args[1]?.text === 'many') {
+      return {
+        tasks: Array.from({ length: 125 }, (_, index) => ({ id: `task:${index}` })),
+        completionRecords: Array.from({ length: 125 }, (_, index) => ({ id: `record:${index}` })),
+      }
+    }
     return { tasks: [], completionRecords: [] }
   }
   const exported: any = {}
@@ -102,6 +108,35 @@ test('invalid date ranges stay recoverable and opening focuses the search field'
   unmount()
 })
 
+test('empty search is idle and broad results render only a bounded first page', () => {
+  const { state, calls, unmount } = mountDialog()
+  const initialCalls = calls.length
+  assert.deepEqual(state.results.value, { tasks: [], completionRecords: [] })
+  assert.equal(calls.length, initialCalls, 'opening the dialog must not scan the whole workspace before intent exists')
+
+  state.text.value = 'many'
+  assert.equal(state.results.value.tasks.length, 125)
+  assert.equal(state.results.value.completionRecords.length, 125)
+  assert.equal(state.visibleTasks.value.length, 100)
+  assert.equal(state.visibleCompletionRecords.value.length, 100)
+  assert.equal(state.resultsTruncated.value, true)
+  unmount()
+})
+
+test('task summaries expose the matching acceptance criterion or checklist item', () => {
+  const { state, unmount } = mountDialog()
+  state.text.value = 'checkpoint'
+  assert.equal(state.taskSummary({
+    task: { notes: '', learning: { acceptanceCriteria: ['阅读文档', '验证 checkpoint'] }, checklist: [] },
+    matchedFields: ['acceptance_criteria'],
+  }), '验证 checkpoint')
+  assert.equal(state.taskSummary({
+    task: { notes: '', checklist: [{ text: '准备环境' }, { text: 'Checkpoint 截图' }] },
+    matchedFields: ['checklist'],
+  }), 'Checkpoint 截图')
+  unmount()
+})
+
 test('choosing either result returns its exact canonical id and closes the dialog', () => {
   const { state, events, unmount } = mountDialog()
   state.selectTask('task:exact')
@@ -142,5 +177,11 @@ test('dialog source uses the shared search semantics and exposes responsive grou
   assert.match(source, /@click="selectRecord\(hit\.id\)"/)
   assert.match(source, /<Button variant="ghost" size="sm" @click="openTagManager">管理标签<\/Button>/)
   assert.match(source, /@media \(max-width: 819px\)/)
-  assert.doesNotMatch(source, /<input[^>]*type="date"/, 'date fields must use the themed Input primitive')
+  assert.match(source, /import DateTimePicker from '..\/ui\/DateTimePicker\.vue'/)
+  assert.match(source, /<DateTimePicker v-model="from" label="开始日期"/)
+  assert.match(source, /<DateTimePicker v-model="to" label="结束日期"/)
+  assert.match(source, /MAX_VISIBLE_RESULTS_PER_KIND = 100/)
+  assert.match(source, /v-for="hit in visibleTasks"/)
+  assert.match(source, /v-for="hit in visibleCompletionRecords"/)
+  assert.doesNotMatch(source, /<Input\b[^>]*type="date"/, 'date fields must use the themed date picker')
 })

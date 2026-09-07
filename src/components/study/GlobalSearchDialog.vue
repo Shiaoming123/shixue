@@ -5,9 +5,9 @@ import { searchWorkspace, type WorkspaceSearchQuery, type WorkspaceSearchResult 
 import { SYSTEM_LEARNING_LIST_ID } from '../../domain/workspace/migrate.ts'
 import type { TaskStatus, WorkspaceStateV3 } from '../../domain/workspace/types.ts'
 import Button from '../ui/Button.vue'
+import DateTimePicker from '../ui/DateTimePicker.vue'
 import Dialog from '../ui/Dialog.vue'
 import EmptyState from '../ui/EmptyState.vue'
-import Input from '../ui/Input.vue'
 import Listbox, { type ListboxOption } from '../ui/Listbox.vue'
 
 const props = defineProps<{
@@ -25,6 +25,7 @@ const emit = defineEmits<{
 }>()
 
 const EMPTY_RESULTS: WorkspaceSearchResult = { tasks: [], completionRecords: [] }
+const MAX_VISIBLE_RESULTS_PER_KIND = 100
 const text = ref('')
 const kind = ref('')
 const topic = ref('')
@@ -68,7 +69,7 @@ const dateError = computed(() => from.value && to.value && from.value > to.value
   ? '开始日期不能晚于结束日期。'
   : '')
 const hasFilters = computed(() => Boolean(
-  text.value || kind.value || topic.value || status.value || from.value || to.value || selectedTagIds.value.length,
+  text.value.trim() || kind.value || topic.value || status.value || from.value || to.value || selectedTagIds.value.length,
 ))
 const query = computed<WorkspaceSearchQuery>(() => {
   const value: WorkspaceSearchQuery = {}
@@ -87,10 +88,14 @@ const query = computed<WorkspaceSearchQuery>(() => {
   return value
 })
 const results = computed<WorkspaceSearchResult>(() => {
-  if (!props.workspace || dateError.value) return EMPTY_RESULTS
+  if (!props.workspace || dateError.value || !hasFilters.value) return EMPTY_RESULTS
   return searchWorkspace(props.workspace, query.value)
 })
 const resultCount = computed(() => results.value.tasks.length + results.value.completionRecords.length)
+const visibleTasks = computed(() => results.value.tasks.slice(0, MAX_VISIBLE_RESULTS_PER_KIND))
+const visibleCompletionRecords = computed(() => results.value.completionRecords.slice(0, MAX_VISIBLE_RESULTS_PER_KIND))
+const visibleResultCount = computed(() => visibleTasks.value.length + visibleCompletionRecords.value.length)
+const resultsTruncated = computed(() => visibleResultCount.value < resultCount.value)
 
 watch(() => props.open, async (open) => {
   if (!open) return
@@ -150,10 +155,19 @@ function tagsFor(tagIds: readonly string[]): string[] {
 function taskSummary(hit: WorkspaceSearchResult['tasks'][number]): string {
   const { task, matchedFields } = hit
   if (matchedFields.includes('notes') && task.notes) return task.notes
-  if (matchedFields.includes('acceptance_criteria') && task.learning?.acceptanceCriteria[0]) return task.learning.acceptanceCriteria[0]
-  if (matchedFields.includes('checklist') && task.checklist[0]) return task.checklist[0].text
+  if (matchedFields.includes('acceptance_criteria') && task.learning?.acceptanceCriteria.length) {
+    return firstMatching(task.learning.acceptanceCriteria) ?? task.learning.acceptanceCriteria[0]!
+  }
+  if (matchedFields.includes('checklist') && task.checklist.length) {
+    return firstMatching(task.checklist.map(({ text }) => text)) ?? task.checklist[0]!.text
+  }
   if (matchedFields.includes('blocker') && task.learning?.blockedReason) return task.learning.blockedReason
   return task.notes || task.learning?.acceptanceCriteria[0] || statusLabels.get(task.status) || task.status
+}
+
+function firstMatching(values: readonly string[]): string | undefined {
+  const needle = normalizeText(text.value)
+  return needle ? values.find((value) => normalizeText(value).includes(needle)) : undefined
 }
 
 function recordSummary(hit: WorkspaceSearchResult['completionRecords'][number]): string {
@@ -198,6 +212,10 @@ function localDate(value: string | null): string {
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
+
+function normalizeText(value: string): string {
+  return value.normalize('NFKC').trim().toLowerCase()
+}
 </script>
 
 <template>
@@ -238,8 +256,8 @@ function compareText(left: string, right: string): number {
         <Listbox v-model="status" :options="statusOptions" label="按状态筛选" variant="compact" />
 
         <div class="date-range">
-          <Input v-model="from" type="date" label="开始日期" />
-          <Input v-model="to" type="date" label="结束日期" />
+          <div class="date-field"><span>开始日期</span><DateTimePicker v-model="from" label="开始日期" placeholder="不限制开始日期" /></div>
+          <div class="date-field"><span>结束日期</span><DateTimePicker v-model="to" label="结束日期" placeholder="不限制结束日期" /></div>
           <p v-if="dateError" role="alert">{{ dateError }}</p>
         </div>
 
@@ -264,7 +282,7 @@ function compareText(left: string, right: string): number {
         <template v-if="workspace && !dateError && resultCount">
           <section v-if="results.tasks.length" class="result-group">
             <h3>任务 <span>{{ results.tasks.length }}</span></h3>
-            <button v-for="hit in results.tasks" :key="hit.id" type="button" class="result-row" @click="selectTask(hit.id)">
+            <button v-for="hit in visibleTasks" :key="hit.id" type="button" class="result-row" @click="selectTask(hit.id)">
               <span class="result-icon"><ListTodo :size="18" :stroke-width="1.8" /></span>
               <span class="result-copy">
                 <strong>{{ hit.task.title }}</strong>
@@ -280,7 +298,7 @@ function compareText(left: string, right: string): number {
 
           <section v-if="results.completionRecords.length" class="result-group">
             <h3>完成记录 <span>{{ results.completionRecords.length }}</span></h3>
-            <button v-for="hit in results.completionRecords" :key="hit.id" type="button" class="result-row" @click="selectRecord(hit.id)">
+            <button v-for="hit in visibleCompletionRecords" :key="hit.id" type="button" class="result-row" @click="selectRecord(hit.id)">
               <span class="result-icon result-icon--record"><FileCheck2 :size="18" :stroke-width="1.8" /></span>
               <span class="result-copy">
                 <strong>{{ hit.record.taskTitleSnapshot }}</strong>
@@ -293,6 +311,7 @@ function compareText(left: string, right: string): number {
               </span>
             </button>
           </section>
+          <p v-if="resultsTruncated" class="result-limit" role="status">显示前 {{ visibleResultCount }} 条结果，请增加筛选条件以缩小范围。</p>
         </template>
 
         <EmptyState
@@ -310,8 +329,8 @@ function compareText(left: string, right: string): number {
         <EmptyState
           v-else
           icon="inbox"
-          :title="hasFilters ? '没有匹配的学习事实' : '还没有可搜索的内容'"
-          :description="hasFilters ? '换个关键词，或清除部分筛选后再试。' : '创建任务或完成一次学习后，内容会出现在这里。'"
+          :title="hasFilters ? '没有匹配的学习事实' : '输入关键词或选择筛选条件'"
+          :description="hasFilters ? '换个关键词，或清除部分筛选后再试。' : '搜索会在你开始输入或选择筛选后运行。'"
         >
           <Button v-if="hasFilters" variant="secondary" size="sm" @click="clearFilters">清除筛选</Button>
         </EmptyState>
@@ -392,7 +411,8 @@ function compareText(left: string, right: string): number {
 .filter-heading strong { font-size: var(--text-sm); font-weight: 650; }
 .filter-heading > div { display: flex; align-items: center; gap: 2px; }
 .date-range { display: grid; gap: var(--space-2); padding-top: var(--space-1); }
-.date-range :deep(.field__input) { min-height: var(--control-hit); font-size: var(--text-sm); color-scheme: light dark; }
+.date-field { display: grid; gap: var(--space-1); color: var(--muted); font-size: var(--text-sm); font-weight: var(--font-medium); }
+.date-range :deep(.date-trigger) { min-height: var(--control-hit); font-size: var(--text-sm); }
 .date-range p { margin: 0; color: var(--danger); font-size: var(--text-xs); line-height: 1.45; }
 
 .tag-filter { min-width: 0; margin: 0; padding: var(--space-2) 0 0; border: 0; }
@@ -474,6 +494,7 @@ function compareText(left: string, right: string): number {
 .result-copy > span { color: var(--muted); font-size: var(--text-sm); }
 .result-copy small { display: flex; flex-wrap: wrap; gap: 4px var(--space-2); color: var(--muted); font-size: var(--text-xs); }
 .result-copy small span:not(:first-child) { color: color-mix(in srgb, var(--muted) 84%, var(--accent)); }
+.result-limit { margin: var(--space-4) 0 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.5; }
 
 @media (max-width: 819px) {
   .global-search-dialog :deep(.dialog-panel--lg) { width: 100%; }

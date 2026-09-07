@@ -101,8 +101,8 @@
       },
       {
         "id": "learning-search-tags",
-        "sources": ["src/domain/capabilities/tag-commands.ts", "src/domain/search/workspace-search.ts"],
-        "tests": ["tests/tag-commands.test.ts", "tests/workspace-search.test.ts"]
+        "sources": ["src/domain/capabilities/tag-commands.ts", "src/domain/capabilities/task-commands.ts", "src/domain/capabilities/recurrence-commands.ts", "src/domain/search/workspace-search.ts"],
+        "tests": ["tests/tag-commands.test.ts", "tests/capability-service.test.ts", "tests/recurrence-learning-completion.test.ts", "tests/workspace-search.test.ts"]
       }
     ],
     "planned": [
