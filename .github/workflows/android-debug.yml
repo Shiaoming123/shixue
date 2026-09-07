@@ -37,7 +37,7 @@ jobs:
           echo no | avdmanager create avd --force --name shixue-ci-api35 --package "system-images;android-35;google_apis;x86_64" --device medium_phone
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
           nohup emulator @shixue-ci-api35 -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect > "$RUNNER_TEMP/shixue-emulator.log" 2>&1 &
-          adb -s emulator-5554 wait-for-device
+          timeout 180 adb -s emulator-5554 wait-for-device
           timeout 180 bash -c 'until [ "$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = "1" ]; do sleep 2; done'
           test "$(adb -s emulator-5554 shell getprop ro.kernel.qemu | tr -d '\r')" = "1"
 
@@ -66,12 +66,12 @@ jobs:
         if: always()
         run: |
           mkdir -p src-tauri/target/android-launch
-          adb -s emulator-5554 logcat -d -t 1000 > src-tauri/target/android-launch/logcat.txt || true
+          timeout 30 adb -s emulator-5554 logcat -d -t 1000 > src-tauri/target/android-launch/logcat.txt || true
           cp "$RUNNER_TEMP/shixue-emulator.log" src-tauri/target/android-launch/emulator.log || true
 
       - name: Stop Android emulator
         if: always()
-        run: adb -s emulator-5554 emu kill || true
+        run: timeout 30 adb -s emulator-5554 emu kill || true
 
       - uses: actions/upload-artifact@v4
         with:
