@@ -20,6 +20,7 @@
 | 快速了解项目定位与适配场景 | [project-guide.md](./project-guide.md) |
 | 配置本地开发与 exFAT 工作区 | [development.md](./development.md) |
 | 定义产品目标、数据与交付边界 | [application-protocol.md](./application-protocol.md) |
+| 阅读当前软件架构、数据流与验证边界 | [architecture.md](./architecture.md) · [English](./architecture.en.md) |
 | 查看拾学与 Todofy 的源码级功能对标 | [todofy-benchmark.md](./todofy-benchmark.md) |
 | 了解拾学已锁定的时间规划范围与验收边界 | [时间规划总规格](./superpowers/specs/2026-09-04-shixue-time-planning-foundation.md) · [集成与发布计划](./superpowers/plans/2026-09-04-navigation-integration-release.md) · [视觉合同](../DESIGN.md) · [视觉验收](../VISUAL_QA.md) |
 | 了解 Release Kit 与发布边界 | [release-kit.md](./release-kit.md) |
@@ -56,6 +57,7 @@
 | project-guide.md | 项目适配指南：适合做什么 + 分类型注意事项 |
 | development.md | 本地开发：环境诊断、验证命令与 exFAT 处理 |
 | application-protocol.md | 应用协议：产品意图、能力、数据、降级与证据边界 |
+| architecture.md / architecture.en.md | 拾学当前软件架构：README 总览、运行与数据详图、平台能力与交付详图 |
 | todofy-benchmark.md | Todofy 固定提交的源码审计、功能取舍、落地模块与验收点 |
 | superpowers/specs/2026-09-04-shixue-time-planning-foundation.md | 通用任务、可选学习、Today / 最近 7 天、重复、离线 NLP、多提醒/托盘和四种日历视图的总规格 |
 | superpowers/plans/2026-09-04-navigation-integration-release.md | 七入口桌面导航、五入口紧凑导航、文档与 Windows 安装包验收计划 |
@@ -77,7 +79,9 @@
 
 ## 架构图
 
-![架构总览](./architecture.svg)
+[![拾学软件架构总览](./design/shixue-architecture-overview.svg)](./architecture.md)
+
+[查看拾学完整软件架构与证据边界](./architecture.md) · [English](./architecture.en.md) · [查看 MeowStarter 框架总览](./architecture.svg)
 
 ## 其他资源
 

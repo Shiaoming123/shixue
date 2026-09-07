@@ -6,7 +6,7 @@
 
 ### Added
 
-- 新增覆盖 Web、桌面、移动端、领域命令、本地存储、原生能力与交付证据边界的双语软件架构图，并在中英文 README 中提供可编辑图源与 SVG。
+- 新增三级双语软件架构展示：README 可读总览、运行与数据及平台与交付两张详图、可缩放全景图，并为全部 SVG 提供可编辑 Mermaid 图源。
 - 新增 Android Emulator 原生启动 smoke：校验当前 APK 身份，隔离安装并显式启动 Activity，要求五阶段 readiness、前台状态与稳定 PID 同时通过；手动 Android workflow 保存 APK、JSON 证据和有限诊断日志。
 - 新增 Android SQLite 进程重启持久化 smoke：绑定已通过的精确 APK 启动报告，通过能力服务写入唯一任务，确认应用进程终止后重启，并要求从 SQLite 恢复任务、创建回执和事件；手动 Android workflow 同步保存持久化 JSON 证据。
 

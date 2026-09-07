@@ -1,0 +1,62 @@
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 38, "rankSpacing": 50}}}%%
+%% Detailed platform-capability and delivery-evidence architecture. Keep labels bilingual.
+flowchart TB
+  subgraph CAPABILITIES["01 · 平台能力装配 / Platform capability assembly"]
+    direction TB
+    CONFIG["ModuleConfig + ModuleContract<br/>enabled · dependencies<br/>platform · required capabilities"]
+    RUNTIME["RuntimeInfo<br/>platform + declared capabilities"]
+    NATIVE["Rust build + Tauri permissions<br/>Cargo feature/cfg · builder registration"]
+    LOADER["Module loader<br/>compatible ∩ dependency order"]
+    WEBMOD["Web 默认装配<br/>core · storage · themes · IndexedDB"]
+    DESKMOD["Desktop 默认装配<br/>core · storage · themes · SQLite<br/>tray · updater · shortcut · notification · autostart"]
+    MOBMOD["Mobile 默认装配<br/>core · storage · themes · SQLite · notification"]
+    OFF["默认关闭 / Disabled by default<br/>Sync · Agent · Clipboard · MCP → Agent"]
+    USABLE["可用原生能力 / Usable native capability<br/>loaded module ∩ compiled binding ∩ permission"]
+
+    CONFIG --> LOADER
+    RUNTIME --> LOADER
+    CONFIG -. "disabled" .-> OFF
+    LOADER -->|"web"| WEBMOD
+    LOADER -->|"desktop"| DESKMOD
+    LOADER -->|"mobile"| MOBMOD
+    NATIVE --> USABLE
+    DESKMOD --> USABLE
+    MOBMOD --> USABLE
+  end
+
+  subgraph DELIVERY["02 · 独立验证与交付流程 / Independent verification & delivery"]
+    direction TB
+    SOURCE["Git source · commit"]
+    TAG["Version tag · v*.*.*"]
+    CI["ci.yml<br/>npm test · protocol + module contracts<br/>build · Rust fmt/clippy/test/check"]
+    ANDROID["android-debug.yml · manual<br/>APK identity · Activity · 5 readiness<br/>process restart · SQLite recovery"]
+    WINDOWS["Windows Release Kit · local<br/>NSIS · MSI · Portable<br/>hash/header audit · NSIS lifecycle smoke"]
+    RELEASE["Windows release.yml<br/>tag gate · draft assets · Portable digest<br/>verify · publish"]
+  end
+
+  subgraph GAPS["03 · 未验证边界 / Not verified by these lanes"]
+    direction LR
+    MOBILE_GAPS["Mobile<br/>Android physical device · emulator reboot recovery<br/>native notifications · mobile signing/store<br/>current-tree iOS build/simulator/persistence/device"]
+    WINDOWS_GAPS["Windows / installed delivery<br/>MSI install · Portable runtime · 200%/Narrator<br/>Authenticode · installed updater E2E"]
+    OTHER_GAPS["Other delivery<br/>deployed Web host · macOS/Linux packages<br/>macOS notarization"]
+  end
+
+  SOURCE -.-> CI
+  SOURCE -.-> ANDROID
+  SOURCE -.-> WINDOWS
+  TAG -.-> RELEASE
+  CI -. "source/build checks only" .-> MOBILE_GAPS
+  CI -. "does not deploy" .-> OTHER_GAPS
+  ANDROID -. "emulator process restart only" .-> MOBILE_GAPS
+  WINDOWS -. "NSIS lifecycle only" .-> WINDOWS_GAPS
+  RELEASE -. "assets are not installed E2E" .-> WINDOWS_GAPS
+  RELEASE -. "Windows workflow only" .-> OTHER_GAPS
+
+  CAPABILITIES ~~~ DELIVERY
+
+  classDef capability fill:#f7f1fb,stroke:#795b8f,color:#382446,stroke-width:1.5px;
+  classDef delivery fill:#eef7f7,stroke:#4d7d7d,color:#173b3b,stroke-width:1.5px;
+  classDef gap fill:#fff0f0,stroke:#b24c4c,color:#5d2020,stroke-width:1.6px,stroke-dasharray:6 4;
+  class CONFIG,RUNTIME,NATIVE,LOADER,WEBMOD,DESKMOD,MOBMOD,OFF,USABLE capability;
+  class SOURCE,TAG,CI,ANDROID,WINDOWS,RELEASE delivery;
+  class MOBILE_GAPS,WINDOWS_GAPS,OTHER_GAPS gap;

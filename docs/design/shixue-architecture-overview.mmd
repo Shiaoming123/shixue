@@ -1,0 +1,29 @@
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 42, "rankSpacing": 44}}}%%
+%% Compact README overview. Keep labels bilingual.
+flowchart TB
+  RT["运行环境 / Runtime<br/>Web · Tauri desktop · Tauri mobile"]
+  BOOT["平台探测与模块装配<br/>Platform detection & module assembly"]
+  UI["Vue 3 应用壳与视图<br/>Vue app shell & views"]
+  CAP["TaskCapabilityService<br/>query · preview · execute"]
+  DOMAIN["工作区领域 / Workspace domain<br/>Commands · WorkspaceStateV3"]
+  STORE["WorkspaceStore<br/>load · save(expectedUpdatedAt?)"]
+  IDB[("IndexedDB<br/>Web")]
+  SQLITE[("SQLite<br/>Tauri desktop / mobile")]
+  MEMORY["内存回退 / In-memory fallback<br/>本次运行有效 · non-durable"]
+
+  RT -->|"runtime capabilities"| BOOT
+  BOOT -->|"setup before mount"| UI
+  UI -->|"live writes & queries"| CAP
+  CAP -->|"clone · route · validate"| DOMAIN
+  CAP -->|"load · live CAS save"| STORE
+  UI -. "read-only refresh" .-> STORE
+  STORE -->|"Web adapter"| IDB
+  STORE -->|"native adapter"| SQLITE
+  STORE -. "bootstrap only: no durable adapter registered" .-> MEMORY
+
+  classDef runtime fill:#eef4fb,stroke:#446783,color:#163047,stroke-width:1.6px;
+  classDef application fill:#f2f7f1,stroke:#53745b,color:#1d3923,stroke-width:1.6px;
+  classDef data fill:#fff8e8,stroke:#9b742c,color:#4c3610,stroke-width:1.6px;
+  class RT,BOOT,UI runtime;
+  class CAP,DOMAIN application;
+  class STORE,IDB,SQLITE,MEMORY data;
