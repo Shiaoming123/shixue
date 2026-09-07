@@ -184,6 +184,8 @@ P0 没有新建第二套 Todo UI。最终方案把学习任务统一为 `StudyTa
 | 学习习惯作为派生视图 | 用户可以设“每周三次英语跟读”之类节律；只有生成并完成学习会话/记录才算打卡，不能存在与证据链分离的空勾选。 | TickTick 把习惯与任务、专注统计并列；RemNote 把很小的连续目标和完整每日目标分开。([TickTick habits](https://ticktick.com/features), [RemNote goals](https://help.remnote.com/en/articles/7950933-goals-and-streaks)) |
 | 可解释统计与历史 | 增加按主题的计划/完成/取消、预计/实际时长、证据覆盖率、到期/完成复习、重复卡点；可点击指标回到原记录。连续天数只作提示。 | Focus To-Do 和 Forest 都按时段/项目或标签追踪专注；Todoist 展示日/周完成目标；RemNote 进一步展示练习历史和未来负载。([Focus To-Do](https://www.focustodo.cn/?lang=en_US), [Forest analytics](https://www.forestapp.cc/), [Todoist productivity](https://www.todoist.com/zh-CN/help/todoist/features/use-the-productivity-view-in-todoist-6S63uAa9), [RemNote statistics](https://help.remnote.com/en/articles/7970392-flashcard-statistics)) |
 
+当前实现已完成“轻量标签与全局搜索”的首个闭环：标签写入遵守 CAS、幂等、审计与可撤销边界，完成记录保留标签快照；搜索从七个既有入口旁的统一命令打开，不增加一级导航，并能准确返回任务详情或指定完成记录。保存筛选器和统计仍按后续条目推进。
+
 ### P2：在真实使用数据出现后再增强
 
 - **未来 7 天 / 周日历**：用无日期侧栏把步骤拖入某天或时间块，并显示专注会话与复习负载；不先做月/年/多周视图。Todoist 的日历也以周/月排期和把无日期任务拖入日期为核心。([Todoist calendar](https://www.todoist.com/help/todoist/features/use-the-calendar-layout-in-todoist-lPHRQTu0o))

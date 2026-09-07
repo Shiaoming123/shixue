@@ -75,7 +75,8 @@
       "recurrence-occurrence-v1",
       "offline-natural-language-v1",
       "multi-reminder-v1",
-      "calendar-planning-v1"
+      "calendar-planning-v1",
+      "learning-search-tags-v1"
     ],
     "shippedEvidence": [
       {
@@ -97,6 +98,11 @@
         "id": "responsive-shell",
         "sources": ["src/lib/responsive-shell.ts"],
         "tests": ["tests/responsive-shell.test.ts", "tests/business-sheet-mount.test.ts"]
+      },
+      {
+        "id": "learning-search-tags",
+        "sources": ["src/domain/capabilities/tag-commands.ts", "src/domain/search/workspace-search.ts"],
+        "tests": ["tests/tag-commands.test.ts", "tests/workspace-search.test.ts"]
       }
     ],
     "planned": [

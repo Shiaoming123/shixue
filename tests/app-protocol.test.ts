@@ -79,12 +79,14 @@ function validProtocol() {
         'offline-natural-language-v1',
         'multi-reminder-v1',
         'calendar-planning-v1',
+        'learning-search-tags-v1',
       ],
       shippedEvidence: [
         { id: 'navigation', sources: ['src/lib/workspace-view.ts'], tests: ['tests/workspace-navigation.test.ts'] },
         { id: 'today-upcoming', sources: ['src/domain/views/today.ts', 'src/domain/views/upcoming.ts'], tests: ['tests/workspace-projections.test.ts'] },
         { id: 'review-link', sources: ['src/domain/learning/review-task-link.ts'], tests: ['tests/review-task-link.test.ts'] },
         { id: 'responsive-shell', sources: ['src/lib/responsive-shell.ts'], tests: ['tests/responsive-shell.test.ts', 'tests/business-sheet-mount.test.ts'] },
+        { id: 'learning-search-tags', sources: ['src/domain/capabilities/tag-commands.ts', 'src/domain/search/workspace-search.ts'], tests: ['tests/tag-commands.test.ts', 'tests/workspace-search.test.ts'] },
       ],
       planned: ['agent-behavior'],
     },
@@ -154,14 +156,21 @@ test('rejects a protocol that omits the shipped calendar planning capability', (
   const protocol = validProtocol()
   protocol.implementation.shippedFoundation = protocol.implementation.shippedFoundation.filter((id) => id !== 'calendar-planning-v1')
 
-  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedFoundation must include calendar-planning-v1/)
+  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedFoundation must match the currently implemented planning foundation/)
 })
 
 test('rejects missing or unverified shipped calendar planning evidence', () => {
   const protocol = validProtocol()
   protocol.implementation.shippedEvidence = protocol.implementation.shippedEvidence.filter(({ id }) => id !== 'review-link')
 
-  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedEvidence must match navigation, today-upcoming, review-link, and responsive-shell evidence/)
+  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedEvidence must match the declared local behavioural evidence/)
+})
+
+test('rejects a protocol that omits shipped search and tag evidence', () => {
+  const protocol = validProtocol()
+  protocol.implementation.shippedEvidence = protocol.implementation.shippedEvidence.filter(({ id }) => id !== 'learning-search-tags')
+
+  assert.match(validate(protocol).errors.join('\n'), /implementation\.shippedEvidence must match the declared local behavioural evidence/)
 })
 
 test('rejects a protocol that drops calendar acceptance commands', () => {
