@@ -170,6 +170,8 @@ test('dialog source uses the shared search semantics and exposes responsive grou
   const source = readFileSync(sourceUrl, 'utf8')
   assert.match(source, /import \{ searchWorkspace, type WorkspaceSearchQuery, type WorkspaceSearchResult \} from '..\/..\/domain\/search\/workspace-search\.ts'/)
   assert.match(source, /<Dialog\b/)
+  assert.match(source, /<Dialog\b[\s\S]*?size="xl"/)
+  assert.doesNotMatch(source, /<Dialog\b[\s\S]*?class="global-search-dialog"/)
   assert.match(source, /ref="searchInput"[\s\S]*?autofocus[\s\S]*?aria-label="搜索任务与完成记录"/)
   assert.match(source, /<h3>任务 <span>\{\{ results\.tasks\.length \}\}<\/span><\/h3>/)
   assert.match(source, /<h3>完成记录 <span>\{\{ results\.completionRecords\.length \}\}<\/span><\/h3>/)
