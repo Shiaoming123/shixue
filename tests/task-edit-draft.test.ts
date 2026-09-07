@@ -11,9 +11,17 @@ const code = ts.transpileModule(compileScript(descriptor, { id: 'edit-draft-test
 const exported: any = {}
 new Function('require', 'exports', code)((id: string) => id === 'vue' ? Vue : id.endsWith('use-overlay') ? { useModalOverlay: () => ({ layerId: 'test' }) } : {}, exported)
 const renderer = Vue.createRenderer({ createElement: () => ({}), createText: () => ({}), createComment: () => ({}), insert() {}, remove() {}, setText() {}, setElementText() {}, parentNode: () => null, nextSibling: () => null, patchProp() {} })
-const task = (id = 'one', title = 'Stored title') => ({ id, title, notes: 'Stored notes', topicId: null, plannedOn: '2026-09-05', dueOn: null, reminderAt: null, status: 'planned', priority: 'none', estimateMinutes: 15, acceptanceCriteria: [] })
+const task = (id = 'one', title = 'Stored title') => ({ id, title, notes: 'Stored notes', topicId: null, tagIds: ['tag:reading'], plannedOn: '2026-09-05', dueOn: null, reminderAt: null, status: 'planned', priority: 'none', estimateMinutes: 15, acceptanceCriteria: [] })
 function mount() {
-  const props = Vue.reactive<any>({ open: true, task: task(), topics: [], recurrenceRule: null, plannedAt: null, dueAt: null, reminderRules: [{ id: 'rule:b', taskId: 'one', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true, revision: 2 }] })
+  const props = Vue.reactive<any>({
+    open: true, task: task(), topics: [], recurrenceRule: null, plannedAt: null, dueAt: null,
+    tags: [
+      { id: 'tag:reading', title: '阅读', position: 0, archivedAt: null },
+      { id: 'tag:output', title: '输出', position: 1, archivedAt: null },
+      { id: 'tag:archived', title: '旧标签', position: 2, archivedAt: '2026-09-01T00:00:00.000Z' },
+    ],
+    reminderRules: [{ id: 'rule:b', taskId: 'one', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true, revision: 2 }],
+  })
   const events: any[][] = []
   let state: any
   const app = renderer.createApp({ setup() { state = exported.default.setup(props, { expose() {}, emit: (...args: any[]) => events.push(args) }); return () => Vue.h('div') } })
@@ -82,7 +90,7 @@ test('reminder and recurrence edits stay local until the outer save and cancel p
   assert.deepEqual(events[0][2], {
     baseTask: {
       title: 'Stored title', notes: 'Stored notes', topicId: null, plannedOn: '2026-09-05', dueOn: null,
-      reminderAt: null, priority: 'none', estimateMinutes: 15,
+      reminderAt: null, priority: 'none', estimateMinutes: 15, tagIds: ['tag:reading'],
     },
     baseReminderRules: [{ id: 'rule:b', taskId: 'one', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true, revision: 2 }],
     baseRecurrenceRule: null,
@@ -102,6 +110,18 @@ test('reminder and recurrence edits stay local until the outer save and cancel p
   events.length = 0
   state.save()
   assert.equal(Object.hasOwn(events[0][2], 'recurrenceRule'), false, 'reopening after commit does not submit or reconfirm the persisted recurrence')
+  unmount()
+})
+
+test('task tags stay in the edit draft and archived tags cannot be newly attached', () => {
+  const { props, state, events, unmount } = mount()
+  assert.deepEqual(state.tagIds.value, ['tag:reading'])
+  state.toggleTag(props.tags[1])
+  state.toggleTag(props.tags[2])
+  assert.deepEqual(state.tagIds.value, ['tag:reading', 'tag:output'])
+  state.save()
+  assert.deepEqual(events[0][1].tagIds, ['tag:reading', 'tag:output'])
+  assert.deepEqual(events[0][2].baseTask.tagIds, ['tag:reading'])
   unmount()
 })
 
@@ -154,6 +174,8 @@ test('task edit retry resolution only writes from its captured base and treats c
   assert.equal(resolveTaskEditWrite(base, base, desired), 'write')
   assert.equal(resolveTaskEditWrite(desired, base, desired), 'noop')
   assert.equal(resolveTaskEditWrite({ ...base, title: 'External' }, base, desired), 'conflict')
+  assert.equal(resolveTaskEditWrite({ ...base, tagIds: ['two', 'one'] }, { ...base, tagIds: ['one', 'two'] }, { ...base, tagIds: ['one', 'two'] }), 'noop', 'tag association order is not business state')
+  assert.equal(resolveTaskEditWrite({ ...base, tagIds: ['external'] }, { ...base, tagIds: ['one'] }, { ...base, tagIds: ['mine'] }), 'conflict', 'concurrent tag association changes cannot be overwritten')
   assert.equal(resolveTaskEditWrite({ ...desired, reminderAt: '2026-09-07T01:00:00.000Z' }, base, desired), 'noop', 'legacy reminder compatibility state is outside task edit ownership')
   assert.equal(resolveTaskEditWrite(
     { ...base, dueOn: undefined, dueAt: '2026-09-07T16:00:00+08:00' },

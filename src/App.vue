@@ -232,6 +232,10 @@ const activeReviewLinkId = computed(() => recurrenceWorkspace.value?.reviewTaskL
   reviewTaskId === activeTask.value?.id && completedAt === null)?.id ?? '')
 const selectedTask = computed(() => state.value.tasks.find((task) => task.id === selectedTaskId.value && !task.deletedAt))
 const selectedWorkspaceTask = computed(() => recurrenceWorkspace.value?.tasks.find((task) => task.id === selectedTaskId.value && !task.deletedAt))
+const selectedTaskEditModel = computed(() => selectedTask.value ? ({
+  ...selectedTask.value,
+  tagIds: [...(selectedWorkspaceTask.value?.tagIds ?? [])],
+}) : undefined)
 const selectedOccurrence = computed(() => recurrenceWorkspace.value?.occurrences.find((occurrence) => occurrence.id === selectedOccurrenceId.value) ?? null)
 const selectedRecurrence = computed(() => {
   const workspace = recurrenceWorkspace.value
@@ -846,6 +850,7 @@ async function readCurrentTaskEdit(taskId: string): Promise<{ task: Task; value:
       reminderAt: null,
       priority: task.priority,
       estimateMinutes: task.schedule.estimateMinutes,
+      tagIds: [...task.tagIds],
       ...(task.mode === 'learning' ? { acceptanceCriteria: [...(task.learning?.acceptanceCriteria ?? [])] } : {}),
     },
   }
@@ -1377,7 +1382,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 
     <CompletionSheet :open="completionOpen" :context-id="completionReminderId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) && reminderBusy" :task-title="reminderCompletionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionReviewLinkId = ''" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
-    <TaskEditSheet :open="taskEditorOpen" :task="selectedTask" :topics="state.topics" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" />
+    <TaskEditSheet :open="taskEditorOpen" :task="selectedTaskEditModel" :topics="state.topics" :tags="recurrenceWorkspace?.tags ?? []" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" />
     <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @edit-occurrence="editSingleOccurrence" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />
     <OccurrenceRescheduleSheet :open="occurrenceRescheduleOpen" :title="selectedTask?.title ?? ''" :model-value="occurrenceRescheduleValue" :timed="occurrenceRescheduleTimed" @close="occurrenceRescheduleOpen = false" @submit="rescheduleOccurrence" />
     <Sheet :open="topicEditorOpen" :label="state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单'" size="lg" @close="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" autofocus required placeholder="清单名称" /></label><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></Sheet>
