@@ -46,8 +46,15 @@ export function validateWindowsReleaseWorkflow(workflow) {
   if (!activeWorkflow.includes('runs-on: windows-latest')) {
     errors.push('Windows release workflow must run on windows-latest')
   }
-  if (!activeWorkflow.includes('tauri-apps/tauri-action@v0') || !activeWorkflow.includes('--bundles nsis,msi')) {
+  if (!activeWorkflow.includes('tauri-apps/tauri-action@v1') || !activeWorkflow.includes('--bundles nsis,msi')) {
     errors.push('Windows release workflow must retain NSIS and MSI bundling')
+  }
+  if (!activeWorkflow.includes('uploadUpdaterJson: true')
+    || !activeWorkflow.includes("releaseAssetNamePattern: 'Shixue_[version]_[arch][setup][ext]'")) {
+    errors.push('Windows release workflow must use the tauri-action v1 updater and asset-name inputs')
+  }
+  if (activeWorkflow.includes('includeUpdaterJson:') || activeWorkflow.includes('assetNamePattern:')) {
+    errors.push('Windows release workflow must not use removed tauri-action v0 input names')
   }
   if (!activeWorkflow.includes('- name: Require version tag source') || !activeWorkflow.includes("github.ref_type != 'tag'")) {
     errors.push('Windows release workflow must reject branch-based manual dispatches')
