@@ -1,4 +1,4 @@
-#[cfg(desktop)]
+#[cfg(any(desktop, target_os = "android"))]
 use tauri::Manager;
 
 #[cfg(feature = "agent")]
@@ -37,8 +37,8 @@ fn runtime_platform() -> &'static str {
 }
 
 #[tauri::command]
-fn report_ios_smoke_phase(phase: &str) -> Result<(), String> {
-    #[cfg(all(target_os = "ios", debug_assertions))]
+fn report_native_smoke_phase(app: tauri::AppHandle, phase: &str) -> Result<(), String> {
+    #[cfg(all(any(target_os = "android", target_os = "ios"), debug_assertions))]
     {
         use std::fs::OpenOptions;
         use std::io::Write;
@@ -51,12 +51,30 @@ fn report_ios_smoke_phase(phase: &str) -> Result<(), String> {
             "frontend-ready",
         ];
         if !PHASES.contains(&phase) {
-            return Err(format!("Unknown iOS smoke phase: {phase}"));
+            return Err(format!("Unknown native smoke phase: {phase}"));
         }
-        let Ok(run_id) = std::env::var("SHIXUE_IOS_SMOKE_RUN_ID") else {
+
+        #[cfg(target_os = "ios")]
+        let run_id = std::env::var("SHIXUE_IOS_SMOKE_RUN_ID").ok();
+        #[cfg(target_os = "ios")]
+        let path = std::env::temp_dir().join("shixue-ios-launch-smoke.log");
+
+        #[cfg(target_os = "android")]
+        let cache_dir = app
+            .path()
+            .app_cache_dir()
+            .map_err(|error| error.to_string())?;
+        #[cfg(target_os = "android")]
+        let run_id = std::fs::read_to_string(cache_dir.join("shixue-android-smoke-run-id"))
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        #[cfg(target_os = "android")]
+        let path = cache_dir.join("shixue-android-launch-smoke.log");
+
+        let Some(run_id) = run_id else {
             return Ok(());
         };
-        let path = std::env::temp_dir().join("shixue-ios-launch-smoke.log");
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -65,8 +83,8 @@ fn report_ios_smoke_phase(phase: &str) -> Result<(), String> {
         writeln!(file, "[shixue:smoke] {run_id} {phase}").map_err(|error| error.to_string())?;
     }
 
-    #[cfg(not(all(target_os = "ios", debug_assertions)))]
-    let _ = phase;
+    #[cfg(not(all(any(target_os = "android", target_os = "ios"), debug_assertions)))]
+    let _ = (app, phase);
 
     Ok(())
 }
@@ -151,7 +169,7 @@ pub fn run() {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
             runtime_platform,
-            report_ios_smoke_phase,
+            report_native_smoke_phase,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut,
             agent::set_api_key,
@@ -172,7 +190,7 @@ pub fn run() {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
             runtime_platform,
-            report_ios_smoke_phase,
+            report_native_smoke_phase,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut,
             agent::set_api_key,
@@ -188,7 +206,7 @@ pub fn run() {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
             runtime_platform,
-            report_ios_smoke_phase,
+            report_native_smoke_phase,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut,
             study_cloud::study_cloud_sign_in,
@@ -204,7 +222,7 @@ pub fn run() {
         builder = builder.invoke_handler(tauri::generate_handler![
             greet,
             runtime_platform,
-            report_ios_smoke_phase,
+            report_native_smoke_phase,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut
         ]);

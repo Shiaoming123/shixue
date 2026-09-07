@@ -29,8 +29,17 @@ jobs:
 
       - uses: android-actions/setup-android@v4
 
-      - name: Install Android build components
-        run: sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;27.1.12297006"
+      - name: Install Android build and emulator components
+        run: sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;27.1.12297006" "emulator" "system-images;android-35;google_apis;x86_64"
+
+      - name: Start isolated Android emulator
+        run: |
+          echo no | avdmanager create avd --force --name shixue-ci-api35 --package "system-images;android-35;google_apis;x86_64" --device medium_phone
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+          nohup emulator @shixue-ci-api35 -port 5554 -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader_indirect > "$RUNNER_TEMP/shixue-emulator.log" 2>&1 &
+          adb -s emulator-5554 wait-for-device
+          timeout 180 bash -c 'until [ "$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = "1" ]; do sleep 2; done'
+          test "$(adb -s emulator-5554 shell getprop ro.kernel.qemu | tr -d '\r')" = "1"
 
       - run: npm ci
       - run: npm run tauri -- android init --ci
@@ -46,9 +55,33 @@ jobs:
           APK=$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)
           test -n "$APK"
           npm run check:android-artifact -- --apk "$APK"
+          echo "SHIXUE_ANDROID_APK=$APK" >> "$GITHUB_ENV"
+
+      - name: Smoke installed Android launch and readiness
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.1.12297006
+        run: npm run smoke:android-launch -- --device emulator-5554 --apk "$GITHUB_WORKSPACE/$SHIXUE_ANDROID_APK" --output src-tauri/target/android-launch/ci.json
+
+      - name: Capture Android diagnostics
+        if: always()
+        run: |
+          mkdir -p src-tauri/target/android-launch
+          adb -s emulator-5554 logcat -d -t 1000 > src-tauri/target/android-launch/logcat.txt || true
+          cp "$RUNNER_TEMP/shixue-emulator.log" src-tauri/target/android-launch/emulator.log || true
+
+      - name: Stop Android emulator
+        if: always()
+        run: adb -s emulator-5554 emu kill || true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: meow-starter-android-x86_64-debug-apk
+          name: shixue-android-x86_64-debug-apk
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shixue-android-emulator-evidence
+          path: src-tauri/target/android-launch/
           if-no-files-found: error

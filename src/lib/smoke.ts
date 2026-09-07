@@ -13,7 +13,7 @@ export async function reportSmokePhase(phase: SmokePhase): Promise<void> {
   if (!isTauri()) return
 
   try {
-    await invoke('report_ios_smoke_phase', { phase })
+    await invoke('report_native_smoke_phase', { phase })
   } catch {
     // The smoke runner treats a missing marker as a failure. Normal app startup
     // must not fail when no smoke run id was supplied by the simulator launcher.

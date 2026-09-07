@@ -21,6 +21,7 @@ const packageJson = {
     'rust:verify': 'node scripts/rust-verify.mjs',
     'smoke:web-persistence': 'node scripts/smoke-web-persistence.mjs',
     'smoke:ios-launch': 'node scripts/smoke-ios-launch.mjs',
+    'smoke:android-launch': 'node scripts/smoke-android-launch.mjs',
     'smoke:calendar': 'node scripts/smoke-calendar.mjs',
     'benchmark:task-query': 'node scripts/benchmark-study-task-query.mjs',
     'smoke:windows-package': 'node scripts/smoke-windows-package.mjs',
@@ -33,7 +34,7 @@ const projectRoot = new URL('..', import.meta.url)
 
 function validProtocol() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     product: {
       name: 'meow-study',
       goal: 'Build a local-first cross-platform application.',
@@ -105,6 +106,12 @@ function validProtocol() {
       mobileNative: 'source-ready',
     },
     nativeEvidence: {
+      android: {
+        maturity: 'source-ready',
+        nativeBuild: 'not-run',
+        emulatorRun: 'not-run',
+        deviceRun: 'not-run',
+      },
       ios: {
         maturity: 'source-ready',
         nativeBuild: 'not-run',
@@ -114,7 +121,7 @@ function validProtocol() {
     },
     acceptance: {
       required: ['test', 'check:protocol', 'check:csp', 'typecheck', 'build', 'build:web', 'check:modules', 'check:docs'],
-      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:ios-launch', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
+      conditional: ['rust:verify', 'smoke:web-persistence', 'smoke:calendar', 'benchmark:task-query', 'smoke:ios-launch', 'smoke:android-launch', 'smoke:windows-package', 'mobile:doctor', 'check:android-artifact'],
     },
     evolution: {
       additive: 'Add fields in a new schema version.',
@@ -167,11 +174,15 @@ test('rejects a mobile delivery claim stronger than the current source-ready evi
   assert.match(validate(protocol).errors.join('\n'), /delivery must retain the currently evidenced release boundary/)
 })
 
-test('rejects iOS evidence that upgrades the current tree without a current native run', () => {
+test('rejects native evidence that upgrades the current tree without a current native run', () => {
+  const androidProtocol = validProtocol()
+  androidProtocol.nativeEvidence.android.emulatorRun = 'pass'
+  assert.match(validate(androidProtocol).errors.join('\n'), /nativeEvidence must retain the recorded Android and iOS evidence boundaries/)
+
   const protocol = validProtocol()
   protocol.nativeEvidence.ios.simulatorRun = 'pass'
 
-  assert.match(validate(protocol).errors.join('\n'), /nativeEvidence must retain the recorded iOS evidence boundary/)
+  assert.match(validate(protocol).errors.join('\n'), /nativeEvidence must retain the recorded Android and iOS evidence boundaries/)
 })
 
 test('rejects a protocol that omits the shipped calendar planning capability', () => {

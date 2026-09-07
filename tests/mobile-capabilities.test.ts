@@ -52,7 +52,7 @@ test('native runtime platform is exposed to the WebView before module routing', 
   const entry = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
 
   assert.match(entry, /fn runtime_platform\(\)/)
-  assert.match(entry, /generate_handler!\[\s*greet,\s*runtime_platform,\s*report_ios_smoke_phase,\s*read_legacy_reminder_deliveries,\s*set_quick_add_shortcut\s*\]/)
+  assert.match(entry, /generate_handler!\[\s*greet,\s*runtime_platform,\s*report_native_smoke_phase,\s*read_legacy_reminder_deliveries,\s*set_quick_add_shortcut\s*\]/)
 })
 
 test('keeps shared Tauri defaults disabled and restores the mobile wry runtime', () => {

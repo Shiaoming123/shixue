@@ -5,26 +5,26 @@ import {
   validateAndroidBadging,
 } from '../scripts/check-android-artifact.mjs'
 
-const validBadging = `package: name='com.shiaoming123.meow_starter' versionCode='1000' versionName='0.1.0'
+const validBadging = `package: name='com.shiaoming123.shixue' versionCode='3000' versionName='0.3.0'
 sdkVersion:'24'
 targetSdkVersion:'36'
 native-code: 'arm64-v8a' 'x86_64'`
 
-test('accepts a debug APK whose identity and SDK metadata match the starter', () => {
+test('accepts a debug APK whose identity and SDK metadata match Shixue', () => {
   const metadata = parseAndroidBadging(validBadging)
 
   assert.deepEqual(metadata, {
-    packageName: 'com.shiaoming123.meow_starter',
-    versionCode: '1000',
-    versionName: '0.1.0',
+    packageName: 'com.shiaoming123.shixue',
+    versionCode: '3000',
+    versionName: '0.3.0',
     minSdk: 24,
     targetSdk: 36,
     abis: ['arm64-v8a', 'x86_64'],
   })
   assert.deepEqual(
     validateAndroidBadging(metadata, {
-      identifier: 'com.shiaoming123.meow-starter',
-      version: '0.1.0',
+      identifier: 'com.shiaoming123.shixue',
+      version: '0.3.0',
     }),
     [],
   )
@@ -35,8 +35,8 @@ test('rejects an APK with mismatched application identity or incomplete metadata
 
   assert.deepEqual(
     validateAndroidBadging(metadata, {
-      identifier: 'com.shiaoming123.meow-starter',
-      version: '0.1.0',
+      identifier: 'com.shiaoming123.shixue',
+      version: '0.3.0',
     }),
     [
       'APK package name does not match the Tauri identifier.',
