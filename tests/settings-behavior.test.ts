@@ -219,6 +219,7 @@ test('denied preference access does not prevent workspace initialization', async
     applyTheme() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }),
     compactMedia: undefined, compact: ref(false), onCompactChange() {},
     refreshState: async () => { loaded++ }, state: ref({ topics: [] }), selectedTopicId: ref(''), showFocus: ref(false), activeSession: ref(null),
+    reportSmokePhase: async () => {},
     reportStorageError() { assert.fail('preference failure must not become a domain-storage failure') }, loading,
     cloudAvailable: false, runtime: { platform: 'web' }, initializeDeviceCapabilities: async () => {}, initializeReminders: async () => {}, clockTimer: undefined, reminderTimer: undefined, cloudTimer: undefined, setInterval: () => 0,
     disposed: false,
@@ -239,6 +240,7 @@ test('unmount during native initialization cannot install timers after teardown'
     handleQuickAdd() {}, handleModuleError() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
     localStorage: { getItem: () => null }, notify() {}, applyTheme() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }),
     compactMedia: undefined, compact: ref(false), onCompactChange() {}, refreshState: async () => {}, state: ref({ topics: [] }), selectedTopicId: ref(''), showFocus: ref(false), activeSession: ref(null),
+    reportSmokePhase: async () => {},
     reportStorageError(error: unknown) { throw error }, loading: ref(true), cloudAvailable: false, runtime: { platform: 'desktop' },
   }
   const result = await new Function(...Object.keys(ports), `

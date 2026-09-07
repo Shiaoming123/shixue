@@ -19,6 +19,8 @@
 - Evidence tier remains `Compile-ready`. SQLite restart persistence, safe-area rendering, WKWebView import/export, background reminders, device, archive, TestFlight, and App Store are not verified.
 - Generated Apple sources remain under ignored `src-tauri/gen/apple/`; only non-rebuildable native configuration may be versioned after a specific review.
 
+Task 2 subsequently resolved the startup gate without changing the locked dependency set. A one-variable minimal reproduction traced the `SIGTRAP` to the non-ASCII native executable/product name on the current Wry 0.55.1 and iOS 26.5 Simulator path. The iOS override now builds `Shixue.app` while `CFBundleDisplayName` preserves “拾学”; the bounded smoke reaches all five readiness markers and remains alive. Native build and Simulator run are `pass`; SQLite restart persistence, real device, signing, and distribution remain unverified.
+
 ## Non-goals and fixed boundaries
 
 - Do not reimplement PR5 calendar or implement PR6 release/navigation business scope inside the startup-fix or persistence PRs.

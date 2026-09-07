@@ -34,7 +34,9 @@ import type { CalendarView } from './domain/calendar/range'
 import { offsetForInstant } from './domain/calendar/target'
 import { loadSidebarPreferences, saveSidebarPreferences, type SidebarPreferences } from './lib/sidebar-preferences'
 import { shouldAutoSelectTask } from './lib/task-detail-layout'
-import { detectRuntimeInfo, hasRuntimeCapability } from './lib/platform'
+import { hasRuntimeCapability, RUNTIME_INFO_KEY, runtimeInfoForNativePlatform } from './lib/platform'
+import { reportSmokePhase } from './lib/smoke'
+import { inject } from 'vue'
 import {
   addTaskChecklistItem,
   archiveStudyListGroup,
@@ -138,7 +140,7 @@ let desktopCalendarModeLoaded = !calendarStartsCompact
 const defaultSidebarMenuKeys = ['smart:inbox', 'smart:today', 'smart:next7', 'page:calendar', 'smart:all', 'smart:completed', 'page:topics', 'page:review']
 const sidebarPreferences = ref(loadSidebarPreferences(defaultSidebarMenuKeys))
 const tasksView = ref<InstanceType<typeof TasksView> | null>(null)
-const runtime = detectRuntimeInfo()
+const runtime = inject(RUNTIME_INFO_KEY, () => runtimeInfoForNativePlatform('web'), true)
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const capabilityService = createTaskCapabilityService(getWorkspaceStore(), () => new Date().toISOString(), (kind) => `${kind}:${crypto.randomUUID()}`)
 const nativeNotificationAvailable = ref(false)
@@ -327,11 +329,15 @@ onMounted(async () => {
   compactMedia = window.matchMedia('(max-width: 819px)')
   compact.value = compactMedia.matches
   compactMedia.addEventListener('change', onCompactChange)
+  let workspaceReady = false
   try {
     await refreshState()
     selectedTopicId.value = state.value.topics.find((topic) => !topic.archivedAt)?.id ?? ''
     showFocus.value = Boolean(activeSession.value)
+    workspaceReady = true
+    await reportSmokePhase('workspace-ready')
   } catch (error) { reportStorageError(error) } finally { loading.value = false }
+  if (workspaceReady) await reportSmokePhase('frontend-ready')
   if (cloudAvailable) void refreshCloudSession()
   await initializeDeviceCapabilities()
   await initializeReminders()

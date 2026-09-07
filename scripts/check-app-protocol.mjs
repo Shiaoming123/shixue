@@ -19,13 +19,13 @@ const EXPECTED_DELIVERY = {
   signing: 'unverified',
   updater: 'template-only',
   webDeployment: 'unverified',
-  mobileNative: 'unverified',
+  mobileNative: 'local-debug',
 }
 const EXPECTED_NATIVE_EVIDENCE = {
   ios: {
-    maturity: 'compile-ready',
+    maturity: 'simulator-verified',
     nativeBuild: 'pass',
-    simulatorRun: 'fail',
+    simulatorRun: 'pass',
     deviceRun: 'not-run',
   },
 }
