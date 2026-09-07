@@ -57,6 +57,7 @@ import {
 import { workspaceDestinationFromSmartView } from './lib/sidebar-navigation'
 import { hasRuntimeCapability, RUNTIME_INFO_KEY, runtimeInfoForNativePlatform } from './lib/platform'
 import { reportSmokePhase } from './lib/smoke'
+import { runNativeAndroidPersistenceSmoke } from './lib/android-persistence-smoke'
 import {
   addTaskChecklistItem,
   archiveStudyListGroup,
@@ -440,6 +441,8 @@ onMounted(async () => {
   let workspaceReady = false
   try {
     await refreshState()
+    const persistenceSmoke = await runNativeAndroidPersistenceSmoke(capabilityService)
+    if (persistenceSmoke?.stage === 'write-confirmed') await refreshState()
     selectedTopicId.value = state.value.topics.find((topic) => !topic.archivedAt)?.id ?? ''
     showFocus.value = Boolean(activeSession.value)
     workspaceReady = true

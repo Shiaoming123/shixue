@@ -89,6 +89,135 @@ fn report_native_smoke_phase(app: tauri::AppHandle, phase: &str) -> Result<(), S
     Ok(())
 }
 
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AndroidPersistenceSmokeRequest {
+    schema_version: u8,
+    run_id: String,
+    task_id: String,
+    title: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AndroidPersistenceSmokeResult {
+    schema_version: u8,
+    run_id: String,
+    stage: String,
+    task_id: String,
+    title: String,
+    workspace_revision: u64,
+}
+
+#[tauri::command]
+fn read_android_persistence_smoke_request(
+    app: tauri::AppHandle,
+) -> Result<Option<AndroidPersistenceSmokeRequest>, String> {
+    #[cfg(all(target_os = "android", debug_assertions))]
+    {
+        let cache_dir = app
+            .path()
+            .app_cache_dir()
+            .map_err(|error| error.to_string())?;
+        let path = cache_dir.join("shixue-android-persistence-smoke-request.json");
+        let source = match std::fs::read_to_string(path) {
+            Ok(source) => source,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        };
+        let request: AndroidPersistenceSmokeRequest =
+            serde_json::from_str(&source).map_err(|error| error.to_string())?;
+        validate_android_persistence_smoke_request(&request)?;
+        return Ok(Some(request));
+    }
+
+    #[cfg(not(all(target_os = "android", debug_assertions)))]
+    {
+        let _ = app;
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+fn report_android_persistence_smoke_result(
+    app: tauri::AppHandle,
+    result: AndroidPersistenceSmokeResult,
+) -> Result<(), String> {
+    #[cfg(all(target_os = "android", debug_assertions))]
+    {
+        use std::fs::OpenOptions;
+        use std::io::Write;
+
+        let request = read_android_persistence_smoke_request(app.clone())?
+            .ok_or_else(|| "Android persistence smoke request is missing.".to_owned())?;
+        validate_android_persistence_smoke_result(&request, &result)?;
+        let cache_dir = app
+            .path()
+            .app_cache_dir()
+            .map_err(|error| error.to_string())?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(cache_dir.join("shixue-android-persistence-smoke.jsonl"))
+            .map_err(|error| error.to_string())?;
+        serde_json::to_writer(&mut file, &result).map_err(|error| error.to_string())?;
+        writeln!(file).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(not(all(target_os = "android", debug_assertions)))]
+    {
+        let _ = (app, result);
+        Err("Android persistence smoke evidence is unavailable in this build.".into())
+    }
+}
+
+#[cfg(any(all(target_os = "android", debug_assertions), test))]
+fn validate_android_persistence_smoke_request(
+    request: &AndroidPersistenceSmokeRequest,
+) -> Result<(), String> {
+    let expected_task_id = format!("task:android-persistence:{}", request.run_id);
+    let expected_title = format!("Android persistence smoke {}", request.run_id);
+    if request.schema_version != 1
+        || !is_safe_smoke_token(&request.run_id)
+        || request.task_id != expected_task_id
+        || request.title != expected_title
+    {
+        return Err("Invalid Android persistence smoke request.".into());
+    }
+    Ok(())
+}
+
+#[cfg(any(all(target_os = "android", debug_assertions), test))]
+fn validate_android_persistence_smoke_result(
+    request: &AndroidPersistenceSmokeRequest,
+    result: &AndroidPersistenceSmokeResult,
+) -> Result<(), String> {
+    if result.schema_version != 1
+        || result.run_id != request.run_id
+        || result.task_id != request.task_id
+        || result.title != request.title
+        || !matches!(
+            result.stage.as_str(),
+            "write-confirmed" | "restart-confirmed"
+        )
+        || result.workspace_revision == 0
+    {
+        return Err("Android persistence smoke result does not match its request.".into());
+    }
+    Ok(())
+}
+
+#[cfg(any(all(target_os = "android", debug_assertions), test))]
+fn is_safe_smoke_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+}
+
 #[tauri::command]
 async fn read_legacy_reminder_deliveries(
     app: tauri::AppHandle,
@@ -170,6 +299,8 @@ pub fn run() {
             greet,
             runtime_platform,
             report_native_smoke_phase,
+            read_android_persistence_smoke_request,
+            report_android_persistence_smoke_result,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut,
             agent::set_api_key,
@@ -191,6 +322,8 @@ pub fn run() {
             greet,
             runtime_platform,
             report_native_smoke_phase,
+            read_android_persistence_smoke_request,
+            report_android_persistence_smoke_result,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut,
             agent::set_api_key,
@@ -207,6 +340,8 @@ pub fn run() {
             greet,
             runtime_platform,
             report_native_smoke_phase,
+            read_android_persistence_smoke_request,
+            report_android_persistence_smoke_result,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut,
             study_cloud::study_cloud_sign_in,
@@ -223,6 +358,8 @@ pub fn run() {
             greet,
             runtime_platform,
             report_native_smoke_phase,
+            read_android_persistence_smoke_request,
+            report_android_persistence_smoke_result,
             read_legacy_reminder_deliveries,
             set_quick_add_shortcut
         ]);
@@ -256,5 +393,61 @@ fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        validate_android_persistence_smoke_request, validate_android_persistence_smoke_result,
+        AndroidPersistenceSmokeRequest, AndroidPersistenceSmokeResult,
+    };
+
+    fn request() -> AndroidPersistenceSmokeRequest {
+        AndroidPersistenceSmokeRequest {
+            schema_version: 1,
+            run_id: "run-1".into(),
+            task_id: "task:android-persistence:run-1".into(),
+            title: "Android persistence smoke run-1".into(),
+        }
+    }
+
+    #[test]
+    fn persistence_smoke_evidence_must_match_its_validated_request() {
+        let request = request();
+        assert!(validate_android_persistence_smoke_request(&request).is_ok());
+        assert!(validate_android_persistence_smoke_result(
+            &request,
+            &AndroidPersistenceSmokeResult {
+                schema_version: 1,
+                run_id: request.run_id.clone(),
+                stage: "restart-confirmed".into(),
+                task_id: request.task_id.clone(),
+                title: request.title.clone(),
+                workspace_revision: 2,
+            },
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn persistence_smoke_rejects_forged_identity_and_unknown_stage() {
+        let mut forged_request = request();
+        forged_request.task_id = "task:other".into();
+        assert!(validate_android_persistence_smoke_request(&forged_request).is_err());
+
+        let request = request();
+        assert!(validate_android_persistence_smoke_result(
+            &request,
+            &AndroidPersistenceSmokeResult {
+                schema_version: 1,
+                run_id: request.run_id.clone(),
+                stage: "skipped".into(),
+                task_id: request.task_id.clone(),
+                title: request.title.clone(),
+                workspace_revision: 2,
+            },
+        )
+        .is_err());
     }
 }
