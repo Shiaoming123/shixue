@@ -66,7 +66,7 @@ export type StudyTaskMetadataUpdate = Partial<Pick<StudyTask,
   | 'priority'
   | 'estimateMinutes'
   | 'acceptanceCriteria'
->> & { plannedAt?: string | null; dueAt?: string | null }
+>> & { plannedAt?: string | null; dueAt?: string | null; tagIds?: string[] }
 
 export type StudyTaskCreationInput = Pick<StudyTask, 'title'> &
   Partial<Pick<StudyTask,
@@ -586,6 +586,7 @@ function taskPatch(input: StudyTaskMetadataUpdate) {
   if (input.priority !== undefined) patch.priority = input.priority
   if (input.estimateMinutes !== undefined) patch.estimateMinutes = input.estimateMinutes
   if (input.acceptanceCriteria !== undefined) patch.acceptanceCriteria = [...input.acceptanceCriteria]
+  if (input.tagIds !== undefined) patch.tagIds = [...input.tagIds]
   return patch
 }
 

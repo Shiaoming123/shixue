@@ -25,6 +25,7 @@ type TaskEditSemantic = {
   priority: string
   estimateMinutes: number | null
   acceptanceCriteria?: string[]
+  tagIds?: string[]
 }
 
 function semanticKey(value: TaskEditSemantic) {
@@ -37,6 +38,7 @@ function semanticKey(value: TaskEditSemantic) {
     priority: value.priority,
     estimateMinutes: value.estimateMinutes,
     acceptanceCriteria: value.acceptanceCriteria ?? null,
+    tagIds: [...(value.tagIds ?? [])].sort(),
   })
 }
 

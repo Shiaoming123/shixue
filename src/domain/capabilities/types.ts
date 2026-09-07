@@ -1,5 +1,6 @@
 import type { ReminderCapabilityCommand } from './reminder-commands.ts'
 import type { CalendarCapabilityCommand } from './calendar-commands.ts'
+import type { WorkspaceSearchQuery, WorkspaceSearchResult } from '../search/workspace-search.ts'
 import type {
   CompletionRecord,
   JsonValue,
@@ -15,6 +16,7 @@ import type {
   TaskList,
   TaskPriority,
   TaskStatus,
+  Tag,
   WorkspaceStateV3,
 } from '../workspace/types.ts'
 
@@ -32,6 +34,7 @@ export type EntityType =
   | 'workspace'
   | 'list_group'
   | 'list'
+  | 'tag'
   | 'task'
   | 'recurrence_series'
   | 'occurrence'
@@ -68,6 +71,7 @@ export type DomainErrorCode =
   | 'LIST_NOT_FOUND'
   | 'SECTION_NOT_FOUND'
   | 'TAG_NOT_FOUND'
+  | 'TAG_ALREADY_EXISTS'
   | 'SESSION_NOT_FOUND'
   | 'CHECKLIST_ITEM_NOT_FOUND'
   | 'COMPLETION_RECORD_NOT_FOUND'
@@ -295,6 +299,25 @@ export interface ListGroupArchiveCommand {
   groupId: string
 }
 
+export interface TagCreateCommand {
+  type: 'tag.create'
+  tagId?: string
+  title: string
+}
+
+export interface TagRenameCommand {
+  type: 'tag.rename'
+  tagId: string
+  title: string
+}
+
+export interface TagArchiveCommand {
+  type: 'tag.archive'
+  tagId: string
+}
+
+export type TagCapabilityCommand = TagCreateCommand | TagRenameCommand | TagArchiveCommand
+
 export interface TaskPlanCommand {
   type: 'task.plan'
   taskId: string
@@ -422,6 +445,8 @@ export interface WorkspaceResetCommand {
 }
 
 export type UndoCompensation =
+  | { type: 'tag.remove_created'; tagId: string }
+  | { type: 'tag.restore'; tag: Tag }
   | {
       type: 'task.remove_created'
       taskIds: string[]
@@ -501,6 +526,7 @@ export type LiveCompatibilityCommand =
 export type CapabilityCommand =
   | CalendarCapabilityCommand
   | ReminderCapabilityCommand
+  | TagCapabilityCommand
   | TaskCapabilityCommand
   | RecurrenceCapabilityCommand
   | ReviewCapabilityCommand
@@ -549,6 +575,7 @@ export interface CommandResult {
 
 export type CapabilityQuery =
   | { type: 'workspace.snapshot' }
+  | ({ type: 'workspace.search' } & WorkspaceSearchQuery)
   | { type: 'task.get'; taskId: string; includeDeleted?: boolean }
   | { type: 'task.list'; listId?: string; statuses?: TaskStatus[]; includeDeleted?: boolean }
   | { type: 'task.search'; text: string; includeDeleted?: boolean }
@@ -562,11 +589,12 @@ export interface AuditListResult {
 
 export type QueryResult<Q extends CapabilityQuery> =
   Q extends { type: 'workspace.snapshot' } ? WorkspaceStateV3
-    : Q extends { type: 'task.get' } ? Task | null
-      : Q extends { type: 'task.list' | 'task.search' } ? Task[]
-        : Q extends { type: 'command.describe' } ? CommandDescriptor
-          : Q extends { type: 'audit.list' } ? AuditListResult
-            : never
+    : Q extends { type: 'workspace.search' } ? WorkspaceSearchResult
+      : Q extends { type: 'task.get' } ? Task | null
+        : Q extends { type: 'task.list' | 'task.search' } ? Task[]
+          : Q extends { type: 'command.describe' } ? CommandDescriptor
+            : Q extends { type: 'audit.list' } ? AuditListResult
+              : never
 
 export type CapabilityClock = () => string
 export type CapabilityIdGenerator = (kind:
@@ -577,6 +605,7 @@ export type CapabilityIdGenerator = (kind:
   | 'completion'
   | 'session'
   | 'checklist'
+  | 'tag'
   | 'reminder'
   | 'recurrence_series'
   | 'occurrence'

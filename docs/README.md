@@ -7,7 +7,7 @@
 | 级别 | 能力 |
 | --- | --- |
 | **Stable** | core、SQLite、主题、桌面托盘/单实例 |
-| **Beta** | 拾学通用任务与时间规划源码、Web IndexedDB、updater 构建链路、移动端响应式与桌面能力降级 |
+| **Beta** | 拾学通用任务与时间规划源码、可逆标签与全局学习事实搜索、Web IndexedDB、updater 构建链路、移动端响应式与桌面能力降级 |
 | **Preview** | Sync、Agent、Ollama、MCP、可选系统插件 |
 | **Roadmap** | sidecar、RAG、语音、OCR |
 

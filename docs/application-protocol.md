@@ -88,6 +88,14 @@ execution, routing of current live writes through that service, the shared
 themed-control foundation, recurrence and occurrences, offline natural-language
 quick add, multiple reminders, and `calendar-planning-v1`.
 
+`learning-search-tags-v1` adds reversible tag creation, rename, and archive
+commands through the same compare-and-swap and audit boundary. Tasks can keep
+tag associations, and completion records snapshot their tags so later archive
+or rename operations do not erase historical reachability. `workspace.search`
+deterministically searches task fields, checklist items, tags, and completion
+record learning/evidence/blocker/next-action fields, with combinable result
+type, topic, status, date, and all-selected-tags filters.
+
 `calendar-planning-v1` is backed by machine-checkable source and test pointers:
 
 | Evidence id | Implemented boundary | Behavioural evidence |
@@ -96,6 +104,7 @@ quick add, multiple reminders, and `calendar-planning-v1`.
 | `today-upcoming` | `src/domain/views/today.ts`, `src/domain/views/upcoming.ts` | `tests/workspace-projections.test.ts` |
 | `review-link` | `src/domain/learning/review-task-link.ts` | `tests/review-task-link.test.ts` |
 | `responsive-shell` | `src/lib/responsive-shell.ts` | `tests/responsive-shell.test.ts`, `tests/business-sheet-mount.test.ts` |
+| `learning-search-tags` | `src/domain/capabilities/tag-commands.ts`, `src/domain/capabilities/task-commands.ts`, `src/domain/capabilities/recurrence-commands.ts`, `src/domain/search/workspace-search.ts` | `tests/tag-commands.test.ts`, `tests/capability-service.test.ts`, `tests/recurrence-learning-completion.test.ts`, `tests/workspace-search.test.ts` |
 
 These entries claim the local application behaviour covered by those sources
 and tests. They do not claim an external calendar provider, hosted service,
@@ -104,6 +113,9 @@ native-device validation, or any release channel.
 The conditional acceptance commands include `smoke:calendar` for the five fixed
 Web viewports and `benchmark:task-query` for deterministic Today, Upcoming, and
 calendar projection counts. These checks do not change native delivery status.
+`smoke:web-persistence` additionally exercises the global search dialog and
+reversible tag management at the fixed responsive viewports; it remains Web
+evidence rather than native-shell or installed-package evidence.
 
 Agent behaviour remains planned.
 The command envelope reserves `source: agent`, but there is no shipped Agent

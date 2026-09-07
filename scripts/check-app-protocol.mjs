@@ -31,6 +31,7 @@ const EXPECTED_SHIPPED_FOUNDATION = [
   'offline-natural-language-v1',
   'multi-reminder-v1',
   'calendar-planning-v1',
+  'learning-search-tags-v1',
 ]
 const EXPECTED_PLANNED_FEATURES = [
   'agent-behavior',
@@ -45,6 +46,7 @@ const EXPECTED_SHIPPED_EVIDENCE = [
   { id: 'today-upcoming', sources: ['src/domain/views/today.ts', 'src/domain/views/upcoming.ts'], tests: ['tests/workspace-projections.test.ts'] },
   { id: 'review-link', sources: ['src/domain/learning/review-task-link.ts'], tests: ['tests/review-task-link.test.ts'] },
   { id: 'responsive-shell', sources: ['src/lib/responsive-shell.ts'], tests: ['tests/responsive-shell.test.ts', 'tests/business-sheet-mount.test.ts'] },
+  { id: 'learning-search-tags', sources: ['src/domain/capabilities/tag-commands.ts', 'src/domain/capabilities/task-commands.ts', 'src/domain/capabilities/recurrence-commands.ts', 'src/domain/search/workspace-search.ts'], tests: ['tests/tag-commands.test.ts', 'tests/capability-service.test.ts', 'tests/recurrence-learning-completion.test.ts', 'tests/workspace-search.test.ts'] },
 ]
 
 const IMPLEMENTATION_FACTS = {
@@ -199,11 +201,11 @@ function validateImplementationStatus(implementation, evidenceFileExists, errors
     return
   }
   if (!sameStrings(implementation.shippedFoundation, EXPECTED_SHIPPED_FOUNDATION)) {
-    errors.push('implementation.shippedFoundation must include calendar-planning-v1 and match the currently implemented planning foundation.')
+    errors.push('implementation.shippedFoundation must match the currently implemented planning foundation.')
   }
   validateEvidenceUniquenessAndFiles(implementation.shippedEvidence, evidenceFileExists, errors)
   if (!sameShippedEvidence(implementation.shippedEvidence, EXPECTED_SHIPPED_EVIDENCE)) {
-    errors.push('implementation.shippedEvidence must match navigation, today-upcoming, review-link, and responsive-shell evidence.')
+    errors.push('implementation.shippedEvidence must match the declared local behavioural evidence.')
   }
   if (!sameStrings(implementation.planned, EXPECTED_PLANNED_FEATURES)) {
     errors.push('implementation.planned must retain Agent behaviour as planned.')

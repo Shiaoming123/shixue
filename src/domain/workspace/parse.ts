@@ -63,6 +63,7 @@ export function parseWorkspaceState(value: unknown): WorkspaceStateV3 {
   }
   assertCollectionSizes(parsed)
   assertUniqueIds(parsed)
+  assertActiveTagTitles(parsed.tags)
   assertReferences(parsed)
   return parsed
 }
@@ -357,9 +358,16 @@ function parseTaskEvent(raw: unknown, index: number): TaskEvent {
 
 function parseCompletionRecord(raw: unknown, index: number): CompletionRecord {
   const value = requireRecord(raw, `Completion record ${index}`)
+  const tagIdsSnapshot = value.tagIdsSnapshot === undefined
+    ? []
+    : parseTextArray(value.tagIdsSnapshot, 'Completion record tagIdsSnapshot')
+  if (new Set(tagIdsSnapshot).size !== tagIdsSnapshot.length) {
+    throw new Error('Completion record has duplicate tagIdsSnapshot.')
+  }
   return {
     id: requireText(value.id, 'Completion record id'), taskId: requireText(value.taskId, 'Completion record taskId'),
     topicId: parseNullableText(value.topicId, 'Completion record topicId'), sessionIds: parseTextArray(value.sessionIds, 'Completion record sessionIds'),
+    tagIdsSnapshot,
     taskTitleSnapshot: requireText(value.taskTitleSnapshot, 'Completion record taskTitleSnapshot'),
     learned: requireText(value.learned, 'Completion record learned'), evidence: requireText(value.evidence, 'Completion record evidence'),
     blocker: requireText(value.blocker, 'Completion record blocker', true), nextAction: requireText(value.nextAction, 'Completion record nextAction'),
@@ -442,6 +450,16 @@ function assertUniqueIds(state: WorkspaceStateV3): void {
   assertUnique(state.commandReceipts.map((receipt) => ({ id: receipt.idempotencyKey })), 'command receipt idempotencyKey')
 }
 
+function assertActiveTagTitles(tags: readonly Tag[]): void {
+  const activeTitles = new Set<string>()
+  for (const tag of tags) {
+    if (tag.archivedAt !== null) continue
+    if (tag.title !== tag.title.trim()) throw new Error(`Active tag ${tag.id} title must be trimmed.`)
+    if (activeTitles.has(tag.title)) throw new Error(`Workspace state contains a duplicate active tag title: ${tag.title}.`)
+    activeTitles.add(tag.title)
+  }
+}
+
 function assertReferences(state: WorkspaceStateV3): void {
   const groups = ids(state.listGroups); const lists = ids(state.lists); const sections = new Map(state.sections.map((section) => [section.id, section])); const tags = ids(state.tags)
   const tasks = new Map(state.tasks.map((task) => [task.id, task])); const series = new Map(state.recurrenceSeries.map((entry) => [entry.id, entry])); const occurrences = new Map(state.occurrences.map((entry) => [entry.id, entry]))
@@ -486,6 +504,7 @@ function assertReferences(state: WorkspaceStateV3): void {
   for (const session of state.studySessions) if (!tasks.has(session.taskId)) throw new Error(`Study session ${session.id} has unknown taskId.`)
   for (const record of state.completionRecords) {
     if (!tasks.has(record.taskId)) throw new Error(`Completion record ${record.id} has unknown taskId.`)
+    for (const tagId of record.tagIdsSnapshot) if (!tags.has(tagId)) throw new Error(`Completion record ${record.id} has unknown tagId.`)
     for (const sessionId of record.sessionIds) { const session = sessions.get(sessionId); if (!session) throw new Error(`Completion record ${record.id} has unknown sessionId.`); if (session.taskId !== record.taskId) throw new Error(`Completion record ${record.id} session belongs to another task.`) }
   }
   assertEvents(state.taskEvents, tasks, records, occurrences, series)

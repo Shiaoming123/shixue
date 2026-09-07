@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import {
   BookOpen, CalendarClock, CalendarDays, CalendarRange, CircleCheckBig, Folder, History, Inbox,
-  ListTodo, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Settings,
+  ListTodo, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Search, Settings,
 } from '@lucide/vue'
 import { moveSidebarItem, type SidebarDisplayMode } from '../../lib/sidebar-preferences'
 import {
@@ -27,6 +27,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   navigate: [destination: ShellDestination]
+  search: []
   'update:displayMode': [mode: SidebarDisplayMode]
   reorder: [order: string[]]
   'create-list': []
@@ -128,6 +129,12 @@ function commitMove(source: string, target: string, keys: string[]) {
       </button>
     </div>
 
+    <button class="search-command" type="button" aria-label="搜索" aria-keyshortcuts="Control+K Meta+K" title="搜索（Ctrl K）" @click="emit('search')">
+      <Search class="search-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
+      <span class="search-label">搜索</span>
+      <kbd class="search-shortcut" aria-hidden="true">Ctrl K</kbd>
+    </button>
+
     <p id="sidebar-order-help" class="sr-only">拖动菜单项可调整顺序，也可使用 Alt 加上方向键上移或下移。</p>
     <p class="sr-only" aria-live="polite">{{ reorderMessage }}</p>
 
@@ -189,6 +196,14 @@ function commitMove(source: string, target: string, keys: string[]) {
 .sidebar.icons .mode-toggle { position: absolute; left: 5px; opacity: 0; pointer-events: none; }
 .sidebar.icons .brand:hover .brand-mark, .sidebar.icons .brand:focus-within .brand-mark { opacity: 0; }
 .sidebar.icons .brand:hover .mode-toggle, .sidebar.icons .mode-toggle:focus-visible { opacity: 1; pointer-events: auto; }
+.search-command { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 0 10px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: color-mix(in srgb, var(--control-fill) 82%, transparent); color: var(--muted); font: inherit; text-align: left; transition: border-color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease); }
+.search-command:hover { border-color: color-mix(in srgb, var(--accent) 24%, var(--hairline)); background: var(--control-fill); color: var(--text); }
+.search-command:focus-visible { outline: 0; box-shadow: var(--focus-ring); }
+.search-icon { flex: 0 0 auto; }
+.search-label { min-width: 0; max-width: 110px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 1; transition: max-width var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease), transform var(--motion-base) var(--ease); }
+.search-shortcut { max-width: 48px; overflow: hidden; padding: 2px 6px; border: 1px solid var(--hairline); border-radius: var(--radius-sm); color: var(--muted); font: inherit; font-size: 10px; white-space: nowrap; opacity: 1; transition: max-width var(--motion-base) var(--ease), padding var(--motion-base) var(--ease), border-width var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease); }
+.sidebar.icons .search-command { justify-content: center; gap: 0; padding-inline: 0; }
+.sidebar.icons .search-label, .sidebar.icons .search-shortcut { max-width: 0; padding-inline: 0; border-width: 0; opacity: 0; transform: translateX(-6px); }
 .navigation { min-height: 0; flex: 1; overflow-y: auto; padding-top: 24px; scrollbar-width: none; }
 .navigation::-webkit-scrollbar { display: none; }
 .nav-section h2 { max-height: 18px; margin: 0 8px 7px; overflow: hidden; color: color-mix(in srgb, var(--muted) 86%, transparent); font-size: var(--text-xs); font-weight: var(--font-medium); letter-spacing: .04em; opacity: 1; white-space: nowrap; transition: max-height var(--motion-base) var(--ease), margin var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease); }
@@ -226,11 +241,11 @@ function commitMove(source: string, target: string, keys: string[]) {
   .sidebar { width: 72px; min-width: 72px; padding-inline: 8px; }
   .brand { justify-content: center; padding-inline: 0; }
   .mode-toggle { display: none; }
-  .brand-copy, .nav-section h2, .section-heading > div, .group-heading, .nav-label, .nav-count { max-width: 0; min-width: 0; max-height: 0; min-height: 0; margin: 0; padding-inline: 0; border-width: 0; opacity: 0; pointer-events: none; }
+  .brand-copy, .search-label, .search-shortcut, .nav-section h2, .section-heading > div, .group-heading, .nav-label, .nav-count { max-width: 0; min-width: 0; max-height: 0; min-height: 0; margin: 0; padding-inline: 0; border-width: 0; opacity: 0; pointer-events: none; }
   .section-heading > div, .group-heading { visibility: hidden; }
-  .nav-item { justify-content: center; gap: 0; padding-inline: 0; }
+  .search-command, .nav-item { justify-content: center; gap: 0; padding-inline: 0; }
 }
 @media (max-width: 819px) { .sidebar { display: none; } }
-@media (prefers-reduced-motion: reduce) { .sidebar, .brand-copy, .brand-mark, .nav-section h2, .section-heading > div, .group-heading, .nav-item, .nav-label, .nav-count, .nav-order-move { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sidebar, .brand-copy, .brand-mark, .search-command, .search-label, .search-shortcut, .nav-section h2, .section-heading > div, .group-heading, .nav-item, .nav-label, .nav-count, .nav-order-move { transition: none; } }
 @media (prefers-reduced-transparency: reduce) { .sidebar { background: var(--surface); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; } }
 </style>

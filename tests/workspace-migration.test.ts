@@ -168,7 +168,10 @@ test('v2 migration preserves legacy ids and maps every learning field', () => {
     'list:system:learning',
   )
   assert.deepEqual(next.studySessions, old.sessions)
-  assert.deepEqual(next.completionRecords, old.completionRecords)
+  assert.deepEqual(next.completionRecords, old.completionRecords.map((record) => ({
+    ...record,
+    tagIdsSnapshot: [],
+  })))
   assert.equal(next.studySessions[0].taskId, old.tasks[0].id)
   assert.equal(next.completionRecords[0].taskId, old.tasks[0].id)
   assert.deepEqual(next.reminderRules, [{

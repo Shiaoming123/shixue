@@ -138,6 +138,47 @@ async function main() {
       await page.getByRole('button', { name: /恢复演示内容/ }).click()
       await page.getByRole('button', { name: '确认恢复', exact: true }).click()
 
+      const managedTag = `烟测标签-${Date.now()}`
+      const renamedManagedTag = `${managedTag}-已改名`
+      await page.locator('.sidebar').getByRole('button', { name: '搜索', exact: true }).click()
+      const desktopGlobalSearch = page.getByRole('dialog', { name: '搜索学习事实', exact: true })
+      await desktopGlobalSearch.waitFor({ state: 'visible' })
+      const desktopGlobalSearchInput = desktopGlobalSearch.getByRole('searchbox', { name: '搜索任务与完成记录', exact: true })
+      if (!(await desktopGlobalSearchInput.evaluate((element) => element === document.activeElement))) {
+        throw new Error('Opening global search did not move focus to the search field.')
+      }
+      await desktopGlobalSearchInput.fill('持久化')
+      await desktopGlobalSearch.getByRole('heading', { name: /^任务/ }).waitFor({ state: 'visible' })
+      await desktopGlobalSearch.getByRole('heading', { name: /^完成记录/ }).waitFor({ state: 'visible' })
+      await desktopGlobalSearch.getByRole('button', { name: '管理标签', exact: true }).click()
+
+      const tagManager = page.getByRole('dialog', { name: '管理标签', exact: true })
+      await tagManager.getByLabel('新标签', { exact: true }).fill(managedTag)
+      await tagManager.getByRole('button', { name: '创建', exact: true }).click()
+      await tagManager.getByText(managedTag, { exact: true }).waitFor({ state: 'visible' })
+      await tagManager.getByRole('button', { name: `重命名标签 ${managedTag}`, exact: true }).click()
+      await tagManager.getByRole('textbox', { name: `重命名标签 ${managedTag}`, exact: true }).fill(renamedManagedTag)
+      await tagManager.getByRole('button', { name: '保存标签名称', exact: true }).click()
+      await tagManager.getByText(renamedManagedTag, { exact: true }).waitFor({ state: 'visible' })
+      await tagManager.getByRole('button', { name: `归档标签 ${renamedManagedTag}`, exact: true }).click()
+      await tagManager.getByText(renamedManagedTag, { exact: true }).waitFor({ state: 'visible' })
+      await tagManager.getByRole('button', { name: '关闭标签管理', exact: true }).click()
+      await desktopGlobalSearch.waitFor({ state: 'visible' })
+      if (!(await desktopGlobalSearchInput.evaluate((element) => element === document.activeElement))) {
+        throw new Error('Closing tag management did not restore the global search context and focus.')
+      }
+      await page.keyboard.press('Escape')
+      await page.getByRole('button', { name: '撤销', exact: true }).click()
+      await page.getByText('已撤销。', { exact: true }).waitFor({ state: 'visible' })
+      await page.locator('.sidebar').getByRole('button', { name: '搜索', exact: true }).click()
+      await page.getByRole('dialog', { name: '搜索学习事实', exact: true }).getByRole('button', { name: '管理标签', exact: true }).click()
+      const reopenedTagManager = page.getByRole('dialog', { name: '管理标签', exact: true })
+      const activeTagSection = reopenedTagManager.getByRole('heading', { name: '正在使用', exact: true }).locator('..').locator('..')
+      await activeTagSection.getByText(renamedManagedTag, { exact: true }).waitFor({ state: 'visible' })
+      await reopenedTagManager.getByRole('button', { name: '关闭标签管理', exact: true }).click()
+      await desktopGlobalSearch.waitFor({ state: 'visible' })
+      await page.keyboard.press('Escape')
+
       const quickAddTitle = '明天下午3点 复习线代 #数学 p1'
       const quickAdd = page.locator('.quick-add-composer')
       await page.getByRole('button', { name: /^收件箱/ }).click()
@@ -324,6 +365,55 @@ async function main() {
             throw new Error(`Medium layout does not use the 72px icon sidebar at ${viewport.width}px: ${JSON.stringify(sidebarBox)}`)
           }
         }
+
+        const searchTrigger = viewport.hasBottomNav
+          ? page.getByRole('button', { name: '全局搜索', exact: true })
+          : page.locator('.sidebar').getByRole('button', { name: '搜索', exact: true })
+        await searchTrigger.click()
+        const globalSearch = page.getByRole('dialog', { name: '搜索学习事实', exact: true })
+        await globalSearch.waitFor({ state: 'visible' })
+        await globalSearch.getByRole('searchbox', { name: '搜索任务与完成记录', exact: true }).fill('持久化')
+        await globalSearch.getByRole('heading', { name: /^任务/ }).waitFor({ state: 'visible' })
+        await globalSearch.getByRole('heading', { name: /^完成记录/ }).waitFor({ state: 'visible' })
+        if (viewport.width === 820 || viewport.width === 390) {
+          const searchDateTrigger = globalSearch.getByRole('button', { name: '开始日期', exact: true })
+          await searchDateTrigger.click()
+          const searchDatePicker = page.getByRole('dialog', { name: '开始日期', exact: true })
+          await searchDatePicker.waitFor({ state: 'visible' })
+          if ((await searchDatePicker.getAttribute('aria-modal')) !== String(viewport.hasBottomNav)) {
+            throw new Error(`Global search date picker modality is wrong at ${viewport.width}px.`)
+          }
+          if (await searchDatePicker.getByRole('gridcell').count() !== 42) {
+            throw new Error(`Global search date picker did not expose 42 day targets at ${viewport.width}px.`)
+          }
+          await page.keyboard.press('Escape')
+          await searchDatePicker.waitFor({ state: 'hidden' })
+          if (!(await searchDateTrigger.evaluate((element) => element === document.activeElement))) {
+            throw new Error(`Global search date picker did not restore focus at ${viewport.width}px.`)
+          }
+        }
+        const searchGeometry = await globalSearch.evaluate((element) => {
+          const box = element.getBoundingClientRect()
+          return {
+            left: box.left,
+            right: box.right,
+            width: box.width,
+            viewportWidth: document.documentElement.clientWidth,
+            pageScrollWidth: document.documentElement.scrollWidth,
+          }
+        })
+        if (searchGeometry.left < -0.5 || searchGeometry.right > searchGeometry.viewportWidth + 0.5
+          || searchGeometry.pageScrollWidth > searchGeometry.viewportWidth) {
+          throw new Error(`Global search overflows at ${viewport.width}px: ${JSON.stringify(searchGeometry)}`)
+        }
+        if (viewport.width === 390 || viewport.width === 320) {
+          await page.screenshot({
+            path: resolve(quickAddArtifactRoot, viewport.width === 390 ? 'global-search-mobile-390x844.png' : 'global-search-mobile-min-320x700.png'),
+          })
+        }
+        await page.keyboard.press('Escape')
+        await globalSearch.waitFor({ state: 'hidden' })
+
         const compactQuickAdd = page.locator('.quick-add-composer')
         await compactQuickAdd.getByRole('textbox', { name: '新建任务' }).fill(quickAddTitle)
         const scheduleTrigger = compactQuickAdd.getByRole('button', { name: /编辑计划.*15:00/ })

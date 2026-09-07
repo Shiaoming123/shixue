@@ -48,6 +48,7 @@ See the [visual fidelity ledger](./docs/design/fidelity-ledger.md) for concepts,
 - **Calendar:** Day, week, month, and agenda views support scheduling unplanned tasks. Calendar moves support a task, one occurrence, future occurrences, or the entire series. Duration resizing supports only a task or one occurrence; future/series resize scopes are explicitly rejected.
 - **Recurrence:** Generate occurrences daily, weekly, monthly, yearly, or after completion while retaining completion, skip, and exception history.
 - **Offline quick add:** Deterministic Chinese and English rules parse dates, times, due markers, priorities, recurrence, `#tags`, and `@lists` locally. Ambiguous or conflicting results require confirmation and do not depend on a model or network.
+- **Lightweight tags and global search:** Create, rename, archive, and associate tags without losing historical links. `Ctrl/Cmd+K` searches task fields, checklists, tags, and completion-record learning, evidence, blockers, and next actions, with combinable topic, status, date, and tag filters.
 - **Multiple reminders and tray:** A task can have several reminders. System notification submission is attempted only while the app or tray process is running and permission is available; reminders are not guaranteed after a full exit. In-app cards provide Complete, Snooze, and Open when native actions are unavailable.
 - **Optional learning mode:** Add topics, focus sessions, acceptance criteria, outcome evidence, and 1 / 3 / 7-day reviews. General todos do not require learning fields.
 - **Local data evolution:** WorkspaceState v3 supports Study v1/v2 migration and import. IndexedDB / SQLite preserve the legacy snapshot before migration; new exports use `meow-study/workspace-export` v3. Older application versions cannot read v3 data. Pre-upgrade backups exclude later records and do not provide automatic downgrade recovery.
@@ -165,6 +166,7 @@ For the local Windows package, `npm run smoke:windows-package` installs the NSIS
 
 - [x] General tasks, Today / Upcoming, seven-destination desktop navigation, and five-destination compact navigation
 - [x] Day/week/month/agenda calendar, recurrence, offline bilingual quick add, and the multiple-reminder source path
+- [x] Reversible tag management and deterministic search across tasks, checklists, tags, and completion records
 - [x] Optional learning mode, focus sessions, evidence-backed completion, and review loop
 - [x] IndexedDB / SQLite persistence, Study v1/v2 → Workspace v3 migration, and JSON exchange
 - [x] Local Windows x64 Portable, NSIS, and MSI packaging plus install/launch smoke

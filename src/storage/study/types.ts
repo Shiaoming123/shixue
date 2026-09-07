@@ -106,6 +106,7 @@ export interface CompletionRecord {
   taskId: string
   topicId: string | null
   sessionIds: string[]
+  tagIdsSnapshot: string[]
   taskTitleSnapshot: string
   learned: string
   evidence: string
@@ -372,6 +373,7 @@ export function migrateStudyStateV1ToV2(value: unknown, migratedAt: string): Stu
         taskId: task.id,
         topicId: task.topicId,
         sessionIds: [session.id],
+        tagIdsSnapshot: [],
         taskTitleSnapshot: task.title,
         learned: session.learned || session.scratchpad || '迁移的学习记录',
         evidence: session.evidence || '原记录未填写成果证据',
@@ -908,6 +910,12 @@ function parseCompletionRecord(
   index: number,
 ): CompletionRecord {
   const value = requireRecord(raw, `Completion record ${index}`)
+  const tagIdsSnapshot = value.tagIdsSnapshot === undefined
+    ? []
+    : parseTextArray(value.tagIdsSnapshot, 'Completion record tagIdsSnapshot')
+  if (new Set(tagIdsSnapshot).size !== tagIdsSnapshot.length) {
+    throw new Error('Completion record has duplicate tagIdsSnapshot.')
+  }
   return {
     id: requireText(value.id, 'Completion record id'),
     taskId: requireText(value.taskId, 'Completion record taskId'),
@@ -916,6 +924,7 @@ function parseCompletionRecord(
       value.sessionIds,
       'Completion record sessionIds',
     ),
+    tagIdsSnapshot,
     taskTitleSnapshot: requireText(
       value.taskTitleSnapshot,
       'Completion record taskTitleSnapshot',
