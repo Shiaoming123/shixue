@@ -43,6 +43,7 @@ import type { CalendarView } from './domain/calendar/range'
 import { offsetForInstant } from './domain/calendar/target'
 import { loadSidebarPreferences, saveSidebarPreferences, type SidebarPreferences } from './lib/sidebar-preferences'
 import { shouldAutoSelectTask } from './lib/task-detail-layout'
+import { learningBatchBlockers, routeSingleTaskCompletion } from './lib/task-completion-routing'
 import {
   desktopWorkspaceNavigation,
   learningWorkspaceNavigation,
@@ -114,6 +115,7 @@ const loading = ref(true)
 const showFocus = ref(false)
 const completionOpen = ref(false)
 const completionReviewLinkId = ref('')
+const completionTaskId = ref('')
 const completionOccurrenceId = ref('')
 const completionOccurrenceBusy = ref(false)
 const topicEditorOpen = ref(false)
@@ -234,6 +236,7 @@ const completionOccurrenceTask = computed(() => {
   const series = workspace?.recurrenceSeries.find(({ id }) => id === occurrence?.seriesId)
   return workspace?.tasks.find(({ id }) => id === series?.taskId)
 })
+const completionTask = computed(() => state.value.tasks.find(({ id, deletedAt }) => id === completionTaskId.value && !deletedAt))
 const cloudConfig = import.meta.env.VITE_STUDY_SUPABASE_URL?.trim() && import.meta.env.VITE_STUDY_SUPABASE_PUBLISHABLE_KEY?.trim() ? {
   provider: 'supabase' as const,
   projectUrl: import.meta.env.VITE_STUDY_SUPABASE_URL.trim(),
@@ -574,6 +577,7 @@ async function handleReminderAction(action: ReminderCardAction) {
   }
   if (action.action === 'complete' && task.mode === 'learning') {
     completionOccurrenceId.value = ''
+    completionTaskId.value = ''
     completionReminderId.value = delivery.id
     completionReviewLinkId.value = ''
     reminderCenterOpen.value = false
@@ -639,6 +643,7 @@ async function setLaunchAtLogin(enabled: boolean) {
 function handleQuickAdd() {
   completionOpen.value = false
   completionReminderId.value = ''
+  completionTaskId.value = ''
   completionReviewLinkId.value = ''
   taskActionOpen.value = false
   taskEditorOpen.value = false
@@ -1151,6 +1156,7 @@ async function executeOccurrence(id: string, type: 'recurrence.complete' | 'recu
   if (!workspace || !occurrence) return
   if (type === 'recurrence.complete' && task?.mode === 'learning') {
     completionReminderId.value = ''
+    completionTaskId.value = ''
     completionReviewLinkId.value = ''
     completionOccurrenceId.value = occurrence.id
     await nextTick()
@@ -1288,6 +1294,27 @@ async function bulkMoveTasksToToday(taskIds: string[]) {
 async function toggleTaskCompletion(taskId: string) {
   const task = state.value.tasks.find((item) => item.id === taskId && !item.deletedAt)
   if (!task || task.status === 'cancelled') return
+  const workspace = recurrenceWorkspace.value
+  const route = workspace ? routeSingleTaskCompletion(workspace, taskId) : 'toggle'
+  if (route === 'plan') {
+    openTaskAction(taskId, 'plan')
+    notify('学习任务需要先安排日期，再填写完成证据。')
+    return
+  }
+  if (route === 'unblock') {
+    notify('学习任务需要先解除阻碍，再填写完成证据。')
+    await taskPrimary(taskId)
+    return
+  }
+  if (route === 'evidence') {
+    completionReminderId.value = ''
+    completionOccurrenceId.value = ''
+    completionReviewLinkId.value = ''
+    completionTaskId.value = taskId
+    await nextTick()
+    completionOpen.value = true
+    return
+  }
   try {
     const changed = await toggleStudyTaskCompletion(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString(), reviewedOn: today.value })
     await refreshState()
@@ -1296,6 +1323,12 @@ async function toggleTaskCompletion(taskId: string) {
 }
 
 async function bulkCompleteTasks(taskIds: string[]) {
+  const workspace = recurrenceWorkspace.value
+  const blockers = workspace ? learningBatchBlockers(workspace, taskIds) : []
+  if (blockers.length) {
+    notify(`批量完成未执行：${blockers.length} 项学习任务需要逐项填写完成证据。`)
+    return
+  }
   try {
     for (const taskId of taskIds) {
       const task = (await loadStudyState()).tasks.find((item) => item.id === taskId && !item.deletedAt)
@@ -1355,6 +1388,7 @@ function updateScratchpad(value: string) {
 async function completeFocus(payload: CompletionPayload) {
   if (completionReminderId.value) return completeReminderEvidence(payload)
   if (completionOccurrenceId.value) return completeOccurrenceEvidence(payload)
+  if (completionTaskId.value) return completeTaskEvidence(payload)
   const session = activeSession.value
   const task = activeTask.value
   if (!session || !task) return
@@ -1367,6 +1401,23 @@ async function completeFocus(payload: CompletionPayload) {
   } catch (error) { reportStorageError(error) }
 }
 
+async function completeTaskEvidence(payload: CompletionPayload) {
+  const taskId = completionTaskId.value
+  const task = recurrenceWorkspace.value?.tasks.find(({ id, deletedAt }) => id === taskId && !deletedAt)
+  if (!task || task.mode !== 'learning') return
+  completionOccurrenceBusy.value = true
+  try {
+    await completeStudyTask({ taskId, ...payload }, {
+      expectedRevision: task.revision, recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now: new Date().toISOString(),
+    })
+    await refreshState()
+    completionOpen.value = false
+    completionTaskId.value = ''
+    notify('已记录学习证据并完成任务。')
+  } catch (error) { notify(error instanceof Error ? error.message : '学习证据未能保存，请重试。') }
+  finally { completionOccurrenceBusy.value = false }
+}
+
 async function rateReview(linkId: string, result: ReviewResult) {
   try { await completeReviewTaskLink(linkId, result, today.value, { now: new Date().toISOString() }); await refreshState(); reviewRevealed.value = false; notify(result === 'clear' ? '已安排下一次回顾。' : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。') } catch (error) { reportStorageError(error) }
 }
@@ -1374,6 +1425,7 @@ async function rateReview(linkId: string, result: ReviewResult) {
 function openFocusCompletion(reviewLinkId?: string) {
   completionReminderId.value = ''
   completionOccurrenceId.value = ''
+  completionTaskId.value = ''
   completionReviewLinkId.value = reviewLinkId ?? ''
   completionOpen.value = true
 }
@@ -1616,7 +1668,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
       <BottomTabs v-if="!showFocus" :active="destination" @navigate="setDestination" />
     </div>
 
-    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || completionOccurrenceId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) ? reminderBusy : completionOccurrenceBusy" :task-title="reminderCompletionTask?.title ?? completionOccurrenceTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId || completionOccurrenceId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionOccurrenceId = ''; completionReviewLinkId = ''" @save="completeFocus" />
+    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || completionOccurrenceId || completionTaskId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) ? reminderBusy : completionOccurrenceBusy" :task-title="reminderCompletionTask?.title ?? completionOccurrenceTask?.title ?? completionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId || completionOccurrenceId || completionTaskId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionOccurrenceId = ''; completionTaskId = ''; completionReviewLinkId = ''" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
     <TaskEditSheet :open="taskEditorOpen" :task="selectedTaskEditModel" :topics="state.topics" :tags="recurrenceWorkspace?.tags ?? []" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @manage-tags="openTagManager()" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" />
     <GlobalSearchDialog v-model:open="globalSearchOpen" :workspace="recurrenceWorkspace" :timezone="timezone" @close="globalSearchOpen = false" @manage-tags="openTagManager(true)" @open-task="openSearchTask" @open-record="openSearchRecord" />

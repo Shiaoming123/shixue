@@ -368,6 +368,9 @@ function toggleCompletion(
     throw new DomainCommandError('TASK_INVALID_TRANSITION', 'A cancelled Study task cannot be completion-toggled.', { taskId: task.id })
   }
   const fromStatus = task.status
+  if (task.mode === 'learning' && fromStatus !== 'completed') {
+    throw new DomainCommandError('LEARNING_EVIDENCE_REQUIRED', 'A learning task requires completion evidence.', { taskId: task.id })
+  }
   let event: TaskEvent
   if (fromStatus === 'completed') {
     task.status = task.schedule.startAt || task.schedule.startOn ? 'planned' : 'inbox'

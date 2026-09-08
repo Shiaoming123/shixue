@@ -8,6 +8,7 @@ import { createWorkspaceExport } from '../src/storage/workspace/data-port.ts'
 import { prepareWorkspaceImport, summarizeWorkspace } from '../src/lib/workspace-data-summary.ts'
 import { currentSidebarDestination } from '../src/lib/sidebar-navigation.ts'
 import { resolveRecurrenceEditWrite, resolveReminderEditWrite } from '../src/lib/task-edit-commit.ts'
+import { learningBatchBlockers, routeSingleTaskCompletion } from '../src/lib/task-completion-routing.ts'
 
 // Execute the production handlers with deterministic ports; no browser or source-pattern assertions.
 function script(file: string) {
@@ -461,7 +462,7 @@ test('learning reminder completion opens evidence entry without completing eithe
   const reminderCenterOpen = ref(true)
   const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'learning' }] }
   const api = handlers('App.vue', ['handleReminderAction'], {
-    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, completionOccurrenceId: ref('stale-occurrence'), completionReviewLinkId: ref('stale-review'), reminderCenterOpen, nextTick: async () => {},
+    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, completionOccurrenceId: ref('stale-occurrence'), completionTaskId: ref('stale-task'), completionReviewLinkId: ref('stale-review'), reminderCenterOpen, nextTick: async () => {},
     executeReminderCommand: async () => assert.fail('no completion before evidence'),
   })
   await api.handleReminderAction({ deliveryId: 'delivery', action: 'complete' })
@@ -499,7 +500,7 @@ test('learning occurrence completion from task surfaces opens evidence entry wit
     tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
   }
   const api = handlers('App.vue', ['executeOccurrence'], {
-    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOpen, completionReminderId: ref('delivery'), completionReviewLinkId: ref('review'), nextTick: async () => {},
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOpen, completionReminderId: ref('delivery'), completionTaskId: ref('stale-task'), completionReviewLinkId: ref('review'), nextTick: async () => {},
     today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' },
     CAPABILITY_PROTOCOL_VERSION: 1,
     capabilityService: { execute: async (envelope: unknown) => { commands.push(envelope) } },
@@ -509,6 +510,62 @@ test('learning occurrence completion from task surfaces opens evidence entry wit
   assert.deepEqual(commands, [])
   assert.equal(completionOccurrenceId.value, 'occurrence')
   assert.equal(completionOpen.value, true)
+})
+
+test('task completion handler opens evidence for planned learning without toggling persistence', async () => {
+  const completionOpen = ref(false)
+  const completionTaskId = ref('')
+  const workspace = { tasks: [{ id: 'learning', title: 'Learn', mode: 'learning', status: 'planned' }], reviewTaskLinks: [] }
+  const api = handlers('App.vue', ['toggleTaskCompletion'], {
+    state: ref({ tasks: [{ ...workspace.tasks[0], deletedAt: null }] }), recurrenceWorkspace: ref(workspace),
+    routeSingleTaskCompletion, completionOpen, completionTaskId, completionReminderId: ref('stale'),
+    completionOccurrenceId: ref('stale'), completionReviewLinkId: ref('stale'), nextTick: async () => {},
+    openTaskAction: () => assert.fail('planned learning must not open a task action'),
+    taskPrimary: async () => assert.fail('planned learning must not unblock'), notify() {},
+    toggleStudyTaskCompletion: async () => assert.fail('learning completion must not use generic toggle persistence'),
+  })
+  await api.toggleTaskCompletion('learning')
+  assert.equal(completionTaskId.value, 'learning')
+  assert.equal(completionOpen.value, true)
+})
+
+test('task completion handler routes inbox and blocked learning to actionable prerequisites', async () => {
+  const actions: string[] = []
+  const primaries: string[] = []
+  const tasks = [
+    { id: 'inbox', title: 'Inbox', mode: 'learning', status: 'inbox', deletedAt: null },
+    { id: 'blocked', title: 'Blocked', mode: 'learning', status: 'blocked', deletedAt: null },
+  ]
+  const api = handlers('App.vue', ['toggleTaskCompletion'], {
+    state: ref({ tasks }), recurrenceWorkspace: ref({ tasks, reviewTaskLinks: [] }), routeSingleTaskCompletion,
+    completionOpen: ref(false), completionTaskId: ref(''), completionReminderId: ref(''),
+    completionOccurrenceId: ref(''), completionReviewLinkId: ref(''), nextTick: async () => {},
+    openTaskAction: (id: string, mode: string) => actions.push(`${id}:${mode}`),
+    taskPrimary: async (id: string) => { primaries.push(id) }, notify() {},
+    toggleStudyTaskCompletion: async () => assert.fail('prerequisite routing must not toggle persistence'),
+  })
+  await api.toggleTaskCompletion('inbox')
+  await api.toggleTaskCompletion('blocked')
+  assert.deepEqual(actions, ['inbox:plan'])
+  assert.deepEqual(primaries, ['blocked'])
+})
+
+test('mixed bulk completion rejects before calling any persistence port', async () => {
+  const tasks = [
+    { id: 'general', title: 'General', mode: 'general', status: 'planned' },
+    { id: 'learning', title: 'Learning', mode: 'learning', status: 'planned' },
+  ]
+  const notices: string[] = []
+  const api = handlers('App.vue', ['bulkCompleteTasks'], {
+    recurrenceWorkspace: ref({ tasks, reviewTaskLinks: [] }), learningBatchBlockers,
+    loadStudyState: async () => assert.fail('mixed batch must reject before loading for a write'),
+    toggleStudyTaskCompletion: async () => assert.fail('mixed batch must reject before persistence'),
+    refreshState: async () => assert.fail('rejected batch must not refresh'), selectedTaskId: ref('selected'),
+    notify: (message: string) => notices.push(message), reportStorageError: (error: unknown) => { throw error },
+    crypto: { randomUUID: () => 'event' }, today: ref('2026-09-08'),
+  })
+  await api.bulkCompleteTasks(['general', 'learning'])
+  assert.deepEqual(notices, ['批量完成未执行：1 项学习任务需要逐项填写完成证据。'])
 })
 
 test('general occurrence completion from task surfaces remains a direct command', async () => {

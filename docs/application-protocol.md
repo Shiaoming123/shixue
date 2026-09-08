@@ -142,6 +142,14 @@ must use the versioned capability service, which validates and applies a command
 before one compare-and-swap save. Direct workspace storage writes are not an
 application capability.
 
+Generic `task.toggle_completion` may complete general tasks, but cannot move an
+ordinary learning task into `completed`: learning completion requires the
+evidence-bearing `task.complete` command. Linked review targets are resolved to
+`review.complete` before this guard so semantic replay remains idempotent. The
+human UI opens the shared evidence sheet only for planned or in-progress
+learning tasks, routes inbox and blocked tasks to planning or unblocking first,
+and rejects a batch containing an active learning task before any batch write.
+
 The shipped foundation comprises WorkspaceStateV3 parsing, Study v1/v2
 migration and v3 export, capability protocol v1 with transactional command
 execution, routing of current live writes through that service, the shared

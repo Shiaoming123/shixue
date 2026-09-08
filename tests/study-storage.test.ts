@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { deleteDB, openDB } from 'idb'
+import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
 import {
   addTaskChecklistItem,
   bulkCancelStudyTasks,
@@ -81,6 +82,19 @@ function legacyState(): StudyStateV1 {
 
 async function useEmptyStore() {
   registerWorkspaceStore(createInMemoryWorkspaceStore(emptyState()))
+}
+
+async function useGeneralTask(title: string, plannedOn?: string) {
+  const store = createInMemoryWorkspaceStore(emptyState())
+  registerWorkspaceStore(store)
+  let nextId = 0
+  const service = createTaskCapabilityService(store, () => '2026-09-04T08:00:00.000Z', (kind) => `${kind}-${++nextId}`)
+  const snapshot = await service.query({ type: 'workspace.snapshot' })
+  await service.execute({
+    protocolVersion: 1, idempotencyKey: `create-${title}`, source: 'human-ui',
+    expectedWorkspaceRevision: snapshot.revision,
+    command: { type: 'task.create', taskId: 'task-1', listId: 'list:system:learning', title, ...(plannedOn ? { startOn: plannedOn } : {}) },
+  })
 }
 
 test('task commands complete the inbox-to-evidence learning loop atomically', async () => {
@@ -310,11 +324,7 @@ test('planning preserves a precise start after its deadline for an explicit conf
 })
 
 test('quick completion toggles without evidence and finishes the task session', async () => {
-  await useEmptyStore()
-  await captureStudyTask(
-    { title: 'Quick task', plannedOn: '2026-09-05' },
-    { taskId: 'task-1', eventId: 'capture', now: '2026-09-04T08:00:00.000Z' },
-  )
+  await useGeneralTask('Quick task', '2026-09-05')
   await planStudyTask('task-1', {}, { eventId: 'plan', now: '2026-09-04T08:01:00.000Z' })
   await startStudyTask('task-1', { sessionId: 'session-1', eventId: 'start', now: '2026-09-04T08:02:00.000Z' })
 
@@ -340,11 +350,7 @@ test('quick completion toggles without evidence and finishes the task session', 
 })
 
 test('quick completion supports inbox tasks, reopens them to inbox, and rejects cancellation', async () => {
-  await useEmptyStore()
-  await captureStudyTask(
-    { title: 'Inbox task' },
-    { taskId: 'task-1', eventId: 'capture', now: '2026-09-04T08:00:00.000Z' },
-  )
+  await useGeneralTask('Inbox task')
   assert.equal((await toggleStudyTaskCompletion('task-1', {
     eventId: 'complete', now: '2026-09-04T08:01:00.000Z',
   })).status, 'completed')

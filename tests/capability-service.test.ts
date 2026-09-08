@@ -542,6 +542,25 @@ test('learning completion requires evidence and records it atomically', async ()
   assert.equal(state.reviewTaskLinks.at(-1)?.completionRecordId, state.completionRecords.at(-1)?.id)
 })
 
+test('learning toggle completion cannot bypass evidence or persist a partial change', async () => {
+  const service = fixture()
+  await executeNext(service, 'learning-toggle-create', {
+    type: 'task.create', taskId: 'learning-toggle', mode: 'learning',
+    listId: 'list:system:learning', title: 'Keep evidence required', startOn: '2026-09-05',
+  })
+  const before = await service.query({ type: 'workspace.snapshot' })
+
+  await assert.rejects(
+    executeNext(service, 'learning-toggle-complete', {
+      type: 'task.toggle_completion', taskId: 'learning-toggle', expectedRevision: 1,
+      reviewedOn: '2026-09-05', eventId: 'learning-toggle-event',
+    }),
+    (error) => error instanceof DomainCommandError && error.code === 'LEARNING_EVIDENCE_REQUIRED',
+  )
+
+  assert.deepEqual(await service.query({ type: 'workspace.snapshot' }), before)
+})
+
 test('batch cancel and delete mutate every validated target with consecutive events', async () => {
   const service = fixture()
   for (const taskId of ['batch-a', 'batch-b']) {
