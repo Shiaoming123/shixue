@@ -177,13 +177,13 @@ src-tauri/
 
 ## 3. 移动端 capabilities
 
-### Android 学习 UI 验收（待原生运行）
+### Android 学习 UI 验收
 
 `android-debug` 在已有启动与 SQLite 探针后运行
 `node scripts/smoke-android-learning-loop.mjs --device <serial> --launch-report <absolute-json-path> --output <json-path>`。
 它使用已有 Playwright Android WebView 接口，要求模拟器 serial、应用包名和原生启动 run id 一致，再通过真实 UI 创建学习任务、开始专注、写随手记、暂停、重启进程、提交完成证据，并再次重启验证同一完成记录及自动生成的复习任务。脚本不会写数据库或扩展调试 bridge。
 
-报告和截图保存到显式输出目录；选择器、进程重启、身份校验或页面错误都会使验收失败。每次附着 WebView 后先注册错误监听，再合并 Playwright 可读取的 console/page error 缓冲；这不保证覆盖调试连接建立前的全部启动错误，JSON 中的 `errorCoverage` 保留该边界。此脚本的单元测试只证明失败关闭约束；在对应提交的隔离模拟器工作流实际成功前，产品闭环保持 `NOT_RUN`。它不证明复习到期后的执行、整机重启、物理设备或商店交付。仅对专用隔离模拟器运行，不使用个人设备或已有用户 AVD。
+报告和截图保存到显式输出目录；选择器、进程重启、身份校验或页面错误都会使验收失败。每次附着 WebView 后先注册错误监听，再合并 Playwright 可读取的 console/page error 缓冲；这不保证覆盖调试连接建立前的全部启动错误，JSON 中的 `errorCoverage` 保留该边界。提交 `2fcf7b4` 的隔离 API 35 x86_64 运行 [34205818076](https://github.com/Shiaoming123/shixue/actions/runs/34205818076) 已通过完整流程，两次进程重启后的随手记和完成记录均恢复，且只生成一条复习任务，console/page errors 为 0。它不证明复习到期后的执行、整机重启、物理设备或商店交付。仅对专用隔离模拟器运行，不使用个人设备或已有用户 AVD。
 
 Tauri 移动端用独立的 capability 文件（`src-tauri/capabilities/` 下，或 `gen/` 里），需要声明移动端权限：
 
