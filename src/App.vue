@@ -64,7 +64,6 @@ import {
   archiveStudyListGroup,
   bulkDeleteStudyTasks,
   completeStudyTask,
-  completeReviewTaskLink,
   createTaskFromNextAction,
   deleteStudyTask,
   exportLearningRecordsMarkdown,
@@ -114,7 +113,6 @@ const state = ref<StudyState>(createSeedStudyState())
 const loading = ref(true)
 const showFocus = ref(false)
 const completionOpen = ref(false)
-const completionReviewLinkId = ref('')
 const completionTaskId = ref('')
 const completionOccurrenceId = ref('')
 const completionOccurrenceBusy = ref(false)
@@ -598,7 +596,6 @@ async function handleReminderAction(action: ReminderCardAction) {
     completionOccurrenceId.value = ''
     completionTaskId.value = ''
     completionReminderId.value = delivery.id
-    completionReviewLinkId.value = ''
     reminderCenterOpen.value = false
     await nextTick()
     completionOpen.value = true
@@ -663,7 +660,6 @@ function handleQuickAdd() {
   completionOpen.value = false
   completionReminderId.value = ''
   completionTaskId.value = ''
-  completionReviewLinkId.value = ''
   taskActionOpen.value = false
   taskEditorOpen.value = false
   recurrenceScopeOpen.value = false
@@ -1199,7 +1195,6 @@ async function executeOccurrence(id: string, type: 'recurrence.complete' | 'recu
   if (type === 'recurrence.complete' && task?.mode === 'learning') {
     completionReminderId.value = ''
     completionTaskId.value = ''
-    completionReviewLinkId.value = ''
     completionOccurrenceId.value = occurrence.id
     await nextTick()
     completionOpen.value = true
@@ -1351,7 +1346,6 @@ async function toggleTaskCompletion(taskId: string) {
   if (route === 'evidence') {
     completionReminderId.value = ''
     completionOccurrenceId.value = ''
-    completionReviewLinkId.value = ''
     completionTaskId.value = taskId
     await nextTick()
     completionOpen.value = true
@@ -1463,9 +1457,7 @@ async function completeFocus(payload: CompletionPayload) {
   if (!session || !task) return
   const now = new Date().toISOString()
   try {
-    if (completionReviewLinkId.value) await completeReviewTaskLink(completionReviewLinkId.value, 'clear', today.value, { expectedRevision: task.revision, now })
-    else await completeStudyTask({ taskId: task.id, sessionId: session.id, learned: payload.learned, evidence: payload.evidence, blocker: payload.blocker, nextAction: payload.nextAction, mastery: payload.mastery }, { recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now })
-    completionReviewLinkId.value = ''
+    await completeStudyTask({ taskId: task.id, sessionId: session.id, learned: payload.learned, evidence: payload.evidence, blocker: payload.blocker, nextAction: payload.nextAction, mastery: payload.mastery }, { recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now })
     await refreshState(); completionOpen.value = false; setDestination({ kind: 'today' }); notify(`已记录这次学习。下一项：${weeklyNext.value}`)
   } catch (error) { reportStorageError(error) }
 }
@@ -1538,10 +1530,14 @@ async function reloadReviews() {
 }
 
 function openFocusCompletion(reviewLinkId?: string) {
+  const reviewLink = reviewLinkId ? recurrenceWorkspace.value?.reviewTaskLinks.find(({ id, completedAt }) => id === reviewLinkId && completedAt === null) : undefined
+  if (reviewLink) {
+    openPendingReviewLink(reviewLink.id)
+    return
+  }
   completionReminderId.value = ''
   completionOccurrenceId.value = ''
   completionTaskId.value = ''
-  completionReviewLinkId.value = reviewLinkId ?? ''
   completionOpen.value = true
 }
 
@@ -1783,7 +1779,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
       <BottomTabs v-if="!showFocus" :active="destination" @navigate="setDestination" />
     </div>
 
-    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || completionOccurrenceId || completionTaskId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) ? reminderBusy : completionOccurrenceBusy" :task-title="reminderCompletionTask?.title ?? completionOccurrenceTask?.title ?? completionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId || completionOccurrenceId || completionTaskId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionOccurrenceId = ''; completionTaskId = ''; completionReviewLinkId = ''" @save="completeFocus" />
+    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || completionOccurrenceId || completionTaskId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) ? reminderBusy : completionOccurrenceBusy" :task-title="reminderCompletionTask?.title ?? completionOccurrenceTask?.title ?? completionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId || completionOccurrenceId || completionTaskId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionOccurrenceId = ''; completionTaskId = ''" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
     <TaskEditSheet :open="taskEditorOpen" :task="selectedTaskEditModel" :topics="state.topics" :tags="recurrenceWorkspace?.tags ?? []" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @manage-tags="openTagManager()" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" />
     <GlobalSearchDialog v-model:open="globalSearchOpen" :workspace="recurrenceWorkspace" :timezone="timezone" @close="globalSearchOpen = false" @manage-tags="openTagManager(true)" @open-task="openSearchTask" @open-record="openSearchRecord" />

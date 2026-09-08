@@ -43,7 +43,6 @@ test('review commit blocks double ratings and keeps refresh failure retries read
   let failRead = true
   const { rateReview, reloadReviews } = handlers('App.vue', ['rateReview', 'reloadReviews'], {
     reviewBusy, reviewRevealed, reviewRefreshRequired: ref(false), today: ref('2026-09-08'),
-    completeReviewTaskLink: async () => { writes++; return { nextReviewOn: null } },
     capabilityService: { query: async () => ({ revision: 1 }), execute: async () => { writes++; return { data: { nextLinkId: null } } } },
     CAPABILITY_PROTOCOL_VERSION: 1,
     refreshState: async () => { if (failRead) throw new Error('read unavailable') },
@@ -69,7 +68,6 @@ test('review feedback describes the persisted next cycle and releases failed wri
     let failWrite = true
     const { rateReview } = handlers('App.vue', ['rateReview', 'reloadReviews'], {
       reviewBusy, reviewRevealed: ref(true), reviewRefreshRequired: ref(false), today: ref('2026-09-08'),
-      completeReviewTaskLink: async () => { if (failWrite) throw new Error('write unavailable'); return { nextReviewOn: nextLinkId ? '2026-09-15' : null } },
       capabilityService: { query: async () => ({ revision: 1 }), execute: async () => { if (failWrite) throw new Error('write unavailable'); return { data: { nextLinkId } } } },
       CAPABILITY_PROTOCOL_VERSION: 1, refreshState: async () => {},
       notify: (message: string) => notices.push(message), reportStorageError: (error: Error) => notices.push(error.message),
@@ -741,7 +739,7 @@ test('learning reminder completion opens evidence entry without completing eithe
   const reminderCenterOpen = ref(true)
   const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'learning' }], reviewTaskLinks: [] }
   const api = handlers('App.vue', ['handleReminderAction'], {
-    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, completionOccurrenceId: ref('stale-occurrence'), completionTaskId: ref('stale-task'), completionReviewLinkId: ref('stale-review'), reminderCenterOpen, nextTick: async () => {},
+    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, completionOccurrenceId: ref('stale-occurrence'), completionTaskId: ref('stale-task'), reminderCenterOpen, nextTick: async () => {},
     executeReminderCommand: async () => assert.fail('no completion before evidence'),
   })
   await api.handleReminderAction({ deliveryId: 'delivery', action: 'complete' })
@@ -800,7 +798,7 @@ test('learning occurrence completion from task surfaces opens evidence entry wit
     reviewTaskLinks: [],
   }
   const api = handlers('App.vue', ['executeOccurrence'], {
-    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOpen, completionReminderId: ref('delivery'), completionTaskId: ref('stale-task'), completionReviewLinkId: ref('review'), nextTick: async () => {},
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOpen, completionReminderId: ref('delivery'), completionTaskId: ref('stale-task'), nextTick: async () => {},
     today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' },
     CAPABILITY_PROTOCOL_VERSION: 1,
     capabilityService: { execute: async (envelope: unknown) => { commands.push(envelope) } },
@@ -840,7 +838,7 @@ test('task completion handler opens evidence for planned learning without toggli
   const api = handlers('App.vue', ['toggleTaskCompletion'], {
     state: ref({ tasks: [{ ...workspace.tasks[0], deletedAt: null }] }), recurrenceWorkspace: ref(workspace),
     routeSingleTaskCompletion, completionOpen, completionTaskId, completionReminderId: ref('stale'),
-    completionOccurrenceId: ref('stale'), completionReviewLinkId: ref('stale'), nextTick: async () => {},
+    completionOccurrenceId: ref('stale'), nextTick: async () => {},
     openTaskAction: () => assert.fail('planned learning must not open a task action'),
     taskPrimary: async () => assert.fail('planned learning must not unblock'), notify() {},
     toggleStudyTaskCompletion: async () => assert.fail('learning completion must not use generic toggle persistence'),
@@ -866,6 +864,21 @@ test('linked review task completion opens its exact recall item without toggling
   assert.deepEqual(opened, ['review-link'])
 })
 
+test('focus completion routes a pending review to rating without fixing the result to clear', () => {
+  const opened: string[] = []
+  const completionOpen = ref(false)
+  const api = handlers('App.vue', ['openFocusCompletion'], {
+    recurrenceWorkspace: ref({ reviewTaskLinks: [{ id: 'review:pending', completedAt: null }] }),
+    openPendingReviewLink: (linkId: string) => opened.push(linkId), completionOpen,
+    completionReminderId: ref('stale'), completionOccurrenceId: ref('stale'), completionTaskId: ref('stale'),
+  })
+  api.openFocusCompletion('review:pending')
+  assert.deepEqual(opened, ['review:pending'])
+  assert.equal(completionOpen.value, false, 'rating must happen in ReviewView, not the evidence sheet')
+  api.openFocusCompletion()
+  assert.equal(completionOpen.value, true, 'ordinary focus completion must still collect evidence')
+})
+
 test('task completion handler routes inbox and blocked learning to actionable prerequisites', async () => {
   const actions: string[] = []
   const primaries: string[] = []
@@ -876,7 +889,7 @@ test('task completion handler routes inbox and blocked learning to actionable pr
   const api = handlers('App.vue', ['toggleTaskCompletion'], {
     state: ref({ tasks }), recurrenceWorkspace: ref({ tasks, reviewTaskLinks: [] }), routeSingleTaskCompletion,
     completionOpen: ref(false), completionTaskId: ref(''), completionReminderId: ref(''),
-    completionOccurrenceId: ref(''), completionReviewLinkId: ref(''), nextTick: async () => {},
+    completionOccurrenceId: ref(''), nextTick: async () => {},
     openTaskAction: (id: string, mode: string) => actions.push(`${id}:${mode}`),
     taskPrimary: async (id: string) => { primaries.push(id) }, notify() {},
     toggleStudyTaskCompletion: async () => assert.fail('prerequisite routing must not toggle persistence'),
@@ -915,7 +928,7 @@ test('general occurrence completion from task surfaces remains a direct command'
     reviewTaskLinks: [],
   }
   const api = handlers('App.vue', ['executeOccurrence'], {
-    recurrenceWorkspace: ref(workspace), completionOccurrenceId: ref(''), completionOpen: ref(false), completionReminderId: ref(''), completionReviewLinkId: ref(''), nextTick: async () => {},
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId: ref(''), completionOpen: ref(false), completionReminderId: ref(''), nextTick: async () => {},
     today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
     capabilityService: { execute: async (envelope: unknown) => { commands.push(envelope) } },
     refreshState: async () => {}, notify() {}, reportStorageError(error: unknown) { throw error },
