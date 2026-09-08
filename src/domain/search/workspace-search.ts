@@ -197,7 +197,6 @@ function nonEmptySet<T>(values: readonly T[] | undefined): Set<T> | null {
   return values && values.length > 0 ? new Set(values) : null
 }
 
-
 function normalize(value: string): string {
   return value.normalize('NFKC').trim().toLowerCase()
 }
