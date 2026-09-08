@@ -1,9 +1,9 @@
-import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MOBILE_APP_IDENTITY } from './mobile-app-identity.mjs'
+import { delay, resultText, runProcess } from './mobile-smoke-process.mjs'
 
 export const IOS_BUNDLE_ID = MOBILE_APP_IDENTITY.identifier
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -14,27 +14,6 @@ const readinessMarkers = {
   vueMounted: 'vue-mounted',
   workspaceReady: 'workspace-ready',
   frontendReady: 'frontend-ready',
-}
-
-function delay(milliseconds) {
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds))
-}
-
-function runProcess(command, args, options = {}) {
-  return new Promise((resolveCommand) => {
-    execFile(command, args, { cwd: projectRoot, encoding: 'utf8', ...options }, (error, stdout = '', stderr = '') => {
-      resolveCommand({
-        status: error?.code === undefined ? 0 : Number.isInteger(error.code) ? error.code : 1,
-        stdout,
-        stderr,
-        signal: error?.signal ?? null,
-      })
-    })
-  })
-}
-
-function resultText(result) {
-  return `${result?.stdout ?? ''}\n${result?.stderr ?? ''}`
 }
 
 function extractPid(text) {

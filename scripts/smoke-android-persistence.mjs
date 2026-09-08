@@ -1,36 +1,15 @@
-import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { MOBILE_APP_IDENTITY } from './mobile-app-identity.mjs'
+import { delay, resultText, runProcess } from './mobile-smoke-process.mjs'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const defaultOutputRoot = resolve(projectRoot, 'src-tauri', 'target', 'android-persistence')
 const packageId = MOBILE_APP_IDENTITY.androidPackageId
 const requestFile = 'cache/shixue-android-persistence-smoke-request.json'
 const evidenceFile = 'cache/shixue-android-persistence-smoke.jsonl'
-
-function delay(milliseconds) {
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds))
-}
-
-function runProcess(command, args, options = {}) {
-  return new Promise((resolveCommand) => {
-    execFile(command, args, { cwd: projectRoot, encoding: 'utf8', ...options }, (error, stdout = '', stderr = '') => {
-      resolveCommand({
-        status: error?.code === undefined ? 0 : Number.isInteger(error.code) ? error.code : 1,
-        stdout,
-        stderr,
-        signal: error?.signal ?? null,
-      })
-    })
-  })
-}
-
-function resultText(result) {
-  return `${result?.stdout ?? ''}\n${result?.stderr ?? ''}`
-}
 
 function extractPid(result) {
   if (result.status !== 0) return null
