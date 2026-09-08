@@ -12,8 +12,9 @@ evidence explicit.
 
 - Upgrade only the coherent Vite 8 / Vue plugin 6 / vue-tsc 3 group; retain
   TypeScript 5.6 because its independent major upgrade is not validated.
-- CSP permits only current same-origin assets and Tauri IPC. It must not add
-  wildcards, `unsafe-eval`, third-party hosts, or future Agent/sync allowances.
+- CSP permits current same-origin assets, Tauri IPC, and packaged Android font
+  data. It must not add wildcards, `unsafe-eval`, third-party hosts, or future
+  Agent/sync allowances.
 - Sync stays disabled by default and receives no provider, cloud account, or
   conflict UI. Persistence is an adapter behind `SyncStateStore`.
 - Android setup may install public SDK tooling and configure user environment

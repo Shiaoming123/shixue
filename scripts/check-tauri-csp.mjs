@@ -6,7 +6,7 @@ const required = {
   'script-src': ["'self'"],
   'style-src': ["'self'", "'unsafe-inline'"],
   'img-src': ["'self'"],
-  'font-src': ["'self'"],
+  'font-src': ["'self'", 'data:'],
   'connect-src': ["'self'", 'ipc:', 'http://ipc.localhost'],
   'object-src': ["'none'"],
   'base-uri': ["'self'"],
