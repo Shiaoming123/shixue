@@ -94,7 +94,7 @@ test('workspace refresh keeps an unsaved focus note visible so continued typing 
     getWorkspaceStore: () => ({ load: async () => ({}) }),
     projectWorkspaceState: () => ({ sessions: [{ id: 'focus', scratchpad: 'old note' }] }),
     recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {},
-    scratchNotes: new Map([['focus', 'new note']]), refreshVersion: 0,
+    scratchNotes: new Map([['focus', 'new note']]), refreshVersion: 0, appliedRefreshVersion: 0,
   })
   await api.refreshState()
   assert.equal(state.value.sessions[0].scratchpad, 'new note')
@@ -107,7 +107,7 @@ test('a delayed workspace read cannot erase a note committed while the read was 
   const api = handlers('App.vue', ['refreshState'], {
     getWorkspaceStore: () => ({ load: async () => { scratchDrafts.clear(); return {} } }),
     projectWorkspaceState: () => ({ sessions: [{ id: 'focus', scratchpad: 'old note' }] }),
-    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {}, scratchDrafts, scratchNotes, refreshVersion: 0,
+    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {}, scratchDrafts, scratchNotes, refreshVersion: 0, appliedRefreshVersion: 0,
   })
   await api.refreshState()
   assert.equal(state.value.sessions[0].scratchpad, 'new note')
@@ -122,7 +122,7 @@ test('an older refresh cannot overwrite a newer read after that read confirms th
   const api = handlers('App.vue', ['refreshState'], {
     getWorkspaceStore: () => ({ load: () => ++reads === 1 ? oldRead : Promise.resolve('new note') }),
     projectWorkspaceState: (note: string) => ({ sessions: [{ id: 'focus', scratchpad: note }] }),
-    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {}, scratchNotes, refreshVersion: 0,
+    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {}, scratchNotes, refreshVersion: 0, appliedRefreshVersion: 0,
   })
   const oldRefresh = api.refreshState()
   await api.refreshState()
@@ -130,6 +130,24 @@ test('an older refresh cannot overwrite a newer read after that read confirms th
   resolveOld('old note')
   await oldRefresh
   assert.equal(state.value.sessions[0].scratchpad, 'new note')
+})
+
+test('an older successful refresh still applies when the newer request fails', async () => {
+  const state = ref({ sessions: [{ id: 'focus', scratchpad: 'stale note' }] })
+  let resolveOld!: (value: string) => void
+  const oldRead = new Promise<string>((resolve) => { resolveOld = resolve })
+  let reads = 0
+  const api = handlers('App.vue', ['refreshState'], {
+    getWorkspaceStore: () => ({ load: () => ++reads === 1 ? oldRead : Promise.reject(new Error('read failed')) }),
+    projectWorkspaceState: (note: string) => ({ sessions: [{ id: 'focus', scratchpad: note }] }),
+    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {},
+    scratchNotes: new Map(), refreshVersion: 0, appliedRefreshVersion: 0,
+  })
+  const oldRefresh = api.refreshState()
+  await assert.rejects(api.refreshState(), /read failed/)
+  resolveOld('saved note')
+  await oldRefresh
+  assert.equal(state.value.sessions[0].scratchpad, 'saved note')
 })
 
 test('a permanently failed session does not starve later notes and offers an explicit retry', async () => {
@@ -413,7 +431,7 @@ test('refresh projects both UI models from the same newly loaded workspace', asy
   const projected = { tasks: ['new'], sessions: [] }
   let reads = 0
   const api = handlers('App.vue', ['refreshState'], {
-    state, recurrenceWorkspace, scratchNotes: new Map(), refreshVersion: 0, scheduleCloudSync() {},
+    state, recurrenceWorkspace, scratchNotes: new Map(), refreshVersion: 0, appliedRefreshVersion: 0, scheduleCloudSync() {},
     getWorkspaceStore: () => ({ load: async () => { reads++; return next } }),
     projectWorkspaceState: (value: unknown) => { assert.equal(value, next); return projected },
   })

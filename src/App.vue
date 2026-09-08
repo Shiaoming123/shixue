@@ -255,6 +255,7 @@ const scratchDrafts = new Map<string, string>()
 // Keep committed notes until a workspace read confirms them, including reads already in flight.
 const scratchNotes = new Map<string, string>()
 let refreshVersion = 0
+let appliedRefreshVersion = 0
 let compactMedia: MediaQueryList | undefined
 
 const today = computed(() => new Date().toLocaleDateString('sv-SE'))
@@ -674,7 +675,7 @@ function onCompactChange(event: MediaQueryListEvent) {
 async function refreshState() {
   const version = ++refreshVersion
   const workspace = await getWorkspaceStore().load()
-  if (version !== refreshVersion) return
+  if (version < appliedRefreshVersion) return
   const projected = projectWorkspaceState(workspace)
   for (const session of projected.sessions) {
     const note = scratchNotes.get(session.id)
@@ -683,6 +684,7 @@ async function refreshState() {
   }
   recurrenceWorkspace.value = workspace
   state.value = projected
+  appliedRefreshVersion = version
   scheduleCloudSync()
 }
 
