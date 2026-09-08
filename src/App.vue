@@ -260,8 +260,8 @@ let refreshVersion = 0
 let appliedRefreshVersion = 0
 let compactMedia: MediaQueryList | undefined
 
-const today = computed(() => new Date().toLocaleDateString('sv-SE'))
-const dateLabel = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date()).replace('星期', '周'))
+const today = computed(() => new Date(clock.value).toLocaleDateString('sv-SE'))
+const dateLabel = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(clock.value)).replace('星期', '周'))
 const activeSession = computed(() => state.value.sessions.find((session) => !session.deletedAt && (session.state === 'running' || session.state === 'paused')))
 const activeTask = computed(() => state.value.tasks.find((task) => task.id === activeSession.value?.taskId && !task.deletedAt))
 const activeReviewLinkId = computed(() => recurrenceWorkspace.value?.reviewTaskLinks.find(({ reviewTaskId, completedAt }) =>
