@@ -1,0 +1,36 @@
+name: public Windows MSI lifecycle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-msi:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Stage the pinned public v0.3.0 MSI
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/stage-public-windows-msi.mjs
+      - name: Install, launch, relaunch and uninstall
+        run: node scripts/smoke-windows-package.mjs --msi
+      - name: Upload bounded acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: public-windows-msi-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            src-tauri/target/public-windows-msi/manifest.json
+            src-tauri/target/public-windows-msi/download-verification.json
+            src-tauri/target/windows-msi-smoke-report.json
