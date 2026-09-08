@@ -2,6 +2,7 @@ import { addCalendarDays } from '../storage/study/types.ts'
 import type { StudyTask, StudyTaskStatus, StudyTopic } from '../storage/study/types.ts'
 import type { Task, TaskOccurrence, WorkspaceStateV3 } from '../domain/workspace/types.ts'
 import { createTimeZoneFormatter, zonedDateTimeToInstant } from '../domain/recurrence/timezone.ts'
+import { compareText } from './text-order.ts'
 
 export type StudyTaskSort = 'manual' | 'updatedAt' | 'dueOn' | 'title'
 export type StudyTaskQuerySort = StudyTaskSort | 'priority'
@@ -353,10 +354,6 @@ function isInDateWindow(value: string | null, from: string, to: string): boolean
 
 function visibleTasks(tasks: readonly StudyTask[]): StudyTask[] {
   return tasks.filter(({ deletedAt }) => !deletedAt)
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function normalize(value: string): string {
