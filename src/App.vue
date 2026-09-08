@@ -252,6 +252,9 @@ let cloudTimer: ReturnType<typeof setInterval> | undefined
 let cloudDebounceTimer: ReturnType<typeof setTimeout> | undefined
 let scratchSaving = false
 const scratchDrafts = new Map<string, string>()
+// Keep committed notes until a workspace read confirms them, including reads already in flight.
+const scratchNotes = new Map<string, string>()
+let refreshVersion = 0
 let compactMedia: MediaQueryList | undefined
 
 const today = computed(() => new Date().toLocaleDateString('sv-SE'))
@@ -669,11 +672,14 @@ function onCompactChange(event: MediaQueryListEvent) {
   }
 }
 async function refreshState() {
+  const version = ++refreshVersion
   const workspace = await getWorkspaceStore().load()
+  if (version !== refreshVersion) return
   const projected = projectWorkspaceState(workspace)
   for (const session of projected.sessions) {
-    const draft = scratchDrafts.get(session.id)
-    if (draft !== undefined) session.scratchpad = draft
+    const note = scratchNotes.get(session.id)
+    if (note === session.scratchpad) scratchNotes.delete(session.id)
+    else if (note !== undefined) session.scratchpad = note
   }
   recurrenceWorkspace.value = workspace
   state.value = projected
@@ -1390,21 +1396,28 @@ function updateScratchpad(value: string) {
   const sessionId = session.id
   session.scratchpad = value
   scratchDrafts.set(sessionId, value)
+  scratchNotes.set(sessionId, value)
   void saveScratchDrafts()
 }
 
 async function saveScratchDrafts() {
   if (scratchSaving) return
   scratchSaving = true
+  const failed = new Set<string>()
   try {
-    while (scratchDrafts.size) {
+    while ([...scratchDrafts.keys()].some((id) => !failed.has(id))) {
       for (const [sessionId, value] of scratchDrafts) {
-        await saveStudyScratchpad(sessionId, value, { now: new Date().toISOString() })
-        if (scratchDrafts.get(sessionId) === value) scratchDrafts.delete(sessionId)
+        if (failed.has(sessionId)) continue
+        try {
+          await saveStudyScratchpad(sessionId, value, { now: new Date().toISOString() })
+          if (scratchDrafts.get(sessionId) === value) scratchDrafts.delete(sessionId)
+        } catch (error) { failed.add(sessionId); reportStorageError(error) }
       }
     }
-  } catch (error) { reportStorageError(error) }
-  finally { scratchSaving = false }
+  } finally {
+    scratchSaving = false
+    if (failed.size) notify('随手记尚未保存，内容仍保留在页面中。', { label: '重试', run: saveScratchDrafts, successMessage: '' })
+  }
 }
 
 async function completeFocus(payload: CompletionPayload) {

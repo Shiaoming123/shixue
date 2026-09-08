@@ -94,10 +94,64 @@ test('workspace refresh keeps an unsaved focus note visible so continued typing 
     getWorkspaceStore: () => ({ load: async () => ({}) }),
     projectWorkspaceState: () => ({ sessions: [{ id: 'focus', scratchpad: 'old note' }] }),
     recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {},
-    scratchDrafts: new Map([['focus', 'new note']]),
+    scratchNotes: new Map([['focus', 'new note']]), refreshVersion: 0,
   })
   await api.refreshState()
   assert.equal(state.value.sessions[0].scratchpad, 'new note')
+})
+
+test('a delayed workspace read cannot erase a note committed while the read was pending', async () => {
+  const scratchDrafts = new Map([['focus', 'new note']])
+  const scratchNotes = new Map(scratchDrafts)
+  const state = ref({ sessions: [{ id: 'focus', scratchpad: 'new note' }] })
+  const api = handlers('App.vue', ['refreshState'], {
+    getWorkspaceStore: () => ({ load: async () => { scratchDrafts.clear(); return {} } }),
+    projectWorkspaceState: () => ({ sessions: [{ id: 'focus', scratchpad: 'old note' }] }),
+    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {}, scratchDrafts, scratchNotes, refreshVersion: 0,
+  })
+  await api.refreshState()
+  assert.equal(state.value.sessions[0].scratchpad, 'new note')
+})
+
+test('an older refresh cannot overwrite a newer read after that read confirms the saved note', async () => {
+  const scratchNotes = new Map([['focus', 'new note']])
+  const state = ref({ sessions: [{ id: 'focus', scratchpad: 'new note' }] })
+  let resolveOld!: (value: unknown) => void
+  const oldRead = new Promise((resolve) => { resolveOld = resolve })
+  let reads = 0
+  const api = handlers('App.vue', ['refreshState'], {
+    getWorkspaceStore: () => ({ load: () => ++reads === 1 ? oldRead : Promise.resolve('new note') }),
+    projectWorkspaceState: (note: string) => ({ sessions: [{ id: 'focus', scratchpad: note }] }),
+    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {}, scratchNotes, refreshVersion: 0,
+  })
+  const oldRefresh = api.refreshState()
+  await api.refreshState()
+  assert.equal(scratchNotes.size, 0)
+  resolveOld('old note')
+  await oldRefresh
+  assert.equal(state.value.sessions[0].scratchpad, 'new note')
+})
+
+test('a permanently failed session does not starve later notes and offers an explicit retry', async () => {
+  const scratchDrafts = new Map([['broken', 'failed note'], ['working', 'good note']])
+  const writes: string[] = []
+  const actions: { label: string; run: () => Promise<void> }[] = []
+  let fail = true
+  const api = handlers('App.vue', ['saveScratchDrafts'], {
+    scratchDrafts, scratchSaving: false, reportStorageError: () => {},
+    notify: (_message: string, action: { label: string; run: () => Promise<void> }) => actions.push(action),
+    saveStudyScratchpad: async (id: string) => {
+      writes.push(id)
+      if (id === 'broken' && fail) throw new Error('session gone')
+    },
+  })
+  await api.saveScratchDrafts()
+  assert.deepEqual(writes, ['broken', 'working'])
+  assert.deepEqual([...scratchDrafts.keys()], ['broken'])
+  assert.equal(actions[0]?.label, '重试')
+  fail = false
+  await actions[0]!.run()
+  assert.equal(scratchDrafts.size, 0)
 })
 
 test('saving notes drains newer typing in order and saves both tasks after a quick switch', async () => {
@@ -119,7 +173,7 @@ test('failed note writes retain the draft for refresh and retry', async () => {
   const scratchDrafts = new Map([['focus', 'unsaved note']])
   const errors: unknown[] = []
   const api = handlers('App.vue', ['saveScratchDrafts'], {
-    scratchDrafts, scratchSaving: false, reportStorageError: (error: unknown) => errors.push(error),
+    scratchDrafts, scratchSaving: false, notify: () => {}, reportStorageError: (error: unknown) => errors.push(error),
     saveStudyScratchpad: async () => { throw new Error('disk unavailable') },
   })
   await api.saveScratchDrafts()
@@ -131,7 +185,7 @@ test('typing starts persistence immediately without waiting for a debounce timer
   let writes = 0
   const scratchDrafts = new Map<string, string>()
   const api = handlers('App.vue', ['updateScratchpad'], {
-    activeSession: ref({ id: 'focus', scratchpad: '' }), scratchDrafts,
+    activeSession: ref({ id: 'focus', scratchpad: '' }), scratchDrafts, scratchNotes: new Map(),
     saveScratchDrafts: async () => { writes++ },
   })
   api.updateScratchpad('last input before reload')
@@ -168,7 +222,7 @@ test('a failed immediate save can be retried without losing the latest draft', a
   const scratchDrafts = new Map([['focus', 'retry this']])
   let fail = true
   const api = handlers('App.vue', ['saveScratchDrafts'], {
-    scratchDrafts, scratchSaving: false, reportStorageError: () => {},
+    scratchDrafts, scratchSaving: false, notify: () => {}, reportStorageError: () => {},
     saveStudyScratchpad: async () => { if (fail) throw new Error('disk unavailable') },
   })
   await api.saveScratchDrafts()
@@ -359,7 +413,7 @@ test('refresh projects both UI models from the same newly loaded workspace', asy
   const projected = { tasks: ['new'], sessions: [] }
   let reads = 0
   const api = handlers('App.vue', ['refreshState'], {
-    state, recurrenceWorkspace, scratchDrafts: new Map(), scheduleCloudSync() {},
+    state, recurrenceWorkspace, scratchNotes: new Map(), refreshVersion: 0, scheduleCloudSync() {},
     getWorkspaceStore: () => ({ load: async () => { reads++; return next } }),
     projectWorkspaceState: (value: unknown) => { assert.equal(value, next); return projected },
   })
