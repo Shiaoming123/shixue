@@ -151,6 +151,11 @@ The local data boundary also includes `learning-records-markdown-export-v1`,
 which exposes the completion evidence in a readable file without changing the
 Workspace schema or import protocol.
 
+Focus sessions are shared execution facts, not implicit learning evidence.
+Completing a `general` task after a focus session finishes the task and session
+without creating a completion record or review schedule. Only a `learning`
+task can promote the submitted reflection into those learning-specific facts.
+
 `learning-search-tags-v1` adds reversible tag creation, rename, and archive
 commands through the same compare-and-swap and audit boundary. Tasks can keep
 tag associations, and completion records snapshot their tags so later archive
