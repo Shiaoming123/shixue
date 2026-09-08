@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { chromium } from 'playwright-core'
@@ -8,7 +9,8 @@ const url = process.argv[2]
 assert.ok(url && /^http:\/\/127\.0\.0\.1:\d+\/$/.test(url), 'Pass an explicit loopback preview URL.')
 const output = resolve('artifacts/visual-qa/live-calendar-date')
 await mkdir(output, { recursive: true })
-const browser = await chromium.launch({ executablePath: resolveBrowserExecutable(), headless: true })
+const browserExecutable = resolveBrowserExecutable()
+const browser = await chromium.launch({ executablePath: browserExecutable, headless: true })
 const results = []
 try {
   for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }]) {
@@ -41,7 +43,8 @@ try {
     results.push({ viewport, success: true, reloads: 0, dateLabel: await title.textContent(), errors })
     await context.close()
   }
-  await writeFile(resolve(output, 'report.json'), `${JSON.stringify(results, null, 2)}\n`)
+  const report = { sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), browserExecutable, browserVersion: browser.version(), results }
+  await writeFile(resolve(output, 'report.json'), `${JSON.stringify(report, null, 2)}\n`)
   console.log(JSON.stringify(results))
 } finally {
   await browser.close()
