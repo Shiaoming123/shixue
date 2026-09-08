@@ -17,11 +17,12 @@ export interface TaskCompletionSnapshot {
 export function routeSingleTaskCompletion(
   snapshot: TaskCompletionSnapshot,
   taskId: string,
-): 'evidence' | 'plan' | 'unblock' | 'toggle' {
+): 'evidence' | 'plan' | 'review' | 'unblock' | 'toggle' {
   const task = snapshot.tasks.find(({ id }) => id === taskId)
   if (!task) throw new Error(`Task not found: ${taskId}.`)
   const linkedReview = snapshot.reviewTaskLinks.some(({ reviewTaskId }) => reviewTaskId === taskId)
-  if (task.mode !== 'learning' || task.status === 'completed' || linkedReview) return 'toggle'
+  if (task.mode !== 'learning' || task.status === 'completed') return 'toggle'
+  if (linkedReview) return 'review'
   if (task.status === 'inbox') return 'plan'
   if (task.status === 'blocked') return 'unblock'
   return 'evidence'

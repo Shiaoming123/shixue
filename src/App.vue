@@ -64,7 +64,6 @@ import {
   archiveStudyListGroup,
   bulkDeleteStudyTasks,
   completeStudyTask,
-  completeReviewTaskLink,
   createTaskFromNextAction,
   deleteStudyTask,
   exportLearningRecordsMarkdown,
@@ -114,7 +113,6 @@ const state = ref<StudyState>(createSeedStudyState())
 const loading = ref(true)
 const showFocus = ref(false)
 const completionOpen = ref(false)
-const completionReviewLinkId = ref('')
 const completionTaskId = ref('')
 const completionOccurrenceId = ref('')
 const completionOccurrenceBusy = ref(false)
@@ -165,7 +163,10 @@ type RecurrenceUpdateEnvelope = CommandEnvelope<Extract<CapabilityCommand, { typ
 let recurrencePreviewEnvelope: RecurrenceUpdateEnvelope | null = null
 let recurrencePreviewVersion = 0
 const reviewRevealed = ref(false)
+const reviewBusy = ref(false)
+const reviewRefreshRequired = ref(false)
 const reviewMode = ref<'review' | 'records'>('review')
+const reviewTargetLinkId = ref('')
 const recordTarget = ref<{ id: string; requestId: number }>()
 let recordTargetRequestId = 0
 const appearanceDark = ref(false)
@@ -250,11 +251,16 @@ let clockTimer: ReturnType<typeof setInterval> | undefined
 let reminderTimer: ReturnType<typeof setInterval> | undefined
 let cloudTimer: ReturnType<typeof setInterval> | undefined
 let cloudDebounceTimer: ReturnType<typeof setTimeout> | undefined
-let scratchSaveTimer: ReturnType<typeof setTimeout> | undefined
+let scratchSaving = false
+const scratchDrafts = new Map<string, string>()
+// Keep committed notes until a workspace read confirms them, including reads already in flight.
+const scratchNotes = new Map<string, string>()
+let refreshVersion = 0
+let appliedRefreshVersion = 0
 let compactMedia: MediaQueryList | undefined
 
-const today = computed(() => new Date().toLocaleDateString('sv-SE'))
-const dateLabel = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date()).replace('星期', '周'))
+const today = computed(() => new Date(clock.value).toLocaleDateString('sv-SE'))
+const dateLabel = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(clock.value)).replace('星期', '周'))
 const activeSession = computed(() => state.value.sessions.find((session) => !session.deletedAt && (session.state === 'running' || session.state === 'paused')))
 const activeTask = computed(() => state.value.tasks.find((task) => task.id === activeSession.value?.taskId && !task.deletedAt))
 const activeReviewLinkId = computed(() => recurrenceWorkspace.value?.reviewTaskLinks.find(({ reviewTaskId, completedAt }) =>
@@ -404,11 +410,16 @@ const weeklyLearningSummary = computed(() => recurrenceWorkspace.value
       topics: [],
     })
 const reviewQueue = computed(() => completedRecords.value.filter((record) => record.nextReviewOn && record.nextReviewOn <= today.value).sort((a, b) => (a.nextReviewOn ?? '').localeCompare(b.nextReviewOn ?? '')))
-const reviewItems = computed<ReviewViewItem[]>(() => reviewQueue.value.flatMap((record) => {
-  const link = recurrenceWorkspace.value?.reviewTaskLinks.find(({ completionRecordId, reviewStage, dueOn, completedAt }) =>
-    completionRecordId === record.id && reviewStage === record.reviewStage && dueOn === record.nextReviewOn && completedAt === null)
-  return link ? [{ id: record.id, linkId: link.id, topic: topicTitleFor(record.topicId), learned: record.learned, evidence: record.evidence, ageLabel: formatAge(record.completedAt) }] : []
-}))
+const reviewItems = computed<ReviewViewItem[]>(() => {
+  const targetLink = recurrenceWorkspace.value?.reviewTaskLinks.find(({ id, completedAt }) => id === reviewTargetLinkId.value && completedAt === null)
+  const targetRecord = targetLink ? completedRecords.value.find(({ id }) => id === targetLink.completionRecordId) : undefined
+  const records = targetRecord ? [targetRecord, ...reviewQueue.value.filter(({ id }) => id !== targetRecord.id)] : reviewQueue.value
+  return records.flatMap((record) => {
+    const link = recurrenceWorkspace.value?.reviewTaskLinks.find(({ completionRecordId, reviewStage, dueOn, completedAt }) =>
+      completionRecordId === record.id && reviewStage === record.reviewStage && dueOn === record.nextReviewOn && completedAt === null)
+    return link ? [{ id: record.id, linkId: link.id, topic: topicTitleFor(record.topicId), learned: record.learned, evidence: record.evidence, ageLabel: formatAge(record.completedAt) }] : []
+  })
+})
 const recordViews = computed<CompletionRecordViewItem[]>(() => completedRecords.value.map((record) => ({ id: record.id, taskId: record.taskId, topicId: record.topicId, topic: topicTitleFor(record.topicId), taskTitle: record.taskTitleSnapshot, learned: record.learned, evidence: record.evidence, blocker: record.blocker, nextAction: record.nextAction, mastery: record.mastery, completedLabel: formatShortDate(record.completedAt), minutes: recordMinutes(record) })))
 
 const topicViews = computed<TopicViewItem[]>(() => state.value.topics.filter((topic) => !topic.archivedAt).map((topic) => {
@@ -470,7 +481,6 @@ onUnmounted(() => {
   if (reminderTimer) clearInterval(reminderTimer)
   if (cloudTimer) clearInterval(cloudTimer)
   if (cloudDebounceTimer) clearTimeout(cloudDebounceTimer)
-  if (scratchSaveTimer) clearTimeout(scratchSaveTimer)
   compactMedia?.removeEventListener('change', onCompactChange)
   window.removeEventListener('shixue:quick-add', handleQuickAdd)
   window.removeEventListener('shixue:module-error', handleModuleError)
@@ -567,7 +577,7 @@ async function handleReminderAction(action: ReminderCardAction) {
   const delivery = workspace?.reminderDeliveries.find(({ id }) => id === action.deliveryId)
   const rule = workspace?.reminderRules.find(({ id }) => id === delivery?.reminderRuleId)
   const task = workspace?.tasks.find(({ id }) => id === rule?.taskId)
-  if (!delivery || !task) return
+  if (!workspace || !delivery || !task) return
   reminderError.value = ''
   if (action.action === 'open') {
     reminderCenterOpen.value = false
@@ -575,11 +585,17 @@ async function handleReminderAction(action: ReminderCardAction) {
     selectedOccurrenceId.value = delivery.occurrenceId ?? ''
     return
   }
+  const reviewLink = action.action === 'complete' ? workspace.reviewTaskLinks.find(({ reviewTaskId, occurrenceId, completedAt }) =>
+    reviewTaskId === task.id && (occurrenceId ?? null) === (delivery.occurrenceId ?? null) && completedAt === null) : undefined
+  if (reviewLink) {
+    reminderCenterOpen.value = false
+    openPendingReviewLink(reviewLink.id)
+    return
+  }
   if (action.action === 'complete' && task.mode === 'learning') {
     completionOccurrenceId.value = ''
     completionTaskId.value = ''
     completionReminderId.value = delivery.id
-    completionReviewLinkId.value = ''
     reminderCenterOpen.value = false
     await nextTick()
     completionOpen.value = true
@@ -644,7 +660,6 @@ function handleQuickAdd() {
   completionOpen.value = false
   completionReminderId.value = ''
   completionTaskId.value = ''
-  completionReviewLinkId.value = ''
   taskActionOpen.value = false
   taskEditorOpen.value = false
   recurrenceScopeOpen.value = false
@@ -669,10 +684,18 @@ function onCompactChange(event: MediaQueryListEvent) {
   }
 }
 async function refreshState() {
+  const version = ++refreshVersion
   const workspace = await getWorkspaceStore().load()
+  if (version < appliedRefreshVersion) return
   const projected = projectWorkspaceState(workspace)
+  for (const session of projected.sessions) {
+    const note = scratchNotes.get(session.id)
+    if (note === session.scratchpad) scratchNotes.delete(session.id)
+    else if (note !== undefined) session.scratchpad = note
+  }
   recurrenceWorkspace.value = workspace
   state.value = projected
+  appliedRefreshVersion = version
   scheduleCloudSync()
 }
 
@@ -793,6 +816,7 @@ function localDeviceId() {
 function setDestination(next: ShellDestination, options: { topicFilter?: string; preservePriority?: boolean } = {}) {
   recordTarget.value = undefined
   reviewMode.value = 'review'
+  reviewTargetLinkId.value = ''
   destination.value = next
   listsMoreOpen.value = false
   showFocus.value = false
@@ -846,6 +870,10 @@ function openSearchRecord(recordId: string) {
   setDestination({ kind: 'learning', section: 'review' })
   reviewMode.value = 'records'
   recordTarget.value = { id: record.id, requestId: ++recordTargetRequestId }
+}
+function openPendingReviewLink(linkId: string) {
+  setDestination({ kind: 'learning', section: 'review' })
+  reviewTargetLinkId.value = linkId
 }
 function openTagManager(returnToSearch = false) {
   tagManagerError.value = ''
@@ -1158,10 +1186,15 @@ async function executeOccurrence(id: string, type: 'recurrence.complete' | 'recu
   const series = occurrence ? workspace?.recurrenceSeries.find((item) => item.id === occurrence.seriesId) : undefined
   const task = series ? workspace?.tasks.find((item) => item.id === series.taskId) : undefined
   if (!workspace || !occurrence) return
+  const reviewLink = type === 'recurrence.complete' ? workspace.reviewTaskLinks.find(({ reviewTaskId, occurrenceId, completedAt }) =>
+    reviewTaskId === task?.id && occurrenceId === occurrence.id && completedAt === null) : undefined
+  if (reviewLink) {
+    openPendingReviewLink(reviewLink.id)
+    return
+  }
   if (type === 'recurrence.complete' && task?.mode === 'learning') {
     completionReminderId.value = ''
     completionTaskId.value = ''
-    completionReviewLinkId.value = ''
     completionOccurrenceId.value = occurrence.id
     await nextTick()
     completionOpen.value = true
@@ -1313,10 +1346,15 @@ async function toggleTaskCompletion(taskId: string) {
   if (route === 'evidence') {
     completionReminderId.value = ''
     completionOccurrenceId.value = ''
-    completionReviewLinkId.value = ''
     completionTaskId.value = taskId
     await nextTick()
     completionOpen.value = true
+    return
+  }
+  if (route === 'review') {
+    const link = workspace?.reviewTaskLinks.find(({ reviewTaskId, completedAt }) => reviewTaskId === taskId && completedAt === null)
+    if (!link) return
+    openPendingReviewLink(link.id)
     return
   }
   try {
@@ -1385,8 +1423,29 @@ function updateScratchpad(value: string) {
   if (!session) return
   const sessionId = session.id
   session.scratchpad = value
-  if (scratchSaveTimer) clearTimeout(scratchSaveTimer)
-  scratchSaveTimer = setTimeout(async () => { try { await saveStudyScratchpad(sessionId, value, { now: new Date().toISOString() }) } catch (error) { reportStorageError(error) } }, 450)
+  scratchDrafts.set(sessionId, value)
+  scratchNotes.set(sessionId, value)
+  void saveScratchDrafts()
+}
+
+async function saveScratchDrafts() {
+  if (scratchSaving) return
+  scratchSaving = true
+  const failed = new Set<string>()
+  try {
+    while ([...scratchDrafts.keys()].some((id) => !failed.has(id))) {
+      for (const [sessionId, value] of scratchDrafts) {
+        if (failed.has(sessionId)) continue
+        try {
+          await saveStudyScratchpad(sessionId, value, { now: new Date().toISOString() })
+          if (scratchDrafts.get(sessionId) === value) scratchDrafts.delete(sessionId)
+        } catch (error) { failed.add(sessionId); reportStorageError(error) }
+      }
+    }
+  } finally {
+    scratchSaving = false
+    if (failed.size) notify('随手记尚未保存，内容仍保留在页面中。', { label: '重试', run: saveScratchDrafts, successMessage: '' })
+  }
 }
 
 async function completeFocus(payload: CompletionPayload) {
@@ -1398,39 +1457,87 @@ async function completeFocus(payload: CompletionPayload) {
   if (!session || !task) return
   const now = new Date().toISOString()
   try {
-    if (completionReviewLinkId.value) await completeReviewTaskLink(completionReviewLinkId.value, 'clear', today.value, { expectedRevision: task.revision, now })
-    else await completeStudyTask({ taskId: task.id, sessionId: session.id, learned: payload.learned, evidence: payload.evidence, blocker: payload.blocker, nextAction: payload.nextAction, mastery: payload.mastery }, { recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now })
-    completionReviewLinkId.value = ''
+    await completeStudyTask({ taskId: task.id, sessionId: session.id, learned: payload.learned, evidence: payload.evidence, blocker: payload.blocker, nextAction: payload.nextAction, mastery: payload.mastery }, { recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now })
     await refreshState(); completionOpen.value = false; setDestination({ kind: 'today' }); notify(`已记录这次学习。下一项：${weeklyNext.value}`)
   } catch (error) { reportStorageError(error) }
 }
 
 async function completeTaskEvidence(payload: CompletionPayload) {
   const taskId = completionTaskId.value
+  if (!taskId || completionOccurrenceBusy.value) return
   const task = recurrenceWorkspace.value?.tasks.find(({ id, deletedAt }) => id === taskId && !deletedAt)
   if (!task || task.mode !== 'learning') return
   completionOccurrenceBusy.value = true
   try {
-    await completeStudyTask({ taskId, ...payload }, {
-      expectedRevision: task.revision, recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now: new Date().toISOString(),
+    const workspace = await capabilityService.query({ type: 'workspace.snapshot' })
+    await capabilityService.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+      idempotencyKey: `completion:${crypto.randomUUID()}`,
+      source: 'human-ui',
+      expectedWorkspaceRevision: workspace.revision,
+      command: {
+        type: 'task.complete', taskId, ...payload,
+        expectedRevision: task.revision, recordId: crypto.randomUUID(), eventId: crypto.randomUUID(),
+      },
     })
-    await refreshState()
-    completionOpen.value = false
-    completionTaskId.value = ''
+    if (completionTaskId.value === taskId) {
+      completionOpen.value = false
+      completionTaskId.value = ''
+    }
+    try { await refreshState() }
+    catch (error) {
+      notify(`学习证据已保存，但视图刷新失败：${error instanceof Error ? error.message : String(error)}`, {
+        label: '重新加载',
+        successMessage: '学习记录已刷新。',
+        run: refreshState,
+      })
+      return
+    }
     notify('已记录学习证据并完成任务。')
   } catch (error) { notify(error instanceof Error ? error.message : '学习证据未能保存，请重试。') }
   finally { completionOccurrenceBusy.value = false }
 }
 
 async function rateReview(linkId: string, result: ReviewResult) {
-  try { await completeReviewTaskLink(linkId, result, today.value, { now: new Date().toISOString() }); await refreshState(); reviewRevealed.value = false; notify(result === 'clear' ? '已安排下一次回顾。' : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。') } catch (error) { reportStorageError(error) }
+  if (reviewBusy.value) return
+  reviewBusy.value = true
+  try {
+    const workspace = await capabilityService.query({ type: 'workspace.snapshot' })
+    const receipt = await capabilityService.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+      idempotencyKey: `review:${crypto.randomUUID()}`,
+      source: 'human-ui', expectedWorkspaceRevision: workspace.revision,
+      command: { type: 'review.complete', linkId, result, reviewedOn: today.value },
+    })
+    if (!await reloadReviews()) return
+    const nextLinkId = receipt.data && typeof receipt.data === 'object' && !Array.isArray(receipt.data) ? receipt.data.nextLinkId : undefined
+    notify(result === 'clear' ? (nextLinkId ? '已安排下一次回顾。' : nextLinkId === null ? '已完成这一轮复习。' : '复习结果已刷新。') : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。')
+  } catch (error) { reviewBusy.value = false; reportStorageError(error) }
+}
+
+async function reloadReviews() {
+  try {
+    await refreshState()
+    reviewRevealed.value = false
+    reviewBusy.value = false
+    reviewRefreshRequired.value = false
+    return true
+  } catch (error) {
+    reviewRefreshRequired.value = true
+    notify(`复习结果已保存，但视图刷新失败：${error instanceof Error ? error.message : String(error)}`)
+    return false
+  }
 }
 
 function openFocusCompletion(reviewLinkId?: string) {
+  const reviewLink = reviewLinkId ? recurrenceWorkspace.value?.reviewTaskLinks.find(({ id, completedAt }) => id === reviewLinkId && completedAt === null) : undefined
+  if (reviewLink) {
+    openPendingReviewLink(reviewLink.id)
+    return
+  }
   completionReminderId.value = ''
   completionOccurrenceId.value = ''
   completionTaskId.value = ''
-  completionReviewLinkId.value = reviewLinkId ?? ''
   completionOpen.value = true
 }
 
@@ -1665,14 +1772,14 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
           <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
           <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
           <LearningRhythmView v-else-if="destination.section === 'rhythm'" :items="learningRhythmItems" :totals="learningRhythmSelection.totals" @open-occurrence="openRhythmOccurrence" @open-task="openSearchTask" @edit-task="openTaskEditor" />
-          <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-summary="weeklyLearningSummary" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openSearchTask" @open-record="openSearchRecord" @open-plan-source="openWeeklyPlanSource" />
+          <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :busy="reviewBusy" :refresh-required="reviewRefreshRequired" :weekly-summary="weeklyLearningSummary" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @reload="reloadReviews" @rate="rateReview" @create-task="createFromNextAction" @open-task="openSearchTask" @open-record="openSearchRecord" @open-plan-source="openWeeklyPlanSource" />
         </div>
         <CalendarWorkspace v-if="!loading && page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :target-offset="calendarTargetOffset" :execute-command="executeCalendarCommand" @desktop-mode-selected="persistDesktopCalendarMode" />
       </main>
       <BottomTabs v-if="!showFocus" :active="destination" @navigate="setDestination" />
     </div>
 
-    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || completionOccurrenceId || completionTaskId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) ? reminderBusy : completionOccurrenceBusy" :task-title="reminderCompletionTask?.title ?? completionOccurrenceTask?.title ?? completionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId || completionOccurrenceId || completionTaskId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionOccurrenceId = ''; completionTaskId = ''; completionReviewLinkId = ''" @save="completeFocus" />
+    <CompletionSheet :open="completionOpen" :context-id="completionReminderId || completionOccurrenceId || completionTaskId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) ? reminderBusy : completionOccurrenceBusy" :task-title="reminderCompletionTask?.title ?? completionOccurrenceTask?.title ?? completionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId || completionOccurrenceId || completionTaskId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionOccurrenceId = ''; completionTaskId = ''" @save="completeFocus" />
     <TaskActionSheet :open="taskActionOpen" :mode="taskActionMode" :task-title="actionTask?.title ?? ''" :topics="state.topics" :default-topic-id="actionTask?.topicId" :default-planned-on="actionTask?.plannedOn" :default-due-on="actionTask?.dueOn" :default-minutes="actionTask?.estimateMinutes" :default-criteria="actionTask?.acceptanceCriteria" @close="taskActionOpen = false" @submit="submitTaskAction" />
     <TaskEditSheet :open="taskEditorOpen" :task="selectedTaskEditModel" :topics="state.topics" :tags="recurrenceWorkspace?.tags ?? []" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @manage-tags="openTagManager()" @close="taskEditorOpen = false; reminderError = ''" @save="saveTaskEdit" />
     <GlobalSearchDialog v-model:open="globalSearchOpen" :workspace="recurrenceWorkspace" :timezone="timezone" @close="globalSearchOpen = false" @manage-tags="openTagManager(true)" @open-task="openSearchTask" @open-record="openSearchRecord" />

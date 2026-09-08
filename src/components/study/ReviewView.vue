@@ -26,6 +26,8 @@ const props = defineProps<{
   item?: ReviewViewItem
   remaining: number
   revealed: boolean
+  busy?: boolean
+  refreshRequired?: boolean
   weeklySummary: WeeklyLearningSummary
   records: CompletionRecordViewItem[]
   topics: RecordTopicOption[]
@@ -35,6 +37,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   reveal: []
+  reload: []
   rate: [linkId: string, result: 'clear' | 'fuzzy' | 'relearn']
   createTask: [recordId: string]
   openTask: [taskId: string]
@@ -43,6 +46,7 @@ const emit = defineEmits<{
 }>()
 
 const mode = ref<'review' | 'records'>(props.initialMode ?? 'review')
+const reviewCard = ref<HTMLElement | null>(null)
 const query = ref('')
 const topicId = ref('')
 const selectedRecordId = ref('')
@@ -67,6 +71,12 @@ const reviewResultLabels = { clear: '记得清楚', fuzzy: '有点模糊', relea
 const planStatusLabels: Record<WeeklyLearningPlanStatus, string> = { pending: '待完成', completed: '已完成', cancelled: '已取消', skipped: '已跳过' }
 const dueReviewStateLabels: Record<WeeklyLearningDueReviewState, string> = { scheduled: '本周稍后', due: '今日到期', overdue: '已逾期', completed: '已完成' }
 watch(() => props.initialMode, (value) => { if (value) mode.value = value })
+watch(() => props.item?.linkId, async (linkId) => {
+  if (!linkId) return
+  mode.value = 'review'
+  await nextTick()
+  reviewCard.value?.focus()
+}, { immediate: true })
 watch(() => props.recordTarget, async (target) => {
   if (!target) return
   mode.value = 'records'
@@ -254,7 +264,8 @@ function planSourceLabel(fact: WeeklyLearningPlanFact): string {
 
     <template v-if="mode === 'review'">
       <header class="page-header"><p>5 分钟回顾</p><h1>确认自己是否真的记住</h1><span>{{ remaining > 0 ? `还有 ${remaining} 条到期记录` : '今天的到期记录已经完成' }}</span></header>
-      <article v-if="item" class="review-card">
+      <p v-if="refreshRequired" role="status">复习结果已保存，需重新加载后继续。<Button variant="ghost" size="sm" @click="emit('reload')">重新加载复习结果</Button></p>
+      <article v-if="item" ref="reviewCard" class="review-card" :data-review-link-id="item.linkId" tabindex="-1" :aria-busy="busy">
         <div class="review-meta"><Brain :size="20" />{{ item.ageLabel }}你记录了 · {{ item.topic }}</div>
         <blockquote>{{ item.learned }}</blockquote>
         <template v-if="!revealed"><p class="question">不看原记录，你能解释为什么吗？</p><button class="reveal" @click="emit('reveal')">想过了，查看证据</button></template>
@@ -262,9 +273,9 @@ function planSourceLabel(fact: WeeklyLearningPlanFact): string {
           <div class="evidence"><small>当时留下的证据</small><p>{{ item.evidence }}</p></div>
           <p class="prompt">现在回忆得怎么样？</p>
           <div class="rating-actions">
-            <button class="relearn" @click="emit('rate', item.linkId, 'relearn')"><RotateCcw :size="17" />需要重学</button>
-            <button class="fuzzy" @click="emit('rate', item.linkId, 'fuzzy')"><Sparkles :size="17" />有点模糊</button>
-            <button class="clear" @click="emit('rate', item.linkId, 'clear')"><CheckCircle2 :size="17" />记得清楚</button>
+            <button class="relearn" :disabled="busy" @click="emit('rate', item.linkId, 'relearn')"><RotateCcw :size="17" />需要重学</button>
+            <button class="fuzzy" :disabled="busy" @click="emit('rate', item.linkId, 'fuzzy')"><Sparkles :size="17" />有点模糊</button>
+            <button class="clear" :disabled="busy" @click="emit('rate', item.linkId, 'clear')"><CheckCircle2 :size="17" />记得清楚</button>
           </div>
         </template>
       </article>

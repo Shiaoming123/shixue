@@ -35,6 +35,268 @@ function handlers(file: string, names: string[], ports: Record<string, unknown>)
 }
 const ref = <T>(value: T) => ({ value })
 
+test('review commit blocks double ratings and keeps refresh failure retries read-only', async () => {
+  const reviewBusy = ref(false)
+  const reviewRevealed = ref(true)
+  const notices: any[][] = []
+  let writes = 0
+  let failRead = true
+  const { rateReview, reloadReviews } = handlers('App.vue', ['rateReview', 'reloadReviews'], {
+    reviewBusy, reviewRevealed, reviewRefreshRequired: ref(false), today: ref('2026-09-08'),
+    capabilityService: { query: async () => ({ revision: 1 }), execute: async () => { writes++; return { data: { nextLinkId: null } } } },
+    CAPABILITY_PROTOCOL_VERSION: 1,
+    refreshState: async () => { if (failRead) throw new Error('read unavailable') },
+    notify: (...args: any[]) => notices.push(args), reportStorageError: assert.fail,
+  })
+  await Promise.all([rateReview('review:first', 'clear'), rateReview('review:first', 'fuzzy')])
+  assert.equal(writes, 1)
+  assert.equal(reviewBusy.value, true, 'stale outcome controls must remain disabled after commit')
+  assert.match(notices[0][0], /复习结果已保存.*刷新失败/)
+  assert.equal(await reloadReviews(), false)
+  assert.equal(reviewBusy.value, true)
+  failRead = false
+  assert.equal(await reloadReviews(), true)
+  assert.equal(writes, 1)
+  assert.equal(reviewBusy.value, false)
+  assert.equal(reviewRevealed.value, false)
+})
+
+test('review feedback describes the persisted next cycle and releases failed writes for retry', async () => {
+  for (const nextLinkId of ['review:next', null, undefined]) {
+    const notices: string[] = []
+    const reviewBusy = ref(false)
+    let failWrite = true
+    const { rateReview } = handlers('App.vue', ['rateReview', 'reloadReviews'], {
+      reviewBusy, reviewRevealed: ref(true), reviewRefreshRequired: ref(false), today: ref('2026-09-08'),
+      capabilityService: { query: async () => ({ revision: 1 }), execute: async () => { if (failWrite) throw new Error('write unavailable'); return { data: { nextLinkId } } } },
+      CAPABILITY_PROTOCOL_VERSION: 1, refreshState: async () => {},
+      notify: (message: string) => notices.push(message), reportStorageError: (error: Error) => notices.push(error.message),
+    })
+    await rateReview('review:first', 'clear')
+    assert.equal(reviewBusy.value, false)
+    assert.deepEqual(notices, ['write unavailable'])
+    failWrite = false
+    await rateReview('review:first', 'clear')
+    assert.equal(reviewBusy.value, false)
+    assert.equal(notices[1], nextLinkId ? '已安排下一次回顾。' : nextLinkId === null ? '已完成这一轮复习。' : '复习结果已刷新。')
+  }
+})
+
+test('learning completion closes after commit and offers a read-only retry when refreshing fails', async () => {
+  const completionTaskId = ref('learning-task')
+  const completionOpen = ref(true)
+  const completionOccurrenceBusy = ref(false)
+  const notices: any[][] = []
+  let writes = 0
+  let reads = 0
+  const write = async (envelope: any) => {
+    writes += 1
+    assert.equal(envelope.expectedWorkspaceRevision, 1)
+    assert.equal(envelope.command.type, 'task.complete')
+    assert.equal(envelope.command.expectedRevision, 2)
+    assert.equal(envelope.command.evidence, 'passing example')
+  }
+  const refreshState = async () => { reads += 1; throw new Error('read unavailable') }
+  const { completeTaskEvidence } = handlers('App.vue', ['completeTaskEvidence'], {
+    completionTaskId, completionOpen, completionOccurrenceBusy,
+    recurrenceWorkspace: ref({ tasks: [{ id: 'learning-task', mode: 'learning', revision: 2 }] }),
+    capabilityService: { query: async () => ({ revision: 1 }), execute: write }, CAPABILITY_PROTOCOL_VERSION: 1,
+    refreshState, notify: (...args: any[]) => notices.push(args),
+  })
+  const payload = { learned: 'why it works', evidence: 'passing example', nextAction: 'apply it', mastery: 3 }
+  await Promise.all([completeTaskEvidence(payload), completeTaskEvidence(payload)])
+  assert.equal(writes, 1, 'repeated submission must not write twice')
+  assert.equal(completionOpen.value, false, 'committed evidence must not remain editable for retry')
+  assert.equal(completionTaskId.value, '')
+  assert.equal(completionOccurrenceBusy.value, false)
+  assert.match(notices[0][0], /学习证据已保存.*刷新失败/)
+  await assert.rejects(notices[0][1].run(), /read unavailable/)
+  assert.equal(writes, 1, 'retry must only reload the committed result')
+  assert.equal(reads, 2)
+})
+
+test('failed learning completion retains its evidence context for retry', async () => {
+  const completionTaskId = ref('learning-task')
+  const completionOpen = ref(true)
+  const completionOccurrenceBusy = ref(false)
+  const fail = async () => { throw new Error('write unavailable') }
+  const notices: string[] = []
+  const { completeTaskEvidence } = handlers('App.vue', ['completeTaskEvidence'], {
+    completionTaskId, completionOpen, completionOccurrenceBusy,
+    recurrenceWorkspace: ref({ tasks: [{ id: 'learning-task', mode: 'learning', revision: 2 }] }),
+    capabilityService: { query: async () => ({ revision: 1 }), execute: fail }, CAPABILITY_PROTOCOL_VERSION: 1,
+    refreshState: () => assert.fail('failed writes must not refresh'),
+    notify: (message: string) => notices.push(message),
+  })
+  await completeTaskEvidence({ learned: 'draft', evidence: 'proof', nextAction: 'next', mastery: 3 })
+  assert.equal(completionOpen.value, true)
+  assert.equal(completionTaskId.value, 'learning-task')
+  assert.equal(completionOccurrenceBusy.value, false)
+  assert.deepEqual(notices, ['write unavailable'])
+})
+
+test('workspace refresh keeps an unsaved focus note visible so continued typing cannot erase it', async () => {
+  const state = ref({ sessions: [{ id: 'focus', scratchpad: 'new note' }] })
+  const api = handlers('App.vue', ['refreshState'], {
+    getWorkspaceStore: () => ({ load: async () => ({}) }),
+    projectWorkspaceState: () => ({ sessions: [{ id: 'focus', scratchpad: 'old note' }] }),
+    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {},
+    scratchNotes: new Map([['focus', 'new note']]), refreshVersion: 0, appliedRefreshVersion: 0,
+  })
+  await api.refreshState()
+  assert.equal(state.value.sessions[0].scratchpad, 'new note')
+})
+
+test('a delayed workspace read cannot erase a note committed while the read was pending', async () => {
+  const scratchDrafts = new Map([['focus', 'new note']])
+  const scratchNotes = new Map(scratchDrafts)
+  const state = ref({ sessions: [{ id: 'focus', scratchpad: 'new note' }] })
+  const api = handlers('App.vue', ['refreshState'], {
+    getWorkspaceStore: () => ({ load: async () => { scratchDrafts.clear(); return {} } }),
+    projectWorkspaceState: () => ({ sessions: [{ id: 'focus', scratchpad: 'old note' }] }),
+    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {}, scratchDrafts, scratchNotes, refreshVersion: 0, appliedRefreshVersion: 0,
+  })
+  await api.refreshState()
+  assert.equal(state.value.sessions[0].scratchpad, 'new note')
+})
+
+test('an older refresh cannot overwrite a newer read after that read confirms the saved note', async () => {
+  const scratchNotes = new Map([['focus', 'new note']])
+  const state = ref({ sessions: [{ id: 'focus', scratchpad: 'new note' }] })
+  let resolveOld!: (value: unknown) => void
+  const oldRead = new Promise((resolve) => { resolveOld = resolve })
+  let reads = 0
+  const api = handlers('App.vue', ['refreshState'], {
+    getWorkspaceStore: () => ({ load: () => ++reads === 1 ? oldRead : Promise.resolve('new note') }),
+    projectWorkspaceState: (note: string) => ({ sessions: [{ id: 'focus', scratchpad: note }] }),
+    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {}, scratchNotes, refreshVersion: 0, appliedRefreshVersion: 0,
+  })
+  const oldRefresh = api.refreshState()
+  await api.refreshState()
+  assert.equal(scratchNotes.size, 0)
+  resolveOld('old note')
+  await oldRefresh
+  assert.equal(state.value.sessions[0].scratchpad, 'new note')
+})
+
+test('an older successful refresh still applies when the newer request fails', async () => {
+  const state = ref({ sessions: [{ id: 'focus', scratchpad: 'stale note' }] })
+  let resolveOld!: (value: string) => void
+  const oldRead = new Promise<string>((resolve) => { resolveOld = resolve })
+  let reads = 0
+  const api = handlers('App.vue', ['refreshState'], {
+    getWorkspaceStore: () => ({ load: () => ++reads === 1 ? oldRead : Promise.reject(new Error('read failed')) }),
+    projectWorkspaceState: (note: string) => ({ sessions: [{ id: 'focus', scratchpad: note }] }),
+    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {},
+    scratchNotes: new Map(), refreshVersion: 0, appliedRefreshVersion: 0,
+  })
+  const oldRefresh = api.refreshState()
+  await assert.rejects(api.refreshState(), /read failed/)
+  resolveOld('saved note')
+  await oldRefresh
+  assert.equal(state.value.sessions[0].scratchpad, 'saved note')
+})
+
+test('a permanently failed session does not starve later notes and offers an explicit retry', async () => {
+  const scratchDrafts = new Map([['broken', 'failed note'], ['working', 'good note']])
+  const writes: string[] = []
+  const actions: { label: string; run: () => Promise<void> }[] = []
+  let fail = true
+  const api = handlers('App.vue', ['saveScratchDrafts'], {
+    scratchDrafts, scratchSaving: false, reportStorageError: () => {},
+    notify: (_message: string, action: { label: string; run: () => Promise<void> }) => actions.push(action),
+    saveStudyScratchpad: async (id: string) => {
+      writes.push(id)
+      if (id === 'broken' && fail) throw new Error('session gone')
+    },
+  })
+  await api.saveScratchDrafts()
+  assert.deepEqual(writes, ['broken', 'working'])
+  assert.deepEqual([...scratchDrafts.keys()], ['broken'])
+  assert.equal(actions[0]?.label, '重试')
+  fail = false
+  await actions[0]!.run()
+  assert.equal(scratchDrafts.size, 0)
+})
+
+test('saving notes drains newer typing in order and saves both tasks after a quick switch', async () => {
+  const scratchDrafts = new Map([['first', 'first draft'], ['second', 'second draft']])
+  const writes: string[] = []
+  const api = handlers('App.vue', ['saveScratchDrafts'], {
+    scratchDrafts, scratchSaving: false, reportStorageError: (error: unknown) => { throw error },
+    saveStudyScratchpad: async (id: string, value: string) => {
+      writes.push(`${id}:${value}`)
+      if (value === 'first draft') scratchDrafts.set(id, 'newer draft')
+    },
+  })
+  await api.saveScratchDrafts()
+  assert.deepEqual(writes, ['first:first draft', 'second:second draft', 'first:newer draft'])
+  assert.deepEqual([...scratchDrafts], [])
+})
+
+test('failed note writes retain the draft for refresh and retry', async () => {
+  const scratchDrafts = new Map([['focus', 'unsaved note']])
+  const errors: unknown[] = []
+  const api = handlers('App.vue', ['saveScratchDrafts'], {
+    scratchDrafts, scratchSaving: false, notify: () => {}, reportStorageError: (error: unknown) => errors.push(error),
+    saveStudyScratchpad: async () => { throw new Error('disk unavailable') },
+  })
+  await api.saveScratchDrafts()
+  assert.equal(scratchDrafts.get('focus'), 'unsaved note')
+  assert.equal(errors.length, 1)
+})
+
+test('typing starts persistence immediately without waiting for a debounce timer', () => {
+  let writes = 0
+  const scratchDrafts = new Map<string, string>()
+  const api = handlers('App.vue', ['updateScratchpad'], {
+    activeSession: ref({ id: 'focus', scratchpad: '' }), scratchDrafts, scratchNotes: new Map(),
+    saveScratchDrafts: async () => { writes++ },
+  })
+  api.updateScratchpad('last input before reload')
+  assert.equal(writes, 1)
+  assert.equal(scratchDrafts.get('focus'), 'last input before reload')
+})
+
+test('pending note writes serialize and merge fast typing until the final commit completes', async () => {
+  const scratchDrafts = new Map([['focus', 'first']])
+  const writes: string[] = []
+  let finish!: () => void
+  const committed = new Promise<void>((resolve) => { finish = resolve })
+  const api = handlers('App.vue', ['saveScratchDrafts'], {
+    scratchDrafts, scratchSaving: false, reportStorageError: (error: unknown) => { throw error },
+    saveStudyScratchpad: async (_id: string, value: string) => {
+      writes.push(value)
+      if (value === 'first') await committed
+    },
+  })
+  const saving = api.saveScratchDrafts()
+  scratchDrafts.set('focus', 'middle')
+  await api.saveScratchDrafts()
+  scratchDrafts.set('focus', 'last')
+  await api.saveScratchDrafts()
+  assert.deepEqual(writes, ['first'])
+  assert.equal(scratchDrafts.get('focus'), 'last')
+  finish()
+  await saving
+  assert.deepEqual(writes, ['first', 'last'])
+  assert.equal(scratchDrafts.size, 0)
+})
+
+test('a failed immediate save can be retried without losing the latest draft', async () => {
+  const scratchDrafts = new Map([['focus', 'retry this']])
+  let fail = true
+  const api = handlers('App.vue', ['saveScratchDrafts'], {
+    scratchDrafts, scratchSaving: false, notify: () => {}, reportStorageError: () => {},
+    saveStudyScratchpad: async () => { if (fail) throw new Error('disk unavailable') },
+  })
+  await api.saveScratchDrafts()
+  assert.equal(scratchDrafts.size, 1)
+  fail = false
+  await api.saveScratchDrafts()
+  assert.equal(scratchDrafts.size, 0)
+})
+
 test('only the current destination owns selection even when previous filters remain', () => {
   assert.equal(currentSidebarDestination('settings', 'today', 'list:a'), 'page:settings')
   assert.equal(currentSidebarDestination('review', 'all', 'list:a'), 'page:review')
@@ -213,10 +475,10 @@ test('refresh projects both UI models from the same newly loaded workspace', asy
   const next = await createInMemoryWorkspaceStore().load()
   const state = ref<unknown>('old')
   const recurrenceWorkspace = ref<unknown>('old')
-  const projected = { tasks: ['new'] }
+  const projected = { tasks: ['new'], sessions: [] }
   let reads = 0
   const api = handlers('App.vue', ['refreshState'], {
-    state, recurrenceWorkspace, scheduleCloudSync() {},
+    state, recurrenceWorkspace, scratchNotes: new Map(), refreshVersion: 0, appliedRefreshVersion: 0, scheduleCloudSync() {},
     getWorkspaceStore: () => ({ load: async () => { reads++; return next } }),
     projectWorkspaceState: (value: unknown) => { assert.equal(value, next); return projected },
   })
@@ -475,9 +737,9 @@ test('learning reminder completion opens evidence entry without completing eithe
   const completionOpen = ref(false)
   const completionReminderId = ref('')
   const reminderCenterOpen = ref(true)
-  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'learning' }] }
+  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'learning' }], reviewTaskLinks: [] }
   const api = handlers('App.vue', ['handleReminderAction'], {
-    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, completionOccurrenceId: ref('stale-occurrence'), completionTaskId: ref('stale-task'), completionReviewLinkId: ref('stale-review'), reminderCenterOpen, nextTick: async () => {},
+    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, completionOccurrenceId: ref('stale-occurrence'), completionTaskId: ref('stale-task'), reminderCenterOpen, nextTick: async () => {},
     executeReminderCommand: async () => assert.fail('no completion before evidence'),
   })
   await api.handleReminderAction({ deliveryId: 'delivery', action: 'complete' })
@@ -486,9 +748,29 @@ test('learning reminder completion opens evidence entry without completing eithe
   assert.equal(reminderCenterOpen.value, false)
 })
 
+test('linked review reminder completion opens the exact recall link instead of evidence or persistence', async () => {
+  const opened: string[] = []
+  const workspace = {
+    reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence:exact' }],
+    reminderRules: [{ id: 'rule', taskId: 'review-task' }],
+    tasks: [{ id: 'review-task', mode: 'learning' }],
+    reviewTaskLinks: [
+      { id: 'review:other', reviewTaskId: 'review-task', occurrenceId: 'occurrence:other', completedAt: null },
+      { id: 'review:exact', reviewTaskId: 'review-task', occurrenceId: 'occurrence:exact', completedAt: null },
+    ],
+  }
+  const api = handlers('App.vue', ['handleReminderAction'], {
+    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), reminderCenterOpen: ref(true),
+    openPendingReviewLink: (linkId: string) => opened.push(linkId),
+    executeReminderCommand: async () => assert.fail('linked review reminder must not persist generic completion'),
+  })
+  await api.handleReminderAction({ deliveryId: 'delivery', action: 'complete' })
+  assert.deepEqual(opened, ['review:exact'])
+})
+
 test('general recurring reminder completes exactly its occurrence, and snooze changes only delivery time', async () => {
   const commands: any[] = []
-  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'general' }], occurrences: [{ id: 'occurrence', revision: 2 }] }
+  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'general' }], occurrences: [{ id: 'occurrence', revision: 2 }], reviewTaskLinks: [] }
   const before = structuredClone(workspace)
   const api = handlers('App.vue', ['handleReminderAction'], {
     reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''),
@@ -513,9 +795,10 @@ test('learning occurrence completion from task surfaces opens evidence entry wit
     occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
     recurrenceSeries: [{ id: 'series', taskId: 'task' }],
     tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+    reviewTaskLinks: [],
   }
   const api = handlers('App.vue', ['executeOccurrence'], {
-    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOpen, completionReminderId: ref('delivery'), completionTaskId: ref('stale-task'), completionReviewLinkId: ref('review'), nextTick: async () => {},
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOpen, completionReminderId: ref('delivery'), completionTaskId: ref('stale-task'), nextTick: async () => {},
     today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' },
     CAPABILITY_PROTOCOL_VERSION: 1,
     capabilityService: { execute: async (envelope: unknown) => { commands.push(envelope) } },
@@ -527,6 +810,27 @@ test('learning occurrence completion from task surfaces opens evidence entry wit
   assert.equal(completionOpen.value, true)
 })
 
+test('linked review occurrence completion opens its exact recall link instead of evidence or persistence', async () => {
+  const opened: string[] = []
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence:exact', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'review-task' }],
+    tasks: [{ id: 'review-task', mode: 'learning', revision: 7 }],
+    reviewTaskLinks: [
+      { id: 'review:other', reviewTaskId: 'review-task', occurrenceId: 'occurrence:other', completedAt: null },
+      { id: 'review:exact', reviewTaskId: 'review-task', occurrenceId: 'occurrence:exact', completedAt: null },
+    ],
+  }
+  const api = handlers('App.vue', ['executeOccurrence'], {
+    recurrenceWorkspace: ref(workspace), openPendingReviewLink: (linkId: string) => opened.push(linkId),
+    capabilityService: { execute: async () => assert.fail('linked review occurrence must not persist generic completion') },
+    reportStorageError(error: unknown) { throw error },
+  })
+  await api.executeOccurrence('occurrence:exact', 'recurrence.complete')
+  assert.deepEqual(opened, ['review:exact'])
+})
+
 test('task completion handler opens evidence for planned learning without toggling persistence', async () => {
   const completionOpen = ref(false)
   const completionTaskId = ref('')
@@ -534,7 +838,7 @@ test('task completion handler opens evidence for planned learning without toggli
   const api = handlers('App.vue', ['toggleTaskCompletion'], {
     state: ref({ tasks: [{ ...workspace.tasks[0], deletedAt: null }] }), recurrenceWorkspace: ref(workspace),
     routeSingleTaskCompletion, completionOpen, completionTaskId, completionReminderId: ref('stale'),
-    completionOccurrenceId: ref('stale'), completionReviewLinkId: ref('stale'), nextTick: async () => {},
+    completionOccurrenceId: ref('stale'), nextTick: async () => {},
     openTaskAction: () => assert.fail('planned learning must not open a task action'),
     taskPrimary: async () => assert.fail('planned learning must not unblock'), notify() {},
     toggleStudyTaskCompletion: async () => assert.fail('learning completion must not use generic toggle persistence'),
@@ -542,6 +846,37 @@ test('task completion handler opens evidence for planned learning without toggli
   await api.toggleTaskCompletion('learning')
   assert.equal(completionTaskId.value, 'learning')
   assert.equal(completionOpen.value, true)
+})
+
+test('linked review task completion opens its exact recall item without toggling persistence', async () => {
+  const opened: string[] = []
+  const task = { id: 'review-task', title: 'Review', mode: 'learning', status: 'planned', deletedAt: null }
+  const workspace = {
+    tasks: [task],
+    reviewTaskLinks: [{ id: 'review-link', reviewTaskId: task.id, completionRecordId: 'record', completedAt: null }],
+  }
+  const api = handlers('App.vue', ['toggleTaskCompletion'], {
+    state: ref({ tasks: [task] }), recurrenceWorkspace: ref(workspace), routeSingleTaskCompletion,
+    openPendingReviewLink: (linkId: string) => opened.push(linkId),
+    notify() {}, toggleStudyTaskCompletion: async () => assert.fail('linked review must not use generic toggle persistence'),
+  })
+  await api.toggleTaskCompletion(task.id)
+  assert.deepEqual(opened, ['review-link'])
+})
+
+test('focus completion routes a pending review to rating without fixing the result to clear', () => {
+  const opened: string[] = []
+  const completionOpen = ref(false)
+  const api = handlers('App.vue', ['openFocusCompletion'], {
+    recurrenceWorkspace: ref({ reviewTaskLinks: [{ id: 'review:pending', completedAt: null }] }),
+    openPendingReviewLink: (linkId: string) => opened.push(linkId), completionOpen,
+    completionReminderId: ref('stale'), completionOccurrenceId: ref('stale'), completionTaskId: ref('stale'),
+  })
+  api.openFocusCompletion('review:pending')
+  assert.deepEqual(opened, ['review:pending'])
+  assert.equal(completionOpen.value, false, 'rating must happen in ReviewView, not the evidence sheet')
+  api.openFocusCompletion()
+  assert.equal(completionOpen.value, true, 'ordinary focus completion must still collect evidence')
 })
 
 test('task completion handler routes inbox and blocked learning to actionable prerequisites', async () => {
@@ -554,7 +889,7 @@ test('task completion handler routes inbox and blocked learning to actionable pr
   const api = handlers('App.vue', ['toggleTaskCompletion'], {
     state: ref({ tasks }), recurrenceWorkspace: ref({ tasks, reviewTaskLinks: [] }), routeSingleTaskCompletion,
     completionOpen: ref(false), completionTaskId: ref(''), completionReminderId: ref(''),
-    completionOccurrenceId: ref(''), completionReviewLinkId: ref(''), nextTick: async () => {},
+    completionOccurrenceId: ref(''), nextTick: async () => {},
     openTaskAction: (id: string, mode: string) => actions.push(`${id}:${mode}`),
     taskPrimary: async (id: string) => { primaries.push(id) }, notify() {},
     toggleStudyTaskCompletion: async () => assert.fail('prerequisite routing must not toggle persistence'),
@@ -590,9 +925,10 @@ test('general occurrence completion from task surfaces remains a direct command'
     occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
     recurrenceSeries: [{ id: 'series', taskId: 'task' }],
     tasks: [{ id: 'task', mode: 'general', revision: 7 }],
+    reviewTaskLinks: [],
   }
   const api = handlers('App.vue', ['executeOccurrence'], {
-    recurrenceWorkspace: ref(workspace), completionOccurrenceId: ref(''), completionOpen: ref(false), completionReminderId: ref(''), completionReviewLinkId: ref(''), nextTick: async () => {},
+    recurrenceWorkspace: ref(workspace), completionOccurrenceId: ref(''), completionOpen: ref(false), completionReminderId: ref(''), nextTick: async () => {},
     today: ref('2026-09-06'), crypto: { randomUUID: () => 'command-id' }, CAPABILITY_PROTOCOL_VERSION: 1,
     capabilityService: { execute: async (envelope: unknown) => { commands.push(envelope) } },
     refreshState: async () => {}, notify() {}, reportStorageError(error: unknown) { throw error },

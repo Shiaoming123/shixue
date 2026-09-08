@@ -15,11 +15,11 @@ const tasks = [
 const reviewTaskLinks = [{ reviewTaskId: 'review' }] as const
 const snapshot = { tasks, reviewTaskLinks }
 
-test('ordinary unfinished learning tasks open evidence while review and reopen targets keep their command route', () => {
+test('ordinary unfinished learning tasks open evidence while linked reviews enter recall and completed tasks keep their command route', () => {
   assert.ok(routing, 'task completion routing must be implemented')
   assert.equal(routing.routeSingleTaskCompletion(snapshot, 'general'), 'toggle')
   assert.equal(routing.routeSingleTaskCompletion(snapshot, 'learning'), 'evidence')
-  assert.equal(routing.routeSingleTaskCompletion(snapshot, 'review'), 'toggle')
+  assert.equal(routing.routeSingleTaskCompletion(snapshot, 'review'), 'review')
   assert.equal(routing.routeSingleTaskCompletion(snapshot, 'finished-learning'), 'toggle')
   assert.equal(routing.routeSingleTaskCompletion(snapshot, 'inbox-learning'), 'plan')
   assert.equal(routing.routeSingleTaskCompletion(snapshot, 'blocked-learning'), 'unblock')
