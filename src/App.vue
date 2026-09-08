@@ -42,7 +42,7 @@ import { loadLastDesktopCalendarView, loadPlanningPreferences, saveLastDesktopCa
 import type { CalendarView } from './domain/calendar/range'
 import { offsetForInstant } from './domain/calendar/target'
 import { loadSidebarPreferences, saveSidebarPreferences, type SidebarPreferences } from './lib/sidebar-preferences'
-import { shouldAutoSelectTask } from './lib/task-detail-layout'
+import { restoreDeletedInlineTaskFocus, shouldAutoSelectTask } from './lib/task-detail-layout'
 import {
   desktopWorkspaceNavigation,
   learningWorkspaceNavigation,
@@ -188,6 +188,7 @@ let desktopCalendarModeLoaded = !calendarStartsCompact
 const defaultSidebarMenuKeys = [...desktopWorkspaceNavigation.map(({ preferenceKey }) => preferenceKey), 'page:review']
 const sidebarPreferences = ref(loadSidebarPreferences(defaultSidebarMenuKeys))
 const tasksView = ref<InstanceType<typeof TasksView> | null>(null)
+let deletedTaskFocusFallback: (() => HTMLElement | null) | undefined
 const runtime = inject(RUNTIME_INFO_KEY, () => runtimeInfoForNativePlatform('web'), true)
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const capabilityService = createTaskCapabilityService(getWorkspaceStore(), () => new Date().toISOString(), (kind) => `${kind}:${crypto.randomUUID()}`)
@@ -806,6 +807,11 @@ function isLearningDestinationActive(view: WorkspaceView) {
 function openTopicEditor(topic?: StudyTopic) { topicEditorOpen.value = true; selectedTopicId.value = topic?.id ?? ''; topicTitle.value = topic?.title ?? ''; topicGoal.value = topic?.goal ?? ''; topicMinutes.value = topic?.weeklyTargetMinutes ?? 120; topicGroupId.value = topic?.groupId ?? '' }
 function openGroupEditor(group?: StudyListGroup) { groupEditorOpen.value = true; selectedGroupId.value = group?.id ?? ''; groupTitle.value = group?.title ?? '' }
 function openTask(taskId: string) { if (page.value !== 'tasks' && page.value !== 'today') setDestination({ kind: 'inbox' }); selectedOccurrenceId.value = ''; selectedTaskId.value = taskId; showFocus.value = false }
+function taskDetailRestoreFocusFallback() {
+  const target = deletedTaskFocusFallback?.() ?? null
+  deletedTaskFocusFallback = undefined
+  return target
+}
 function openGlobalSearch() { globalSearchOpen.value = true }
 function handleGlobalSearchShortcut(event: KeyboardEvent) {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLocaleLowerCase() !== 'k') return
@@ -1250,10 +1256,13 @@ function toZonedDateTimeInput(value: string, timezone: string) {
 async function deleteTask(taskId: string) {
   const task = state.value.tasks.find((item) => item.id === taskId && !item.deletedAt)
   if (!task) return
+  if (selectedTaskId.value === taskId) deletedTaskFocusFallback = tasksView.value?.prepareTaskRemovalFocus(taskId)
   try {
     await deleteStudyTask(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString() })
     await refreshState()
     selectedTaskId.value = ''
+    await nextTick()
+    restoreDeletedInlineTaskFocus(window.innerWidth, taskDetailRestoreFocusFallback)
     notify('任务已删除，学习证据仍保留。')
   } catch (error) { reportStorageError(error) }
 }
@@ -1601,7 +1610,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
           </div>
           <div class="tasks-layout">
           <div class="tasks-scroll"><TasksView ref="tasksView" :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :quick-add-catalog-revision="recurrenceWorkspace?.revision" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @defer="openTaskAction($event, 'defer')" @cancel="openTaskAction($event, 'cancel')" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @overdue-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
-          <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
+          <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" :restore-focus-fallback="taskDetailRestoreFocusFallback" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
           </div>
         </template>
         <SettingsView v-else-if="page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export-json="exportJsonData" @export-markdown="exportMarkdownData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-appearance="setAppearance" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />

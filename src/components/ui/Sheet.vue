@@ -8,6 +8,7 @@ const props = withDefaults(defineProps<{
   placement?: 'responsive' | 'right' | 'inline'
   size?: 'sm' | 'md' | 'lg'
   closeOnOutside?: boolean
+  restoreFocusFallback?: () => HTMLElement | null
 }>(), {
   placement: 'responsive',
   size: 'md',
@@ -24,6 +25,7 @@ const modal = () => props.open && props.placement !== 'inline'
 const { layerId } = useModalOverlay(modal, panel, requestClose, {
   kind: 'sheet',
   closeOnOutside: () => props.closeOnOutside,
+  restoreFocusFallback: props.restoreFocusFallback,
 })
 
 function requestClose(reason: OverlayCloseReason) {

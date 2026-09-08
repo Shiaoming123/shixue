@@ -30,6 +30,15 @@ test('business sheets and responsive task detail no longer own parallel overlay 
   assert.match(detail, /width:\s*100%/)
   assert.doesNotMatch(detail, /width:\s*420px|min-width:\s*420px/)
 
+  const tasks = rootSource('src/components/study/TasksView.vue')
+  assert.match(tasks, /prepareTaskRemovalFocus/)
+  assert.match(tasks, /taskIds\[index \+ 1\][\s\S]*taskIds\[index - 1\]/)
+  assert.match(tasks, /ref="pageTitle"[\s\S]*tabindex="-1"/)
+
+  const app = rootSource('src/App.vue')
+  assert.match(app, /prepareTaskRemovalFocus\(taskId\)/)
+  assert.match(app, /:restore-focus-fallback="taskDetailRestoreFocusFallback"/)
+
   const responsive = rootSource('src/components/ui/Sheet.vue')
   assert.match(responsive, /\.sheet-panel--responsive::before/)
   assert.match(responsive, /\.sheet-overlay-enter-from \.sheet-panel--responsive[\s\S]*translateY/)

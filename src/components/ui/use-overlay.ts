@@ -8,6 +8,7 @@ export interface OverlayRegistration {
   kind: OverlayKind
   trigger: HTMLElement | null
   panel?: () => HTMLElement | null
+  restoreFocusFallback?: () => HTMLElement | null
   close(reason: OverlayCloseReason): void
 }
 
@@ -139,13 +140,14 @@ export function useModalOverlay(
   open: MaybeRefOrGetter<boolean>,
   panel: Ref<HTMLElement | null>,
   close: (reason: OverlayCloseReason) => void,
-  options: { kind?: 'dialog' | 'sheet'; closeOnOutside?: MaybeRefOrGetter<boolean> } = {},
+  options: { kind?: 'dialog' | 'sheet'; closeOnOutside?: MaybeRefOrGetter<boolean>; restoreFocusFallback?: () => HTMLElement | null } = {},
 ) {
   const registration: OverlayRegistration = {
     id: `modal-${useId()}`,
     kind: options.kind ?? 'dialog',
     trigger: null,
     panel: () => panel.value,
+    restoreFocusFallback: options.restoreFocusFallback,
     close(reason) {
       if (reason === 'outside' && options.closeOnOutside !== undefined && !toValue(options.closeOnOutside)) {
         bringToFront()
@@ -166,7 +168,7 @@ export function useModalOverlay(
     } else if (previous) releaseOverlay(layerId, true)
   }, { immediate: true })
   onUnmounted(() => {
-    if (toValue(open)) queueMicrotask(() => registration.trigger?.focus({ preventScroll: true }))
+    if (toValue(open)) restoreOverlayFocus(registration)
   })
   return { layerId }
 }
@@ -191,8 +193,15 @@ export function releaseOverlay(layerId: string, restoreFocus = false) {
   }
   syncModalIsolation()
   if (!restoreFocus) return
-  const trigger = registrations.get(layerId)?.trigger
-  queueMicrotask(() => trigger?.focus({ preventScroll: true }))
+  const registration = registrations.get(layerId)
+  if (registration) restoreOverlayFocus(registration)
+}
+
+function restoreOverlayFocus(registration: OverlayRegistration) {
+  queueMicrotask(() => {
+    const target = registration.trigger?.isConnected ? registration.trigger : registration.restoreFocusFallback?.()
+    if (target?.isConnected) target.focus({ preventScroll: true })
+  })
 }
 
 export function useOverlay(registration: OverlayRegistration): {

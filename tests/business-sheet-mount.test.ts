@@ -32,10 +32,11 @@ function componentFrom(name: string, controls: Record<string, (...args: any[]) =
   }).outputText
   const passthrough = Vue.defineComponent({ setup: (_, { slots }) => () => Vue.h('div', slots.default?.()) })
   const Sheet = Vue.defineComponent({
-    props: ['open', 'label', 'placement'], emits: ['close'],
+    props: ['open', 'label', 'placement', 'restoreFocusFallback'], emits: ['close'],
     setup(props, { emit, slots }) {
       controls.close = (reason = 'outside') => emit('close', reason)
       controls.placement = () => props.placement
+      controls.restoreFocusFallback = () => props.restoreFocusFallback
       return () => props.open ? Vue.h('section', slots.default?.()) : null
     },
   })
@@ -150,8 +151,10 @@ test('mounted TaskDetailDrawer passes the three responsive placements to shared 
     const controls: Record<string, (...args: any[]) => any> = {}
     const Component = componentFrom('TaskDetailDrawer', controls)
     const detailTask = { ...task, topic: 'Inbox', plannedLabel: '', reminderLabel: '', dueLabel: '', tags: [], checklist: [] }
-    const app = renderer.createApp(Component, { task: detailTask, events: [] })
+    const fallback = () => null
+    const app = renderer.createApp(Component, { task: detailTask, events: [], restoreFocusFallback: fallback })
     app.mount(new HostNode())
+    assert.equal(controls.restoreFocusFallback(), fallback)
     assert.equal(controls.placement(), 'responsive')
     windowStub.innerWidth = 820; windowStub.dispatchEvent(new Event('resize')); await Vue.nextTick()
     assert.equal(controls.placement(), 'right')

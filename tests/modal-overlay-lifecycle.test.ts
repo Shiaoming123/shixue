@@ -6,6 +6,7 @@ import { createRenderer, h, nextTick, ref, shallowRef } from 'vue'
 import { focusNextToTrigger, hasActiveOverlay, useModalOverlay, useOverlay } from '../src/components/ui/use-overlay.ts'
 
 class ElementStub extends EventTarget {
+  isConnected = true
   tabIndex = 0
   children: ElementStub[] = []
   dataset: Record<string, string> = {}
@@ -20,7 +21,7 @@ class ElementStub extends EventTarget {
   matches() { return false }
   closest(selector: string) { return selector === '[data-overlay-layer]' ? this.scope : null }
   getClientRects() { return [{}] }
-  focus() { doc.activeElement = this }
+  focus() { if (this.isConnected) doc.activeElement = this }
 }
 const doc = Object.assign(new EventTarget(), {
   body: new ElementStub(),
@@ -150,6 +151,29 @@ test('modal lifecycle traps both tab boundaries, closes only top layer, and rest
   assert.equal(open.value, false)
   assert.equal(hasActiveOverlay(), false)
   assert.equal(doc.activeElement, trigger, 'closing must return to the original task trigger')
+  app.unmount()
+})
+
+test('modal lifecycle uses a live fallback when the task trigger was removed', async () => {
+  const trigger = new ElementStub()
+  const fallback = new ElementStub()
+  const panel = new ElementStub()
+  panel.children = [new ElementStub()]
+  trigger.focus()
+  const open = ref(false)
+  const app = renderer.createApp({ setup() {
+    useModalOverlay(open, shallowRef(panel) as never, () => { open.value = false }, {
+      restoreFocusFallback: () => fallback as never,
+    })
+    return () => h('div')
+  } })
+  app.mount(new ElementStub())
+  open.value = true
+  await nextTick(); await nextTick()
+  trigger.isConnected = false
+  open.value = false
+  await nextTick(); await nextTick()
+  assert.equal(doc.activeElement, fallback, 'deleted task details must return focus to a surviving list target')
   app.unmount()
 })
 

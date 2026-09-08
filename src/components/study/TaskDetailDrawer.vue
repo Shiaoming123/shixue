@@ -23,6 +23,7 @@ const props = defineProps<{
   occurrenceScheduleLabel?: string
   deadlineLabel?: string
   mobile?: boolean
+  restoreFocusFallback?: () => HTMLElement | null
 }>()
 
 const emit = defineEmits<{
@@ -73,7 +74,7 @@ function addChecklistItem() {
 </script>
 
 <template>
-  <Sheet :open="Boolean(task)" label="任务详情" :placement="detailPlacement" @close="emit('close')">
+  <Sheet :open="Boolean(task)" label="任务详情" :placement="detailPlacement" :restore-focus-fallback="restoreFocusFallback" @close="emit('close')">
   <aside v-if="task" class="detail-drawer" :class="{ mobile }" :role="covering ? undefined : 'complementary'" aria-label="任务详情">
     <header class="drawer-header">
       <div><button title="编辑任务" aria-label="编辑任务" @click="emit('edit', task.id)"><Pencil :size="18" /></button><button title="删除任务" aria-label="删除任务" @click="confirmDelete = true"><Trash2 :size="18" /></button></div>
