@@ -108,7 +108,7 @@ async function refreshCatalog() {
   tags.value = snapshot.tags.filter(({ archivedAt }) => archivedAt === null).map(({ id, title }) => ({ id, title }))
 }
 
-function buildCommand() {
+function buildCommand(ids: { taskId?: string; eventId?: string; seriesId?: string } = {}) {
   return buildQuickAddCommand({
     input: input.value,
     candidates: acceptedCandidates.value,
@@ -119,6 +119,7 @@ function buildCommand() {
     defaultEstimateMinutes: props.defaultEstimateMinutes,
     removeRecognizedText: props.quickAddRemoveRecognizedText,
     ...(learningMode.value ? { mode: 'learning' as const } : {}),
+    ...ids,
   })
 }
 
@@ -132,16 +133,7 @@ async function submit() {
   try {
     const snapshot = await capabilityService.query({ type: 'workspace.snapshot' })
     const taskId = crypto.randomUUID()
-    const command = buildQuickAddCommand({
-      input: input.value,
-      candidates: acceptedCandidates.value,
-      destinationListId: props.destinationListId,
-      defaultStartOn: props.defaultStartOn,
-      fallbackRecurrenceAnchorOn: localToday(),
-      timezone,
-      defaultEstimateMinutes: props.defaultEstimateMinutes,
-      removeRecognizedText: props.quickAddRemoveRecognizedText,
-      ...(learningMode.value ? { mode: 'learning' as const } : {}),
+    const command = buildCommand({
       taskId,
       eventId: crypto.randomUUID(),
       seriesId: acceptedCandidates.value.some(({ kind }) => kind === 'recurrence') ? crypto.randomUUID() : undefined,
@@ -158,9 +150,13 @@ async function submit() {
     if (!created) throw new Error('Quick add did not return the created task.')
     input.value = ''
     learningMode.value = false
-    await refreshCatalog()
     emit('created', created)
     inputElement.value?.focus({ preventScroll: true })
+    try {
+      await refreshCatalog()
+    } catch {
+      error.value = '任务已保存，但清单与标签未能刷新。'
+    }
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '任务未能保存，请重试。'
   } finally {
