@@ -1,9 +1,48 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
+import type { CapabilityCommand } from '../src/domain/capabilities/types.ts'
+import { SYSTEM_LEARNING_LIST_ID } from '../src/domain/workspace/migrate.ts'
+import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { selectWeeklyLearningSummary } from '../src/domain/views/weekly-learning-summary.ts'
 import type { CompletionRecord, RecurrenceSeries, StudySession, Task, TaskEvent, TaskList, TaskOccurrence, WorkspaceStateV3 } from '../src/domain/workspace/types.ts'
 
 const AT = '2026-09-16T12:00:00.000Z'
+
+test('a default learning task keeps its weekly plan, evidence and review in one topic', async () => {
+  const initial = state()
+  initial.lists.push(list(SYSTEM_LEARNING_LIST_ID, '学习', 2))
+  const store = createInMemoryWorkspaceStore(initial)
+  let sequence = 0
+  const service = createTaskCapabilityService(store, () => AT, (kind) => `${kind}:weekly:${++sequence}`)
+  const execute = async (command: CapabilityCommand) => service.execute({
+    protocolVersion: 1, source: 'human-ui', idempotencyKey: `weekly:${++sequence}`,
+    expectedWorkspaceRevision: (await store.load()).revision, command,
+  })
+  await execute({
+    type: 'task.create', taskId: 'task:default-learning', listId: SYSTEM_LEARNING_LIST_ID,
+    mode: 'learning', title: '掌握一个可验证概念', startOn: '2026-09-16',
+  })
+  await execute({
+    type: 'task.complete', taskId: 'task:default-learning', recordId: 'record:default-learning',
+    learned: '已解释概念', evidence: '通过实例验证', nextAction: '明天复述', mastery: 3,
+  })
+  const snapshot = await store.load()
+  const before = structuredClone(snapshot)
+  const summary = selectWeeklyLearningSummary(snapshot, { asOf: AT, timezone: 'UTC', weekStartsOn: 1 })
+  assert.equal(summary.topics.length, 1, 'one learning task must not split its plan and evidence across topics')
+  const topic = summary.topics[0]!
+  assert.equal(topic.topicId, null)
+  assert.equal(topic.topicTitle, '未归类')
+  assert.equal(topic.currentPlans.planned.value, 1)
+  assert.equal(topic.currentPlans.completed.value, 1)
+  assert.equal(topic.currentPlans.evidenceCoverage.covered.value, 1)
+  assert.deepEqual(topic.evidenceCompletions.recordIds, ['record:default-learning'])
+  assert.deepEqual(topic.reviewCoverage.due.recordIds, ['record:default-learning'])
+  assert.equal(topic.reviewCoverage.scheduledCount, 1)
+  assert.equal(topic.reviewCoverage.due.facts[0]?.reviewTaskId, snapshot.reviewTaskLinks[0]?.reviewTaskId)
+  assert.deepEqual(snapshot, before, 'grouping must preserve completion-time topic snapshots and stored facts')
+})
 
 function state(): WorkspaceStateV3 {
   return {

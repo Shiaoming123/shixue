@@ -1,5 +1,6 @@
 import { calendarRange } from '../calendar/range.ts'
 import { parseZonedDateTime } from '../recurrence/timezone.ts'
+import { SYSTEM_LEARNING_LIST_ID } from '../workspace/migrate.ts'
 import type { CompletionRecord, ReviewTaskLink, Task, TaskEvent, TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
 
 export interface WeeklyLearningSummaryQuery {
@@ -221,7 +222,7 @@ function requireTopic(
   topicId: string | null,
   titles: ReadonlyMap<string, string>,
 ): MutableTopicSummary {
-  const knownTopicId = topicId && titles.has(topicId) ? topicId : null
+  const knownTopicId = topicId && topicId !== SYSTEM_LEARNING_LIST_ID && titles.has(topicId) ? topicId : null
   const key = knownTopicId ?? ''
   let topic = topics.get(key)
   if (!topic) {
