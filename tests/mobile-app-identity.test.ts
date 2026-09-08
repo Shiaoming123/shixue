@@ -32,10 +32,12 @@ test('mobile smoke identity fails closed for a missing or unsafe Tauri identifie
   const missingRoot = await createProject(t, {})
   const unsafeRoot = await createProject(t, { identifier: 'com.example.study;rm' })
   const unsupportedRoot = await createProject(t, { identifier: 'com.example.study_app' })
+  const oversizedRoot = await createProject(t, { identifier: `com.example.${'a'.repeat(244)}` })
 
   assert.throws(() => readMobileAppIdentity(missingRoot), /valid identifier/)
   assert.throws(() => readMobileAppIdentity(unsafeRoot), /valid identifier/)
   assert.throws(() => readMobileAppIdentity(unsupportedRoot), /valid identifier/)
+  assert.throws(() => readMobileAppIdentity(oversizedRoot), /valid identifier/)
 })
 
 test('mobile smoke entrypoints do not duplicate the configured product identifier', async () => {
