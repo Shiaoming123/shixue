@@ -63,6 +63,7 @@ CARGO_TARGET_DIR=/absolute/path/on/apfs npm run rust:verify
 | Check the product-level application protocol | `npm run check:protocol` |
 | Check the production Tauri content-security policy | `npm run check:csp` |
 | Verify an existing Android debug APK's identity and ABI metadata | `npm run check:android-artifact -- --apk <path-to-apk>` |
+| Verify Android SQLite recovery after a proven emulator reboot | `npm run smoke:android-persistence -- --device <serial> --launch-report <absolute-json-path> --restart emulator-reboot` |
 | Check desktop, Web, or mobile module compatibility | `npm run check:modules [-- web|mobile]` |
 | Run all frontend quality gates | `npm run verify` |
 | Check release configuration in template mode | `npm run release:check` |

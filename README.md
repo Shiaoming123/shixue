@@ -124,7 +124,7 @@ npm run smoke:windows-package
 | 已发布版本自动更新 | `NOT_RUN`；仓库有 updater 元数据与载荷签名构建链路，但尚无安装端跨已发布版本的端到端升级证据。 |
 | Windows 原生缩放与读屏 | 系统 200% 缩放和 Narrator 均为 `NOT_RUN`；Web 的 CSS zoom、等效回流和 Edge 截图不能替代原生证据。 |
 | Android 模拟器 | `42cc204` 的 x86_64 debug APK 在隔离的 API 36 模拟器中通过包名/版本/ABI 校验、显式 Activity 启动、前台检查、五阶段 readiness 与稳定 PID smoke；同一 APK 还通过能力服务写入唯一任务，确认进程终止后重启，并从 SQLite 恢复任务、创建回执和事件。 |
-| Android 真机与发布 | 真机、模拟器重启后的恢复、原生通知、签名、Google Play 和商店交付均为 `NOT_RUN`。 |
+| Android 真机与发布 | 模拟器整机重启恢复已有自动化门禁，但当前提交尚未取得该原生运行结果，仍为 `NOT_RUN`；真机、原生通知、签名、Google Play 和商店交付也均为 `NOT_RUN`。 |
 | iOS / iPadOS | 当前树的 Simulator 与设备运行均为 `NOT_RUN`；历史快照不升级当前证据。320–819px Web 截图只证明响应式布局。 |
 
 多提醒、应用内动作、通知权限与关闭行为已有源码和 Web/自动化证据。未知旧提醒记录会阻止投递并报告错误；发送与确认之间崩溃不承诺恰好一次。逐项提醒证据见 [PR4 产品审查](./docs/design/2026-09-05-pr4-product-audit.md)。视觉合同保持用户批准的 `LOCKED / NAVIGATION AMENDED` 状态，验收边界见 [VISUAL_QA.md](./VISUAL_QA.md)。
@@ -151,9 +151,10 @@ npm run rust:verify
 npm run smoke:web-persistence
 npm run smoke:android-launch -- --device <adb-serial> --apk <absolute-apk-path>
 npm run smoke:android-persistence -- --device <adb-serial> --launch-report <absolute-launch-report-path>
+npm run smoke:android-persistence -- --device <adb-serial> --launch-report <absolute-launch-report-path> --restart emulator-reboot
 ```
 
-`verify` 包含领域与存储测试、应用协议、CSP、桌面/Web/移动模块契约、类型检查、桌面/Web 构建、移动布局和文档链接检查。Web smoke 与日历 smoke 证明浏览器路径和响应式行为；Android 原生运行另由显式的 APK/模拟器启动 smoke 验证，持久化 smoke 复用其精确 APK 证据并验证应用进程重启后的 SQLite 恢复。上述检查仍不证明 Windows 安装包、系统通知、原生缩放、Narrator、Android 真机、模拟器重启或移动端发布。
+`verify` 包含领域与存储测试、应用协议、CSP、桌面/Web/移动模块契约、类型检查、桌面/Web 构建、移动布局和文档链接检查。Web smoke 与日历 smoke 证明浏览器路径和响应式行为；Android 原生运行另由显式的 APK/模拟器启动 smoke 验证，持久化 smoke 复用其精确 APK 证据并验证应用进程重启后的 SQLite 恢复。带 `--restart emulator-reboot` 的模式还要求设备离线、重新完成启动且内核 boot ID 改变，随后才读取同一 SQLite 数据；门禁源码或单元测试通过不等于该原生运行已经执行。上述检查仍不证明 Windows 安装包、系统通知、原生缩放、Narrator、Android 真机或移动端发布。
 
 Windows 本地交付另运行 `npm run smoke:windows-package`：它在隔离目录中安装 NSIS 包、启动应用、确认进程存活，再清理本次测试目录。此结果证明本地包生命周期可运行，不等同于 Authenticode 签名、SmartScreen 信誉或商店审核。
 

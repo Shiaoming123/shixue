@@ -140,6 +140,7 @@
       "nativeBuild": "pass",
       "emulatorRun": "pass",
       "persistenceRestart": "pass",
+      "emulatorRebootPersistence": "not-run",
       "deviceRun": "not-run"
     },
     "ios": {
