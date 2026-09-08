@@ -250,7 +250,7 @@ let clockTimer: ReturnType<typeof setInterval> | undefined
 let reminderTimer: ReturnType<typeof setInterval> | undefined
 let cloudTimer: ReturnType<typeof setInterval> | undefined
 let cloudDebounceTimer: ReturnType<typeof setTimeout> | undefined
-let scratchSaveTimer: ReturnType<typeof setTimeout> | undefined
+let scratchSaving = false
 const scratchDrafts = new Map<string, string>()
 let compactMedia: MediaQueryList | undefined
 
@@ -471,7 +471,6 @@ onUnmounted(() => {
   if (reminderTimer) clearInterval(reminderTimer)
   if (cloudTimer) clearInterval(cloudTimer)
   if (cloudDebounceTimer) clearTimeout(cloudDebounceTimer)
-  if (scratchSaveTimer) clearTimeout(scratchSaveTimer)
   compactMedia?.removeEventListener('change', onCompactChange)
   window.removeEventListener('shixue:quick-add', handleQuickAdd)
   window.removeEventListener('shixue:module-error', handleModuleError)
@@ -1391,17 +1390,21 @@ function updateScratchpad(value: string) {
   const sessionId = session.id
   session.scratchpad = value
   scratchDrafts.set(sessionId, value)
-  if (scratchSaveTimer) clearTimeout(scratchSaveTimer)
-  scratchSaveTimer = setTimeout(saveScratchDrafts, 450)
+  void saveScratchDrafts()
 }
 
 async function saveScratchDrafts() {
-  for (const [sessionId, value] of scratchDrafts) {
-    try {
-      await saveStudyScratchpad(sessionId, value, { now: new Date().toISOString() })
-      if (scratchDrafts.get(sessionId) === value) scratchDrafts.delete(sessionId)
-    } catch (error) { reportStorageError(error) }
-  }
+  if (scratchSaving) return
+  scratchSaving = true
+  try {
+    while (scratchDrafts.size) {
+      for (const [sessionId, value] of scratchDrafts) {
+        await saveStudyScratchpad(sessionId, value, { now: new Date().toISOString() })
+        if (scratchDrafts.get(sessionId) === value) scratchDrafts.delete(sessionId)
+      }
+    }
+  } catch (error) { reportStorageError(error) }
+  finally { scratchSaving = false }
 }
 
 async function completeFocus(payload: CompletionPayload) {

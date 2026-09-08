@@ -100,31 +100,82 @@ test('workspace refresh keeps an unsaved focus note visible so continued typing 
   assert.equal(state.value.sessions[0].scratchpad, 'new note')
 })
 
-test('saving notes keeps newer typing and saves notes from both tasks after a quick switch', async () => {
+test('saving notes drains newer typing in order and saves both tasks after a quick switch', async () => {
   const scratchDrafts = new Map([['first', 'first draft'], ['second', 'second draft']])
   const writes: string[] = []
   const api = handlers('App.vue', ['saveScratchDrafts'], {
-    scratchDrafts, reportStorageError: (error: unknown) => { throw error },
+    scratchDrafts, scratchSaving: false, reportStorageError: (error: unknown) => { throw error },
     saveStudyScratchpad: async (id: string, value: string) => {
       writes.push(`${id}:${value}`)
-      if (id === 'first') scratchDrafts.set(id, 'newer draft')
+      if (value === 'first draft') scratchDrafts.set(id, 'newer draft')
     },
   })
   await api.saveScratchDrafts()
-  assert.deepEqual(writes, ['first:first draft', 'second:second draft'])
-  assert.deepEqual([...scratchDrafts], [['first', 'newer draft']])
+  assert.deepEqual(writes, ['first:first draft', 'second:second draft', 'first:newer draft'])
+  assert.deepEqual([...scratchDrafts], [])
 })
 
 test('failed note writes retain the draft for refresh and retry', async () => {
   const scratchDrafts = new Map([['focus', 'unsaved note']])
   const errors: unknown[] = []
   const api = handlers('App.vue', ['saveScratchDrafts'], {
-    scratchDrafts, reportStorageError: (error: unknown) => errors.push(error),
+    scratchDrafts, scratchSaving: false, reportStorageError: (error: unknown) => errors.push(error),
     saveStudyScratchpad: async () => { throw new Error('disk unavailable') },
   })
   await api.saveScratchDrafts()
   assert.equal(scratchDrafts.get('focus'), 'unsaved note')
   assert.equal(errors.length, 1)
+})
+
+test('typing starts persistence immediately without waiting for a debounce timer', () => {
+  let writes = 0
+  const scratchDrafts = new Map<string, string>()
+  const api = handlers('App.vue', ['updateScratchpad'], {
+    activeSession: ref({ id: 'focus', scratchpad: '' }), scratchDrafts,
+    saveScratchDrafts: async () => { writes++ },
+  })
+  api.updateScratchpad('last input before reload')
+  assert.equal(writes, 1)
+  assert.equal(scratchDrafts.get('focus'), 'last input before reload')
+})
+
+test('pending note writes serialize and merge fast typing until the final commit completes', async () => {
+  const scratchDrafts = new Map([['focus', 'first']])
+  const writes: string[] = []
+  let finish!: () => void
+  const committed = new Promise<void>((resolve) => { finish = resolve })
+  const api = handlers('App.vue', ['saveScratchDrafts'], {
+    scratchDrafts, scratchSaving: false, reportStorageError: (error: unknown) => { throw error },
+    saveStudyScratchpad: async (_id: string, value: string) => {
+      writes.push(value)
+      if (value === 'first') await committed
+    },
+  })
+  const saving = api.saveScratchDrafts()
+  scratchDrafts.set('focus', 'middle')
+  await api.saveScratchDrafts()
+  scratchDrafts.set('focus', 'last')
+  await api.saveScratchDrafts()
+  assert.deepEqual(writes, ['first'])
+  assert.equal(scratchDrafts.get('focus'), 'last')
+  finish()
+  await saving
+  assert.deepEqual(writes, ['first', 'last'])
+  assert.equal(scratchDrafts.size, 0)
+})
+
+test('a failed immediate save can be retried without losing the latest draft', async () => {
+  const scratchDrafts = new Map([['focus', 'retry this']])
+  let fail = true
+  const api = handlers('App.vue', ['saveScratchDrafts'], {
+    scratchDrafts, scratchSaving: false, reportStorageError: () => {},
+    saveStudyScratchpad: async () => { if (fail) throw new Error('disk unavailable') },
+  })
+  await api.saveScratchDrafts()
+  assert.equal(scratchDrafts.size, 1)
+  fail = false
+  await api.saveScratchDrafts()
+  assert.equal(scratchDrafts.size, 0)
 })
 
 test('only the current destination owns selection even when previous filters remain', () => {
