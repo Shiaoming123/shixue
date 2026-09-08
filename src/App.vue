@@ -42,7 +42,7 @@ import { loadLastDesktopCalendarView, loadPlanningPreferences, saveLastDesktopCa
 import type { CalendarView } from './domain/calendar/range'
 import { offsetForInstant } from './domain/calendar/target'
 import { loadSidebarPreferences, saveSidebarPreferences, type SidebarPreferences } from './lib/sidebar-preferences'
-import { shouldAutoSelectTask } from './lib/task-detail-layout'
+import { restoreDeletedInlineTaskFocus, shouldAutoSelectTask } from './lib/task-detail-layout'
 import {
   desktopWorkspaceNavigation,
   learningWorkspaceNavigation,
@@ -1261,6 +1261,8 @@ async function deleteTask(taskId: string) {
     await deleteStudyTask(task.id, { expectedRevision: task.revision, eventId: crypto.randomUUID(), now: new Date().toISOString() })
     await refreshState()
     selectedTaskId.value = ''
+    await nextTick()
+    restoreDeletedInlineTaskFocus(window.innerWidth, taskDetailRestoreFocusFallback)
     notify('任务已删除，学习证据仍保留。')
   } catch (error) { reportStorageError(error) }
 }
