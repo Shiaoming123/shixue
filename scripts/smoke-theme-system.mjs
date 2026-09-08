@@ -24,6 +24,10 @@ try {
     await card.click()
     const id = await page.locator('html').getAttribute('data-theme')
     assert.ok(id && id !== 'custom')
+    if (id === 'forest' || id === 'amber') {
+      await page.waitForTimeout(280)
+      await page.screenshot({ path: resolve(output, `desktop-${id}-light.png`), fullPage: true })
+    }
   }
 
   await page.getByRole('button', { name: '跟随系统', exact: true }).click()

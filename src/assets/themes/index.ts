@@ -105,12 +105,13 @@ function labelOn(fill: string) {
   return contrastRatio('#ffffff', fill) >= contrastRatio('#111827', fill) ? '#ffffff' : '#111827'
 }
 
-function palette(primary: string, dark: boolean): ThemeTokens {
+function palette(primary: string, dark: boolean, intensity: number): ThemeTokens {
   const [hue, saturation] = rgbToHsl(hexToRgb(primary))
-  const chroma = Math.max(0.08, Math.min(saturation, 0.42))
-  const bg = hslToHex([hue, chroma, dark ? 0.07 : 0.985])
-  const surface = hslToHex([hue, chroma, dark ? 0.105 : 1])
-  const surfaceAlt = hslToHex([hue, chroma, dark ? 0.155 : 0.955])
+  const tint = clamp(intensity)
+  const chroma = Math.min(saturation, 0.55) * tint
+  const bg = hslToHex([hue, chroma, dark ? 0.055 : 0.985 - 0.025 * tint])
+  const surface = hslToHex([hue, chroma, dark ? 0.095 : 0.998])
+  const surfaceAlt = hslToHex([hue, chroma, dark ? 0.16 + 0.02 * tint : 0.955 - 0.055 * tint])
   const backgrounds = [bg, surface, surfaceAlt]
   const direction = dark ? 'lighten' : 'darken'
   const accent = readableColor(primary, backgrounds, direction)
@@ -122,7 +123,7 @@ function palette(primary: string, dark: boolean): ThemeTokens {
     bg, surface, surfaceAlt,
     text: readableColor(dark ? '#eef2f7' : '#20242c', backgrounds, direction),
     muted: readableColor(dark ? '#aab2c0' : '#626873', backgrounds, direction),
-    border: hslToHex([hue, Math.min(chroma, 0.18), dark ? 0.27 : 0.86]),
+    border: hslToHex([hue, Math.min(chroma, 0.22), dark ? 0.29 + 0.03 * tint : 0.86 - 0.08 * tint]),
     accent, accentAlt,
     accentText: labelOn(accent),
     accentAltText: labelOn(accentAlt),
@@ -132,20 +133,20 @@ function palette(primary: string, dark: boolean): ThemeTokens {
   }
 }
 
-function theme(id: string, name: string, description: string, primary: string): Theme {
-  return { id, name, description, light: palette(primary, false), dark: palette(primary, true) }
+function theme(id: string, name: string, description: string, primary: string, intensity = 1): Theme {
+  return { id, name, description, light: palette(primary, false, intensity), dark: palette(primary, true, intensity) }
 }
 
 export const themes: Theme[] = [
-  theme('paper', '基础浅色', '清晰的白色画布与靛蓝强调', '#4f46e5'),
+  theme('paper', '基础浅色', '清晰的白色画布与靛蓝强调', '#4f46e5', 0.12),
   theme('midnight', '基础深色', '低眩光深色表面与紫色强调', '#8b5cf6'),
-  theme('study', '拾学蓝', '安静、可靠的学习蓝', '#176b91'),
+  theme('study', '拾学蓝', '安静、可靠的学习蓝', '#176b91', 0.72),
   theme('ocean', '海洋蓝', '冷静而清晰的效率配色', '#2563eb'),
   theme('forest', '森林绿', '适合长期阅读与知识整理', '#18794e'),
   theme('amber', '暖阳橙', '温暖、有活力的生活记录配色', '#b45309'),
   theme('violet', '灵感紫', '接近创作工具的鲜明紫色', '#7c3aed'),
   theme('rose', '番茄红', '醒目但克制的行动感配色', '#be185d'),
-  theme('mono', '极简黑白', '接近文档工具的中性黑白', '#262626'),
+  theme('mono', '极简黑白', '接近文档工具的中性黑白', '#262626', 0),
 ]
 
 export function createCustomTheme(primary: string): Theme {
