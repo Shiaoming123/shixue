@@ -4,6 +4,8 @@ export type UpdatePhase =
   | 'idle'
   | 'unconfigured'
   | 'checking'
+  | 'up-to-date'
+  | 'update-available'
   | 'downloading'
   | 'installing'
   | 'error'
@@ -48,7 +50,7 @@ export async function checkForUpdates(
     const update = await check()
     if (!update) {
       onState({
-        phase: 'idle',
+        phase: 'up-to-date',
         percent: 0,
         message: options.silent ? '' : '已经是最新版本',
       })
@@ -56,6 +58,11 @@ export async function checkForUpdates(
     }
 
     const notes = update.body?.trim()
+    onState({
+      phase: 'update-available',
+      percent: 0,
+      message: `发现新版本 ${update.version}`,
+    })
     const confirmed = await ask(
       `发现新版本 ${update.version}${notes ? `\n\n${notes}` : ''}\n\n是否立即下载并安装？`,
       { title: '检查更新', kind: 'info', okLabel: '更新', cancelLabel: '稍后' },

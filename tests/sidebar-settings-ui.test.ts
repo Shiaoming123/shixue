@@ -56,6 +56,17 @@ test('settings exposes only connected appearance, navigation, quick add, data, r
   assert.doesNotMatch(settings, /<select\b/)
 })
 
+test('settings connects a capability-gated manual updater action to the application shell', () => {
+  const app = appSource()
+  const settings = studySource('SettingsView.vue')
+
+  assert.match(app, /hasRuntimeCapability\(runtime, 'native-updater'\)/)
+  assert.match(app, /@check-updates="runUpdateCheck"/)
+  assert.match(settings, /v-if="updaterAvailable"/)
+  assert.match(settings, /@click="emit\('checkUpdates'\)"/)
+  assert.match(settings, /检查更新/)
+})
+
 test('settings separates the lossless JSON backup from the readable Markdown export', () => {
   const app = appSource()
   const settings = studySource('SettingsView.vue')

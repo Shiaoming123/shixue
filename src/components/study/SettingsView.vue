@@ -7,6 +7,7 @@ import {
 import type { PlanningPreferences } from '../../lib/planning-preferences'
 import type { SidebarDisplayMode } from '../../lib/sidebar-preferences'
 import type { WorkspaceStateV3 } from '../../domain/workspace/types'
+import type { UpdateState } from '../../lib/updater'
 import { prepareWorkspaceImport, summarizeWorkspace } from '../../lib/workspace-data-summary'
 import Button from '../ui/Button.vue'
 import Dialog from '../ui/Dialog.vue'
@@ -28,6 +29,8 @@ const props = defineProps<{
   cloudStatus: CloudAccountStatus
   cloudEmail?: string
   cloudMessage?: string
+  updaterAvailable: boolean
+  updateState: UpdateState
   workspace: WorkspaceStateV3 | null
   reminderBusy?: boolean
   reminderMessage?: string
@@ -59,6 +62,7 @@ const emit = defineEmits<{
   cloudSignIn: [email: string, password: string]
   cloudSignOut: []
   cloudSync: []
+  checkUpdates: []
 }>()
 
 const confirmReset = ref(false)
@@ -73,6 +77,7 @@ const resetError = ref('')
 const currentSummary = computed(() => props.workspace ? summarizeWorkspace(props.workspace) : '记录暂时不可用')
 const cloudEmailDraft = ref('')
 const cloudPassword = ref('')
+const updaterBusy = computed(() => ['checking', 'downloading', 'installing'].includes(props.updateState.phase))
 const estimateOptions: ListboxOption[] = [
   { value: 'none', label: '不设置' },
   { value: '15', label: '15 分钟' },
@@ -215,6 +220,15 @@ onMounted(() => pageTitle.value?.focus())
         </div>
         <Switch v-if="autostartAvailable" :model-value="Boolean(autostartEnabled)" :disabled="autostartBusy" label="开机启动" description="跟随系统实际设置" @update:model-value="emit('setLaunchAtLogin', $event)" />
         <p v-if="deviceMessage" role="status">{{ deviceMessage }}</p>
+      </section>
+
+      <section v-if="updaterAvailable" class="settings-section">
+        <div class="section-title"><Download :size="18" /><div><h2>应用更新</h2><p>仅在你主动操作时检查 GitHub Release。</p></div></div>
+        <button class="action-row" type="button" :disabled="updaterBusy" @click="emit('checkUpdates')">
+          <Download :size="18" />
+          <span><strong>{{ updaterBusy ? '正在检查更新…' : '检查更新' }}</strong><small>当前检查不会在启动时自动运行</small></span>
+        </button>
+        <p v-if="updateState.message" :role="updateState.phase === 'error' ? 'alert' : 'status'">{{ updateState.message }}</p>
       </section>
 
       <section class="settings-section settings-section--wide">
