@@ -42,7 +42,7 @@ npm run smoke:android-persistence -- --device emulator-5554 --launch-report <abs
 ```
 
 构建会在忽略的 `src-tauri/gen/android/` 树中生成 debug APK。启动 smoke 只接受绝对 APK 路径和显式 ADB serial，并先验证包名、版本、SDK 与 ABI；随后在模拟器中清理旧安装，以唯一 run id 收集 WebView、原生宿主、Vue、工作区与前端五阶段标记，最后要求 Activity 在前台且 PID 稳定存活。持久化 smoke 复用这份成功启动报告，不重新安装 APK；它通过能力服务写入唯一任务，确认 `force-stop` 后 PID 消失，再要求新进程从 SQLite 恢复同一任务、创建回执和事件。Windows 还需要 Developer Mode（或创建符号链接的等效权限）。
-GitHub 上的手动 `android-debug` workflow 会在干净 runner 中生成工程、冷启动隔离 API 35 x86_64 模拟器、构建和核验 APK，依次执行启动与进程重启持久化 smoke，并保存 APK、两份 JSON 证据与有限诊断日志。它不是签名或商店发布工作流，也不证明模拟器重启或真机恢复。
+GitHub 上的手动 `android-debug` workflow 会在干净 runner 中生成工程、冷启动隔离 API 35 x86_64 模拟器、构建和核验 APK，依次执行启动、SQLite 进程重启持久化与真实 WebView 学习闭环 smoke，并保存 APK、JSON、截图与有限诊断日志。它不是签名或商店发布工作流，也不证明模拟器重启或真机恢复。
 
 ## 发布前的人工输入
 
