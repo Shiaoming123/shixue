@@ -458,15 +458,15 @@ test('sidebar failure keeps selection and never reports restoration success', ()
   assert.equal(messages.at(-1), '已恢复默认菜单顺序。')
 })
 
-test('appearance persistence failure leaves the displayed and selected theme unchanged', () => {
-  const appearanceDark = ref(false)
+test('theme persistence failure leaves the displayed and selected theme unchanged', () => {
+  const themePreference = ref({ themeId: 'study', mode: 'light', customPrimary: '#176b91' })
   let applied = 0
   const messages: string[] = []
-  const api = handlers('App.vue', ['setAppearance'], {
-    appearanceDark, applyTheme: () => applied++, localStorage: { setItem() { throw Error('quota') } }, notify: (message: string) => messages.push(message),
+  const api = handlers('App.vue', ['setThemePreference'], {
+    themePreference, applyThemePreference: () => applied++, saveThemePreference() { throw Error('quota') }, notify: (message: string) => messages.push(message),
   })
-  api.setAppearance('dark')
-  assert.equal(appearanceDark.value, false)
+  api.setThemePreference({ mode: 'dark' })
+  assert.deepEqual(themePreference.value, { themeId: 'study', mode: 'light', customPrimary: '#176b91' })
   assert.equal(applied, 0)
   assert.equal(messages.length, 1)
 })
@@ -515,9 +515,9 @@ test('denied preference access does not prevent workspace initialization', async
   const messages: string[] = []
   const ports = {
     window: { addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
-    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
+    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, remindersEnabled: ref(false),
     localStorage: { getItem() { throw Error('SecurityError') } }, notify: (message: string) => messages.push(message),
-    applyTheme() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }),
+    applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }), appearanceMedia: undefined, systemDark: ref(false), onAppearanceChange() {},
     compactMedia: undefined, compact: ref(false), onCompactChange() {},
     refreshState: async () => { loaded++ }, state: ref({ topics: [] }), selectedTopicId: ref(''), showFocus: ref(false), activeSession: ref(null),
     reportSmokePhase: async () => {}, runNativeAndroidPersistenceSmoke: async () => null, capabilityService: {},
@@ -538,8 +538,8 @@ test('unmount during native initialization cannot install timers after teardown'
   const js = ts.transpileModule(`const mounted = ${callback.getText(source)}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   const ports = {
     window: { addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
-    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, appearanceDark: ref(false), remindersEnabled: ref(false),
-    localStorage: { getItem: () => null }, notify() {}, applyTheme() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }),
+    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, remindersEnabled: ref(false),
+    localStorage: { getItem: () => null }, notify() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }), appearanceMedia: undefined, systemDark: ref(false), onAppearanceChange() {},
     compactMedia: undefined, compact: ref(false), onCompactChange() {}, refreshState: async () => {}, state: ref({ topics: [] }), selectedTopicId: ref(''), showFocus: ref(false), activeSession: ref(null),
     reportSmokePhase: async () => {}, runNativeAndroidPersistenceSmoke: async () => null, capabilityService: {},
     reportStorageError(error: unknown) { throw error }, loading: ref(true), cloudAvailable: false, runtime: { platform: 'desktop' },

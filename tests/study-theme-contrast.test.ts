@@ -1,27 +1,28 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getTheme } from '../src/assets/themes/index.ts'
+import { contrastRatio, createCustomTheme, getTheme, themes } from '../src/assets/themes/index.ts'
 
-function luminance(hex: string) {
-  const channels = hex.slice(1).match(/../g)!.map((part) => parseInt(part, 16) / 255)
-    .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
-  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
-}
-
-function contrast(foreground: string, background: string) {
-  const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a)
-  return (values[0] + 0.05) / (values[1] + 0.05)
-}
-
-for (const mode of ['light', 'dark'] as const) {
-  test(`study ${mode}: small functional text remains readable on all content surfaces`, () => {
-    const tokens = getTheme('study')[mode]
-    for (const role of ['text', 'muted', 'accent', 'success', 'warning', 'danger'] as const) {
-      for (const background of ['bg', 'surface', 'surfaceAlt'] as const) {
-        assert.ok(contrast(tokens[role], tokens[background]) >= 4.5, `${role} on ${background}`)
-      }
+function assertReadable(tokens: ReturnType<typeof getTheme>['light']) {
+  for (const role of ['text', 'muted', 'accent', 'accentAlt', 'success', 'warning', 'danger'] as const) {
+    for (const background of ['bg', 'surface', 'surfaceAlt'] as const) {
+      assert.ok(contrastRatio(tokens[role], tokens[background]) >= 4.5, `${role} on ${background}`)
     }
-    assert.ok(contrast(tokens.accentText, tokens.accent) >= 4.5, 'primary action label')
-    assert.ok(contrast(tokens.dangerText!, tokens.danger) >= 4.5, 'destructive action label')
-  })
+  }
+  for (const [label, fill] of [['accentText', 'accent'], ['accentAltText', 'accentAlt'], ['successText', 'success'], ['warningText', 'warning'], ['dangerText', 'danger']] as const) {
+    assert.ok(contrastRatio(tokens[label], tokens[fill]) >= 4.5, `${label} on ${fill}`)
+  }
 }
+
+test('all preset palettes are distinct and readable', () => {
+  assert.ok(themes.length >= 7)
+  assert.equal(new Set(themes.map((theme) => theme.id)).size, themes.length)
+  assert.equal(new Set(themes.map((theme) => theme.light.accent)).size, themes.length)
+  for (const theme of themes) { assertReadable(theme.light); assertReadable(theme.dark) }
+})
+
+test('custom primary generates readable light and dark palettes', () => {
+  for (const primary of ['#ffffff', '#000000', '#22c55e', '#ff1493']) {
+    const theme = createCustomTheme(primary)
+    assertReadable(theme.light); assertReadable(theme.dark)
+  }
+})

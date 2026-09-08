@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Search, Settings } from '@lucide/vue'
-import { applyTheme } from './assets/themes'
+import {
+  applyThemePreference,
+  loadThemePreference,
+  prefersDark,
+  resolveThemeDark,
+  saveThemePreference,
+  type ThemeMode,
+  type ThemePreference,
+} from './assets/themes/apply'
 import AppSidebar, { type StudySmartViewCounts } from './components/study/AppSidebar.vue'
 import BottomTabs from './components/study/BottomTabs.vue'
 import CalendarWorkspace from './components/calendar/CalendarWorkspace.vue'
@@ -183,7 +191,9 @@ const reviewMode = ref<'review' | 'records'>('review')
 const reviewTargetLinkId = ref('')
 const recordTarget = ref<{ id: string; requestId: number }>()
 let recordTargetRequestId = 0
-const appearanceDark = ref(false)
+const themePreference = ref<ThemePreference>(loadThemePreference())
+const systemDark = ref(prefersDark())
+const appearanceDark = computed(() => resolveThemeDark(themePreference.value.mode, systemDark.value))
 const compact = ref(false)
 const clock = ref(Date.now())
 const calendarTargetOffset = computed(() => offsetForInstant(new Date(clock.value)))
@@ -272,6 +282,7 @@ const scratchNotes = new Map<string, string>()
 let refreshVersion = 0
 let appliedRefreshVersion = 0
 let compactMedia: MediaQueryList | undefined
+let appearanceMedia: MediaQueryList | undefined
 
 const today = computed(() => new Date(clock.value).toLocaleDateString('sv-SE'))
 const dateLabel = computed(() => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(clock.value)).replace('星期', '周'))
@@ -456,13 +467,14 @@ onMounted(async () => {
   window.addEventListener('shixue:module-error', handleModuleError)
   window.addEventListener('keydown', handleGlobalSearchShortcut)
   try {
-    appearanceDark.value = localStorage.getItem('meow-study-appearance') === 'dark'
     remindersEnabled.value = localStorage.getItem('meow-study-reminders') === 'enabled'
   } catch {
     notify('设备偏好暂时无法读取，已使用默认显示设置；学习记录仍可打开。')
   }
-  applyTheme('study', appearanceDark.value)
   applyReducedGlass(planningPreferences.value.reducedGlassOverride)
+  appearanceMedia = window.matchMedia('(prefers-color-scheme: dark)')
+  systemDark.value = appearanceMedia.matches
+  appearanceMedia.addEventListener('change', onAppearanceChange)
   compactMedia = window.matchMedia('(max-width: 819px)')
   compact.value = compactMedia.matches
   compactMedia.addEventListener('change', onCompactChange)
@@ -495,6 +507,7 @@ onUnmounted(() => {
   if (reminderTimer) clearInterval(reminderTimer)
   if (cloudTimer) clearInterval(cloudTimer)
   if (cloudDebounceTimer) clearTimeout(cloudDebounceTimer)
+  appearanceMedia?.removeEventListener('change', onAppearanceChange)
   compactMedia?.removeEventListener('change', onCompactChange)
   window.removeEventListener('shixue:quick-add', handleQuickAdd)
   window.removeEventListener('shixue:module-error', handleModuleError)
@@ -1653,13 +1666,18 @@ async function resetDemo(complete: (success: boolean) => void) {
     complete(true)
   } catch (error) { reportStorageError(error); complete(false) }
 }
-function setAppearance(mode: 'light' | 'dark') {
+function setThemePreference(patch: Partial<ThemePreference>) {
   try {
-    localStorage.setItem('meow-study-appearance', mode)
-    appearanceDark.value = mode === 'dark'
-    applyTheme('study', appearanceDark.value)
+    const next = { ...themePreference.value, ...patch }
+    saveThemePreference(next)
+    themePreference.value = next
+    applyThemePreference(next)
   } catch { notify('外观设置未能保存，请重试。') }
 }
+function setTheme(themeId: string) { setThemePreference({ themeId }) }
+function setThemeMode(mode: ThemeMode) { setThemePreference({ mode }) }
+function setCustomPrimary(customPrimary: string) { setThemePreference({ themeId: 'custom', customPrimary }) }
+function onAppearanceChange(event: MediaQueryListEvent) { systemDark.value = event.matches }
 function updatePlanningPreferences(patch: Partial<PlanningPreferences>) {
   try {
     planningPreferences.value = savePlanningPreferences(patch)
@@ -1781,7 +1799,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
           <TaskDetailDrawer :task="selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
           </div>
         </template>
-        <SettingsView v-else-if="page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export-json="exportJsonData" @export-markdown="exportMarkdownData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-appearance="setAppearance" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
+        <SettingsView v-else-if="page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :theme-id="themePreference.themeId" :theme-mode="themePreference.mode" :custom-primary="themePreference.customPrimary" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export-json="exportJsonData" @export-markdown="exportMarkdownData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-theme="setTheme" @set-theme-mode="setThemeMode" @set-custom-primary="setCustomPrimary" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
         <div v-else-if="destination.kind === 'learning'" class="route-workspace">
           <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
           <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />

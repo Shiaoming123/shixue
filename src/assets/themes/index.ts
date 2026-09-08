@@ -1,15 +1,4 @@
-/**
- * 设计系统 tokens。
- *
- * 分两层：
- * 1. 语义色（semantic color）：每套主题提供 light / dark 两套，跟随主题切换。
- * 2. 结构 token（spacing / radius / font / shadow / motion / z）：与主题无关，
- *    在 global.css 里一次性定义，全主题共享。
- *
- * 设计原则：结构 token 保证「任何主题下组件间距、圆角、动效都一致」，
- * 语义色只负责「换肤」，两者解耦，扩展新主题时只需补一套色板。
- */
-
+/** Semantic colour tokens. Layout, type and motion tokens stay in global.css. */
 export interface ThemeTokens {
   bg: string
   surface: string
@@ -18,11 +7,15 @@ export interface ThemeTokens {
   muted: string
   border: string
   accent: string
+  accentAlt: string
   accentText: string
+  accentAltText: string
   success: string
+  successText: string
   warning: string
+  warningText: string
   danger: string
-  dangerText?: string
+  dangerText: string
 }
 
 export interface Theme {
@@ -33,194 +26,152 @@ export interface Theme {
   dark: ThemeTokens
 }
 
-export const themes: Theme[] = [
-  {
-    id: 'study',
-    name: '拾学 Soft Surface',
-    description: '轻白表面、细边界与安静的蓝色强调',
-    light: {
-      bg: '#ffffff',
-      surface: '#ffffff',
-      surfaceAlt: '#f6f7f9',
-      text: '#27272a',
-      muted: '#62626b',
-      border: '#ecebef',
-      accent: '#176b91',
-      accentText: '#ffffff',
-      success: '#317347',
-      warning: '#8a5c0b',
-      danger: '#aa403a',
-      dangerText: '#ffffff',
-    },
-    dark: {
-      bg: '#141619',
-      surface: '#1c1f23',
-      surfaceAlt: '#272b30',
-      text: '#edf0f3',
-      muted: '#a8afb8',
-      border: '#383e46',
-      accent: '#84c9e6',
-      accentText: '#112731',
-      success: '#72c487',
-      warning: '#e6a643',
-      danger: '#ef776e',
-      dangerText: '#0d1518',
-    },
-  },
-  {
-    id: 'ocean',
-    name: '海洋蓝',
-    description: '专业、冷静，适合开发者工具与效率应用',
-    light: {
-      bg: '#f5f7fb',
-      surface: '#ffffff',
-      surfaceAlt: '#eef2f9',
-      text: '#1a2233',
-      muted: '#5c6b83',
-      border: 'rgba(20, 40, 80, 0.12)',
-      accent: '#2f6feb',
-      accentText: '#ffffff',
-      success: '#18a058',
-      warning: '#d97b12',
-      danger: '#d64545',
-    },
-    dark: {
-      bg: '#0f1620',
-      surface: '#1a2333',
-      surfaceAlt: '#232f45',
-      text: '#e6ecf5',
-      muted: '#8b9bb5',
-      border: 'rgba(150, 175, 220, 0.16)',
-      accent: '#5b8cff',
-      accentText: '#0c1a35',
-      success: '#4ad88a',
-      warning: '#f0a53e',
-      danger: '#f27070',
-    },
-  },
-  {
-    id: 'forest',
-    name: '森林绿',
-    description: '清爽、柔和，适合笔记与知识管理类应用',
-    light: {
-      bg: '#f4f8f4',
-      surface: '#ffffff',
-      surfaceAlt: '#e9f2e9',
-      text: '#1c2b1f',
-      muted: '#5c7160',
-      border: 'rgba(30, 80, 40, 0.12)',
-      accent: '#2f9e5f',
-      accentText: '#ffffff',
-      success: '#2f9e5f',
-      warning: '#c98a12',
-      danger: '#d64545',
-    },
-    dark: {
-      bg: '#101710',
-      surface: '#1a231a',
-      surfaceAlt: '#243026',
-      text: '#e4ede4',
-      muted: '#8aa08c',
-      border: 'rgba(140, 190, 150, 0.16)',
-      accent: '#4ad88a',
-      accentText: '#0c2a18',
-      success: '#4ad88a',
-      warning: '#e8b84a',
-      danger: '#f27070',
-    },
-  },
-  {
-    id: 'amber',
-    name: '暖阳橙',
-    description: '温暖、有活力，适合创意与生活记录类应用',
-    light: {
-      bg: '#fdf8f1',
-      surface: '#ffffff',
-      surfaceAlt: '#f8efe2',
-      text: '#2a2217',
-      muted: '#7a6a54',
-      border: 'rgba(140, 100, 40, 0.14)',
-      accent: '#e07a1f',
-      accentText: '#ffffff',
-      success: '#2f9e5f',
-      warning: '#d97b12',
-      danger: '#d64545',
-    },
-    dark: {
-      bg: '#1a130c',
-      surface: '#241b10',
-      surfaceAlt: '#312517',
-      text: '#f2e8d8',
-      muted: '#a8937a',
-      border: 'rgba(220, 180, 120, 0.16)',
-      accent: '#f0a53e',
-      accentText: '#2a1a08',
-      success: '#4ad88a',
-      warning: '#f0a53e',
-      danger: '#f27070',
-    },
-  },
-  {
-    id: 'mono',
-    name: '极简黑白',
-    description: '克制、中性，适合写作与专注类应用',
-    light: {
-      bg: '#fafafa',
-      surface: '#ffffff',
-      surfaceAlt: '#f0f0f0',
-      text: '#1a1a1a',
-      muted: '#737373',
-      border: 'rgba(0, 0, 0, 0.14)',
-      accent: '#111111',
-      accentText: '#ffffff',
-      success: '#2f9e5f',
-      warning: '#d97b12',
-      danger: '#d64545',
-    },
-    dark: {
-      bg: '#0d0d0d',
-      surface: '#171717',
-      surfaceAlt: '#222222',
-      text: '#ededed',
-      muted: '#8a8a8a',
-      border: 'rgba(255, 255, 255, 0.14)',
-      accent: '#e8e8e8',
-      accentText: '#0d0d0d',
-      success: '#4ad88a',
-      warning: '#f0a53e',
-      danger: '#f27070',
-    },
-  },
-]
+type RGB = [number, number, number]
+type HSL = [number, number, number]
 
-export function getTheme(id: string): Theme {
-  return themes.find((t) => t.id === id) ?? themes[0]
+const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value))
+
+function normalizeHex(value: string) {
+  const match = value.trim().match(/^#?([\da-f]{3}|[\da-f]{6})$/i)
+  if (!match) return '#176b91'
+  const raw = match[1].length === 3 ? [...match[1]].map((part) => part + part).join('') : match[1]
+  return `#${raw.toLowerCase()}`
 }
 
-/**
- * 将主题语义色写入 CSS 变量。
- * 结构 token（spacing/radius/…）在 global.css 静态定义，这里不重复写。
- */
-export function applyTheme(id: string, dark: boolean) {
-  const theme = getTheme(id)
-  const tokens = dark ? theme.dark : theme.light
+function hexToRgb(value: string): RGB {
+  const hex = normalizeHex(value).slice(1)
+  return [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16)) as RGB
+}
+
+function rgbToHex([red, green, blue]: RGB) {
+  return `#${[red, green, blue].map((value) => Math.round(clamp(value, 0, 255)).toString(16).padStart(2, '0')).join('')}`
+}
+
+function rgbToHsl([red, green, blue]: RGB): HSL {
+  const [r, g, b] = [red, green, blue].map((value) => value / 255)
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const lightness = (max + min) / 2
+  if (max === min) return [0, 0, lightness]
+  const delta = max - min
+  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min)
+  const hue = max === r
+    ? ((g - b) / delta + (g < b ? 6 : 0)) / 6
+    : max === g ? ((b - r) / delta + 2) / 6 : ((r - g) / delta + 4) / 6
+  return [hue * 360, saturation, lightness]
+}
+
+function hslToHex([hue, saturation, lightness]: HSL) {
+  const h = ((hue % 360) + 360) % 360 / 360
+  if (saturation === 0) return rgbToHex([lightness * 255, lightness * 255, lightness * 255])
+  const q = lightness < 0.5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation
+  const p = 2 * lightness - q
+  const channel = (offset: number) => {
+    let t = h + offset
+    if (t < 0) t += 1
+    if (t > 1) t -= 1
+    if (t < 1 / 6) return p + (q - p) * 6 * t
+    if (t < 1 / 2) return q
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
+    return p
+  }
+  return rgbToHex([channel(1 / 3) * 255, channel(0) * 255, channel(-1 / 3) * 255])
+}
+
+function luminance(value: string) {
+  const [red, green, blue] = hexToRgb(value).map((channel) => {
+    const normalized = channel / 255
+    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4
+  })
+  return red * 0.2126 + green * 0.7152 + blue * 0.0722
+}
+
+export function contrastRatio(foreground: string, background: string) {
+  const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a)
+  return (values[0] + 0.05) / (values[1] + 0.05)
+}
+
+function readableColor(value: string, backgrounds: string[], direction: 'darken' | 'lighten') {
+  const [hue, saturation, initialLightness] = rgbToHsl(hexToRgb(value))
+  for (let step = 0; step <= 100; step += 1) {
+    const lightness = clamp(initialLightness + (direction === 'lighten' ? step : -step) / 100)
+    const candidate = hslToHex([hue, saturation, lightness])
+    if (backgrounds.every((background) => contrastRatio(candidate, background) >= 4.5)) return candidate
+  }
+  return direction === 'lighten' ? '#ffffff' : '#000000'
+}
+
+function labelOn(fill: string) {
+  return contrastRatio('#ffffff', fill) >= contrastRatio('#111827', fill) ? '#ffffff' : '#111827'
+}
+
+function palette(primary: string, dark: boolean): ThemeTokens {
+  const [hue, saturation] = rgbToHsl(hexToRgb(primary))
+  const chroma = Math.max(0.08, Math.min(saturation, 0.42))
+  const bg = hslToHex([hue, chroma, dark ? 0.07 : 0.985])
+  const surface = hslToHex([hue, chroma, dark ? 0.105 : 1])
+  const surfaceAlt = hslToHex([hue, chroma, dark ? 0.155 : 0.955])
+  const backgrounds = [bg, surface, surfaceAlt]
+  const direction = dark ? 'lighten' : 'darken'
+  const accent = readableColor(primary, backgrounds, direction)
+  const accentAlt = readableColor(hslToHex([hue + 42, Math.max(saturation, 0.55), dark ? 0.62 : 0.42]), backgrounds, direction)
+  const success = readableColor('#18864b', backgrounds, direction)
+  const warning = readableColor('#a85d00', backgrounds, direction)
+  const danger = readableColor('#b42318', backgrounds, direction)
+  return {
+    bg, surface, surfaceAlt,
+    text: readableColor(dark ? '#eef2f7' : '#20242c', backgrounds, direction),
+    muted: readableColor(dark ? '#aab2c0' : '#626873', backgrounds, direction),
+    border: hslToHex([hue, Math.min(chroma, 0.18), dark ? 0.27 : 0.86]),
+    accent, accentAlt,
+    accentText: labelOn(accent),
+    accentAltText: labelOn(accentAlt),
+    success, successText: labelOn(success),
+    warning, warningText: labelOn(warning),
+    danger, dangerText: labelOn(danger),
+  }
+}
+
+function theme(id: string, name: string, description: string, primary: string): Theme {
+  return { id, name, description, light: palette(primary, false), dark: palette(primary, true) }
+}
+
+export const themes: Theme[] = [
+  theme('paper', '基础浅色', '清晰的白色画布与靛蓝强调', '#4f46e5'),
+  theme('midnight', '基础深色', '低眩光深色表面与紫色强调', '#8b5cf6'),
+  theme('study', '拾学蓝', '安静、可靠的学习蓝', '#176b91'),
+  theme('ocean', '海洋蓝', '冷静而清晰的效率配色', '#2563eb'),
+  theme('forest', '森林绿', '适合长期阅读与知识整理', '#18794e'),
+  theme('amber', '暖阳橙', '温暖、有活力的生活记录配色', '#b45309'),
+  theme('violet', '灵感紫', '接近创作工具的鲜明紫色', '#7c3aed'),
+  theme('rose', '番茄红', '醒目但克制的行动感配色', '#be185d'),
+  theme('mono', '极简黑白', '接近文档工具的中性黑白', '#262626'),
+]
+
+export function createCustomTheme(primary: string): Theme {
+  const normalized = normalizeHex(primary)
+  return theme('custom', '自定义', `基于 ${normalized} 自动生成`, normalized)
+}
+
+export function getTheme(id: string): Theme {
+  return themes.find((item) => item.id === id) ?? themes.find((item) => item.id === 'study')!
+}
+
+export function applyTheme(id: string, dark: boolean, customPrimary?: string) {
+  const selected = id === 'custom' ? createCustomTheme(customPrimary ?? '#176b91') : getTheme(id)
+  const tokens = dark ? selected.dark : selected.light
   const root = document.documentElement
-  root.dataset.theme = id
+  root.dataset.theme = selected.id
   root.dataset.mode = dark ? 'dark' : 'light'
   root.style.colorScheme = dark ? 'dark' : 'light'
   const map: Record<string, string> = {
-    '--bg': tokens.bg,
-    '--surface': tokens.surface,
-    '--surface-alt': tokens.surfaceAlt,
-    '--text': tokens.text,
-    '--muted': tokens.muted,
-    '--border': tokens.border,
-    '--accent': tokens.accent,
-    '--accent-text': tokens.accentText,
-    '--success': tokens.success,
-    '--warning': tokens.warning,
-    '--danger': tokens.danger,
-    '--danger-text': tokens.dangerText ?? '#ffffff',
+    '--bg': tokens.bg, '--surface': tokens.surface, '--surface-alt': tokens.surfaceAlt,
+    '--text': tokens.text, '--muted': tokens.muted, '--border': tokens.border,
+    '--accent': tokens.accent, '--accent-alt': tokens.accentAlt,
+    '--accent-text': tokens.accentText, '--accent-alt-text': tokens.accentAltText,
+    '--success': tokens.success, '--success-text': tokens.successText,
+    '--warning': tokens.warning, '--warning-text': tokens.warningText,
+    '--danger': tokens.danger, '--danger-text': tokens.dangerText,
   }
-  for (const [k, v] of Object.entries(map)) root.style.setProperty(k, v)
+  for (const [key, value] of Object.entries(map)) root.style.setProperty(key, value)
 }

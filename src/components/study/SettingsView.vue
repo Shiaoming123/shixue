@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef } from 'vue'
 import {
-  Bell, Cloud, Download, Eye, FileJson, FileText, Moon, PanelLeft, RotateCcw, ShieldCheck,
-  Sun, Upload,
+  Bell, Cloud, Download, Eye, FileJson, FileText, Monitor, Moon, PanelLeft, RotateCcw,
+  ShieldCheck, Sun, Upload,
 } from '@lucide/vue'
+import { themes } from '../../assets/themes'
 import type { PlanningPreferences } from '../../lib/planning-preferences'
 import type { SidebarDisplayMode } from '../../lib/sidebar-preferences'
 import type { WorkspaceStateV3 } from '../../domain/workspace/types'
@@ -17,6 +18,9 @@ export type CloudAccountStatus = 'signed-out' | 'signed-in' | 'syncing' | 'faile
 
 const props = defineProps<{
   dark: boolean
+  themeId: string
+  themeMode: 'system' | 'light' | 'dark'
+  customPrimary: string
   remindersAvailable: boolean
   remindersEnabled: boolean
   quickAddRemoveRecognizedText: boolean
@@ -46,7 +50,9 @@ const emit = defineEmits<{
   import: [content: string, complete: (success: boolean) => void]
   resetDemo: [complete: (success: boolean) => void]
   resetSidebarOrder: []
-  setAppearance: [mode: 'light' | 'dark']
+  setTheme: [id: string]
+  setThemeMode: [mode: 'system' | 'light' | 'dark']
+  setCustomPrimary: [color: string]
   setReminders: [enabled: boolean]
   testNotification: []
   openReminders: []
@@ -73,6 +79,10 @@ const resetError = ref('')
 const currentSummary = computed(() => props.workspace ? summarizeWorkspace(props.workspace) : '记录暂时不可用')
 const cloudEmailDraft = ref('')
 const cloudPassword = ref('')
+const themePreviews = computed(() => themes.map((theme) => ({
+  ...theme,
+  preview: props.dark ? theme.dark : theme.light,
+})))
 const estimateOptions: ListboxOption[] = [
   { value: 'none', label: '不设置' },
   { value: '15', label: '15 分钟' },
@@ -142,6 +152,9 @@ function signIn() {
   cloudPassword.value = ''
 }
 function setDefaultEstimate(value: string) { emit('setDefaultEstimateMinutes', value === 'none' ? null : Number(value)) }
+function setCustomPrimary(event: Event) {
+  emit('setCustomPrimary', (event.target as HTMLInputElement).value)
+}
 onMounted(() => pageTitle.value?.focus())
 </script>
 
@@ -156,13 +169,46 @@ onMounted(() => pageTitle.value?.focus())
     </header>
 
     <div class="settings-grid">
-      <section class="settings-section">
+      <section class="settings-section settings-section--wide">
         <div class="section-title"><Eye :size="18" /><div><h2>外观与显示</h2><p>更改会立即应用到当前设备。</p></div></div>
         <div class="setting-block">
-          <span class="setting-label">颜色模式</span>
-          <div class="segmented" role="group" aria-label="颜色模式">
-            <button type="button" :class="{ active: !dark }" :aria-pressed="!dark" @click="emit('setAppearance', 'light')"><Sun :size="17" />浅色</button>
-            <button type="button" :class="{ active: dark }" :aria-pressed="dark" @click="emit('setAppearance', 'dark')"><Moon :size="17" />深色</button>
+          <span class="setting-label">配色方案</span>
+          <div class="theme-grid" role="group" aria-label="配色方案">
+            <button
+              v-for="theme in themePreviews"
+              :key="theme.id"
+              type="button"
+              class="theme-card"
+              :class="{ active: themeId === theme.id }"
+              :aria-pressed="themeId === theme.id"
+              :style="{
+                '--preview-bg': theme.preview.bg,
+                '--preview-surface': theme.preview.surfaceAlt,
+                '--preview-accent': theme.preview.accent,
+              }"
+              @click="emit('setTheme', theme.id)"
+            >
+              <span class="theme-swatches" aria-hidden="true"><i /><i /><i /></span>
+              <span><strong>{{ theme.name }}</strong><small>{{ theme.description }}</small></span>
+            </button>
+            <label
+              class="theme-card theme-card--custom"
+              :class="{ active: themeId === 'custom' }"
+              :style="{ '--preview-bg': 'var(--bg)', '--preview-surface': 'var(--surface-alt)', '--preview-accent': customPrimary }"
+              @click="emit('setTheme', 'custom')"
+            >
+              <input :value="customPrimary" type="color" aria-label="选择自定义主色" @input="setCustomPrimary" />
+              <span class="theme-swatches" aria-hidden="true"><i /><i /><i /></span>
+              <span><strong>自定义</strong><small>{{ customPrimary.toUpperCase() }} · 自动协调背景与状态色</small></span>
+            </label>
+          </div>
+        </div>
+        <div class="setting-block">
+          <span class="setting-label">显示模式</span>
+          <div class="segmented segmented--three" role="group" aria-label="显示模式">
+            <button type="button" :class="{ active: themeMode === 'system' }" :aria-pressed="themeMode === 'system'" @click="emit('setThemeMode', 'system')"><Monitor :size="17" />跟随系统</button>
+            <button type="button" :class="{ active: themeMode === 'light' }" :aria-pressed="themeMode === 'light'" @click="emit('setThemeMode', 'light')"><Sun :size="17" />浅色</button>
+            <button type="button" :class="{ active: themeMode === 'dark' }" :aria-pressed="themeMode === 'dark'" @click="emit('setThemeMode', 'dark')"><Moon :size="17" />深色</button>
           </div>
         </div>
       </section>
@@ -281,8 +327,22 @@ onMounted(() => pageTitle.value?.focus())
 .section-title p { margin: 3px 0 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.5; }
 .setting-block { padding-top: var(--space-4); }
 .setting-label { display: block; margin-bottom: var(--space-2); color: var(--muted); font-size: var(--text-xs); font-weight: 600; }
+.theme-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.theme-card { position: relative; min-width: 0; min-height: 112px; display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); padding: var(--space-3); overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); text-align: left; cursor: pointer; transition: border-color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease); }
+.theme-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.theme-card.active { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }
+.theme-card:focus-visible, .theme-card--custom:focus-within { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.theme-card > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.theme-card strong { overflow: hidden; font-size: var(--text-sm); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.theme-card small { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: var(--text-xs); line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.theme-swatches { height: 34px; display: grid; grid-template-columns: 1.5fr 1fr 1fr; overflow: hidden; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--preview-bg); }
+.theme-swatches i { background: var(--preview-bg); }
+.theme-swatches i:nth-child(2) { background: var(--preview-surface); }
+.theme-swatches i:nth-child(3) { background: var(--preview-accent); }
+.theme-card--custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .medium-mode-note { display: none; margin: 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.5; }
 .segmented { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-lg); background: var(--control-fill); }
+.segmented--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .segmented button { min-height: 40px; display: flex; align-items: center; justify-content: center; gap: var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--muted); font-size: var(--text-sm); }
 .segmented button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 .setting-row, .action-row { width: 100%; min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 2px; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--text); text-align: left; }
@@ -321,9 +381,10 @@ onMounted(() => pageTitle.value?.focus())
   .page-header { margin-bottom: var(--space-6); }.page-header h1 { font-size: 24px; }.page-header p { max-width: 240px; }.local-badge { display: none; }
   .settings-grid { grid-template-columns: 1fr; gap: var(--space-4); }.settings-section--wide { grid-column: auto; }
   .settings-section { padding: var(--space-4); }
+  .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .data-actions { grid-template-columns: 1fr; }.confirm-row, .cloud-session { align-items: stretch; flex-direction: column; }.confirm-row > div, .cloud-session > div { justify-content: flex-end; }
   .cloud-form { grid-template-columns: 1fr; }.cloud-form > p { grid-column: auto; }
 }
 @media (min-width: 820px) and (max-width: 1279px) { .sidebar-mode-control .segmented { display: none; }.medium-mode-note { display: block; } }
-@media (max-width: 420px) { .setting-row { align-items: stretch; flex-direction: column; }.setting-row :deep(.listbox) { width: 100%; flex-basis: auto; }.segmented button { font-size: var(--text-xs); } }
+@media (max-width: 420px) { .setting-row { align-items: stretch; flex-direction: column; }.setting-row :deep(.listbox) { width: 100%; flex-basis: auto; }.segmented button { gap: var(--space-1); font-size: var(--text-xs); }.theme-grid { grid-template-columns: 1fr; } }
 </style>

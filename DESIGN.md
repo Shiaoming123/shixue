@@ -1,5 +1,9 @@
 # 拾学时间规划视觉合同
 
+## 主题定制实验扩展
+
+`exp/soft-surface-ui` 允许用户在 9 套配色和自定义主色之间切换；配色方案与 `system / light / dark` 显示模式相互独立。所有页面继续只消费 `--bg / --surface / --surface-alt / --text / --muted / --border / --accent / --accent-alt / --success / --warning / --danger` 及对应文本色。自定义色板必须在常用三层背景上保持正文、次要文字、强调色和状态色至少 4.5:1；设置页色卡与原生取色语义控件需键盘可达，切换遵循全局 motion 与 reduced-motion 规则。
+
 ## Soft Surface 实验覆盖合同
 
 用户本次明确授权 `exp/soft-surface-ui` 全核心页视觉实验；仅本分支以下取值优先于历史 LOCKED 材质与品牌描述。基线为 `fdba96e`，信息架构、能力服务和学习完成语义保持原样。

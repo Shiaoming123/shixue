@@ -1,5 +1,9 @@
 # 拾学视觉验收矩阵
 
+## 主题系统实验
+
+运行 `node scripts/smoke-theme-system.mjs http://127.0.0.1:18476/`，逐一切换全部预设，并验证系统模式联动、自定义主色、刷新持久化、语义色对比度、控制台错误及桌面/移动设置页截图。证据输出到 `artifacts/theme-system/`；该证据属于 Web 实现，不替代原生壳验证。
+
 ## Soft Surface 实验
 
 本分支按用户授权执行新模式，合同见 DESIGN.md 的实验覆盖节。

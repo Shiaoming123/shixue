@@ -288,7 +288,7 @@ onUnmounted(() => settleApproval(false))
 
 .chat-input .stop {
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-text);
 }
 
 .approval-tool {

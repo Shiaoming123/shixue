@@ -110,7 +110,7 @@ defineEmits<{ click: [e: MouseEvent] }>()
 
 .btn--danger {
   background: var(--danger);
-  color: var(--danger-text, #fff);
+  color: var(--danger-text);
 }
 .btn--danger:hover:not(:disabled) {
   filter: brightness(0.94);

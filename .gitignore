@@ -16,6 +16,7 @@ playwright-report/
 test-results/
 artifacts/visual-qa/
 artifacts/soft-surface/
+artifacts/theme-system/
 .nyc_output/
 *.local
 .env

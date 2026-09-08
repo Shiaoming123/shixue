@@ -49,9 +49,14 @@
   --border: rgba(38, 55, 43, 0.16);
   --accent: #3f6b45;
   --accent-text: #ffffff;
+  --accent-alt: #466650;
+  --accent-alt-text: #ffffff;
   --success: #3f6b45;
+  --success-text: #ffffff;
   --warning: #c28618;
+  --warning-text: #181c19;
   --danger: #b4473f;
+  --danger-text: #ffffff;
 
   /* ---- 结构 token：间距（4px 基准） ---- */
   --space-1: 4px;
@@ -140,6 +145,13 @@ html {
 body {
   min-height: 100vh;
   min-height: 100dvh;
+}
+
+body,
+#app {
+  transition:
+    background-color var(--motion-base) var(--ease),
+    color var(--motion-fast) var(--ease);
 }
 
 h1,
