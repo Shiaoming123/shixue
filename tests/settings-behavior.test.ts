@@ -739,7 +739,7 @@ test('learning reminder completion opens evidence entry without completing eithe
   const completionOpen = ref(false)
   const completionReminderId = ref('')
   const reminderCenterOpen = ref(true)
-  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'learning' }] }
+  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'learning' }], reviewTaskLinks: [] }
   const api = handlers('App.vue', ['handleReminderAction'], {
     reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, completionOccurrenceId: ref('stale-occurrence'), completionTaskId: ref('stale-task'), completionReviewLinkId: ref('stale-review'), reminderCenterOpen, nextTick: async () => {},
     executeReminderCommand: async () => assert.fail('no completion before evidence'),
@@ -750,9 +750,29 @@ test('learning reminder completion opens evidence entry without completing eithe
   assert.equal(reminderCenterOpen.value, false)
 })
 
+test('linked review reminder completion opens the exact recall link instead of evidence or persistence', async () => {
+  const opened: string[] = []
+  const workspace = {
+    reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence:exact' }],
+    reminderRules: [{ id: 'rule', taskId: 'review-task' }],
+    tasks: [{ id: 'review-task', mode: 'learning' }],
+    reviewTaskLinks: [
+      { id: 'review:other', reviewTaskId: 'review-task', occurrenceId: 'occurrence:other', completedAt: null },
+      { id: 'review:exact', reviewTaskId: 'review-task', occurrenceId: 'occurrence:exact', completedAt: null },
+    ],
+  }
+  const api = handlers('App.vue', ['handleReminderAction'], {
+    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), reminderCenterOpen: ref(true),
+    openPendingReviewLink: (linkId: string) => opened.push(linkId),
+    executeReminderCommand: async () => assert.fail('linked review reminder must not persist generic completion'),
+  })
+  await api.handleReminderAction({ deliveryId: 'delivery', action: 'complete' })
+  assert.deepEqual(opened, ['review:exact'])
+})
+
 test('general recurring reminder completes exactly its occurrence, and snooze changes only delivery time', async () => {
   const commands: any[] = []
-  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'general' }], occurrences: [{ id: 'occurrence', revision: 2 }] }
+  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'general' }], occurrences: [{ id: 'occurrence', revision: 2 }], reviewTaskLinks: [] }
   const before = structuredClone(workspace)
   const api = handlers('App.vue', ['handleReminderAction'], {
     reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''),
@@ -777,6 +797,7 @@ test('learning occurrence completion from task surfaces opens evidence entry wit
     occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
     recurrenceSeries: [{ id: 'series', taskId: 'task' }],
     tasks: [{ id: 'task', mode: 'learning', revision: 7 }],
+    reviewTaskLinks: [],
   }
   const api = handlers('App.vue', ['executeOccurrence'], {
     recurrenceWorkspace: ref(workspace), completionOccurrenceId, completionOpen, completionReminderId: ref('delivery'), completionTaskId: ref('stale-task'), completionReviewLinkId: ref('review'), nextTick: async () => {},
@@ -789,6 +810,27 @@ test('learning occurrence completion from task surfaces opens evidence entry wit
   assert.deepEqual(commands, [])
   assert.equal(completionOccurrenceId.value, 'occurrence')
   assert.equal(completionOpen.value, true)
+})
+
+test('linked review occurrence completion opens its exact recall link instead of evidence or persistence', async () => {
+  const opened: string[] = []
+  const workspace = {
+    revision: 9,
+    occurrences: [{ id: 'occurrence:exact', seriesId: 'series', revision: 4 }],
+    recurrenceSeries: [{ id: 'series', taskId: 'review-task' }],
+    tasks: [{ id: 'review-task', mode: 'learning', revision: 7 }],
+    reviewTaskLinks: [
+      { id: 'review:other', reviewTaskId: 'review-task', occurrenceId: 'occurrence:other', completedAt: null },
+      { id: 'review:exact', reviewTaskId: 'review-task', occurrenceId: 'occurrence:exact', completedAt: null },
+    ],
+  }
+  const api = handlers('App.vue', ['executeOccurrence'], {
+    recurrenceWorkspace: ref(workspace), openPendingReviewLink: (linkId: string) => opened.push(linkId),
+    capabilityService: { execute: async () => assert.fail('linked review occurrence must not persist generic completion') },
+    reportStorageError(error: unknown) { throw error },
+  })
+  await api.executeOccurrence('occurrence:exact', 'recurrence.complete')
+  assert.deepEqual(opened, ['review:exact'])
 })
 
 test('task completion handler opens evidence for planned learning without toggling persistence', async () => {
@@ -809,8 +851,7 @@ test('task completion handler opens evidence for planned learning without toggli
 })
 
 test('linked review task completion opens its exact recall item without toggling persistence', async () => {
-  const destinations: unknown[] = []
-  const reviewTargetLinkId = ref('')
+  const opened: string[] = []
   const task = { id: 'review-task', title: 'Review', mode: 'learning', status: 'planned', deletedAt: null }
   const workspace = {
     tasks: [task],
@@ -818,12 +859,11 @@ test('linked review task completion opens its exact recall item without toggling
   }
   const api = handlers('App.vue', ['toggleTaskCompletion'], {
     state: ref({ tasks: [task] }), recurrenceWorkspace: ref(workspace), routeSingleTaskCompletion,
-    reviewTargetLinkId, setDestination: (destination: unknown) => destinations.push(destination),
+    openPendingReviewLink: (linkId: string) => opened.push(linkId),
     notify() {}, toggleStudyTaskCompletion: async () => assert.fail('linked review must not use generic toggle persistence'),
   })
   await api.toggleTaskCompletion(task.id)
-  assert.deepEqual(destinations, [{ kind: 'learning', section: 'review' }])
-  assert.equal(reviewTargetLinkId.value, 'review-link')
+  assert.deepEqual(opened, ['review-link'])
 })
 
 test('task completion handler routes inbox and blocked learning to actionable prerequisites', async () => {
@@ -872,6 +912,7 @@ test('general occurrence completion from task surfaces remains a direct command'
     occurrences: [{ id: 'occurrence', seriesId: 'series', revision: 4 }],
     recurrenceSeries: [{ id: 'series', taskId: 'task' }],
     tasks: [{ id: 'task', mode: 'general', revision: 7 }],
+    reviewTaskLinks: [],
   }
   const api = handlers('App.vue', ['executeOccurrence'], {
     recurrenceWorkspace: ref(workspace), completionOccurrenceId: ref(''), completionOpen: ref(false), completionReminderId: ref(''), completionReviewLinkId: ref(''), nextTick: async () => {},

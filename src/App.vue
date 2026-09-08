@@ -579,12 +579,19 @@ async function handleReminderAction(action: ReminderCardAction) {
   const delivery = workspace?.reminderDeliveries.find(({ id }) => id === action.deliveryId)
   const rule = workspace?.reminderRules.find(({ id }) => id === delivery?.reminderRuleId)
   const task = workspace?.tasks.find(({ id }) => id === rule?.taskId)
-  if (!delivery || !task) return
+  if (!workspace || !delivery || !task) return
   reminderError.value = ''
   if (action.action === 'open') {
     reminderCenterOpen.value = false
     openTask(task.id)
     selectedOccurrenceId.value = delivery.occurrenceId ?? ''
+    return
+  }
+  const reviewLink = action.action === 'complete' ? workspace.reviewTaskLinks.find(({ reviewTaskId, occurrenceId, completedAt }) =>
+    reviewTaskId === task.id && (occurrenceId ?? null) === (delivery.occurrenceId ?? null) && completedAt === null) : undefined
+  if (reviewLink) {
+    reminderCenterOpen.value = false
+    openPendingReviewLink(reviewLink.id)
     return
   }
   if (action.action === 'complete' && task.mode === 'learning') {
@@ -867,6 +874,10 @@ function openSearchRecord(recordId: string) {
   setDestination({ kind: 'learning', section: 'review' })
   reviewMode.value = 'records'
   recordTarget.value = { id: record.id, requestId: ++recordTargetRequestId }
+}
+function openPendingReviewLink(linkId: string) {
+  setDestination({ kind: 'learning', section: 'review' })
+  reviewTargetLinkId.value = linkId
 }
 function openTagManager(returnToSearch = false) {
   tagManagerError.value = ''
@@ -1179,6 +1190,12 @@ async function executeOccurrence(id: string, type: 'recurrence.complete' | 'recu
   const series = occurrence ? workspace?.recurrenceSeries.find((item) => item.id === occurrence.seriesId) : undefined
   const task = series ? workspace?.tasks.find((item) => item.id === series.taskId) : undefined
   if (!workspace || !occurrence) return
+  const reviewLink = type === 'recurrence.complete' ? workspace.reviewTaskLinks.find(({ reviewTaskId, occurrenceId, completedAt }) =>
+    reviewTaskId === task?.id && occurrenceId === occurrence.id && completedAt === null) : undefined
+  if (reviewLink) {
+    openPendingReviewLink(reviewLink.id)
+    return
+  }
   if (type === 'recurrence.complete' && task?.mode === 'learning') {
     completionReminderId.value = ''
     completionTaskId.value = ''
@@ -1343,8 +1360,7 @@ async function toggleTaskCompletion(taskId: string) {
   if (route === 'review') {
     const link = workspace?.reviewTaskLinks.find(({ reviewTaskId, completedAt }) => reviewTaskId === taskId && completedAt === null)
     if (!link) return
-    setDestination({ kind: 'learning', section: 'review' })
-    reviewTargetLinkId.value = link.id
+    openPendingReviewLink(link.id)
     return
   }
   try {
