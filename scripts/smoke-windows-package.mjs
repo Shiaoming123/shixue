@@ -323,7 +323,7 @@ async function runRegistryCommand(args) {
 
 function queryInstalledMsiProduct(productName) {
   const escaped = productName.replaceAll("'", "''")
-  const command = `$roots = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall' | Where-Object { Test-Path $_ }; $found = $roots | ForEach-Object { Get-ItemProperty "$_\\*" -ErrorAction Stop } | Where-Object { $_.DisplayName -eq '${escaped}' }; if ($found) { exit 10 }; exit 0`
+  const command = `$roots = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall' | Where-Object { Test-Path $_ -ErrorAction Stop }; $found = $roots | ForEach-Object { Get-ItemProperty "$_\\*" -ErrorAction Stop } | Where-Object { $_.DisplayName -eq '${escaped}' }; if ($found) { exit 10 }; exit 0`
   return new Promise((resolveQuery, rejectQuery) => {
     const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
     let stderr = ''
