@@ -41,6 +41,7 @@ const editTimeValid = ref(true)
 const editValue = ref('')
 const error = ref('')
 const submitting = ref(false)
+const learningMode = ref(false)
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 const capabilityService = createTaskCapabilityService(
   getWorkspaceStore(),
@@ -107,7 +108,7 @@ async function refreshCatalog() {
   tags.value = snapshot.tags.filter(({ archivedAt }) => archivedAt === null).map(({ id, title }) => ({ id, title }))
 }
 
-function buildCommand() {
+function buildCommand(ids: { taskId?: string; eventId?: string; seriesId?: string } = {}) {
   return buildQuickAddCommand({
     input: input.value,
     candidates: acceptedCandidates.value,
@@ -117,6 +118,8 @@ function buildCommand() {
     timezone,
     defaultEstimateMinutes: props.defaultEstimateMinutes,
     removeRecognizedText: props.quickAddRemoveRecognizedText,
+    ...(learningMode.value ? { mode: 'learning' as const } : {}),
+    ...ids,
   })
 }
 
@@ -130,15 +133,7 @@ async function submit() {
   try {
     const snapshot = await capabilityService.query({ type: 'workspace.snapshot' })
     const taskId = crypto.randomUUID()
-    const command = buildQuickAddCommand({
-      input: input.value,
-      candidates: acceptedCandidates.value,
-      destinationListId: props.destinationListId,
-      defaultStartOn: props.defaultStartOn,
-      fallbackRecurrenceAnchorOn: localToday(),
-      timezone,
-      defaultEstimateMinutes: props.defaultEstimateMinutes,
-      removeRecognizedText: props.quickAddRemoveRecognizedText,
+    const command = buildCommand({
       taskId,
       eventId: crypto.randomUUID(),
       seriesId: acceptedCandidates.value.some(({ kind }) => kind === 'recurrence') ? crypto.randomUUID() : undefined,
@@ -154,9 +149,14 @@ async function submit() {
     const created = result.affected.find(({ type, id }) => type === 'task' && id === taskId)
     if (!created) throw new Error('Quick add did not return the created task.')
     input.value = ''
-    await refreshCatalog()
+    learningMode.value = false
     emit('created', created)
     inputElement.value?.focus({ preventScroll: true })
+    try {
+      await refreshCatalog()
+    } catch {
+      error.value = '任务已保存，但清单与标签未能刷新。'
+    }
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '任务未能保存，请重试。'
   } finally {
@@ -261,6 +261,7 @@ defineExpose({ focus })
         :aria-invalid="hasAmbiguousCandidate || Boolean(error)"
         :placeholder="defaultStartOn ? '添加到今天，也可以输入时间、优先级或重复' : '添加任务，也可以输入日期、优先级或重复'"
       />
+      <button class="learning-mode" type="button" aria-label="学习任务" :aria-pressed="learningMode" :disabled="submitting" @click="learningMode = !learningMode"><Check v-if="learningMode" :size="14" aria-hidden="true" />学习任务</button>
       <button type="submit" :disabled="!canSubmit" :aria-label="submitting ? '正在添加' : '添加'">
         <LoaderCircle v-if="submitting" class="spinner" :size="17" aria-hidden="true" />
         <Check v-else :size="17" aria-hidden="true" />
@@ -316,10 +317,12 @@ defineExpose({ focus })
 <style scoped>
 .quick-add-composer { margin-top: var(--space-4); border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--control-fill); box-shadow: var(--shadow-sm); }
 .quick-add-composer:focus-within { border-color: color-mix(in srgb, var(--accent) 58%, var(--border)); box-shadow: var(--focus-ring); }
-.quick-add-input-row { min-height: max(48px, var(--field-min-height)); display: grid; grid-template-columns: 24px minmax(0, 1fr) max(36px, var(--icon-hit)); align-items: center; gap: var(--space-2); padding: 0 var(--space-1) 0 var(--space-3); }
+.quick-add-input-row { min-height: max(48px, var(--field-min-height)); display: grid; grid-template-columns: 24px minmax(0, 1fr) auto max(36px, var(--icon-hit)); align-items: center; gap: var(--space-2); padding: 0 var(--space-1) 0 var(--space-3); }
 .quick-add-input-row > svg { color: var(--accent); }
 .quick-add-input-row input { min-width: 0; min-height: 44px; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--text-base); }
 .quick-add-input-row > button { width: max(36px, var(--icon-hit)); height: max(36px, var(--icon-hit)); display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: var(--accent); color: var(--accent-text); }
+.quick-add-input-row > .learning-mode { width: 80px; min-width: 80px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 var(--space-2); border: 1px solid var(--hairline); background: var(--control-fill); color: var(--muted); font: inherit; font-size: var(--text-xs); white-space: nowrap; }
+.quick-add-input-row > .learning-mode[aria-pressed="true"] { border-color: color-mix(in srgb, var(--accent) 45%, var(--hairline)); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); font-weight: 650; }
 .quick-add-input-row > button:disabled { opacity: .28; }
 .quick-add-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); padding: 0 var(--space-3) var(--space-3); }
 .quick-add-message { margin: calc(-1 * var(--space-1)) var(--space-3) var(--space-3); color: var(--warning); font-size: var(--text-xs); }
@@ -337,6 +340,7 @@ defineExpose({ focus })
   .quick-add-composer { margin-top: var(--space-3); }
   .quick-add-input-row { min-height: 52px; }
   .quick-add-input-row > button { width: 44px; height: 44px; }
+  .quick-add-input-row > .learning-mode { width: 80px; min-width: 80px; }
   .quick-add-chips { gap: var(--space-2); }
 }
 @media (max-width: 369px) {

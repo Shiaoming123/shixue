@@ -12,6 +12,7 @@ export interface BuildQuickAddCommandInput {
   timezone: string
   defaultEstimateMinutes?: number | null
   removeRecognizedText?: boolean
+  mode?: 'learning'
   taskId?: string
   eventId?: string
   seriesId?: string
@@ -46,6 +47,7 @@ export function buildQuickAddCommand(options: BuildQuickAddCommandInput): TaskCr
     ...(options.eventId ? { eventId: options.eventId } : {}),
     listId,
     title,
+    ...(options.mode ? { mode: options.mode } : {}),
     ...(tagIds.length ? { tagIds } : {}),
     ...(priority ? { priority: parsePriority(priority) } : {}),
     ...(options.defaultEstimateMinutes === null || options.defaultEstimateMinutes === undefined
