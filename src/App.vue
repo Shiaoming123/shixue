@@ -1407,16 +1407,35 @@ async function completeFocus(payload: CompletionPayload) {
 
 async function completeTaskEvidence(payload: CompletionPayload) {
   const taskId = completionTaskId.value
+  if (!taskId || completionOccurrenceBusy.value) return
   const task = recurrenceWorkspace.value?.tasks.find(({ id, deletedAt }) => id === taskId && !deletedAt)
   if (!task || task.mode !== 'learning') return
   completionOccurrenceBusy.value = true
   try {
-    await completeStudyTask({ taskId, ...payload }, {
-      expectedRevision: task.revision, recordId: crypto.randomUUID(), eventId: crypto.randomUUID(), now: new Date().toISOString(),
+    const workspace = await capabilityService.query({ type: 'workspace.snapshot' })
+    await capabilityService.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+      idempotencyKey: `completion:${crypto.randomUUID()}`,
+      source: 'human-ui',
+      expectedWorkspaceRevision: workspace.revision,
+      command: {
+        type: 'task.complete', taskId, ...payload,
+        expectedRevision: task.revision, recordId: crypto.randomUUID(), eventId: crypto.randomUUID(),
+      },
     })
-    await refreshState()
-    completionOpen.value = false
-    completionTaskId.value = ''
+    if (completionTaskId.value === taskId) {
+      completionOpen.value = false
+      completionTaskId.value = ''
+    }
+    try { await refreshState() }
+    catch (error) {
+      notify(`学习证据已保存，但视图刷新失败：${error instanceof Error ? error.message : String(error)}`, {
+        label: '重新加载',
+        successMessage: '学习记录已刷新。',
+        run: refreshState,
+      })
+      return
+    }
     notify('已记录学习证据并完成任务。')
   } catch (error) { notify(error instanceof Error ? error.message : '学习证据未能保存，请重试。') }
   finally { completionOccurrenceBusy.value = false }

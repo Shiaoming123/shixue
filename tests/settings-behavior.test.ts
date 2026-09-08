@@ -35,6 +35,59 @@ function handlers(file: string, names: string[], ports: Record<string, unknown>)
 }
 const ref = <T>(value: T) => ({ value })
 
+test('learning completion closes after commit and offers a read-only retry when refreshing fails', async () => {
+  const completionTaskId = ref('learning-task')
+  const completionOpen = ref(true)
+  const completionOccurrenceBusy = ref(false)
+  const notices: any[][] = []
+  let writes = 0
+  let reads = 0
+  const write = async (envelope: any) => {
+    writes += 1
+    assert.equal(envelope.expectedWorkspaceRevision, 1)
+    assert.equal(envelope.command.type, 'task.complete')
+    assert.equal(envelope.command.expectedRevision, 2)
+    assert.equal(envelope.command.evidence, 'passing example')
+  }
+  const refreshState = async () => { reads += 1; throw new Error('read unavailable') }
+  const { completeTaskEvidence } = handlers('App.vue', ['completeTaskEvidence'], {
+    completionTaskId, completionOpen, completionOccurrenceBusy,
+    recurrenceWorkspace: ref({ tasks: [{ id: 'learning-task', mode: 'learning', revision: 2 }] }),
+    capabilityService: { query: async () => ({ revision: 1 }), execute: write }, CAPABILITY_PROTOCOL_VERSION: 1,
+    refreshState, notify: (...args: any[]) => notices.push(args),
+  })
+  const payload = { learned: 'why it works', evidence: 'passing example', nextAction: 'apply it', mastery: 3 }
+  await Promise.all([completeTaskEvidence(payload), completeTaskEvidence(payload)])
+  assert.equal(writes, 1, 'repeated submission must not write twice')
+  assert.equal(completionOpen.value, false, 'committed evidence must not remain editable for retry')
+  assert.equal(completionTaskId.value, '')
+  assert.equal(completionOccurrenceBusy.value, false)
+  assert.match(notices[0][0], /学习证据已保存.*刷新失败/)
+  await assert.rejects(notices[0][1].run(), /read unavailable/)
+  assert.equal(writes, 1, 'retry must only reload the committed result')
+  assert.equal(reads, 2)
+})
+
+test('failed learning completion retains its evidence context for retry', async () => {
+  const completionTaskId = ref('learning-task')
+  const completionOpen = ref(true)
+  const completionOccurrenceBusy = ref(false)
+  const fail = async () => { throw new Error('write unavailable') }
+  const notices: string[] = []
+  const { completeTaskEvidence } = handlers('App.vue', ['completeTaskEvidence'], {
+    completionTaskId, completionOpen, completionOccurrenceBusy,
+    recurrenceWorkspace: ref({ tasks: [{ id: 'learning-task', mode: 'learning', revision: 2 }] }),
+    capabilityService: { query: async () => ({ revision: 1 }), execute: fail }, CAPABILITY_PROTOCOL_VERSION: 1,
+    refreshState: () => assert.fail('failed writes must not refresh'),
+    notify: (message: string) => notices.push(message),
+  })
+  await completeTaskEvidence({ learned: 'draft', evidence: 'proof', nextAction: 'next', mastery: 3 })
+  assert.equal(completionOpen.value, true)
+  assert.equal(completionTaskId.value, 'learning-task')
+  assert.equal(completionOccurrenceBusy.value, false)
+  assert.deepEqual(notices, ['write unavailable'])
+})
+
 test('only the current destination owns selection even when previous filters remain', () => {
   assert.equal(currentSidebarDestination('settings', 'today', 'list:a'), 'page:settings')
   assert.equal(currentSidebarDestination('review', 'all', 'list:a'), 'page:review')
