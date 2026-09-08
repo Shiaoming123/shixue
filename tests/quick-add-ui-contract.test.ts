@@ -124,6 +124,41 @@ test('command mapping preserves date-only values and embeds recurrence in task.c
   assert.deepEqual(command.recurrence?.cadence, { kind: 'daily', interval: 1 })
 })
 
+test('quick add keeps the default general command byte-for-byte and adds only explicit learning mode', () => {
+  const base = {
+    input: 'Write release notes', candidates: [], destinationListId: 'list:system:learning',
+    defaultStartOn: '2026-09-08', timezone: 'Asia/Shanghai',
+  } as const
+  assert.deepEqual(buildQuickAddCommand(base), {
+    type: 'task.create', listId: 'list:system:learning', title: 'Write release notes', startOn: '2026-09-08',
+  })
+  assert.deepEqual(buildQuickAddCommand({ ...base, mode: 'learning' }), {
+    type: 'task.create', listId: 'list:system:learning', title: 'Write release notes', startOn: '2026-09-08', mode: 'learning',
+  })
+})
+
+test('explicit quick-add learning mode survives capability persistence with empty criteria', async () => {
+  const store = createInMemoryWorkspaceStore()
+  let nextId = 0
+  const service = createTaskCapabilityService(store, () => '2026-09-08T06:00:00.000Z', (kind) => `${kind}-${++nextId}`)
+  for (const [id, mode] of [['general', undefined], ['learning', 'learning']] as const) {
+    const snapshot = await service.query({ type: 'workspace.snapshot' })
+    await service.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION, idempotencyKey: `create-${id}`, source: 'human-ui',
+      expectedWorkspaceRevision: snapshot.revision,
+      command: buildQuickAddCommand({
+        input: id, candidates: [], destinationListId: 'list:system:learning', timezone: 'Asia/Shanghai',
+        taskId: id, eventId: `event-${id}`, ...(mode ? { mode } : {}),
+      }),
+    })
+  }
+  const reloaded = await store.load()
+  assert.equal(reloaded.tasks.find(({ id }) => id === 'general')?.mode, 'general')
+  assert.equal(reloaded.tasks.find(({ id }) => id === 'general')?.learning, null)
+  assert.equal(reloaded.tasks.find(({ id }) => id === 'learning')?.mode, 'learning')
+  assert.deepEqual(reloaded.tasks.find(({ id }) => id === 'learning')?.learning?.acceptanceCriteria, [])
+})
+
 test('timed recurrence derives cadence from the anchor day in its configured timezone', () => {
   const expectations = [
     ['weekly', { kind: 'weekly', interval: 1, weekdays: [0] }],

@@ -155,6 +155,10 @@ migration and v3 export, capability protocol v1 with transactional command
 execution, routing of current live writes through that service, the shared
 themed-control foundation, recurrence and occurrences, offline natural-language
 quick add, multiple reminders, and `calendar-planning-v1`.
+Quick add omits `mode` for its unchanged general-task default. Its explicit
+Learning Task control adds only `mode: "learning"`; natural-language parsing
+never infers task mode. Learning acceptance criteria remain editable on the
+existing task editor, and task mode is not an updateable field.
 The local data boundary also includes `learning-records-markdown-export-v1`,
 which exposes the completion evidence in a readable file without changing the
 Workspace schema or import protocol.

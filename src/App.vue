@@ -909,7 +909,11 @@ function setTaskSort(value: StudyTaskQuerySort) { taskSort.value = value; alignT
 
 async function quickAddCreated(entity: EntityRef) {
   try {
-    await refreshState(); selectedTaskId.value = entity.id; selectedOccurrenceId.value = ''; notify(activeSmartView.value === 'today' ? '已加入今天。' : '已加入收件箱。')
+    await refreshState(); selectedTaskId.value = entity.id; selectedOccurrenceId.value = ''
+    const learning = recurrenceWorkspace.value?.tasks.some(({ id, mode }) => id === entity.id && mode === 'learning')
+    notify(learning
+      ? `学习任务已加入${activeSmartView.value === 'today' ? '今天' : '收件箱'}；可在编辑任务中补充完成标准。`
+      : activeSmartView.value === 'today' ? '已加入今天。' : '已加入收件箱。')
   } catch (error) { reportStorageError(error) }
 }
 

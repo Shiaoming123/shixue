@@ -44,6 +44,21 @@ test('only the current destination owns selection even when previous filters rem
   assert.equal(currentSidebarDestination('today', 'all', 'list:a'), 'smart:today')
 })
 
+test('quick add refreshes and selects a learning task with an actionable criteria hint', async () => {
+  const selectedTaskId = ref('')
+  const selectedOccurrenceId = ref('stale')
+  const messages: string[] = []
+  const recurrenceWorkspace = ref({ tasks: [{ id: 'learning', mode: 'learning' }] })
+  const api = handlers('App.vue', ['quickAddCreated'], {
+    refreshState: async () => {}, selectedTaskId, selectedOccurrenceId, recurrenceWorkspace,
+    activeSmartView: ref('inbox'), notify: (message: string) => messages.push(message),
+  })
+  await api.quickAddCreated({ type: 'task', id: 'learning', revision: 1 })
+  assert.equal(selectedTaskId.value, 'learning')
+  assert.equal(selectedOccurrenceId.value, '')
+  assert.deepEqual(messages, ['学习任务已加入收件箱；可在编辑任务中补充完成标准。'])
+})
+
 test('summary validates the whole candidate without writing and counts records that replacement would remove', async () => {
   const store = createInMemoryWorkspaceStore()
   const current = await store.load()
