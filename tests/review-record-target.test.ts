@@ -32,6 +32,13 @@ test('a repeated global-search target always switches Review to records and expa
   await Vue.nextTick()
   assert.equal(state.mode.value, 'records')
   assert.equal(state.selectedRecordId.value, 'record:exact')
+  let focused = 0
+  state.reviewCard.value = { focus: () => { focused += 1 } }
+  props.item = { linkId: 'review:exact' }
+  await Vue.nextTick()
+  await Vue.nextTick()
+  assert.equal(state.mode.value, 'review')
+  assert.equal(focused, 1, 'the routed review card must own focus')
   app.unmount()
 })
 

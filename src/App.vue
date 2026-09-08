@@ -168,6 +168,7 @@ const reviewRevealed = ref(false)
 const reviewBusy = ref(false)
 const reviewRefreshRequired = ref(false)
 const reviewMode = ref<'review' | 'records'>('review')
+const reviewTargetLinkId = ref('')
 const recordTarget = ref<{ id: string; requestId: number }>()
 let recordTargetRequestId = 0
 const appearanceDark = ref(false)
@@ -411,11 +412,16 @@ const weeklyLearningSummary = computed(() => recurrenceWorkspace.value
       topics: [],
     })
 const reviewQueue = computed(() => completedRecords.value.filter((record) => record.nextReviewOn && record.nextReviewOn <= today.value).sort((a, b) => (a.nextReviewOn ?? '').localeCompare(b.nextReviewOn ?? '')))
-const reviewItems = computed<ReviewViewItem[]>(() => reviewQueue.value.flatMap((record) => {
-  const link = recurrenceWorkspace.value?.reviewTaskLinks.find(({ completionRecordId, reviewStage, dueOn, completedAt }) =>
-    completionRecordId === record.id && reviewStage === record.reviewStage && dueOn === record.nextReviewOn && completedAt === null)
-  return link ? [{ id: record.id, linkId: link.id, topic: topicTitleFor(record.topicId), learned: record.learned, evidence: record.evidence, ageLabel: formatAge(record.completedAt) }] : []
-}))
+const reviewItems = computed<ReviewViewItem[]>(() => {
+  const targetLink = recurrenceWorkspace.value?.reviewTaskLinks.find(({ id, completedAt }) => id === reviewTargetLinkId.value && completedAt === null)
+  const targetRecord = targetLink ? completedRecords.value.find(({ id }) => id === targetLink.completionRecordId) : undefined
+  const records = targetRecord ? [targetRecord, ...reviewQueue.value.filter(({ id }) => id !== targetRecord.id)] : reviewQueue.value
+  return records.flatMap((record) => {
+    const link = recurrenceWorkspace.value?.reviewTaskLinks.find(({ completionRecordId, reviewStage, dueOn, completedAt }) =>
+      completionRecordId === record.id && reviewStage === record.reviewStage && dueOn === record.nextReviewOn && completedAt === null)
+    return link ? [{ id: record.id, linkId: link.id, topic: topicTitleFor(record.topicId), learned: record.learned, evidence: record.evidence, ageLabel: formatAge(record.completedAt) }] : []
+  })
+})
 const recordViews = computed<CompletionRecordViewItem[]>(() => completedRecords.value.map((record) => ({ id: record.id, taskId: record.taskId, topicId: record.topicId, topic: topicTitleFor(record.topicId), taskTitle: record.taskTitleSnapshot, learned: record.learned, evidence: record.evidence, blocker: record.blocker, nextAction: record.nextAction, mastery: record.mastery, completedLabel: formatShortDate(record.completedAt), minutes: recordMinutes(record) })))
 
 const topicViews = computed<TopicViewItem[]>(() => state.value.topics.filter((topic) => !topic.archivedAt).map((topic) => {
@@ -807,6 +813,7 @@ function localDeviceId() {
 function setDestination(next: ShellDestination, options: { topicFilter?: string; preservePriority?: boolean } = {}) {
   recordTarget.value = undefined
   reviewMode.value = 'review'
+  reviewTargetLinkId.value = ''
   destination.value = next
   listsMoreOpen.value = false
   showFocus.value = false
@@ -1331,6 +1338,13 @@ async function toggleTaskCompletion(taskId: string) {
     completionTaskId.value = taskId
     await nextTick()
     completionOpen.value = true
+    return
+  }
+  if (route === 'review') {
+    const link = workspace?.reviewTaskLinks.find(({ reviewTaskId, completedAt }) => reviewTaskId === taskId && completedAt === null)
+    if (!link) return
+    setDestination({ kind: 'learning', section: 'review' })
+    reviewTargetLinkId.value = link.id
     return
   }
   try {

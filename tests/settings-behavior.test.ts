@@ -808,6 +808,24 @@ test('task completion handler opens evidence for planned learning without toggli
   assert.equal(completionOpen.value, true)
 })
 
+test('linked review task completion opens its exact recall item without toggling persistence', async () => {
+  const destinations: unknown[] = []
+  const reviewTargetLinkId = ref('')
+  const task = { id: 'review-task', title: 'Review', mode: 'learning', status: 'planned', deletedAt: null }
+  const workspace = {
+    tasks: [task],
+    reviewTaskLinks: [{ id: 'review-link', reviewTaskId: task.id, completionRecordId: 'record', completedAt: null }],
+  }
+  const api = handlers('App.vue', ['toggleTaskCompletion'], {
+    state: ref({ tasks: [task] }), recurrenceWorkspace: ref(workspace), routeSingleTaskCompletion,
+    reviewTargetLinkId, setDestination: (destination: unknown) => destinations.push(destination),
+    notify() {}, toggleStudyTaskCompletion: async () => assert.fail('linked review must not use generic toggle persistence'),
+  })
+  await api.toggleTaskCompletion(task.id)
+  assert.deepEqual(destinations, [{ kind: 'learning', section: 'review' }])
+  assert.equal(reviewTargetLinkId.value, 'review-link')
+})
+
 test('task completion handler routes inbox and blocked learning to actionable prerequisites', async () => {
   const actions: string[] = []
   const primaries: string[] = []
