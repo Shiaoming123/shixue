@@ -121,7 +121,7 @@ See the [application protocol](./docs/application-protocol.md) for the detailed 
 | --- | --- |
 | Basic Windows package | The unsigned v0.3.0 Release was published on 2026-09-07 with Portable, NSIS, and MSI assets. Its candidate passed NSIS smoke and baseline installed-app acceptance; features merged into `main` after publication are not automatically part of v0.3.0. Installed review completion, reminder and tray actions on a final rebuilt SHA, MSI installation, no delivery after quit, 200% scaling, and Narrator are `NOT_RUN`. |
 | Authenticode | `NOT_RUN`; current Windows packages are unsigned. Tauri updater `.sig` files and SHA-256 hashes do not establish a Windows publisher signature. |
-| Updates between published versions | `NOT_RUN`; the repository builds updater metadata and signed payloads, but there is no end-to-end installed-client upgrade evidence across published versions. |
+| Updates between published versions | `NOT_RUN`; current `main` exposes a user-triggered update check in desktop settings, but neither v0.2.3 nor v0.3.0 contains that entry point, so there is still no end-to-end installed-client upgrade evidence across published versions. |
 | Native Windows scaling and screen reader | System 200% scaling and Narrator are `NOT_RUN`. Web CSS zoom, equivalent reflow, and Edge screenshots do not substitute for native evidence. |
 | Android emulator | The x86_64 debug APK from `42cc204` passed package/version/ABI validation, explicit Activity launch, foreground inspection, all five readiness phases, and stable PID smoke in an isolated API 36 emulator. The same APK created a unique task through the capability service, terminated the app process, restarted it, and recovered the task, creation receipt, and event from SQLite. |
 | Android device and delivery | Physical devices, recovery across an emulator reboot, native notifications, signing, Google Play, and store delivery are `NOT_RUN`. |
@@ -165,7 +165,7 @@ For the local Windows package, `npm run smoke:windows-package` installs the NSIS
 - [x] Optional learning mode, focus sessions, evidence-backed completion, derived learning rhythm, and review loop
 - [x] IndexedDB / SQLite persistence, Study v1/v2 → Workspace v3 migration, and JSON exchange
 - [x] Local Windows x64 Portable, NSIS, and MSI packaging plus install/launch smoke
-- [x] GitHub Release and Tauri updater-metadata build pipeline (not proof of an end-to-end upgrade)
+- [x] GitHub Release, Tauri updater-metadata build pipeline, and manual desktop settings entry point (not proof of an end-to-end upgrade)
 - [ ] Authenticode signing and post-signing installation verification
 - [ ] End-to-end update testing between published versions
 - [ ] Native Android/iOS device, signing, and store delivery

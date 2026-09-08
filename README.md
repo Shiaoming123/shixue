@@ -121,7 +121,7 @@ npm run smoke:windows-package
 | --- | --- |
 | Windows 基础安装包 | v0.3.0 无签名 Release 已于 2026-09-07 发布，包含 Portable、NSIS 和 MSI。其候选的 NSIS 自动 smoke 与已安装应用基础验收为 `PASS`；发布后合入 `main` 的功能不会自动进入 v0.3.0。最终重建 SHA 的复习完成 UI、提醒动作、托盘动作、MSI 安装、退出后不再投递、200% 缩放和 Narrator 仍为 `NOT_RUN`。 |
 | Authenticode | `NOT_RUN`；当前 Windows 包未签名，Tauri updater `.sig` 和 SHA-256 都不代表 Windows 发布者签名。 |
-| 已发布版本自动更新 | `NOT_RUN`；仓库有 updater 元数据与载荷签名构建链路，但尚无安装端跨已发布版本的端到端升级证据。 |
+| 已发布版本自动更新 | `NOT_RUN`；当前 `main` 已在桌面设置页接入用户主动触发的检查更新入口，但 v0.2.3 与 v0.3.0 均未包含该入口，仍无安装端跨已发布版本的端到端升级证据。 |
 | Windows 原生缩放与读屏 | 系统 200% 缩放和 Narrator 均为 `NOT_RUN`；Web 的 CSS zoom、等效回流和 Edge 截图不能替代原生证据。 |
 | Android 模拟器 | `42cc204` 的 x86_64 debug APK 在隔离的 API 36 模拟器中通过包名/版本/ABI 校验、显式 Activity 启动、前台检查、五阶段 readiness 与稳定 PID smoke；同一 APK 还通过能力服务写入唯一任务，确认进程终止后重启，并从 SQLite 恢复任务、创建回执和事件。 |
 | Android 真机与发布 | 真机、模拟器重启后的恢复、原生通知、签名、Google Play 和商店交付均为 `NOT_RUN`。 |
@@ -165,7 +165,7 @@ Windows 本地交付另运行 `npm run smoke:windows-package`：它在隔离目�
 - [x] 可选学习模式、专注会话、证据式完成、派生学习节律与复习闭环
 - [x] IndexedDB / SQLite 本地持久化、Study v1/v2 → Workspace v3 迁移与 JSON 交换
 - [x] Windows x64 Portable、NSIS、MSI 本地打包和安装启动 smoke
-- [x] GitHub Release 与 Tauri updater 元数据构建链路（不代表端到端升级已验证）
+- [x] GitHub Release、Tauri updater 元数据构建链路与桌面设置页主动检查入口（不代表端到端升级已验证）
 - [ ] Authenticode 签名与签名后安装验证
 - [ ] 自动更新的已发布版本端到端升级验证
 - [ ] Android/iOS 原生真机、签名与商店交付
