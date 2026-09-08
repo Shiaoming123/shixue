@@ -41,3 +41,26 @@ test('reports an available Android device separately from toolchain readiness', 
   assert.deepEqual(result.android.devices, ['emulator-5554'])
   assert.match(result.android.summary.join('\n'), /Android device\/emulator: emulator-5554/)
 })
+
+test('shares one Rust target probe while reporting each platform separately', () => {
+  let rustupCalls = 0
+  const result = inspectMobileToolchains({
+    platform: 'darwin',
+    environment: { ANDROID_HOME: 'configured', NDK_HOME: 'configured', JAVA_HOME: 'configured' },
+    runCommand: (command) => {
+      if (command === 'rustup') {
+        rustupCalls += 1
+        return { status: 1, stdout: '' }
+      }
+      return { status: 0, stdout: '' }
+    },
+  })
+
+  assert.equal(rustupCalls, 1)
+  assert.deepEqual(result.android.errors, [
+    'Install Rust Android targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android.',
+  ])
+  assert.deepEqual(result.ios.errors, [
+    'Install Rust iOS targets: aarch64-apple-ios, x86_64-apple-ios, aarch64-apple-ios-sim.',
+  ])
+})
