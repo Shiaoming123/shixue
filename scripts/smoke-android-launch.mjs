@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { MOBILE_APP_IDENTITY } from './mobile-app-identity.mjs'
 
-export const ANDROID_PACKAGE_ID = 'com.shiaoming123.shixue'
+export const ANDROID_PACKAGE_ID = MOBILE_APP_IDENTITY.androidPackageId
 export const ANDROID_ACTIVITY = `${ANDROID_PACKAGE_ID}/.MainActivity`
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))

@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { MOBILE_APP_IDENTITY } from './mobile-app-identity.mjs'
 
-export const IOS_BUNDLE_ID = 'com.shiaoming123.shixue'
+export const IOS_BUNDLE_ID = MOBILE_APP_IDENTITY.identifier
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const defaultOutputRoot = resolve(projectRoot, 'src-tauri', 'target', 'ios-launch')
 const readinessMarkers = {

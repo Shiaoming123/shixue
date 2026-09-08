@@ -3,10 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { MOBILE_APP_IDENTITY } from './mobile-app-identity.mjs'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const defaultOutputRoot = resolve(projectRoot, 'src-tauri', 'target', 'android-persistence')
-const packageId = 'com.shiaoming123.shixue'
+const packageId = MOBILE_APP_IDENTITY.androidPackageId
 const requestFile = 'cache/shixue-android-persistence-smoke-request.json'
 const evidenceFile = 'cache/shixue-android-persistence-smoke.jsonl'
 
