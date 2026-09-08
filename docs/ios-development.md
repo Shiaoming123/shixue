@@ -15,6 +15,8 @@
 
 iOS 基础分支现已合入 `origin/main@f011db1`，包含 PR2 至 PR6 以及 v0.3.0 发布证据。下方 Simulator 结果来自较早的 `origin/main@140c012` 快照，不覆盖当前合并树；在 macOS 上重新执行原生构建和启动 smoke 前，当前协议将 iOS build/run 标记为 `NOT_RUN`。
 
+仓库提供手动 `ios-simulator` workflow 后，必须先将该 workflow 合入默认分支，再从 Actions 页面以 `workflow_dispatch` 明确触发。它使用标准 macOS runner，无签名构建，并把当前 Git SHA、工具链架构、选定 Simulator 的明确 UDID、精确 `.app` 路径、启动 JSON 和诊断日志作为 artifact 上传。workflow 文件存在或本地静态检查通过不构成原生证据；首次真实 run 成功前，当前树的 iOS build/run 继续标记为 `NOT_RUN`。该 workflow 不验证 SQLite 重启恢复、真机、签名、TestFlight 或 App Store。
+
 ## 2. 与整体路线的并行关系
 
 | 主路线 | iOS 同期工作 | 合并约束 |
