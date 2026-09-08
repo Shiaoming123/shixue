@@ -409,7 +409,7 @@ export async function completeStudyTask(
     mastery?: CompletionRecord['mastery']
   },
   options: TaskCommandOptions & { recordId?: string } = {},
-): Promise<{ task: StudyTask; record: CompletionRecord }> {
+): Promise<{ task: StudyTask; record: CompletionRecord | null }> {
   const task = requireTask(await loadStudyState(), input.taskId, options.expectedRevision)
   if (task.status !== 'planned' && task.status !== 'in_progress') {
     throw new Error('Only a planned or in-progress Study task can be completed.')
@@ -429,10 +429,13 @@ export async function completeStudyTask(
     eventId: makeId('event', options.eventId),
     recordId,
   }, now)
-  const state = await loadStudyState()
+  const workspace = await getWorkspaceStore().load()
+  const state = projectWorkspaceState(workspace)
+  const completedTask = requireTask(state, input.taskId)
+  const completedTaskMode = workspace.tasks.find(({ id, deletedAt }) => id === input.taskId && deletedAt === null)?.mode
   const record = state.completionRecords.find(({ id }) => id === recordId)
-  if (!record) throw new Error(`Completion record not found: ${recordId}.`)
-  return { task: requireTask(state, input.taskId), record: structuredClone(record) }
+  if (completedTaskMode === 'learning' && !record) throw new Error(`Completion record not found: ${recordId}.`)
+  return { task: completedTask, record: record ? structuredClone(record) : null }
 }
 
 export async function toggleStudyTaskCompletion(

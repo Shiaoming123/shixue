@@ -39,6 +39,8 @@ import {
 } from '../src/storage/study/tauri-sqlite.ts'
 import type { StudyState, StudyStateV1, StudyStore } from '../src/storage/study/types.ts'
 import { createIndexedDbTodoStore } from '../src/storage/todos/indexeddb.ts'
+import { CAPABILITY_PROTOCOL_VERSION } from '../src/domain/capabilities/types.ts'
+import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
 
 function emptyState(): StudyState {
   return {
@@ -132,6 +134,41 @@ test('task commands complete the inbox-to-evidence learning loop atomically', as
     state.taskEvents.map(({ type }) => type),
     ['captured', 'planned', 'started', 'completed', 'captured'],
   )
+})
+
+test('general focus completion resolves after saving without inventing a learning record', async () => {
+  const store = createInMemoryWorkspaceStore(emptyState())
+  registerWorkspaceStore(store)
+  const service = createTaskCapabilityService(store, () => '2026-09-04T08:00:00.000Z', (kind) => `${kind}:generated`)
+  await service.execute({
+    protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+    idempotencyKey: 'create-general-focus-task',
+    source: 'human-ui',
+    expectedWorkspaceRevision: 1,
+    command: {
+      type: 'task.create', taskId: 'task-general', eventId: 'event-create',
+      listId: 'list:system:learning', title: 'Prepare release notes', startOn: '2026-09-04',
+    },
+  })
+  await startStudyTask('task-general', {
+    sessionId: 'session-general', eventId: 'event-start', now: '2026-09-04T08:01:00.000Z',
+  })
+
+  const result = await completeStudyTask({
+    taskId: 'task-general', sessionId: 'session-general',
+    learned: 'This field belongs only to learning completion.',
+    evidence: 'This must not become a learning record.',
+    nextAction: 'Publish after review.',
+  }, {
+    recordId: 'record-must-not-exist', eventId: 'event-complete', now: '2026-09-04T08:31:00.000Z',
+  })
+
+  assert.equal(result.task.status, 'completed')
+  assert.equal(result.record, null)
+  const persisted = await loadStudyState()
+  assert.equal(persisted.tasks.find(({ id }) => id === 'task-general')?.status, 'completed')
+  assert.equal(persisted.sessions.find(({ id }) => id === 'session-general')?.state, 'finished')
+  assert.deepEqual(persisted.completionRecords, [])
 })
 
 test('checklist commands persist stable items without noisy TaskEvents', async () => {
