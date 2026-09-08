@@ -91,4 +91,3 @@ function escapeLine(value: string): string {
     .replace(/^(\s*)(#{1,6}|[-+] |\d+[.)] )/, '$1\\$2')
     .replace(/^(\s*)((?:-{3,}|={3,})\s*)$/, '$1\\$2')
 }
-

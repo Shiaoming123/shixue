@@ -80,4 +80,3 @@ function localDate(now: string, timezone: string): string {
   if (Number.isNaN(instant.getTime())) throw new Error(`Invalid projection instant: ${now}`)
   return createTimeZoneFormatter(timezone)(instant).date
 }
-
