@@ -112,7 +112,7 @@ function validProtocol() {
         nativeBuild: 'pass',
         emulatorRun: 'pass',
         persistenceRestart: 'pass',
-        emulatorRebootPersistence: 'not-run',
+        emulatorRebootPersistence: 'pass',
         deviceRun: 'not-run',
       },
       ios: {
@@ -199,7 +199,7 @@ test('rejects removing Android restart persistence or attributing it to the curr
   assert.match(validate(iosProtocol).errors.join('\n'), /nativeEvidence must retain the recorded Android and iOS evidence boundaries/)
 
   const rebootProtocol = validProtocol()
-  rebootProtocol.nativeEvidence.android.emulatorRebootPersistence = 'pass'
+  rebootProtocol.nativeEvidence.android.emulatorRebootPersistence = 'not-run'
   assert.match(validate(rebootProtocol).errors.join('\n'), /nativeEvidence must retain the recorded Android and iOS evidence boundaries/)
 })
 

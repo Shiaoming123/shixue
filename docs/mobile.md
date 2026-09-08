@@ -10,7 +10,7 @@
 | 维度 | 现状 | 目标 |
 |---|---|---|
 | 桌面端 | ✅ macOS / Windows / Linux 为主要 CI 与发布目标 | 保持 |
-| 移动端 | 🟡 M1–M2 已完成；Android 当前树已有本地模拟器启动与应用进程重启后的 SQLite 恢复证据，iOS 仅保留历史快照 | 补真机、模拟器重启恢复、通知、签名与商店证据 |
+| 移动端 | 🟡 M1–M2 已完成；Android 当前树已有模拟器启动、应用进程重启与模拟器整机重启后的 SQLite 恢复证据，iOS 仅保留历史快照 | 补真机、通知、签名与商店证据 |
 | 前端 | ✅ 桌面侧边栏 + 移动端底部 tab | 保持响应式与安全区适配 |
 | 桌面专属能力 | tray / single-instance / updater | 移动端安全降级 |
 
@@ -225,7 +225,7 @@ compact（< 820px）：底部 tab bar + 内容区
 
 ## 6. 分阶段实施
 
-> **成熟度：Beta。** M1–M2 已在浏览器构建产物中验证；Android M3 的 `42cc204` 已生成 x86_64 debug APK，并在隔离 API 36 模拟器通过显式 Activity 启动、五阶段 readiness、前台与稳定 PID smoke；同一 APK 还通过能力服务写入唯一任务，在确认应用进程终止后从 SQLite 恢复任务、创建回执和事件。模拟器整机重启恢复已有自动化门禁，但当前提交没有原生运行结果，仍为 `NOT_RUN`。iOS 仅保留历史 Simulator 快照，当前树仍是 `Source-ready`。M5 的原生通知、签名、真机与商店部分仍未验证。
+> **成熟度：Beta。** M1–M2 已在浏览器构建产物中验证；Android M3 的 `42cc204` 已生成 x86_64 debug APK，并在隔离 API 36 模拟器通过显式 Activity 启动、五阶段 readiness、前台与稳定 PID smoke；同一 APK 还通过能力服务写入唯一任务，在确认应用进程终止后从 SQLite 恢复任务、创建回执和事件。`20000be` 的 `android-debug` run [34182148062](https://github.com/Shiaoming123/shixue/actions/runs/34182148062) 进一步在 API 35 x86_64 模拟器通过整机重启恢复，并确认内核 boot ID 发生变化。iOS 仅保留历史 Simulator 快照，当前树仍是 `Source-ready`。M5 的原生通知、签名、真机与商店部分仍未验证。
 
 | 阶段 | 内容 | 前置 | 可独立验证 |
 |---|---|---|---|
