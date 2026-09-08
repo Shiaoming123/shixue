@@ -45,3 +45,25 @@ test('a missing UI selector cannot produce successful native evidence', async ()
   assert.equal(report.success, false)
   assert.match(report.error, /学习任务 button timed out/)
 })
+
+test('errors already buffered while attaching fail before any UI action', async () => {
+  for (const bufferedKind of ['console', 'pageerror']) {
+    const { options } = harness({ exercise: undefined })
+    const [device] = await options.android.devices()
+    let uiActions = 0
+    const page = {
+      setDefaultTimeout: () => {},
+      on: () => {},
+      consoleMessages: async () => bufferedKind === 'console' ? [{ type: () => 'error', text: () => 'buffered console failure' }] : [],
+      pageErrors: async () => bufferedKind === 'pageerror' ? [new Error('buffered page failure')] : [],
+      locator: () => ({ waitFor: async () => {} }),
+      getByRole: () => { uiActions++; throw new Error('UI must not run') },
+    }
+    options.android.devices = async () => [{ ...device, webView: async () => ({ page: async () => page }) }]
+    const report = await runAndroidLearningLoop(options)
+    assert.equal(report.success, false)
+    assert.match(report.error, /buffered (console|page) failure/)
+    assert.equal(uiActions, 0)
+    assert.match(report.errorCoverage, /not guaranteed before attachment/)
+  }
+})

@@ -7,7 +7,8 @@ const packageId = 'com.shiaoming123.shixue'
 const token = (value) => typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value)
 
 export async function runAndroidLearningLoop({ device: serial, launch, android, outputDirectory, exercise = exerciseLearningLoop } = {}) {
-  const report = { schemaVersion: 1, device: serial, packageId, launchRunId: launch?.runId, apk: launch?.apk, success: false }
+  const report = { schemaVersion: 1, device: serial, packageId, launchRunId: launch?.runId, apk: launch?.apk, success: false,
+    errorCoverage: 'Playwright buffered errors available at each WebView attachment plus subsequent events; not guaranteed before attachment.' }
   let device
   try {
     assert.ok(token(serial) && token(launch?.runId), 'Invalid device or launch run id.')
@@ -47,6 +48,10 @@ async function exerciseLearningLoop(device, launch, outputDirectory) {
     page.setDefaultTimeout(20_000)
     page.on('pageerror', (error) => errors.push(error.message))
     page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+    const [messages, pageErrors] = await Promise.all([page.consoleMessages(), page.pageErrors()])
+    errors.push(...messages.filter((message) => message.type() === 'error').map((message) => message.text()),
+      ...pageErrors.map((error) => error.message))
+    assert.deepEqual(errors, [], 'Native WebView already emitted errors during attachment.')
     await page.locator('.loading').waitFor({ state: 'hidden' })
   }
   const screenshot = async (name) => {
