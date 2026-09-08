@@ -325,9 +325,16 @@ function queryInstalledMsiProduct(productName) {
   const escaped = productName.replaceAll("'", "''")
   const command = `$found = Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq '${escaped}' }; if ($found) { exit 10 }`
   return new Promise((resolveQuery, rejectQuery) => {
-    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], { stdio: 'ignore', windowsHide: true })
+    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
+    let stderr = ''
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk) => { stderr += chunk })
     child.once('error', rejectQuery)
-    child.once('exit', (code, signal) => signal ? rejectQuery(new Error(`MSI identity query exited with ${signal}`)) : resolveQuery(code))
+    child.once('exit', (code, signal) => {
+      if (signal) return rejectQuery(new Error(`MSI identity query exited with ${signal}`))
+      if (code !== 0 && code !== 10) return rejectQuery(new Error(`MSI identity query exited ${code}: ${stderr.trim() || 'no diagnostic output'}`))
+      resolveQuery(code)
+    })
   })
 }
 

@@ -36,13 +36,14 @@ test('a moved release tag cannot inherit acceptance of the original source', () 
 })
 
 test('staging refuses local, self-hosted and non-Windows execution before any writes', () => {
-  const env = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_OS: 'Windows', GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF_NAME: 'main', GITHUB_REPOSITORY: 'Shiaoming123/shixue', GITHUB_TOKEN: 'test-token' }
+  const env = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_OS: 'Windows', GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/main', GITHUB_REPOSITORY: 'Shiaoming123/shixue', GITHUB_TOKEN: 'test-token' }
   assert.doesNotThrow(() => assertHostedWindows('win32', env))
   assert.throws(() => assertHostedWindows('linux', env))
-  for (const key of Object.keys(env).filter((key) => key !== 'GITHUB_REF_NAME')) {
+  for (const key of Object.keys(env)) {
     assert.throws(() => assertHostedWindows('win32', { ...env, [key]: '' }))
   }
   assert.throws(() => assertHostedWindows('win32', { ...env, RUNNER_ENVIRONMENT: 'self-hosted' }))
-  assert.doesNotThrow(() => assertHostedWindows('win32', { ...env, GITHUB_EVENT_NAME: 'push', GITHUB_REF_NAME: 'ci/public-windows-msi-smoke' }))
-  assert.throws(() => assertHostedWindows('win32', { ...env, GITHUB_EVENT_NAME: 'push', GITHUB_REF_NAME: 'other' }))
+  assert.doesNotThrow(() => assertHostedWindows('win32', { ...env, GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/ci/public-windows-msi-smoke' }))
+  assert.throws(() => assertHostedWindows('win32', { ...env, GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/other' }))
+  assert.throws(() => assertHostedWindows('win32', { ...env, GITHUB_REF: 'refs/heads/untrusted' }))
 })

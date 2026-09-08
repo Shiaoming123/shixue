@@ -22,7 +22,7 @@ jobs:
           node-version: 22
       - name: Stage the pinned public v0.3.0 MSI
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/stage-public-windows-msi.mjs
       - name: Install, launch, relaunch and uninstall
         run: node scripts/smoke-windows-package.mjs --msi
