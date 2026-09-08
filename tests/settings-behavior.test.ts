@@ -88,6 +88,45 @@ test('failed learning completion retains its evidence context for retry', async 
   assert.deepEqual(notices, ['write unavailable'])
 })
 
+test('workspace refresh keeps an unsaved focus note visible so continued typing cannot erase it', async () => {
+  const state = ref({ sessions: [{ id: 'focus', scratchpad: 'new note' }] })
+  const api = handlers('App.vue', ['refreshState'], {
+    getWorkspaceStore: () => ({ load: async () => ({}) }),
+    projectWorkspaceState: () => ({ sessions: [{ id: 'focus', scratchpad: 'old note' }] }),
+    recurrenceWorkspace: ref({}), state, scheduleCloudSync: () => {},
+    scratchDrafts: new Map([['focus', 'new note']]),
+  })
+  await api.refreshState()
+  assert.equal(state.value.sessions[0].scratchpad, 'new note')
+})
+
+test('saving notes keeps newer typing and saves notes from both tasks after a quick switch', async () => {
+  const scratchDrafts = new Map([['first', 'first draft'], ['second', 'second draft']])
+  const writes: string[] = []
+  const api = handlers('App.vue', ['saveScratchDrafts'], {
+    scratchDrafts, reportStorageError: (error: unknown) => { throw error },
+    saveStudyScratchpad: async (id: string, value: string) => {
+      writes.push(`${id}:${value}`)
+      if (id === 'first') scratchDrafts.set(id, 'newer draft')
+    },
+  })
+  await api.saveScratchDrafts()
+  assert.deepEqual(writes, ['first:first draft', 'second:second draft'])
+  assert.deepEqual([...scratchDrafts], [['first', 'newer draft']])
+})
+
+test('failed note writes retain the draft for refresh and retry', async () => {
+  const scratchDrafts = new Map([['focus', 'unsaved note']])
+  const errors: unknown[] = []
+  const api = handlers('App.vue', ['saveScratchDrafts'], {
+    scratchDrafts, reportStorageError: (error: unknown) => errors.push(error),
+    saveStudyScratchpad: async () => { throw new Error('disk unavailable') },
+  })
+  await api.saveScratchDrafts()
+  assert.equal(scratchDrafts.get('focus'), 'unsaved note')
+  assert.equal(errors.length, 1)
+})
+
 test('only the current destination owns selection even when previous filters remain', () => {
   assert.equal(currentSidebarDestination('settings', 'today', 'list:a'), 'page:settings')
   assert.equal(currentSidebarDestination('review', 'all', 'list:a'), 'page:review')
@@ -266,10 +305,10 @@ test('refresh projects both UI models from the same newly loaded workspace', asy
   const next = await createInMemoryWorkspaceStore().load()
   const state = ref<unknown>('old')
   const recurrenceWorkspace = ref<unknown>('old')
-  const projected = { tasks: ['new'] }
+  const projected = { tasks: ['new'], sessions: [] }
   let reads = 0
   const api = handlers('App.vue', ['refreshState'], {
-    state, recurrenceWorkspace, scheduleCloudSync() {},
+    state, recurrenceWorkspace, scratchDrafts: new Map(), scheduleCloudSync() {},
     getWorkspaceStore: () => ({ load: async () => { reads++; return next } }),
     projectWorkspaceState: (value: unknown) => { assert.equal(value, next); return projected },
   })

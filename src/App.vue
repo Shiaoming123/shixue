@@ -251,6 +251,7 @@ let reminderTimer: ReturnType<typeof setInterval> | undefined
 let cloudTimer: ReturnType<typeof setInterval> | undefined
 let cloudDebounceTimer: ReturnType<typeof setTimeout> | undefined
 let scratchSaveTimer: ReturnType<typeof setTimeout> | undefined
+const scratchDrafts = new Map<string, string>()
 let compactMedia: MediaQueryList | undefined
 
 const today = computed(() => new Date().toLocaleDateString('sv-SE'))
@@ -671,6 +672,10 @@ function onCompactChange(event: MediaQueryListEvent) {
 async function refreshState() {
   const workspace = await getWorkspaceStore().load()
   const projected = projectWorkspaceState(workspace)
+  for (const session of projected.sessions) {
+    const draft = scratchDrafts.get(session.id)
+    if (draft !== undefined) session.scratchpad = draft
+  }
   recurrenceWorkspace.value = workspace
   state.value = projected
   scheduleCloudSync()
@@ -1385,8 +1390,18 @@ function updateScratchpad(value: string) {
   if (!session) return
   const sessionId = session.id
   session.scratchpad = value
+  scratchDrafts.set(sessionId, value)
   if (scratchSaveTimer) clearTimeout(scratchSaveTimer)
-  scratchSaveTimer = setTimeout(async () => { try { await saveStudyScratchpad(sessionId, value, { now: new Date().toISOString() }) } catch (error) { reportStorageError(error) } }, 450)
+  scratchSaveTimer = setTimeout(saveScratchDrafts, 450)
+}
+
+async function saveScratchDrafts() {
+  for (const [sessionId, value] of scratchDrafts) {
+    try {
+      await saveStudyScratchpad(sessionId, value, { now: new Date().toISOString() })
+      if (scratchDrafts.get(sessionId) === value) scratchDrafts.delete(sessionId)
+    } catch (error) { reportStorageError(error) }
+  }
 }
 
 async function completeFocus(payload: CompletionPayload) {
