@@ -218,11 +218,11 @@ defineExpose({ close: requestClose, updatePosition })
   .popover-panel--mobile-sheet {
     top: auto !important;
     right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
     left: 12px !important;
     width: auto;
     max-width: none;
-    max-height: calc(100dvh - 32px - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - 104px - env(safe-area-inset-bottom, 0px));
     border-radius: var(--radius-2xl);
     background: var(--surface);
   }
@@ -234,13 +234,6 @@ defineExpose({ close: requestClose, updatePosition })
     left: 0 !important;
     border-right: 0;
     border-left: 0;
-  }
-}
-
-@media (max-width: 819px) {
-  .popover-panel--mobile-sheet {
-    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
-    max-height: calc(100dvh - 104px - env(safe-area-inset-bottom, 0px));
   }
 }
 

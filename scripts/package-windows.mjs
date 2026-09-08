@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import {
   copyFile,
@@ -11,6 +10,7 @@ import {
 } from 'node:fs/promises'
 import { basename, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { sha256File } from './file-sha256.mjs'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const releaseRoot = resolve(projectRoot, 'release-artifacts', 'windows')
@@ -118,11 +118,6 @@ async function listFiles(directory) {
   }
 }
 
-async function sha256(path) {
-  const contents = await readFile(path)
-  return createHash('sha256').update(contents).digest('hex')
-}
-
 async function assertBinaryHeader(path, kind) {
   const contents = await readFile(path)
   if (!hasWindowsBinaryHeader(contents, kind)) {
@@ -147,7 +142,7 @@ export async function auditWindowsDelivery(directory, expected) {
     if (!artifactStat.isFile() || artifactStat.size !== artifact.bytes) {
       throw new Error(`Windows delivery artifact size mismatch: ${artifact.file}`)
     }
-    const digest = await sha256(artifactPath)
+    const digest = await sha256File(artifactPath)
     if (digest !== artifact.sha256) {
       throw new Error(`Windows delivery artifact checksum mismatch: ${artifact.file}`)
     }
@@ -231,7 +226,7 @@ async function buildDelivery() {
       kind,
       file,
       bytes: artifactStat.size,
-      sha256: await sha256(destination),
+      sha256: await sha256File(destination),
     })
   }
 

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { appendFile, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,13 +7,9 @@ import {
   readWindowsBuildMetadata,
   resolveCargoTargetRoot,
 } from './package-windows.mjs'
+import { sha256File } from './file-sha256.mjs'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
-
-async function sha256(path) {
-  const contents = await readFile(path)
-  return createHash('sha256').update(contents).digest('hex')
-}
 
 export async function stageWindowsPortable({
   source,
@@ -31,7 +26,7 @@ export async function stageWindowsPortable({
   const fileName = deliveryFileName('portable', version, architecture)
   const destination = resolve(outputDirectory, fileName)
   await copyFile(source, destination)
-  const digest = await sha256(destination)
+  const digest = await sha256File(destination)
   const checksumPath = resolve(outputDirectory, `${fileName}.sha256`)
   await writeFile(checksumPath, `${digest}  ${fileName}\n`)
   return { path: destination, fileName, checksumPath, sha256: digest }

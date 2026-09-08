@@ -19,13 +19,14 @@ export function inspectMobileToolchains({
   environment = process.env,
   runCommand = spawnSync,
 } = {}) {
+  const installedTargets = installedRustTargets(runCommand)
   return {
-    android: inspectAndroid({ environment, runCommand }),
-    ios: inspectIos({ platform, runCommand }),
+    android: inspectAndroid({ environment, runCommand, installedTargets }),
+    ios: inspectIos({ platform, runCommand, installedTargets }),
   }
 }
 
-function inspectAndroid({ environment, runCommand }) {
+function inspectAndroid({ environment, runCommand, installedTargets }) {
   const errors = []
   const summary = []
   if (!environment.ANDROID_HOME && !environment.ANDROID_SDK_ROOT) {
@@ -39,7 +40,6 @@ function inspectAndroid({ environment, runCommand }) {
     errors.push('Install Android platform-tools so adb is available.')
   }
 
-  const installedTargets = installedRustTargets(runCommand)
   const missingTargets = ANDROID_TARGETS.filter((target) => !installedTargets.includes(target))
   if (missingTargets.length > 0) {
     errors.push(`Install Rust Android targets: ${missingTargets.join(', ')}.`)
@@ -56,7 +56,7 @@ function inspectAndroid({ environment, runCommand }) {
   return { state: errors.length === 0 ? 'ready' : 'missing-prerequisites', errors, summary, devices }
 }
 
-function inspectIos({ platform, runCommand }) {
+function inspectIos({ platform, runCommand, installedTargets }) {
   if (platform !== 'darwin') {
     return {
       state: 'unavailable',
@@ -68,7 +68,6 @@ function inspectIos({ platform, runCommand }) {
   const errors = []
   const xcode = run(runCommand, 'xcodebuild', ['-version'])
   const pod = run(runCommand, 'pod', ['--version'])
-  const installedTargets = installedRustTargets(runCommand)
   const missingTargets = IOS_TARGETS.filter((target) => !installedTargets.includes(target))
   if (xcode.status !== 0) errors.push('Install full Xcode and accept its license.')
   if (pod.status !== 0) errors.push('Install CocoaPods so pod is available.')

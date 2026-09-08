@@ -1,6 +1,7 @@
 import { createTimeZoneFormatter } from '../recurrence/timezone.ts'
 import type { WorkspaceStateV3 } from '../workspace/types.ts'
 import { projectTaskItems, type TaskProjection, type TaskProjectionReason } from '../../lib/study-task-query.ts'
+import { compareText } from '../../lib/text-order.ts'
 
 export const TODAY_GROUP_KINDS = ['overdue', 'planned', 'due', 'recurring'] as const
 export type TodayGroupKind = typeof TODAY_GROUP_KINDS[number]
@@ -78,8 +79,4 @@ function localDate(now: string, timezone: string): string {
   const instant = new Date(now)
   if (Number.isNaN(instant.getTime())) throw new Error(`Invalid projection instant: ${now}`)
   return createTimeZoneFormatter(timezone)(instant).date
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0
 }

@@ -1,4 +1,5 @@
 import type { CompletionRecord, WorkspaceStateV3 } from '../workspace/types.ts'
+import { compareText } from '../../lib/text-order.ts'
 
 const REVIEW_RESULT_LABELS: Record<NonNullable<CompletionRecord['lastReviewResult']>, string> = {
   clear: '记得',
@@ -89,8 +90,4 @@ function escapeLine(value: string): string {
     .replace(/([\\`*_\[\]~])/g, '\\$1')
     .replace(/^(\s*)(#{1,6}|[-+] |\d+[.)] )/, '$1\\$2')
     .replace(/^(\s*)((?:-{3,}|={3,})\s*)$/, '$1\\$2')
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0
 }

@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { sha256File } from './file-sha256.mjs'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const tauriTargetRoot = resolve(projectRoot, 'src-tauri', 'target')
@@ -204,11 +204,10 @@ export async function loadCandidateNsisArtifact(root, version) {
     throw new Error('Windows candidate NSIS metadata is incomplete.')
   }
   const path = assertSmokePath(directory, resolve(directory, artifact.file))
-  const [contents, artifactStat] = await Promise.all([readFile(path), stat(path)])
+  const [digest, artifactStat] = await Promise.all([sha256File(path), stat(path)])
   if (!artifactStat.isFile() || artifactStat.size !== artifact.bytes) {
     throw new Error(`Windows candidate NSIS size mismatch: ${artifact.file}`)
   }
-  const digest = createHash('sha256').update(contents).digest('hex')
   if (digest !== artifact.sha256) throw new Error(`Windows candidate NSIS checksum mismatch: ${artifact.file}`)
   return { ...artifact, path, manifestPath, manifest }
 }

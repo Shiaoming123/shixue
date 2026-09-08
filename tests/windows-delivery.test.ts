@@ -15,6 +15,7 @@ import {
   selectSingleArtifact,
 } from '../scripts/package-windows.mjs'
 import { stageWindowsPortable } from '../scripts/stage-windows-portable.mjs'
+import { sha256File } from '../scripts/file-sha256.mjs'
 import { validateWindowsReleaseWorkflow } from '../scripts/release-kit/config.mjs'
 
 function testPeExecutable() {
@@ -26,6 +27,15 @@ function testPeExecutable() {
 }
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
+
+test('hashes the exact file bytes as lowercase SHA-256 hex', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'shixue-file-sha256-'))
+  const path = join(root, 'binary.dat')
+  await writeFile(path, Buffer.from([0x00, 0xff, 0x61, 0x0a]))
+  t.after(() => rm(root, { recursive: true, force: true }))
+
+  assert.equal(await sha256File(path), 'ab537004c8945f156a7ad256f1458647062a1b9d66c60ee78101daef9b58b01d')
+})
 
 test('keeps generated Windows delivery files in the versioned delivery root', () => {
   const root = resolve('D:/repo/release-artifacts/windows')

@@ -1,6 +1,7 @@
 import { createTimeZoneFormatter } from '../recurrence/timezone.ts'
 import { SYSTEM_LEARNING_LIST_ID } from '../workspace/migrate.ts'
 import type { CompletionRecord, Task, TaskStatus, WorkspaceStateV3 } from '../workspace/types.ts'
+import { compareText } from '../../lib/text-order.ts'
 
 export type WorkspaceSearchKind = 'task' | 'completion_record'
 export type WorkspaceSearchStatus = TaskStatus | 'recorded'
@@ -194,10 +195,6 @@ function containsEvery(values: readonly string[], required: ReadonlySet<string>)
 
 function nonEmptySet<T>(values: readonly T[] | undefined): Set<T> | null {
   return values && values.length > 0 ? new Set(values) : null
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function normalize(value: string): string {

@@ -4,6 +4,8 @@ import test from 'node:test'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import * as Vue from 'vue'
+import { formatInTimeZone } from '../src/domain/recurrence/timezone.ts'
+import { compareText } from '../src/lib/text-order.ts'
 
 const sourceUrl = new URL('../src/components/study/GlobalSearchDialog.vue', import.meta.url)
 
@@ -27,6 +29,8 @@ function mountDialog() {
   new Function('require', 'exports', code)((id: string) => {
     if (id === 'vue') return Vue
     if (id.endsWith('/workspace-search.ts')) return { searchWorkspace }
+    if (id.endsWith('/recurrence/timezone.ts')) return { formatInTimeZone }
+    if (id.endsWith('/text-order.ts')) return { compareText }
     return {}
   }, exported)
   const workspace = {
@@ -134,6 +138,24 @@ test('task summaries expose the matching acceptance criterion or checklist item'
     task: { notes: '', checklist: [{ text: '准备环境' }, { text: 'Checkpoint 截图' }] },
     matchedFields: ['checklist'],
   }), 'Checkpoint 截图')
+  unmount()
+})
+
+test('task dates use the selected timezone while invalid instants stay hidden', () => {
+  const { state, unmount } = mountDialog()
+  assert.equal(state.localDate('2026-09-04T18:30:00.000Z'), '2026-09-05')
+  assert.equal(state.localDate('not-a-date'), '')
+  assert.equal(state.localDate(null), '')
+  unmount()
+})
+
+test('equal-position search facets keep raw id order', () => {
+  const { props, state, unmount } = mountDialog()
+  props.workspace.lists[1].position = 0
+  assert.deepEqual(state.orderedLists.value.map(({ id }: { id: string }) => id), [
+    'list:system:learning',
+    'topic:one',
+  ])
   unmount()
 })
 

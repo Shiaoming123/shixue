@@ -2,8 +2,10 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { FileCheck2, ListTodo, Search } from '@lucide/vue'
 import { searchWorkspace, type WorkspaceSearchQuery, type WorkspaceSearchResult } from '../../domain/search/workspace-search.ts'
+import { formatInTimeZone } from '../../domain/recurrence/timezone.ts'
 import { SYSTEM_LEARNING_LIST_ID } from '../../domain/workspace/migrate.ts'
 import type { TaskStatus, WorkspaceStateV3 } from '../../domain/workspace/types.ts'
+import { compareText } from '../../lib/text-order.ts'
 import Button from '../ui/Button.vue'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import Dialog from '../ui/Dialog.vue'
@@ -201,16 +203,7 @@ function localDate(value: string | null): string {
   if (!value) return ''
   const instant = new Date(value)
   if (Number.isNaN(instant.getTime())) return ''
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: props.timezone,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(instant)
-  const values = new Map(parts.map((part) => [part.type, part.value]))
-  return `${values.get('year')}-${values.get('month')}-${values.get('day')}`
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0
+  return formatInTimeZone(instant, props.timezone).date
 }
 
 function normalizeText(value: string): string {
