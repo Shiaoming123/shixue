@@ -14,9 +14,11 @@ export const PUBLIC_MSI = Object.freeze({
 })
 
 export function assertHostedWindows(platform, env) {
+  const isolatedAcceptanceRun = env.GITHUB_EVENT_NAME === 'workflow_dispatch'
+    || (env.GITHUB_EVENT_NAME === 'push' && env.GITHUB_REF_NAME === 'ci/public-windows-msi-smoke')
   if (platform !== 'win32' || env.GITHUB_ACTIONS !== 'true' || env.RUNNER_ENVIRONMENT !== 'github-hosted'
-    || env.RUNNER_OS !== 'Windows' || env.GITHUB_EVENT_NAME !== 'workflow_dispatch'
-    || env.GITHUB_REPOSITORY !== 'Shiaoming123/shixue') {
+    || env.RUNNER_OS !== 'Windows' || !isolatedAcceptanceRun
+    || env.GITHUB_REPOSITORY !== 'Shiaoming123/shixue' || !env.GITHUB_TOKEN) {
     throw new Error('This staging entrypoint requires the manual GitHub-hosted Windows workflow.')
   }
 }
@@ -45,7 +47,10 @@ export function validatePublicMsiBytes(bytes) {
 }
 
 async function request(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(120_000) })
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` },
+    signal: AbortSignal.timeout(120_000),
+  })
   if (!response.ok) throw new Error(`Public MSI request failed: HTTP ${response.status}`)
   return response
 }
