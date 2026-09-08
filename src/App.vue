@@ -165,6 +165,8 @@ type RecurrenceUpdateEnvelope = CommandEnvelope<Extract<CapabilityCommand, { typ
 let recurrencePreviewEnvelope: RecurrenceUpdateEnvelope | null = null
 let recurrencePreviewVersion = 0
 const reviewRevealed = ref(false)
+const reviewBusy = ref(false)
+const reviewRefreshRequired = ref(false)
 const reviewMode = ref<'review' | 'records'>('review')
 const recordTarget = ref<{ id: string; requestId: number }>()
 let recordTargetRequestId = 0
@@ -1475,7 +1477,34 @@ async function completeTaskEvidence(payload: CompletionPayload) {
 }
 
 async function rateReview(linkId: string, result: ReviewResult) {
-  try { await completeReviewTaskLink(linkId, result, today.value, { now: new Date().toISOString() }); await refreshState(); reviewRevealed.value = false; notify(result === 'clear' ? '已安排下一次回顾。' : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。') } catch (error) { reportStorageError(error) }
+  if (reviewBusy.value) return
+  reviewBusy.value = true
+  try {
+    const workspace = await capabilityService.query({ type: 'workspace.snapshot' })
+    const receipt = await capabilityService.execute({
+      protocolVersion: CAPABILITY_PROTOCOL_VERSION,
+      idempotencyKey: `review:${crypto.randomUUID()}`,
+      source: 'human-ui', expectedWorkspaceRevision: workspace.revision,
+      command: { type: 'review.complete', linkId, result, reviewedOn: today.value },
+    })
+    if (!await reloadReviews()) return
+    const nextLinkId = receipt.data && typeof receipt.data === 'object' && !Array.isArray(receipt.data) ? receipt.data.nextLinkId : undefined
+    notify(result === 'clear' ? (nextLinkId ? '已安排下一次回顾。' : nextLinkId === null ? '已完成这一轮复习。' : '复习结果已刷新。') : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。')
+  } catch (error) { reviewBusy.value = false; reportStorageError(error) }
+}
+
+async function reloadReviews() {
+  try {
+    await refreshState()
+    reviewRevealed.value = false
+    reviewBusy.value = false
+    reviewRefreshRequired.value = false
+    return true
+  } catch (error) {
+    reviewRefreshRequired.value = true
+    notify(`复习结果已保存，但视图刷新失败：${error instanceof Error ? error.message : String(error)}`)
+    return false
+  }
 }
 
 function openFocusCompletion(reviewLinkId?: string) {
@@ -1717,7 +1746,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
           <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
           <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
           <LearningRhythmView v-else-if="destination.section === 'rhythm'" :items="learningRhythmItems" :totals="learningRhythmSelection.totals" @open-occurrence="openRhythmOccurrence" @open-task="openSearchTask" @edit-task="openTaskEditor" />
-          <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :weekly-summary="weeklyLearningSummary" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @rate="rateReview" @create-task="createFromNextAction" @open-task="openSearchTask" @open-record="openSearchRecord" @open-plan-source="openWeeklyPlanSource" />
+          <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :busy="reviewBusy" :refresh-required="reviewRefreshRequired" :weekly-summary="weeklyLearningSummary" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @reload="reloadReviews" @rate="rateReview" @create-task="createFromNextAction" @open-task="openSearchTask" @open-record="openSearchRecord" @open-plan-source="openWeeklyPlanSource" />
         </div>
         <CalendarWorkspace v-if="!loading && page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :target-offset="calendarTargetOffset" :execute-command="executeCalendarCommand" @desktop-mode-selected="persistDesktopCalendarMode" />
       </main>

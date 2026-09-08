@@ -35,6 +35,55 @@ function handlers(file: string, names: string[], ports: Record<string, unknown>)
 }
 const ref = <T>(value: T) => ({ value })
 
+test('review commit blocks double ratings and keeps refresh failure retries read-only', async () => {
+  const reviewBusy = ref(false)
+  const reviewRevealed = ref(true)
+  const notices: any[][] = []
+  let writes = 0
+  let failRead = true
+  const { rateReview, reloadReviews } = handlers('App.vue', ['rateReview', 'reloadReviews'], {
+    reviewBusy, reviewRevealed, reviewRefreshRequired: ref(false), today: ref('2026-09-08'),
+    completeReviewTaskLink: async () => { writes++; return { nextReviewOn: null } },
+    capabilityService: { query: async () => ({ revision: 1 }), execute: async () => { writes++; return { data: { nextLinkId: null } } } },
+    CAPABILITY_PROTOCOL_VERSION: 1,
+    refreshState: async () => { if (failRead) throw new Error('read unavailable') },
+    notify: (...args: any[]) => notices.push(args), reportStorageError: assert.fail,
+  })
+  await Promise.all([rateReview('review:first', 'clear'), rateReview('review:first', 'fuzzy')])
+  assert.equal(writes, 1)
+  assert.equal(reviewBusy.value, true, 'stale outcome controls must remain disabled after commit')
+  assert.match(notices[0][0], /复习结果已保存.*刷新失败/)
+  assert.equal(await reloadReviews(), false)
+  assert.equal(reviewBusy.value, true)
+  failRead = false
+  assert.equal(await reloadReviews(), true)
+  assert.equal(writes, 1)
+  assert.equal(reviewBusy.value, false)
+  assert.equal(reviewRevealed.value, false)
+})
+
+test('review feedback describes the persisted next cycle and releases failed writes for retry', async () => {
+  for (const nextLinkId of ['review:next', null, undefined]) {
+    const notices: string[] = []
+    const reviewBusy = ref(false)
+    let failWrite = true
+    const { rateReview } = handlers('App.vue', ['rateReview', 'reloadReviews'], {
+      reviewBusy, reviewRevealed: ref(true), reviewRefreshRequired: ref(false), today: ref('2026-09-08'),
+      completeReviewTaskLink: async () => { if (failWrite) throw new Error('write unavailable'); return { nextReviewOn: nextLinkId ? '2026-09-15' : null } },
+      capabilityService: { query: async () => ({ revision: 1 }), execute: async () => { if (failWrite) throw new Error('write unavailable'); return { data: { nextLinkId } } } },
+      CAPABILITY_PROTOCOL_VERSION: 1, refreshState: async () => {},
+      notify: (message: string) => notices.push(message), reportStorageError: (error: Error) => notices.push(error.message),
+    })
+    await rateReview('review:first', 'clear')
+    assert.equal(reviewBusy.value, false)
+    assert.deepEqual(notices, ['write unavailable'])
+    failWrite = false
+    await rateReview('review:first', 'clear')
+    assert.equal(reviewBusy.value, false)
+    assert.equal(notices[1], nextLinkId ? '已安排下一次回顾。' : nextLinkId === null ? '已完成这一轮复习。' : '复习结果已刷新。')
+  }
+})
+
 test('learning completion closes after commit and offers a read-only retry when refreshing fails', async () => {
   const completionTaskId = ref('learning-task')
   const completionOpen = ref(true)
