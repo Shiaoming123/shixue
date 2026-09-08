@@ -68,6 +68,7 @@ signtool verify /pa /all /v .\Shixue_*.msi
 
 - Portable、NSIS、MSI、SHA-256 与安装启动 smoke：已实现；updater 签名用于安装包更新产物，不覆盖 Portable EXE。
 - `npm run smoke:windows-package` 只消费 `release-artifacts/windows/<version>/manifest.json` 精确指向的单一 NSIS，并在安装前核对大小和 SHA-256；真实产品注册表身份已存在时拒绝覆盖。报告位于 `src-tauri/target/windows-package-smoke-report.json`，自动阶段分别记录 manifest audit、隔离静默安装、首次启动、重启、卸载和清理。脚本不会把进程存活当作可用 UI 证明；可见窗口、应用内提醒动作和托盘等结果由独立的已安装应用验收记录。
+- `npm run smoke:windows-msi` 对 manifest 中唯一 MSI 执行同样的精确字节校验与真实 Known Folder 数据预检，并在独立报告中记录静默的每用户安装、启动、重启和卸载阶段。若同名 MSI 产品或应用数据已存在，结果保持 `BLOCKED`，脚本不会覆盖或删除用户现有状态。
 - 当前原生通知只提交通知正文，Windows 原生通知操作按钮为 `UNSUPPORTED`；Complete / Snooze / Open 由应用内提醒卡承接。只有实机观察到系统通知后，才可把“接受提交”升级为“观察到投递”。
 - Authenticode 证书采购、CI 代码签名和干净设备上的签名验证：尚未实现。
 - SmartScreen 信誉不是单次构建可以证明的结果；即使签名有效，也需要真实分发积累。
