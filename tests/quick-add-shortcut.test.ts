@@ -70,6 +70,6 @@ test('local N focuses the current view composer without hijacking editable targe
   assert.match(tasks, /target instanceof HTMLElement && isQuickAddEditableTarget\(target\)/)
   assert.match(tasks, /event\.key\.toLowerCase\(\) === 'n'[\s\S]*quickAddComposer\.value\?\.focus\(\)/)
   assert.match(tasks, /function activateQuickAdd\(\)[\s\S]*confirmDeleteIds\.value = \[\][\s\S]*quickAddComposer\.value\?\.focus\(\)/)
-  assert.match(tasks, /defineExpose\(\{ activateQuickAdd \}\)/)
+  assert.match(tasks, /defineExpose\(\{ activateQuickAdd, prepareTaskRemovalFocus \}\)/)
   assert.doesNotMatch(tasks, /\[contenteditable="true"\]/)
 })

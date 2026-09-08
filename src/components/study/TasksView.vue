@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import { Bell, CalendarDays, Check, CheckCircle2, ChevronRight, Filter, Flag, Inbox, ListFilter, ListTree, MoreHorizontal, Pencil, Search, Trash2, X } from '@lucide/vue'
 import type { StudyTaskPriority } from '../../storage/study/types'
 import type { StudyTaskQuerySort, StudyTaskSmartView, TaskProjectionReason } from '../../lib/study-task-query'
@@ -46,6 +46,8 @@ const emit = defineEmits<{
 
 const quickAddComposer = ref<InstanceType<typeof QuickAddComposer> | null>(null)
 const searchInput = ref<HTMLInputElement>()
+const pageTitle = ref<HTMLElement>()
+const taskButtons = new Map<string, HTMLElement>()
 const toolbarOpen = ref(false)
 const smartViewMenuOpen = ref(false)
 const batchMode = ref(false)
@@ -131,15 +133,25 @@ async function activateQuickAdd() {
   await nextTick()
   quickAddComposer.value?.focus()
 }
+function setTaskButton(id: string, element: Element | ComponentPublicInstance | null) {
+  if (element instanceof HTMLElement) taskButtons.set(id, element)
+  else taskButtons.delete(id)
+}
+function prepareTaskRemovalFocus(taskId: string) {
+  const taskIds = props.tasks.map(({ id }) => id)
+  const index = taskIds.indexOf(taskId)
+  const candidates = [taskIds[index + 1], taskIds[index - 1]].filter((id): id is string => Boolean(id))
+  return () => candidates.map((id) => taskButtons.get(id)).find((element) => element?.isConnected) ?? pageTitle.value ?? null
+}
 onMounted(() => window.addEventListener('keydown', handleShortcut))
 onUnmounted(() => window.removeEventListener('keydown', handleShortcut))
-defineExpose({ activateQuickAdd })
+defineExpose({ activateQuickAdd, prepareTaskRemovalFocus })
 </script>
 
 <template>
   <section class="tasks-view">
     <header class="page-header">
-      <div class="page-title"><h1>{{ title }}</h1><span>{{ subtitle }}</span></div>
+      <div class="page-title"><h1 ref="pageTitle" tabindex="-1">{{ title }}</h1><span>{{ subtitle }}</span></div>
       <div class="header-actions">
         <Popover :open="smartViewMenuOpen" kind="menu" align="end" mobile-sheet mobile-sheet-label="切换智能清单" @update:open="smartViewMenuOpen = $event">
           <template #trigger="{ triggerProps }"><button v-bind="triggerProps" type="button" title="切换智能清单" aria-label="切换智能清单"><ListTree :size="18" /></button></template>
@@ -175,7 +187,7 @@ defineExpose({ activateQuickAdd })
         <article v-for="task in section.tasks" :key="task.id" class="task-row" :class="{ selected: selectedId === task.id, completed: task.status === 'completed' }">
           <Checkbox v-if="batchMode" class="select-button" shape="round" :model-value="selectedIds.includes(task.id)" :accessible-label="`选择 ${task.title}`" @update:model-value="toggleSelection(task.id)" />
           <button v-else class="complete-button" type="button" :aria-label="task.status === 'completed' ? `重新打开 ${task.title}` : `完成 ${task.title}`" @click="emit('toggleComplete', task.id)"><span :class="[task.priority, { checked: task.status === 'completed' }]"><Check :size="14" /></span></button>
-          <button class="task-main" type="button" @click="emit('open', task.id)"><span class="task-copy"><strong>{{ task.title }}</strong><span v-if="task.reasons.length" class="reason-tags"><small v-for="reason in task.reasons" :key="reason">{{ reasonLabel(reason) }}</small></span><small class="tabular-numbers"><span v-if="task.plannedLabel"><CalendarDays :size="13" />{{ task.plannedLabel }}</span><span v-if="task.reminderLabel"><Bell :size="13" />{{ task.reminderLabel }}</span><span><Inbox :size="13" />{{ task.topic }}</span></small></span><Flag v-if="task.priority !== 'none'" class="priority" :class="task.priority" :size="17" fill="currentColor" /><ChevronRight :size="17" class="chevron" /></button>
+          <button :ref="(element) => setTaskButton(task.id, element)" class="task-main" type="button" @click="emit('open', task.id)"><span class="task-copy"><strong>{{ task.title }}</strong><span v-if="task.reasons.length" class="reason-tags"><small v-for="reason in task.reasons" :key="reason">{{ reasonLabel(reason) }}</small></span><small class="tabular-numbers"><span v-if="task.plannedLabel"><CalendarDays :size="13" />{{ task.plannedLabel }}</span><span v-if="task.reminderLabel"><Bell :size="13" />{{ task.reminderLabel }}</span><span><Inbox :size="13" />{{ task.topic }}</span></small></span><Flag v-if="task.priority !== 'none'" class="priority" :class="task.priority" :size="17" fill="currentColor" /><ChevronRight :size="17" class="chevron" /></button>
           <div class="row-actions"><button v-if="task.reasons.includes('overdue')" type="button" title="延期" :aria-label="`延期 ${task.title}`" @click="emit('defer', task.id)"><CalendarDays :size="15" /></button><button v-if="task.reasons.includes('overdue')" type="button" class="danger" title="取消" :aria-label="`取消 ${task.title}`" @click="emit('cancel', task.id)"><X :size="15" /></button><button type="button" title="编辑" :aria-label="`编辑 ${task.title}`" @click="emit('edit', task.id)"><Pencil :size="15" /></button><button type="button" class="danger" title="删除" :aria-label="`删除 ${task.title}`" @click="confirmDeleteIds = [task.id]"><Trash2 :size="15" /></button></div>
         </article>
       </section>
