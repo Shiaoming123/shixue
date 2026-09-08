@@ -4,10 +4,13 @@ import test from 'node:test'
 
 import { buildIosCiEvidence, selectIosSimulator } from '../scripts/ios-simulator-ci.mjs'
 
-test('manual iOS workflow keeps unsigned simulator validation isolated and observable', () => {
+test('iOS workflow runs manually and for relevant pull requests while keeping unsigned simulator validation isolated', () => {
   const workflow = readFileSync(new URL('../.github/workflows/ios-simulator.yml', import.meta.url), 'utf8')
   assert.match(workflow, /on:\s*\r?\n\s+workflow_dispatch:/)
-  assert.doesNotMatch(workflow, /\b(?:push|pull_request|schedule):/)
+  assert.match(workflow, /\n\s+pull_request:\s*\r?\n\s+paths:/)
+  assert.match(workflow, /- 'src-tauri\/\*\*'/)
+  assert.match(workflow, /- 'scripts\/smoke-ios-launch\.mjs'/)
+  assert.doesNotMatch(workflow, /\b(?:push|schedule):/)
   assert.match(workflow, /permissions:\s*\r?\n\s+contents:\s*read/)
   assert.match(workflow, /runs-on:\s*macos-15\b/)
   assert.doesNotMatch(workflow, /macos[_-]xl|secrets\.|SIGNING|certificate|provision/i)
@@ -21,6 +24,17 @@ test('manual iOS workflow keeps unsigned simulator validation isolated and obser
   const selectionStep = workflow.match(/- name: Select(?: and boot)? an available iPhone Simulator[\s\S]*?(?=\n\s+- name:)/)?.[0] ?? ''
   assert.ok(selectionStep)
   assert.doesNotMatch(selectionStep, /steps\.simulator\.outputs/, 'a step cannot consume its own outputs')
+})
+
+test('iOS workflow configures Cargo target storage on the runner before building', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ios-simulator.yml', import.meta.url), 'utf8')
+  assert.doesNotMatch(workflow, /\$\{\{\s*runner\.temp\s*\}\}/)
+  const targetDirectoryIndex = workflow.indexOf('CARGO_TARGET_DIR=$RUNNER_TEMP/shixue-ios-cargo-target')
+  const githubEnvironmentIndex = workflow.indexOf('>> "$GITHUB_ENV"', targetDirectoryIndex)
+  const buildIndex = workflow.indexOf('ios build --debug --target aarch64-sim')
+  assert.ok(targetDirectoryIndex > 0, 'workflow must derive the Cargo target directory from RUNNER_TEMP')
+  assert.ok(githubEnvironmentIndex > targetDirectoryIndex, 'workflow must persist the target directory through GITHUB_ENV')
+  assert.ok(buildIndex > githubEnvironmentIndex, 'workflow must configure the target directory before the iOS build')
 })
 
 test('selects an available iPhone simulator and returns its explicit UDID', () => {

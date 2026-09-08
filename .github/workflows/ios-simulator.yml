@@ -2,6 +2,21 @@ name: ios-simulator
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/ios-simulator.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'scripts/ios-simulator-ci.mjs'
+      - 'scripts/mobile-doctor.mjs'
+      - 'scripts/prepare-ios-build.mjs'
+      - 'scripts/smoke-ios-launch.mjs'
+      - 'tests/ios-launch-smoke-script.test.ts'
+      - 'tests/ios-simulator-ci.test.ts'
+      - 'tests/mobile-doctor.test.ts'
+      - 'tests/prepare-ios-build.test.ts'
 
 permissions:
   contents: read
@@ -14,8 +29,6 @@ jobs:
   simulator-smoke:
     runs-on: macos-15
     timeout-minutes: 45
-    env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/shixue-ios-cargo-target
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -26,6 +39,8 @@ jobs:
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
 
+      - name: Configure Cargo target directory
+        run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/shixue-ios-cargo-target" >> "$GITHUB_ENV"
       - name: Initialize evidence directory
         run: mkdir -p src-tauri/target/ios-ci src-tauri/target/ios-launch
       - run: npm ci
