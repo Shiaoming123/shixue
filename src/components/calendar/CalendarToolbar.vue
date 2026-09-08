@@ -48,11 +48,11 @@ const dateOpen = ref(false)
 </template>
 
 <style scoped>
-.calendar-toolbar { display: flex; align-items: end; justify-content: space-between; gap: var(--space-4); padding: 18px 22px 14px; border-bottom: 1px solid var(--hairline); }
+.calendar-toolbar { display: flex; align-items: end; justify-content: space-between; gap: var(--space-4); padding: 24px; border-bottom: 1px solid var(--hairline); }
 .calendar-toolbar p { margin: 0 0 2px; color: var(--muted); font-size: var(--text-xs); }
 .calendar-toolbar h1 { margin: 0; color: var(--text); font-size: var(--text-xl); font-weight: var(--font-semibold); }
 .calendar-toolbar__actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-1); }
-.calendar-toolbar__modes { display: flex; padding: 2px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); }
+.calendar-toolbar__modes { display: flex; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--control-fill); }
 .calendar-toolbar__modes button { min-width: 40px; min-height: max(30px, var(--control-hit)); padding: 0 var(--space-2); border: 0; border-radius: calc(var(--radius-md) - 2px); background: transparent; color: var(--muted); font: inherit; font-size: var(--text-sm); }
 .calendar-toolbar__modes button[aria-pressed='true'] { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
 .calendar-toolbar__date-panel { width: min(360px, calc(100vw - 32px)); padding: var(--space-3); }

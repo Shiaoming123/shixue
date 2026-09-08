@@ -76,8 +76,6 @@ function requestClose(reason: OverlayCloseReason = 'select') {
   place-items: center;
   padding: var(--space-5);
   background: color-mix(in srgb, var(--text) 24%, transparent);
-  backdrop-filter: blur(12px) saturate(118%);
-  -webkit-backdrop-filter: blur(12px) saturate(118%);
   pointer-events: auto;
 }
 
@@ -166,7 +164,7 @@ function requestClose(reason: OverlayCloseReason = 'select') {
 
 .dialog-enter-from .dialog-panel,
 .dialog-leave-to .dialog-panel {
-  transform: translateY(8px) scale(0.99);
+  transform: translateY(8px);
 }
 
 @media (max-width: 599px) {

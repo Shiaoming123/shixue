@@ -171,8 +171,6 @@ defineExpose({ close: requestClose, updatePosition })
 
 .popover-layer--mobile-sheet {
   background: color-mix(in srgb, var(--text) 24%, transparent);
-  backdrop-filter: blur(12px) saturate(118%);
-  -webkit-backdrop-filter: blur(12px) saturate(118%);
   pointer-events: auto;
 }
 
@@ -186,8 +184,6 @@ defineExpose({ close: requestClose, updatePosition })
   border-radius: var(--radius-lg);
   background: var(--material-regular);
   box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(20px) saturate(118%);
-  -webkit-backdrop-filter: blur(20px) saturate(118%);
   pointer-events: auto;
 }
 

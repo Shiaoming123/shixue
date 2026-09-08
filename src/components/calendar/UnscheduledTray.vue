@@ -72,13 +72,13 @@ function plan(task: Task, close: (reason: 'select') => void) {
 </template>
 
 <style scoped>
-.unscheduled-tray { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--space-3); padding: 10px 22px; border-bottom: 1px solid var(--hairline); background: var(--material-thin); backdrop-filter: saturate(150%) blur(18px); -webkit-backdrop-filter: saturate(150%) blur(18px); }
+.unscheduled-tray { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--space-3); padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--surface-alt); }
 .unscheduled-tray > header { display: flex; align-items: center; gap: var(--space-2); }
 .unscheduled-tray > header > div { display: flex; align-items: center; gap: var(--space-1); color: var(--muted); }
 .unscheduled-tray h2 { margin: 0; color: var(--text); font-size: var(--text-sm); font-weight: var(--font-semibold); }
 .unscheduled-tray header > span { min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: var(--radius-full); background: var(--control-fill); color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 .unscheduled-tray__items { min-width: 0; display: flex; gap: var(--space-1); overflow-x: auto; }
-.unscheduled-tray__item { position: relative; min-width: 156px; max-width: 240px; display: flex; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface) 88%, transparent); }
+.unscheduled-tray__item { position: relative; min-width: 156px; max-width: 240px; display: flex; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--surface); }
 .unscheduled-tray__drag { min-width: 0; min-height: 34px; flex: 1; overflow: hidden; padding: 0 30px 0 10px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--text-xs); text-align: left; text-overflow: ellipsis; white-space: nowrap; touch-action: none; }
 .unscheduled-tray__menu { position: absolute; top: 2px; right: 2px; width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); }
 .unscheduled-tray__menu:hover { background: var(--control-fill); color: var(--accent); }
@@ -96,5 +96,4 @@ function plan(task: Task, close: (reason: 'select') => void) {
   .unscheduled-tray__menu { width: 44px; height: 44px; top: 0; right: 0; }
   .unscheduled-tray__panel footer :deep(.btn) { min-height: 44px; }
 }
-@media (prefers-reduced-transparency: reduce) { .unscheduled-tray { background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none; } }
 </style>

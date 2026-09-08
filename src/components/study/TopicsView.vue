@@ -102,7 +102,7 @@ const selectedTopic = computed(() => props.topics.find((topic) => topic.id === p
 .topics-view {
   width: min(100%, 980px);
   margin: 0 auto;
-  padding: 48px 44px 90px;
+  padding: 32px 32px 90px;
 }
 
 header {
@@ -150,8 +150,8 @@ h1 {
 .topic-layout {
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
-  gap: 34px;
-  padding-top: 28px;
+  gap: 24px;
+  padding-top: 24px;
 }
 
 .topic-list {
@@ -212,6 +212,11 @@ h1 {
 
 .topic-detail {
   min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .detail-heading {
@@ -270,14 +275,16 @@ h3 {
   justify-content: space-between;
   gap: 18px;
   margin-top: 26px;
-  padding: 18px 20px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--hairline));
+  padding: 20px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
 
 .current-action div {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -367,6 +374,8 @@ h3 {
   .topic-list button {
     min-width: 210px;
   }
+
+  .topic-detail { padding: 20px; }
 
   .current-action {
     align-items: stretch;

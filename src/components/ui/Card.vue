@@ -34,7 +34,7 @@ const pad = { sm: 'var(--space-4)', md: 'var(--space-5)', lg: 'var(--space-6)' }
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
 }
 

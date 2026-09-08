@@ -315,7 +315,7 @@ defineExpose({ focus })
 </template>
 
 <style scoped>
-.quick-add-composer { margin-top: var(--space-4); border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--control-fill); box-shadow: var(--shadow-sm); }
+.quick-add-composer { margin-top: var(--space-5); padding: var(--space-1); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease); }
 .quick-add-composer:focus-within { border-color: color-mix(in srgb, var(--accent) 58%, var(--border)); box-shadow: var(--focus-ring); }
 .quick-add-input-row { min-height: max(48px, var(--field-min-height)); display: grid; grid-template-columns: 24px minmax(0, 1fr) auto max(36px, var(--icon-hit)); align-items: center; gap: var(--space-2); padding: 0 var(--space-1) 0 var(--space-3); }
 .quick-add-input-row > svg { color: var(--accent); }

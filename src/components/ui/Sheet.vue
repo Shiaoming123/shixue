@@ -64,8 +64,6 @@ function requestClose(reason: OverlayCloseReason) {
   padding: var(--space-5);
   overflow: hidden;
   background: color-mix(in srgb, var(--text) 24%, transparent);
-  backdrop-filter: blur(12px) saturate(118%);
-  -webkit-backdrop-filter: blur(12px) saturate(118%);
   pointer-events: auto;
 }
 
@@ -124,7 +122,7 @@ function requestClose(reason: OverlayCloseReason) {
 .sheet-overlay-enter-from .sheet-panel,
 .sheet-overlay-leave-to .sheet-panel { opacity: 0; }
 .sheet-overlay-enter-from .sheet-panel--responsive,
-.sheet-overlay-leave-to .sheet-panel--responsive { transform: translateY(12px) scale(.99); }
+.sheet-overlay-leave-to .sheet-panel--responsive { transform: translateY(8px); }
 .sheet-overlay-enter-from .sheet-panel--right,
 .sheet-overlay-leave-to .sheet-panel--right { transform: translateX(20px); }
 

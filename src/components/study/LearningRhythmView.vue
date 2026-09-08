@@ -131,7 +131,7 @@ function secondaryCounts(item: LearningRhythmViewItem): string {
 .rhythm-view {
   width: min(100%, 820px);
   margin: 0 auto;
-  padding: 44px 48px 100px;
+  padding: 32px 32px 100px;
   color: var(--text);
 }
 
@@ -150,9 +150,8 @@ function secondaryCounts(item: LearningRhythmViewItem): string {
 .total-progress { text-align: right; }
 .total-progress strong { color: var(--accent); font-variant-numeric: tabular-nums; }
 
-.rhythm-list { border-bottom: 1px solid var(--border); }
-.rhythm-row { padding: var(--space-5) 0; border-bottom: 1px solid var(--border); }
-.rhythm-row:last-child { border-bottom: 0; }
+.rhythm-list { display: grid; gap: 20px; margin-top: 24px; }
+.rhythm-row { padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); }
 .row-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
 .row-title { min-width: 0; }
 .row-title small { color: var(--accent); font-size: var(--text-xs); }
@@ -166,7 +165,7 @@ function secondaryCounts(item: LearningRhythmViewItem): string {
 
 .progress-copy { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-4); color: var(--muted); font-size: var(--text-xs); }
 .progress-copy span { color: var(--text); font-variant-numeric: tabular-nums; }
-.progress-track { height: 5px; overflow: hidden; margin-top: var(--space-2); border-radius: var(--radius-full); background: var(--control-fill); }
+.progress-track { height: 6px; overflow: hidden; margin-top: var(--space-2); border-radius: var(--radius-full); background: var(--control-fill); }
 .progress-track i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 
 .recent-learned { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: var(--space-3); margin: var(--space-4) 0 0; color: var(--text); font-size: var(--text-sm); line-height: 1.55; }
@@ -181,7 +180,8 @@ function secondaryCounts(item: LearningRhythmViewItem): string {
 .empty-state p { max-width: 360px; margin: 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.55; }
 
 @media (max-width: 819px) {
-  .rhythm-view { padding: 27px 20px 126px; }
+  .rhythm-view { padding: 24px 20px 126px; }
+  .rhythm-row { padding: 20px; }
   .rhythm-header { align-items: flex-start; flex-direction: column; gap: var(--space-2); }
   .total-progress { text-align: left; }
 }

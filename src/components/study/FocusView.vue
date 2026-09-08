@@ -35,7 +35,7 @@ function updateScratchpad(event: Event) {
     <p class="topic">{{ topicTitle }}</p>
     <h1>{{ taskTitle }}</h1>
 
-    <div class="criteria">
+    <div v-if="criteria.length" class="criteria">
       <p v-for="item in criteria" :key="item"><Check :size="17" :stroke-width="1.8" />{{ item }}</p>
     </div>
 
@@ -64,7 +64,7 @@ function updateScratchpad(event: Event) {
   width: min(100%, 720px);
   min-height: 100%;
   margin: 0 auto;
-  padding: 44px 52px 90px;
+  padding: 32px 40px 90px;
 }
 
 .back {
@@ -82,9 +82,13 @@ function updateScratchpad(event: Event) {
 
 .focus-heading {
   display: flex;
-  align-items: baseline;
-  gap: 13px;
-  margin-top: 70px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 40px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface-alt);
 }
 
 .focus-heading p {
@@ -96,7 +100,7 @@ function updateScratchpad(event: Event) {
 
 .focus-heading strong {
   font-variant-numeric: tabular-nums;
-  font-size: 28px;
+  font-size: 40px;
   font-weight: 570;
   letter-spacing: -0.055em;
 }
@@ -160,7 +164,7 @@ textarea {
   color: var(--text);
   font-size: 14px;
   line-height: 1.65;
-  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--text) 4%, transparent), var(--shadow-sm);
+  box-shadow: var(--shadow-sm);
   transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease);
 }
 
@@ -211,8 +215,10 @@ textarea:focus {
   border: 0;
   background: var(--accent);
   color: var(--accent-text);
-  box-shadow: 0 5px 13px color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: var(--shadow-sm);
 }
+
+@media (prefers-reduced-motion: reduce) { .focus-actions button:active { transform: none; } }
 
 @media (max-width: 819px) {
   .focus-view {

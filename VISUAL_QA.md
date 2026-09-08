@@ -1,5 +1,11 @@
 # 拾学视觉验收矩阵
 
+## Soft Surface 实验
+
+本分支按用户授权执行新模式，合同见 DESIGN.md 的实验覆盖节。
+运行 `node scripts/smoke-soft-surface.mjs` 记录构建预览的核心路由、深浅色、桌面与窄屏截图及真实创建/重载交互；报告写入 `artifacts/soft-surface/report.json`。验收结论以实际报告为准，历史矩阵不代表本实验已验证。
+任务行过渡覆盖仍存在的分组内部；删除最后一项引起整组卸载时无退场动效，不宣称跨组 FLIP。Web 试用仅证明浏览器行为，不能替代 native-simulator/native-device 验收。
+
 ## PR4 审查入口（2026-09-05）
 
 本轮基线、问题清单、实施状态与证据限制见 [PR4 产品审查](docs/design/2026-09-05-pr4-product-audit.md)。截图/故障日志在当前 PR4 工作树的 `artifacts/pr4-audit/`，不纳入提交。源工作树 artifacts 保留。

@@ -15,6 +15,7 @@ coverage/
 playwright-report/
 test-results/
 artifacts/visual-qa/
+artifacts/soft-surface/
 .nyc_output/
 *.local
 .env

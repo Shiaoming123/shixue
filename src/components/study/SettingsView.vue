@@ -82,10 +82,6 @@ const estimateOptions: ListboxOption[] = [
   { value: '60', label: '1 小时' },
   { value: '90', label: '1.5 小时' },
 ]
-const glassOptions: ListboxOption[] = [
-  { value: 'system', label: '跟随系统' },
-  { value: 'on', label: '降低透明效果' },
-]
 const closeOptions: ListboxOption[] = [
   { value: 'ask', label: '每次询问' },
   { value: 'tray', label: '隐藏到托盘' },
@@ -168,10 +164,6 @@ onMounted(() => pageTitle.value?.focus())
             <button type="button" :class="{ active: !dark }" :aria-pressed="!dark" @click="emit('setAppearance', 'light')"><Sun :size="17" />浅色</button>
             <button type="button" :class="{ active: dark }" :aria-pressed="dark" @click="emit('setAppearance', 'dark')"><Moon :size="17" />深色</button>
           </div>
-        </div>
-        <div class="setting-row">
-          <span><strong>功能层材质</strong><small>可按系统偏好减少侧栏和浮层透明效果</small></span>
-          <Listbox :model-value="reducedGlassOverride === 'off' ? 'system' : reducedGlassOverride" :options="glassOptions" label="功能层材质" variant="compact" @update:model-value="emit('setReducedGlass', $event as PlanningPreferences['reducedGlassOverride'])" />
         </div>
       </section>
 
@@ -280,8 +272,8 @@ onMounted(() => pageTitle.value?.focus())
 .page-header h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 650; letter-spacing: -.025em; }
 .page-header p { margin: 7px 0 0; color: var(--muted); font-size: var(--text-base); line-height: 1.55; }
 .local-badge { min-height: 32px; display: inline-flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border: 1px solid var(--hairline); border-radius: var(--radius-full); background: var(--control-fill); color: var(--accent); font-size: var(--text-xs); white-space: nowrap; }
-.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); align-items: start; }
-.settings-section { min-width: 0; padding: var(--space-5); border: 1px solid var(--hairline); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.settings-section { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); }
 .settings-section--wide { grid-column: 1 / -1; }
 .section-title { display: flex; align-items: flex-start; gap: var(--space-3); padding-bottom: var(--space-4); border-bottom: 1px solid var(--hairline); }
 .section-title > svg { flex: 0 0 auto; margin-top: 2px; color: var(--accent); }

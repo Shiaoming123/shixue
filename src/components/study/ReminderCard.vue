@@ -38,7 +38,7 @@ function act(action: ReminderCardAction['action']) {
 </template>
 
 <style scoped>
-.reminder-card { padding: var(--space-4); border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--surface); color: var(--text); }
+.reminder-card { padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); color: var(--text); }
 h3 { margin: var(--space-1) 0 var(--space-3); font-size: var(--text-base); overflow-wrap: anywhere; }
 .kind, .message, .error { margin: var(--space-2) 0; color: var(--muted); font-size: var(--text-xs); }
 .error { color: var(--danger); }

@@ -88,7 +88,7 @@ function submit() {
 
       <fieldset>
         <legend>现在的掌握程度</legend>
-        <button v-for="score in 5" :key="score" type="button" :class="{ active: mastery === score }" @click="mastery = score as 1 | 2 | 3 | 4 | 5">
+        <button v-for="score in 5" :key="score" type="button" :class="{ active: mastery === score }" :aria-pressed="mastery === score" @click="mastery = score as 1 | 2 | 3 | 4 | 5">
           {{ score }}
         </button>
       </fieldset>
@@ -148,7 +148,7 @@ h2 {
 
 label {
   display: block;
-  margin-top: 17px;
+  margin-top: 20px;
 }
 
 label > span,
@@ -171,7 +171,7 @@ textarea {
   min-height: 45px;
   padding: 11px 13px;
   border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   outline: none;
   background: var(--control-fill);
   color: var(--text);
@@ -237,13 +237,13 @@ footer > span {
   gap: 8px;
   padding: 0 18px;
   border: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--accent-text);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: var(--shadow-sm);
 }
 
 .save:disabled {

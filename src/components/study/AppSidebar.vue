@@ -182,7 +182,7 @@ function commitMove(source: string, target: string, keys: string[]) {
 </template>
 
 <style scoped>
-.sidebar { width: 232px; min-width: 232px; height: 100%; display: flex; flex-direction: column; padding: 18px 12px 14px; border-right: 1px solid var(--hairline); background: linear-gradient(180deg, color-mix(in srgb, white 5%, transparent), transparent 38%), var(--material-thin); box-shadow: inset -1px 0 color-mix(in srgb, white 24%, transparent); backdrop-filter: saturate(170%) blur(28px); -webkit-backdrop-filter: saturate(170%) blur(28px); transition: width var(--motion-base) var(--ease), min-width var(--motion-base) var(--ease), padding var(--motion-base) var(--ease); }
+.sidebar { width: 232px; min-width: 232px; height: 100%; display: flex; flex-direction: column; padding: 24px 12px 20px; border-right: 1px solid var(--border); background: var(--surface); transition: width var(--motion-base) var(--ease), min-width var(--motion-base) var(--ease), padding var(--motion-base) var(--ease); }
 .sidebar.icons { width: 72px; min-width: 72px; padding-inline: 8px; }
 .brand { position: relative; min-height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 8px; color: var(--text); font-size: var(--text-lg); font-weight: var(--font-medium); letter-spacing: .02em; }
 .brand-mark { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; overflow: hidden; border: 1px solid color-mix(in srgb, white 32%, var(--hairline)); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface) 72%, transparent); box-shadow: var(--shadow-sm); transition: width var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease), border-width var(--motion-base) var(--ease); }
