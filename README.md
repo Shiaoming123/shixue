@@ -125,7 +125,7 @@ npm run smoke:windows-package
 | Windows 原生缩放与读屏 | 系统 200% 缩放和 Narrator 均为 `NOT_RUN`；Web 的 CSS zoom、等效回流和 Edge 截图不能替代原生证据。 |
 | Android 模拟器 | `42cc204` 的 x86_64 debug APK 在隔离的 API 36 模拟器中通过包名/版本/ABI 校验、显式 Activity 启动、前台检查、五阶段 readiness 与稳定 PID smoke；同一 APK 还通过能力服务写入唯一任务，确认进程终止后重启，并从 SQLite 恢复任务、创建回执和事件。 |
 | Android 真机与发布 | 真机、模拟器重启后的恢复、原生通知、签名、Google Play 和商店交付均为 `NOT_RUN`。 |
-| iOS / iPadOS | 当前树的 Simulator 与设备运行均为 `NOT_RUN`；历史快照不升级当前证据。320–819px Web 截图只证明响应式布局。 |
+| iOS / iPadOS | PR #40 的合并测试提交 `22deca1`（`main@d04eb7d` + `6a09ee6`）已在 macOS 15 / Xcode 16.4 的 iPhone 16、iOS 26.2 Simulator 上通过无签名构建、安装、启动与五阶段 readiness smoke。SQLite 重启恢复、真机、签名、TestFlight 和 App Store 仍为 `NOT_RUN`。 |
 
 多提醒、应用内动作、通知权限与关闭行为已有源码和 Web/自动化证据。未知旧提醒记录会阻止投递并报告错误；发送与确认之间崩溃不承诺恰好一次。逐项提醒证据见 [PR4 产品审查](./docs/design/2026-09-05-pr4-product-audit.md)。视觉合同保持用户批准的 `LOCKED / NAVIGATION AMENDED` 状态，验收边界见 [VISUAL_QA.md](./VISUAL_QA.md)。
 

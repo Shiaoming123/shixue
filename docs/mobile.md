@@ -10,7 +10,7 @@
 | 维度 | 现状 | 目标 |
 |---|---|---|
 | 桌面端 | ✅ macOS / Windows / Linux 为主要 CI 与发布目标 | 保持 |
-| 移动端 | 🟡 M1–M2 已完成；Android 当前树已有本地模拟器启动与应用进程重启后的 SQLite 恢复证据，iOS 仅保留历史快照 | 手动 iOS Simulator workflow 合入默认分支后先重跑当前树，再补真机、模拟器重启恢复、通知、签名与商店证据 |
+| 移动端 | 🟡 M1–M2 已完成；Android 当前树已有本地模拟器启动与应用进程重启后的 SQLite 恢复证据；PR #40 的当前合并测试树已通过 iOS Simulator 无签名构建、安装、启动与 readiness smoke | 补移动端持久化重启、真机、通知、签名与商店证据 |
 | 前端 | ✅ 桌面侧边栏 + 移动端底部 tab | 保持响应式与安全区适配 |
 | 桌面专属能力 | tray / single-instance / updater | 移动端安全降级 |
 
