@@ -134,8 +134,9 @@ public v0.3.0 MSI: release identity, annotated tag/source, asset id, size, and
 SHA-256 must match before a temporary single-MSI manifest is created. No build,
 signing credentials, or local user data are used. It uploads only the download
 verification, manifest, and lifecycle report, even after failure. This workflow
-is `NOT_RUN` until a completed run verifies all automated stages; it does not
-prove successful WebView rendering, Windows 11 interaction, notifications,
+passed all automated stages for the public v0.3.0 MSI in
+[run 34209120590](https://github.com/Shiaoming123/shixue/actions/runs/34209120590)
+on Windows `10.0.26100`. It does not prove successful WebView rendering, Windows 11 interaction, notifications,
 tray actions, native scaling, Narrator, or signing.
 
 ## Windows delivery package

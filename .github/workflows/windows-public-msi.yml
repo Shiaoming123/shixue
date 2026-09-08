@@ -1,9 +1,6 @@
 name: public Windows MSI lifecycle
 
 on:
-  push:
-    branches:
-      - ci/public-windows-msi-smoke
   workflow_dispatch:
 
 permissions:

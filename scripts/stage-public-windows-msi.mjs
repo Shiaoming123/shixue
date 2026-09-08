@@ -14,8 +14,7 @@ export const PUBLIC_MSI = Object.freeze({
 })
 
 export function assertHostedWindows(platform, env) {
-  const isolatedAcceptanceRun = (env.GITHUB_EVENT_NAME === 'workflow_dispatch' && env.GITHUB_REF === 'refs/heads/main')
-    || (env.GITHUB_EVENT_NAME === 'push' && env.GITHUB_REF === 'refs/heads/ci/public-windows-msi-smoke')
+  const isolatedAcceptanceRun = env.GITHUB_EVENT_NAME === 'workflow_dispatch' && env.GITHUB_REF === 'refs/heads/main'
   if (platform !== 'win32' || env.GITHUB_ACTIONS !== 'true' || env.RUNNER_ENVIRONMENT !== 'github-hosted'
     || env.RUNNER_OS !== 'Windows' || !isolatedAcceptanceRun
     || env.GITHUB_REPOSITORY !== 'Shiaoming123/shixue' || !env.GITHUB_TOKEN) {

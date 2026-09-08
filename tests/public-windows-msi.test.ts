@@ -43,7 +43,6 @@ test('staging refuses local, self-hosted and non-Windows execution before any wr
     assert.throws(() => assertHostedWindows('win32', { ...env, [key]: '' }))
   }
   assert.throws(() => assertHostedWindows('win32', { ...env, RUNNER_ENVIRONMENT: 'self-hosted' }))
-  assert.doesNotThrow(() => assertHostedWindows('win32', { ...env, GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/ci/public-windows-msi-smoke' }))
-  assert.throws(() => assertHostedWindows('win32', { ...env, GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/other' }))
+  assert.throws(() => assertHostedWindows('win32', { ...env, GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/ci/public-windows-msi-smoke' }))
   assert.throws(() => assertHostedWindows('win32', { ...env, GITHUB_REF: 'refs/heads/untrusted' }))
 })
