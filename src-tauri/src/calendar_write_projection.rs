@@ -486,6 +486,17 @@ fn recurrence(rule: &str, time: &Value) -> Option<Value> {
         let (mut date, until_time) = if time["kind"] == "all-day" {
             (NaiveDate::parse_from_str(until, "%Y%m%d").ok()?, None)
         } else {
+            if until.len() != 16
+                || !until.is_ascii()
+                || until.as_bytes()[8] != b'T'
+                || until.as_bytes()[15] != b'Z'
+                || [0..8, 9..15]
+                    .into_iter()
+                    .flatten()
+                    .any(|i| !until.as_bytes()[i].is_ascii_digit())
+            {
+                return None;
+            }
             let instant = DateTime::parse_from_rfc3339(&format!(
                 "{}-{}-{}T{}:{}:{}Z",
                 &until[0..4],
@@ -583,18 +594,46 @@ fn occurs(recurrence: &Value, time: &Value, original: &str) -> bool {
         return false;
     }
     let ordinal = (0..=days)
-        .filter(|offset| cadence_day(&recurrence["cadence"], start + Duration::days(*offset)))
+        .filter(|offset| {
+            cadence_occurrence(
+                &recurrence["cadence"],
+                start,
+                start + Duration::days(*offset),
+            )
+        })
         .count() as u64;
     recurrence["end"]["kind"] != "after"
         || ordinal <= recurrence["end"]["count"].as_u64().unwrap_or(0)
 }
-fn cadence_day(cadence: &Value, target: NaiveDate) -> bool {
+fn cadence_occurrence(cadence: &Value, start: NaiveDate, target: NaiveDate) -> bool {
+    let interval = cadence["interval"].as_i64().unwrap_or(0);
+    if interval <= 0 {
+        return false;
+    }
+    let days = (target - start).num_days();
     match cadence["kind"].as_str() {
-        Some("weekly") => cadence["weekdays"].as_array().is_some_and(|days| {
-            days.iter()
-                .any(|day| day.as_u64() == Some(target.weekday().num_days_from_sunday() as u64))
-        }),
-        _ => true,
+        Some("daily") => days % interval == 0,
+        Some("weekly") => {
+            days / 7 % interval == 0
+                && cadence["weekdays"].as_array().is_some_and(|days| {
+                    days.iter().any(|day| {
+                        day.as_u64() == Some(target.weekday().num_days_from_sunday() as u64)
+                    })
+                })
+        }
+        Some("monthly") => {
+            target.day() == start.day()
+                && ((target.year() - start.year()) * 12 + target.month() as i32
+                    - start.month() as i32) as i64
+                    % interval
+                    == 0
+        }
+        Some("yearly") => {
+            target.month() == start.month()
+                && target.day() == start.day()
+                && (target.year() - start.year()) as i64 % interval == 0
+        }
+        _ => false,
     }
 }
 fn wall(time: &Value, value: &str) -> Option<(NaiveDate, Option<chrono::NaiveTime>)> {
@@ -604,6 +643,17 @@ fn wall(time: &Value, value: &str) -> Option<(NaiveDate, Option<chrono::NaiveTim
     let offset = match time["timezone"].as_str()? {
         "Asia/Shanghai" => FixedOffset::east_opt(8 * 3600)?,
         "UTC" | "Etc/UTC" | "Etc/GMT" => FixedOffset::east_opt(0)?,
+        zone if zone.starts_with("Etc/GMT+") || zone.starts_with("Etc/GMT-") => {
+            let hours = zone[8..]
+                .parse::<i32>()
+                .ok()
+                .filter(|hours| (1..=14).contains(hours))?;
+            FixedOffset::east_opt(if zone.as_bytes()[7] == b'+' {
+                -hours * 3600
+            } else {
+                hours * 3600
+            })?
+        }
         _ => return None,
     };
     let local = DateTime::parse_from_rfc3339(value)
@@ -894,6 +944,43 @@ mod tests {
         assert!(recurrence("RRULE:FREQ=DAILY;COUNT=10001", &time).is_none());
         let once = recurrence("RRULE:FREQ=DAILY;COUNT=1", &time).unwrap();
         assert!(!occurs(&once, &time, "2026-09-10T16:30:00Z"));
+        for rule in [
+            "RRULE:FREQ=DAILY;INTERVAL=2;COUNT=3",
+            "RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=3",
+            "RRULE:FREQ=MONTHLY;COUNT=3",
+            "RRULE:FREQ=YEARLY;COUNT=3",
+        ] {
+            let recurrence = recurrence(rule, &time).unwrap();
+            assert!(occurs(&recurrence, &time, "2026-09-09T16:30:00Z"), "{rule}");
+        }
+        let daily = recurrence("RRULE:FREQ=DAILY;INTERVAL=2;COUNT=3", &time).unwrap();
+        assert!(occurs(&daily, &time, "2026-09-13T16:30:00Z"));
+        assert!(!occurs(&daily, &time, "2026-09-15T16:30:00Z"));
+        let weekly = recurrence("RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=3", &time).unwrap();
+        assert!(occurs(&weekly, &time, "2026-10-07T16:30:00Z"));
+        assert!(!occurs(&weekly, &time, "2026-10-21T16:30:00Z"));
+        let monthly = recurrence("RRULE:FREQ=MONTHLY;COUNT=3", &time).unwrap();
+        assert!(occurs(&monthly, &time, "2026-11-09T16:30:00Z"));
+        assert!(!occurs(&monthly, &time, "2026-12-09T16:30:00Z"));
+        let yearly = recurrence("RRULE:FREQ=YEARLY;COUNT=3", &time).unwrap();
+        assert!(occurs(&yearly, &time, "2028-09-09T16:30:00Z"));
+        assert!(!occurs(&yearly, &time, "2029-09-09T16:30:00Z"));
+        for until in [
+            "20260910T16000Z",
+            "20260910X160000Z",
+            "20260910T160000X",
+            "２０２６０９１０T１６００００Z",
+        ] {
+            assert!(
+                recurrence(&format!("RRULE:FREQ=DAILY;UNTIL={until}"), &time).is_none(),
+                "{until}"
+            );
+        }
+        let gmt = json!({"kind":"fixed","startAt":"2026-09-10T01:00:00Z","endAt":"2026-09-10T02:00:00Z","timezone":"Etc/GMT+2"});
+        assert_eq!(
+            recurrence("RRULE:FREQ=MONTHLY;COUNT=1", &gmt).unwrap()["cadence"]["dayOfMonth"],
+            9
+        );
     }
     #[test]
     fn malformed_provider_participants_do_not_become_acknowledgeable_facts() {

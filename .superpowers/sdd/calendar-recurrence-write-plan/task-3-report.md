@@ -90,3 +90,9 @@ Evidence:
 - Timed recurrence verification now converts both anchor and exception instants in the event timezone (including Asia/Shanghai), compares exact local clock time, and converts timed UNTIL using the same wall-clock boundary rule. COUNT uses the same positive, bounded numeric parser as interval and membership rejects occurrences beyond the count ordinal.
 - Focused RED exposed the previous UTC-date/timed-UNTIL and missing cursor setup gaps. GREEN: `timed_recurrence_uses_event_timezone_instant_and_count_membership` covers Shanghai day rollover, timed UNTIL before the wall-clock occurrence time, monthly/yearly parsing, invalid COUNT 0/10001, out-of-count occurrence, and wrong-hour override. The recurrence SQLite ack test now pre-seeds `ordinary-cursor-sentinel` and proves the exact value remains after every recurrence ack.
 - `cargo test --manifest-path src-tauri/Cargo.toml --all-features timed_recurrence_uses_event_timezone_instant_and_count_membership -- --nocapture`, recurrence SQLite ack focused test, and `npm run rust:verify` passed; Rust total is 58/58.
+
+## Task 3B review round 3
+
+- COUNT ordinal now enumerates only actual cadence occurrences, including interval-aware daily/weekly and monthly/yearly cadence. Direct tests cover second/last valid and first beyond COUNT for all four supported cadence kinds.
+- Timed UNTIL now requires exact ASCII `YYYYMMDDTHHMMSSZ` before slicing; short, non-ASCII, and separator regressions fail closed. `Etc/GMT±N` is accepted with IANA reversed-sign semantics and parity-tested with a date-boundary monthly anchor.
+- GREEN: focused timed recurrence test and `npm run rust:verify` passed (58/58).
