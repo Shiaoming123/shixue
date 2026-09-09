@@ -501,7 +501,7 @@ async fn compensate<V: Vault, H: Http>(
     persist(pool, vault, owner, id, &record, previous).await?;
     Ok(record)
 }
-async fn call<H: Http>(
+pub(super) async fn call<H: Http>(
     http: &H,
     preview: &Value,
     name: &str,
@@ -1285,6 +1285,222 @@ mod tests {
             .unwrap();
         vault.set(&head_key("owner"), id).unwrap();
         (pool, vault, preview.clone(), row["snapshot"].clone())
+    }
+    #[test]
+    fn native_future_local_stage_requires_two_current_proofs() {
+        tauri::async_runtime::block_on(async {
+            let (pool, vault, preview, _) = setup().await;
+            let id = field(&preview, "operationId").unwrap();
+            let mut record = ledger(&pool, &vault, "owner", id, "grant").await.unwrap();
+            let mut proofs = Vec::new();
+            for name in ["parent", "successor"] {
+                let mut proof = if name == "parent" {
+                    preview["intent"]["plan"]["originalParent"].clone()
+                } else {
+                    json!({})
+                };
+                proof.as_object_mut().unwrap().extend(
+                    preview["intent"]["plan"][name]["body"]
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                );
+                proof["etag"] = json!(format!("{name}-proved"));
+                record.future.as_mut().unwrap()[name] = json!({"state":"proved","outcomeUnknown":false,"etag":proof["etag"],"proof":proof});
+                proofs.push(proof);
+            }
+            record.state = "applied".into();
+            record.result = Some(
+                json!({"future":{"markerHash":preview["intent"]["plan"]["markerHash"],"parent":proofs[0],"successor":proofs[1]}}),
+            );
+            record.version += 1;
+            persist(&pool, &vault, "owner", id, &record, None)
+                .await
+                .unwrap();
+            for fault in ["partial", "unknown", "restored", "result", "proof"] {
+                let mut invalid = record.clone();
+                match fault {
+                    "partial" => {
+                        invalid.future.as_mut().unwrap()["successor"] = json!({"state":"pending"})
+                    }
+                    "unknown" => invalid.outcome_unknown = true,
+                    "restored" => {
+                        invalid.future.as_mut().unwrap()["compensation"]["state"] = json!("proved")
+                    }
+                    "result" => {
+                        invalid.result.as_mut().unwrap()["future"]["markerHash"] = json!("forged")
+                    }
+                    _ => {
+                        invalid.future.as_mut().unwrap()["parent"]["proof"]["summary"] =
+                            json!("forged")
+                    }
+                }
+                assert!(write_local::future_plan(&invalid).is_err(), "{fault}");
+            }
+            struct Reads {
+                proofs: Vec<Value>,
+                role: &'static str,
+            }
+            impl Http for Reads {
+                async fn call(
+                    &self,
+                    method: &str,
+                    path: &str,
+                    _: Option<&str>,
+                    _: Option<&str>,
+                    _: Option<Value>,
+                ) -> Result<HttpReply, String> {
+                    assert_eq!(method, "GET");
+                    Ok(HttpReply {
+                        status: 200,
+                        body: if path.starts_with("users/me/") {
+                            json!({"id":"cal","accessRole":self.role})
+                        } else {
+                            self.proofs
+                                .iter()
+                                .find(|p| path.ends_with(p["id"].as_str().unwrap()))
+                                .unwrap()
+                                .clone()
+                        },
+                    })
+                }
+            }
+            let http = Reads {
+                proofs: proofs.clone(),
+                role: "writer",
+            };
+            let scopes = vec![WRITE_SCOPE.into()];
+            let rejected = Reads {
+                proofs: vec![
+                    proofs[0].clone(),
+                    json!({"id":proofs[1]["id"],"etag":"incomplete"}),
+                ],
+                role: "writer",
+            };
+            assert!(
+                write_local::stage(&pool, &vault, &rejected, "owner", id, "grant", &scopes)
+                    .await
+                    .is_err()
+            );
+            assert!(ledger(&pool, &vault, "owner", id, "grant")
+                .await
+                .unwrap()
+                .local
+                .is_none());
+            vault.fail.set(true);
+            assert_eq!(
+                write_local::stage(&pool, &vault, &http, "owner", id, "grant", &scopes)
+                    .await
+                    .unwrap_err(),
+                "KEYRING_FAILED"
+            );
+            vault.fail.set(false);
+            assert!(ledger(&pool, &vault, "owner", id, "grant")
+                .await
+                .unwrap()
+                .local
+                .is_none());
+            let batch = write_local::stage(&pool, &vault, &http, "owner", id, "grant", &scopes)
+                .await
+                .unwrap();
+            assert_eq!(batch["items"], json!(proofs));
+            assert_eq!(batch["plan"]["kind"], "recurring.future");
+            let fixture: Value = serde_json::from_str(include_str!(
+                "../../tests/fixtures/calendar-future-projection.json"
+            ))
+            .unwrap();
+            assert_eq!(
+                batch["plan"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .collect::<Vec<_>>(),
+                fixture["cases"][0]["batch"]["plan"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                batch["plan"]["pivotEventId"],
+                preview["intent"]["pivot"]["eventId"]
+            );
+            assert_eq!(
+                batch["plan"]["steps"]["parent"],
+                json!({"state":"proved","proof":proofs[0]})
+            );
+            assert_eq!(
+                batch["plan"]["steps"]["successor"],
+                json!({"state":"proved","proof":proofs[1]})
+            );
+            assert_eq!(
+                write_local::stage(&pool, &vault, &http, "owner", id, "grant", &scopes)
+                    .await
+                    .unwrap(),
+                batch
+            );
+            let denied = Reads {
+                proofs: proofs.clone(),
+                role: "freeBusyReader",
+            };
+            assert!(
+                write_local::stage(&pool, &vault, &denied, "owner", id, "grant", &scopes)
+                    .await
+                    .is_err()
+            );
+            let mut changed = Reads {
+                proofs,
+                role: "writer",
+            };
+            changed.proofs[1]["etag"] = json!("changed");
+            assert!(
+                write_local::stage(&pool, &vault, &changed, "owner", id, "grant", &scopes)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(
+                ledger(&pool, &vault, "owner", id, "grant")
+                    .await
+                    .unwrap()
+                    .local
+                    .unwrap()
+                    .batch,
+                batch
+            );
+            let original = sync_store::workspace_payload(&pool).await.unwrap();
+            let mut stale = original.clone();
+            stale["revision"] = json!(999);
+            sqlx::query("UPDATE study_state SET payload=? WHERE id=1")
+                .bind(stale.to_string())
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert_eq!(
+                write_local::stage(&pool, &vault, &http, "owner", id, "grant", &scopes)
+                    .await
+                    .unwrap_err(),
+                "WRITE_LOCAL_BASELINE_STALE"
+            );
+            sqlx::query("UPDATE study_state SET payload=? WHERE id=1")
+                .bind(original.to_string())
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert_eq!(
+                write_local::ack(
+                    &pool,
+                    &vault,
+                    "owner",
+                    id,
+                    "grant",
+                    batch["batchId"].as_str().unwrap(),
+                    "fake"
+                )
+                .await
+                .unwrap_err(),
+                "WRITE_UNSUPPORTED"
+            );
+        });
     }
     #[test]
     fn native_future_parent_durable_unknown_and_read_only_restart() {

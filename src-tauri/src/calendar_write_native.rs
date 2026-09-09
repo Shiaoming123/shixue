@@ -396,8 +396,13 @@ fn validate_future_record(record: &Ledger) -> Result<(), String> {
             &record.preview,
             record.future.as_ref().ok_or("WRITE_INVALID")?,
         )?;
-        if record.local.is_some() {
-            return Err("WRITE_UNSUPPORTED".into());
+        if let Some(local) = &record.local {
+            if local.receipt_id.is_some()
+                || local.batch["operationId"] != record.preview["operationId"]
+                || local.batch["plan"] != write_local::future_plan(record)?
+            {
+                return Err("WRITE_AUTHORITY_MISMATCH".into());
+            }
         }
         let mut content = record.preview.clone();
         content

@@ -106,6 +106,37 @@ fn reusable(current: &Value, local: &LocalBinding) -> Result<bool, String> {
     Ok(local.receipt_id.is_none()
         && workspace_hash::fingerprint(current)? == local.batch["expectedWorkspaceHash"])
 }
+pub(super) fn future_plan(record: &Ledger) -> Result<Value, String> {
+    let future = record.future.as_ref().ok_or("WRITE_LOCAL_NOT_APPLIED")?;
+    let preview = &record.preview;
+    let intent = &preview["intent"];
+    if record.state != "applied"
+        || record.outcome_unknown
+        || future["compensation"]["state"] != "pending"
+    {
+        return Err("WRITE_LOCAL_NOT_APPLIED".into());
+    }
+    for name in ["parent", "successor"] {
+        let step = &future[name];
+        if step["state"] != "proved"
+            || step["outcomeUnknown"] != false
+            || step["etag"] != step["proof"]["etag"]
+            || future_step::response(preview, name, false, 200, &step["proof"])["kind"] != "proved"
+        {
+            return Err("WRITE_LOCAL_REMOTE_UNVERIFIED".into());
+        }
+    }
+    if record.result.as_ref().map(|r| &r["future"])
+        != Some(
+            &json!({"markerHash":intent["plan"]["markerHash"],"parent":future["parent"]["proof"],"successor":future["successor"]["proof"]}),
+        )
+    {
+        return Err("WRITE_LOCAL_REMOTE_UNVERIFIED".into());
+    }
+    Ok(
+        json!({"hash":preview["hash"],"kind":"recurring.future","parentEventId":intent["parent"]["eventId"],"pivotEventId":intent["pivot"]["eventId"],"successorEventId":intent["plan"]["successor"]["eventId"],"originalStart":intent["originalStart"],"markerHash":intent["plan"]["markerHash"],"steps":{"parent":{"state":"proved","proof":future["parent"]["proof"]},"successor":{"state":"proved","proof":future["successor"]["proof"]}}}),
+    )
+}
 pub(super) async fn stage<V: Vault, H: Http>(
     pool: &SqlitePool,
     vault: &V,
@@ -116,9 +147,11 @@ pub(super) async fn stage<V: Vault, H: Http>(
     scopes: &[String],
 ) -> Result<Value, String> {
     let mut record = ledger(pool, vault, owner, id, epoch).await?;
-    if record.future.is_some() {
-        return Err("WRITE_UNSUPPORTED".into());
-    }
+    let future = record
+        .future
+        .as_ref()
+        .map(|_| future_plan(&record))
+        .transpose()?;
     if record.state != "applied" || record.outcome_unknown {
         return Err("WRITE_LOCAL_NOT_APPLIED".into());
     }
@@ -145,16 +178,92 @@ pub(super) async fn stage<V: Vault, H: Http>(
         "freeBusyReader" => "freebusy",
         _ => "none",
     };
+    let mut future_items = vec![];
+    if let Some(plan) = &future {
+        if access != "details" {
+            return Err("WRITE_LOCAL_PERMISSION_UNVERIFIED".into());
+        }
+        for name in ["parent", "successor"] {
+            let proof = future_parent::call(http, &record.preview, name, false).await?;
+            if proof["kind"] != "proved" || proof["proof"] != plan["steps"][name]["proof"] {
+                return Err("WRITE_LOCAL_REMOTE_UNVERIFIED".into());
+            }
+            // Ordinary sync drops ETags/markers; the frozen future contract retains these proved fields.
+            if proof["proof"]
+                .as_object()
+                .ok_or("WRITE_LOCAL_REMOTE_UNVERIFIED")?
+                .keys()
+                .any(|key| {
+                    ![
+                        "id",
+                        "etag",
+                        "summary",
+                        "start",
+                        "end",
+                        "recurrence",
+                        "extendedProperties",
+                        "eventType",
+                        "status",
+                        "created",
+                        "updated",
+                        "kind",
+                        "htmlLink",
+                        "iCalUID",
+                        "sequence",
+                    ]
+                    .contains(&key.as_str())
+                })
+            {
+                return Err("WRITE_LOCAL_REMOTE_UNVERIFIED".into());
+            }
+            future_items.push(proof["proof"].clone());
+        }
+        let permission = http
+            .call(
+                "GET",
+                &format!("users/me/calendarList/{}", segment(calendar)),
+                None,
+                None,
+                None,
+            )
+            .await?;
+        if permission.status != 200 || permission.body != directory.body {
+            return Err("WRITE_LOCAL_PERMISSION_UNVERIFIED".into());
+        }
+        if workspace_hash::fingerprint(&workspace(pool).await?)?
+            != workspace_hash::fingerprint(&base)?
+        {
+            return Err("WRITE_LOCAL_BASELINE_STALE".into());
+        }
+        if digest(
+            &serde_json::to_value(ledger(pool, vault, owner, id, epoch).await?)
+                .map_err(|_| "WRITE_INVALID")?,
+        )? != digest(&serde_json::to_value(&record).map_err(|_| "WRITE_INVALID")?)?
+        {
+            return Err("WRITE_AUTHORITY_MISMATCH".into());
+        }
+    }
     if let Some(local) = &record.local {
         if local.batch["access"] == access
-            && plan_matches_preview(&local.batch, &record.preview)
-            && reusable(&base, local)?
+            && if let Some(plan) = &future {
+                local.batch["plan"] == *plan
+                    && local.batch["operationId"] == id
+                    && local.batch["items"] == json!(future_items)
+                    && local.receipt_id.is_none()
+                    && local.batch["expectedWorkspaceHash"] == workspace_hash::fingerprint(&base)?
+            } else {
+                plan_matches_preview(&local.batch, &record.preview) && reusable(&base, local)?
+            }
         {
             return Ok(local.batch.clone());
+        }
+        if future.is_some() {
+            return Err("WRITE_LOCAL_BASELINE_STALE".into());
         }
     }
     let intent = &record.preview["intent"];
     let plan = match intent["kind"].as_str() {
+        Some("recurring.future") => future.clone().ok_or("WRITE_LOCAL_NOT_APPLIED")?,
         Some("recurring.single") => {
             json!({"hash":record.preview["hash"],"kind":"recurring.single","parentEventId":intent["parent"]["eventId"],"instanceEventId":intent["instance"]["eventId"],"originalStart":intent["originalStart"]})
         }
@@ -163,8 +272,8 @@ pub(super) async fn stage<V: Vault, H: Http>(
         }
         _ => Value::Null,
     };
-    let mut items = vec![];
-    if access == "details" {
+    let mut items = future_items;
+    if access == "details" && future.is_none() {
         let reply = http
             .call("GET", &event_path(&record.preview)?, None, None, None)
             .await?;
@@ -286,6 +395,9 @@ pub async fn write_read_local<R: tauri::Runtime>(
         &session.scopes,
     )
     .await?;
+    if super::generation(&owner, false)? != generation {
+        return Err("DISCONNECTED".into());
+    }
     if batch["batchId"] != batch_id {
         return Err("WRITE_LOCAL_BASELINE_STALE".into());
     }

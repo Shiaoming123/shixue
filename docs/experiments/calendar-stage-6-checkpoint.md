@@ -29,3 +29,14 @@
 - 阶段7没有实际多时间盒需求证据，保持不实施；按批准方案，阶段8集中全量、性能和发布门禁尚未进入。
 
 开发工作树为 `exp/soft-surface-ui`；开发阶段未提交、合并或推送，后续仅按用户明确授权集成，并保留原始研究文档。协议依据：[条件修改](https://developers.google.com/workspace/calendar/api/guides/version-resources)、[PATCH语义](https://developers.google.com/workspace/calendar/api/v3/reference/events/patch)、[扩展属性](https://developers.google.com/workspace/calendar/api/guides/extended-properties)。真实通知次数、服务端标记保留和RSVP行为仍需账号验收。
+
+## 2026-09-09 Task 4B2b1：future stage/read（补充报告）
+
+本次仅完成原生 `recurring.future` 的批次构造与回读；future ack 和投影 verifier 留给 4B2b2，仍返回 `WRITE_UNSUPPORTED`。上文阶段6初始限制属于历史检查点，不代表当前重复写入源码进度。
+
+- 仅接受 keyring 锚定的 applied、outcomeUnknown=false root，parent/successor 均 proved，compensation pending，且 `result.future` 精确等于 markerHash 与两份证明。
+- 复用 future step GET/response 校验，回读两份当前远端证明并要求字节事实对应的 JSON 完全相等；两次读取 calendar 权限，非 details 或权限变化拒绝暴露。
+- 单个 LocalBinding 持久化两项证明事件及 TS future plan（hash、parent/pivot/固定 successor ID、originalStart、markerHash、proved steps），绑定当前 Workspace hash 与 observedAt。复用前重验基线及锚定 ledger；过期基线拒绝，不重发远端 mutation。
+- 普通 sync 的过滤器会删除 ETag/marker，故 future 使用 TS 合同字段白名单保留已严格证明的原始字段。普通单次/整组路径保留。
+- RED：新增 SQLite/keyring-double 集成测试首次在 stage 返回 `WRITE_UNSUPPORTED`。GREEN：成功、重复读取、部分 proof、root unknown、补偿已执行、结果/证明篡改、权限降级、当前远端 ETag 变化、stale Workspace、keyring 提交失败恢复、TS fixture plan 字段结构、ack 仍拒绝。实际 TS fixture 的双事件投影 verifier/receipt 验证尚未实现。
+- 验证：doctor、`npm run rust:verify`（fmt、clippy、93 个 Rust 测试、all-features/no-default-features check）通过；文档与 diff 检查通过。未改 TS 或 fixture，未运行 Node/typecheck；无 UI、Stage 7、真实 Google、系统 keyring 或运行开关变更。

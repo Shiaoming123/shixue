@@ -24,3 +24,9 @@
 - 本轮本地/fake目标完成。按分阶段checkpoint界定回滚文件，不覆盖研究文档；开发阶段未提交、合并或推送，后续仅按用户明确授权集成。真实发送保持关闭。
 - 最终阶段6原生定向36/36、TS桥接9/9、写feature关闭的只读编译及typecheck通过；投影使用六组真实TS能力服务样本核验SQLite ack。恢复重试不会重新调用发送器。
 - 后续需要Google测试项目与隔离账号后再验收真实连接和协作；飞书confidential broker、重复写回仍是实现缺口。不要把fake或编译通过称为真实联调成功；阶段7条件不满足，阶段8集中全量节点尚未进入。
+
+## 2026-09-09 Task 4B2b1 续行进度
+
+已完成：原生 future stage/read 从已锚定的双 proved root 构造一个完整 LocalBinding，重新读取权限与两份远端证明，绑定 TS plan 结构及当前 Workspace 基线；重复读取重验并复用，partial/tamper/stale/permission 拒绝。SQLite/keyring-double RED/GREEN 与完整 rust:verify 93 项通过；研究文件保留。
+
+待办：4B2b2 的双事件原子投影 verifier、精确 capability receipt 及 lost-ack/expiry/restore 验收。future ack 仍关闭；本检查点不声称完整 Task 4B2b 完成。真实 Google、系统 keyring、UI 与 Stage 7 均未进入。
