@@ -58,3 +58,22 @@ Evidence:
 - `npm test` passed once, 939/939 (task-3a-review-npm-test.log).
 - `npm run build` and `npm run build:web` passed (task-3a-review-build.log and task-3a-review-build-web.log); chunk-size warnings remain.
 - `git diff --check` passed. No Rust changes or Rust gates in this slice; Task 3B remains pending. No Task 4, UI, sending or protected research changes.
+
+## Task 3B — Rust verifier and SQLite acknowledgment complete
+
+- `calendar_write_projection.rs` now recognizes only frozen recurrence plans and reconstructs the projected source and parent event from the observed Google parent RRULE and, for a single scope, the exact instance id, parent id, and `originalStartTime`. It compares the full projected workspace facts, including parent recurrence exceptions, cancellation (`time: null`), restoration/move time, source archive/sanitization after permission downgrade, receipts, revisions, timestamps, and reminder-delivery invariants.
+- Receipt proof requires the root operation, batch identity, successful receipt id, exact `writeProjection` plan plus `expectedWorkspaceHash` and `observedAt`; local acknowledgement additionally derives the exact plan from the keyring-anchored preview before accepting it. This rejects substituted hash, scope, parent, instance, and original-start evidence.
+- The SQLite integration replays the checked-in TypeScript capability fixture for series create/change, single move/cancel/restore, and permission downgrade. It passes only after the exact workspace projection is stored and rejects a tampered receipt projection. Expired recurrence receipts and acknowledged-baseline restore replays are rejected. The existing native local-batch test confirms normal sync cursor storage is untouched.
+
+### RED/GREEN and verification
+
+- RED: `cargo test --manifest-path src-tauri/Cargo.toml --all-features ts_generated_recurrence_projection_matches_and_rejects_tampering -- --nocapture` failed on `single-move` before the recurrence exception normalizer removed only the transport-level `recurringEventId`; the verifier rejected the otherwise valid staged instance.
+- GREEN: the same command passed after the minimal normalization change: 1 passed, 53 filtered.
+- Focused receipt restore test initially failed because the chained fixture retains an earlier receipt; the test now selects the receipt by its exact batch id. GREEN: `cargo test --manifest-path src-tauri/Cargo.toml --all-features recurrence_receipts_expire_and_cannot_replay_a_restored_workspace -- --nocapture` passed (1 passed, 56 filtered).
+- `cargo test --manifest-path src-tauri/Cargo.toml --all-features local_ack_accepts_only_the_ts_recurrence_projection_fixture -- --nocapture` passed (1 passed, 56 filtered), including tampered-receipt rejection for every fixture case.
+- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`, `git diff --check`, and `cargo check --manifest-path src-tauri/Cargo.toml --no-default-features` passed.
+- `npm run rust:verify` passed: 57 Rust tests; the run includes `local_batch_reads_latest_remote_edit_and_is_anchored_without_touching_sync_cursor`.
+
+### Self-review and scope
+
+- No TypeScript, fixture, regular sync cursor, UI, real sending switch, Task 4, or protected competitor research changes were made in Task 3B. The verifier intentionally accepts only the RRULE forms represented by the frozen capability-generated fixture; unsupported RRULE forms fail closed instead of becoming acknowledgeable facts.
