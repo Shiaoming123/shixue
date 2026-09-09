@@ -50,7 +50,7 @@ function recurrence(raw: unknown, event: CalendarEvent): NonNullable<CalendarEve
 }
 
 function metadata(value: Record<string, unknown>): void {
-  if (value.unsupportedRecurrenceFields === true || value.conferenceData !== undefined || value.attachments !== undefined) unsupported()
+  if ((value.eventType !== undefined && value.eventType !== 'default') || value.unsupportedRecurrenceFields === true || value.conferenceData !== undefined || value.attachments !== undefined) unsupported()
   if (value.extendedProperties !== undefined) {
     const properties = record(value.extendedProperties), privateProperties = record(properties.private ?? {})
     if (Object.keys(properties).some((key) => key !== 'private') || Object.keys(privateProperties).some((key) => !['meowOperationId', 'meowOperationHash'].includes(key)) || typeof privateProperties.meowOperationId !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(String(privateProperties.meowOperationHash))) unsupported()
@@ -85,6 +85,7 @@ export function normalizeGoogleBatch(items: unknown[], request: PullRequest, exi
     }
     for (const value of raws.values()) {
       if (value.recurringEventId === undefined) continue
+      metadata(value)
       const parentId = string(value.recurringEventId)
       if (deleted.has(parentId)) continue
       let parent = upserts.get(parentId)
@@ -96,7 +97,7 @@ export function normalizeGoogleBatch(items: unknown[], request: PullRequest, exi
       let time: CalendarEvent['time'] | null = null
       if (value.status !== 'cancelled') {
         const { recurringEventId: _parent, originalStartTime: _original, ...plain } = value
-        const exception = normalizeGoogleEvent(plain, { ...request, timezone: parent.event.time.kind === 'fixed' ? parent.event.time.timezone : request.timezone }).event; metadata(value)
+        const exception = normalizeGoogleEvent(plain, { ...request, timezone: parent.event.time.kind === 'fixed' ? parent.event.time.timezone : request.timezone }).event
         for (const key of ['title', 'notes', 'location', 'status', 'availability', 'organizer', 'attendees'] as const) if (JSON.stringify(exception[key]) !== JSON.stringify(parent.event[key])) unsupported()
         time = exception.time
       }

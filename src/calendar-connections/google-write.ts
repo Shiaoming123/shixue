@@ -1,3 +1,4 @@
+import { normalizeGoogleBatch } from './google-recurrence.ts'
 import { array, record, string } from './types.ts'
 import { parseCalendarEventTime } from '../domain/workspace/parse.ts'
 import { writePreviewHash } from './write-outbox.ts'
@@ -38,6 +39,7 @@ function proof(preview: WritePreview, value: Record<string, unknown>): WriteResp
   const marker = value.extendedProperties === undefined ? null : record(record(value.extendedProperties).private ?? {})
   if (value.id !== preview.eventId || typeof value.etag !== 'string' || !value.etag || !marker || marker.meowOperationId !== preview.operationId || marker.meowOperationHash !== preview.hash) return unknown()
   const intent = preview.intent
+  recurring(value, intent)
   if (intent.kind === 'delete') return unknown()
   if (intent.kind === 'cancel' && value.status !== 'cancelled') return unknown()
   if (intent.kind === 'create' || intent.kind === 'update') {
@@ -95,7 +97,13 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport, loa
     const descriptor = record(calendar.body)
     if (calendar.status !== 200 || descriptor.id !== preview.calendarId || !['owner', 'writer'].includes(String(descriptor.accessRole))) throw new Error('WRITE_PERMISSION')
     let response = await read(preview); check(preview, epoch)
+    let parent: Record<string, unknown> | undefined
     if (preview.intent.kind === 'recurring.single') {
+      const parentResponse = await transport!.request(preview.connectionId, { method: 'GET', path: `${path(preview)}/${encodeURIComponent(preview.intent.parent.eventId)}`, headers: {}, query: {} })
+      check(preview, epoch)
+      if (parentResponse.status !== 200) throw new Error('WRITE_READ_FAILED')
+      parent = record(parentResponse.body)
+      if (parent.id !== preview.intent.parent.eventId || parent.etag !== preview.intent.parent.etag || parent.recurringEventId !== undefined || !Array.isArray(parent.recurrence)) invalid()
       let pageToken: string | undefined; const seen = new Set<string>(); let found: Record<string, unknown> | null = null
       for (let page = 0; page < 100; page++) {
         const listed = await transport!.request(preview.connectionId, { method: 'GET', path: `${path(preview)}/${encodeURIComponent(preview.intent.parent.eventId)}/instances`, headers: {}, query: { showDeleted: 'true', maxResults: '250', ...(pageToken ? { pageToken } : {}) } })
@@ -112,6 +120,12 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport, loa
     if (response.status !== 200) throw new Error('WRITE_READ_FAILED')
     const value = record(response.body); recurring(value, preview.intent)
     if (value.id !== preview.eventId) invalid()
+    if (preview.intent.kind === 'recurring.single' || preview.intent.kind === 'recurring.series') {
+      try {
+        const currentParent = parent ?? value
+        normalizeGoogleBatch([{ ...currentParent, status: currentParent.status === 'cancelled' ? 'confirmed' : currentParent.status }, ...(parent ? [value] : [])], { connectionId: preview.connectionId, calendarId: preview.calendarId, timezone: typeof descriptor.timeZone === 'string' ? descriptor.timeZone : 'UTC', now: new Date().toISOString(), cursor: null }, [], 'full')
+      } catch { invalid() }
+    }
     return { connectionId: preview.connectionId, calendarId: preview.calendarId, eventId: preview.eventId, canWrite: value.locked !== true, etag: string(value.etag), selfEmail: array(value.attendees ?? []).map(record).find((item) => item.self === true)?.email as string | undefined ?? null }
   }
   return {
@@ -151,7 +165,7 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport, loa
     },
     async reconcile(preview) {
       preview = structuredClone(preview)
-      try { const response = await read(preview); if (response.status !== 200) return unknown(); const value = record(response.body); recurring(value, preview.intent); return proof(preview, value) } catch { return unknown() }
+      try { const response = await read(preview); if (response.status !== 200) return unknown(); return proof(preview, record(response.body)) } catch { return unknown() }
     },
   }
 }

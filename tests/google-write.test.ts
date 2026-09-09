@@ -4,18 +4,21 @@ import { createGoogleCalendarWriter, type GoogleWriteRequest, type GoogleWriteTr
 import { CalendarWriteOutbox, type WriteIntent, type WriteOutboxStore } from '../src/calendar-connections/write-outbox.ts'
 const prepare = async (intent: WriteIntent) => new CalendarWriteOutbox({} as WriteOutboxStore, createGoogleCalendarWriter(), async () => {}).prepare('c', 'a@b', intent, 'all')
 const create: WriteIntent = { kind: 'create', fields: { title: 'Meeting', time: { kind: 'all-day', startOn: '2026-09-09', endOnExclusive: '2026-09-10' }, attendees: [{ email: 'guest@example.com', optional: true }] } }
-function fake() {
+const recurringParent = { id: 'parent', etag: 'parent-v1', recurrence: ['RRULE:FREQ=DAILY'], start: { dateTime: '2026-09-09T09:00:00.000Z', timeZone: 'UTC' }, end: { dateTime: '2026-09-09T10:00:00.000Z', timeZone: 'UTC' } }
+function fake(parent: Record<string, unknown> = recurringParent, responseChange: Record<string, unknown> = {}) {
   const calls: GoogleWriteRequest[] = []; let event: Record<string, unknown> | null = null; let status = 200; let lose = false
   const transport: GoogleWriteTransport = { kind: 'fake', session: () => ({ connected: true, canWrite: true, generation: 1 }), async request(_connection, request) {
     calls.push(structuredClone(request))
     if (request.path.includes('/calendarList/')) return { status: 200, body: { id: 'a@b', accessRole: 'owner' } }
     if (request.path.endsWith('/instances')) return { status: 200, body: { items: event ? [structuredClone(event)] : [] } }
+    if (request.method === 'GET' && request.path.endsWith('/events/parent') && event?.recurringEventId) return { status: 200, body: structuredClone(parent) }
     if (request.method === 'GET') return event ? { status: 200, body: structuredClone(event) } : { status: 404 }
     if (status !== 200) return { status }
     if (request.method === 'DELETE') { event = null; if (lose) throw new Error('lost'); return { status: 204 } }
     const body = request.body!
     event = { ...(event ?? {}), ...body, etag: 'v2' }
     if (body.attendeesOmitted) event.attendees = [{ email: 'me@example.com', self: true, responseStatus: (body.attendees as Array<Record<string, unknown>>)[0]!.responseStatus }, { email: 'other@example.com', responseStatus: 'accepted' }]
+    event = { ...event, ...responseChange }
     if (lose) throw new Error('lost'); return { status: 200, body: structuredClone(event) }
   } }
   return { writer: createGoogleCalendarWriter(transport), calls, event: () => event, setEvent: (value: Record<string, unknown> | null) => { event = value }, setStatus: (value: number) => { status = value }, lose: () => { lose = true } }
@@ -70,4 +73,33 @@ test('recurring single freezes the parent, original instance and instance ETag',
 })
 test('recurring series rejects complex RRULE before sending', async () => {
   for (const recurrence of ['RRULE:FREQ=MONTHLY;BYSETPOS=-1', 'RRULE:FREQ=DAILY;INTERVAL=0', 'RRULE:FREQ=DAILY;COUNT=not-a-number', 'RRULE:FREQ=DAILY;UNTIL=20261340', 'RRULE:FREQ=DAILY;UNTIL=20260909T256060Z']) await assert.rejects(prepare({ kind: 'recurring.series', parent: { eventId: 'parent', etag: 'v1' }, action: 'update', fields: { title: 'New' }, recurrence: [recurrence] }), /WRITE_UNSUPPORTED/)
+})
+
+const singleIntent: WriteIntent = { kind: 'recurring.single', parent: { eventId: 'parent', etag: 'parent-v1' }, originalStart: '2026-09-09T09:00:00.000Z', instance: { eventId: 'instance', etag: 'v1' }, action: 'cancel' }
+const instance = { id: 'instance', etag: 'v1', recurringEventId: 'parent', originalStartTime: { dateTime: '2026-09-09T09:00:00.000Z' }, start: recurringParent.start, end: recurringParent.end }
+test('direct and reconciled single proof reject another parent or original occurrence', async () => {
+  for (const wrong of [{ recurringEventId: 'other' }, { originalStartTime: { dateTime: '2026-09-10T09:00:00.000Z' } }]) {
+    const f = fake(recurringParent, wrong); f.setEvent(instance)
+    const preview = await prepare(singleIntent)
+    assert.equal((await f.writer.execute(preview)).kind, 'unknown')
+    assert.equal((await f.writer.reconcile(preview)).kind, 'unknown')
+    assert.equal(f.calls.filter((call) => call.method !== 'GET').length, 1)
+  }
+})
+test('authoritative recurring metadata and rule gate title-only updates and cancellations before mutation', async () => {
+  for (const extra of [{ recurrence: ['RRULE:FREQ=SECONDLY'] }, { eventType: 'outOfOffice' }, { attachments: [] }, { extendedProperties: { private: { thirdParty: 'value' } } }]) {
+    for (const intent of [singleIntent, { kind: 'recurring.series', parent: { eventId: 'parent', etag: 'parent-v1' }, action: 'cancel' }, { kind: 'recurring.series', parent: { eventId: 'parent', etag: 'parent-v1' }, action: 'update', fields: { title: 'New' } }] as WriteIntent[]) {
+      const parent = { ...recurringParent, ...extra }; const f = fake(parent)
+      f.setEvent(intent.kind === 'recurring.single' ? instance : parent)
+      await assert.rejects(f.writer.execute(await prepare(intent)), /UNSUPPORTED/)
+      assert.ok(f.calls.every((call) => call.method === 'GET'))
+    }
+  }
+  for (const extra of [{ eventType: 'outOfOffice' }, { attachments: [] }, { extendedProperties: { private: { thirdParty: 'value' } } }]) {
+    const f = fake(); f.setEvent({ ...instance, ...extra })
+    await assert.rejects(f.writer.execute(await prepare(singleIntent)), /UNSUPPORTED/)
+    assert.ok(f.calls.every((call) => call.method === 'GET'))
+  }
+  const f = fake(); f.setEvent({ ...recurringParent, extendedProperties: { private: { meowOperationId: 'previous', meowOperationHash: `sha256:${'a'.repeat(64)}` } } })
+  assert.equal((await f.writer.execute(await prepare({ kind: 'recurring.series', parent: { eventId: 'parent', etag: 'parent-v1' }, action: 'update', fields: { title: 'New' } }))).kind, 'applied')
 })
