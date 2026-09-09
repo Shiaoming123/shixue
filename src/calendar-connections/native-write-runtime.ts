@@ -17,6 +17,7 @@ function safeIntent(input: unknown): WriteIntent {
     const rawStart = string(value.originalStart), originalStart = /^\d{4}-\d{2}-\d{2}$/.test(rawStart) ? rawStart : instant(rawStart), parent = ref(value.parent), instance = ref(value.instance)
     if (value.action === 'cancel') { if (Object.keys(value).some((key) => !['kind', 'parent', 'originalStart', 'instance', 'action'].includes(key))) invalid(); return { kind: 'recurring.single', parent, instance, originalStart, action: 'cancel' } }
     if (value.action !== 'update') invalid()
+    if (Object.keys(value).some((key) => !['kind', 'parent', 'originalStart', 'instance', 'action', 'fields'].includes(key))) invalid()
     const raw = record(value.fields); if (Object.keys(raw).some((key) => key !== 'time')) invalid(); const time = parseCalendarEventTime(raw.time); if (time.kind !== 'all-day' && time.kind !== 'fixed') invalid()
     return { kind: 'recurring.single', parent, instance, originalStart, action: 'update', fields: { time } }
   }
@@ -24,6 +25,7 @@ function safeIntent(input: unknown): WriteIntent {
     const parent = ref(value.parent)
     if (value.action === 'cancel') { if (Object.keys(value).some((key) => !['kind', 'parent', 'action'].includes(key))) invalid(); return { kind: 'recurring.series', parent, action: 'cancel' } }
     if (value.action !== 'update') invalid()
+    if (Object.keys(value).some((key) => !['kind', 'parent', 'action', 'fields', 'recurrence'].includes(key))) invalid()
     const raw = record(value.fields), fields: Omit<WriteFields, 'attendees'> = {}; if (Object.keys(raw).some((key) => !['title', 'time'].includes(key))) invalid()
     if (raw.title !== undefined) fields.title = string(raw.title)
     if (raw.time !== undefined) { const time = parseCalendarEventTime(raw.time); if (time.kind === 'floating') invalid(); fields.time = time }

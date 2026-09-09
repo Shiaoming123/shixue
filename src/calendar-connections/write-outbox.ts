@@ -175,7 +175,13 @@ function recurrenceRules(raw: unknown): string[] {
   const parts = raw[0].slice(6).split(';').map((part) => part.split('=')); const rule = Object.fromEntries(parts)
   const positive = (value: string | undefined) => value === undefined || /^[1-9]\d*$/.test(value) && Number(value) <= 10_000
   const weekday = (value: string | undefined) => value === undefined || value.split(',').every((day) => ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'].includes(day))
-  const date = (value: string | undefined) => value === undefined || /^\d{8}(T\d{6}Z)?$/.test(value)
+  const date = (value: string | undefined) => {
+    if (value === undefined) return true
+    const match = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?$/.exec(value); if (!match) return false
+    const [, year, month, day, hour = '00', minute = '00', second = '00'] = match
+    const instant = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`)
+    return Number.isFinite(instant.getTime()) && instant.toISOString() === `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`
+  }
   if (parts.some((part) => part.length !== 2) || new Set(parts.map(([key]) => key)).size !== parts.length || Object.keys(rule).some((key) => !['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST'].includes(key)) || !['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(rule.FREQ) || !positive(rule.INTERVAL) || !positive(rule.COUNT) || rule.COUNT && rule.UNTIL || !date(rule.UNTIL) || !weekday(rule.BYDAY) || !positive(rule.BYMONTHDAY) || !positive(rule.BYMONTH) || rule.BYMONTH && Number(rule.BYMONTH) > 12 || rule.BYMONTHDAY && Number(rule.BYMONTHDAY) > 28 || rule.WKST && !['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'].includes(rule.WKST)) fail('WRITE_UNSUPPORTED')
   return [raw[0]]
 }
