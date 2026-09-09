@@ -12,17 +12,17 @@ function invalid(): never { throw new Error('WRITE_RESPONSE_INVALID') }
 function updates(value: unknown): SendUpdates { if (value === 'all' || value === 'externalOnly' || value === 'none') return value; return invalid() }
 function safeIntent(input: unknown): WriteIntent {
   const value = record(input)
-  const ref = (raw: unknown) => { const item = record(raw); return { eventId: string(item.eventId), etag: string(item.etag) } }
+  const ref = (raw: unknown) => { const item = record(raw); if (Object.keys(item).some((key) => !['eventId', 'etag'].includes(key))) invalid(); return { eventId: string(item.eventId), etag: string(item.etag) } }
   if (value.kind === 'recurring.single') {
     const rawStart = string(value.originalStart), originalStart = /^\d{4}-\d{2}-\d{2}$/.test(rawStart) ? rawStart : instant(rawStart), parent = ref(value.parent), instance = ref(value.instance)
-    if (value.action === 'cancel') return { kind: 'recurring.single', parent, instance, originalStart, action: 'cancel' }
+    if (value.action === 'cancel') { if (Object.keys(value).some((key) => !['kind', 'parent', 'originalStart', 'instance', 'action'].includes(key))) invalid(); return { kind: 'recurring.single', parent, instance, originalStart, action: 'cancel' } }
     if (value.action !== 'update') invalid()
     const raw = record(value.fields); if (Object.keys(raw).some((key) => key !== 'time')) invalid(); const time = parseCalendarEventTime(raw.time); if (time.kind !== 'all-day' && time.kind !== 'fixed') invalid()
     return { kind: 'recurring.single', parent, instance, originalStart, action: 'update', fields: { time } }
   }
   if (value.kind === 'recurring.series') {
     const parent = ref(value.parent)
-    if (value.action === 'cancel') return { kind: 'recurring.series', parent, action: 'cancel' }
+    if (value.action === 'cancel') { if (Object.keys(value).some((key) => !['kind', 'parent', 'action'].includes(key))) invalid(); return { kind: 'recurring.series', parent, action: 'cancel' } }
     if (value.action !== 'update') invalid()
     const raw = record(value.fields), fields: Omit<WriteFields, 'attendees'> = {}; if (Object.keys(raw).some((key) => !['title', 'time'].includes(key))) invalid()
     if (raw.title !== undefined) fields.title = string(raw.title)

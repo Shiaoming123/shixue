@@ -173,6 +173,9 @@ function recurringRef(raw: unknown): RecurringRef { keys(record(raw), ['eventId'
 function recurrenceRules(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.length !== 1 || typeof raw[0] !== 'string' || !raw[0].startsWith('RRULE:')) fail('WRITE_UNSUPPORTED')
   const parts = raw[0].slice(6).split(';').map((part) => part.split('=')); const rule = Object.fromEntries(parts)
-  if (parts.some((part) => part.length !== 2) || new Set(parts.map(([key]) => key)).size !== parts.length || Object.keys(rule).some((key) => !['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST'].includes(key)) || !['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(rule.FREQ) || rule.BYSETPOS !== undefined) fail('WRITE_UNSUPPORTED')
+  const positive = (value: string | undefined) => value === undefined || /^[1-9]\d*$/.test(value) && Number(value) <= 10_000
+  const weekday = (value: string | undefined) => value === undefined || value.split(',').every((day) => ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'].includes(day))
+  const date = (value: string | undefined) => value === undefined || /^\d{8}(T\d{6}Z)?$/.test(value)
+  if (parts.some((part) => part.length !== 2) || new Set(parts.map(([key]) => key)).size !== parts.length || Object.keys(rule).some((key) => !['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST'].includes(key)) || !['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(rule.FREQ) || !positive(rule.INTERVAL) || !positive(rule.COUNT) || rule.COUNT && rule.UNTIL || !date(rule.UNTIL) || !weekday(rule.BYDAY) || !positive(rule.BYMONTHDAY) || !positive(rule.BYMONTH) || rule.BYMONTH && Number(rule.BYMONTH) > 12 || rule.BYMONTHDAY && Number(rule.BYMONTHDAY) > 28 || rule.WKST && !['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'].includes(rule.WKST)) fail('WRITE_UNSUPPORTED')
   return [raw[0]]
 }
