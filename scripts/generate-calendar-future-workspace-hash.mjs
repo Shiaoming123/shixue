@@ -69,6 +69,20 @@ calendarCase('floating-moved', r => {
   r.calendarEvents[0].recurrence = { cadence: { kind: 'daily', interval: 1 }, end: { kind: 'never' }, exceptions: [{ originalStart: '2026-09-10T10:00', time: { kind: 'floating', startLocal: '2026-09-12T10:00', endLocal: '2026-09-12T11:00' } }] }
 })
 calendarCase('unrelated-cancelled-event', r => { r.calendarEvents.push({ ...structuredClone(event), id: 'unrelated', status: 'cancelled', deletedAt: stamp }) })
+for (const [name, start, next, accepted] of [
+  ['negative-epoch-wall-clock', '10:00:30Z', '10:00:30Z', false],
+  ['negative-epoch-ts-remainder', '10:00:30Z', '09:59:30Z', false],
+  ['negative-epoch-milliseconds', '10:00:00.001Z', '09:59:00.001Z', false],
+  ['negative-epoch-minute-aligned', '10:00:00Z', '10:00:00Z', true],
+  ['negative-epoch-empty-exceptions', '10:00:30Z', null, false],
+]) {
+  calendarCase(name, r => {
+    r.calendarEvents[0].time = { kind: 'fixed', startAt: `1969-09-09T${start}`, endAt: '1969-09-09T11:00:00Z', timezone: 'UTC' }
+    r.calendarEvents[0].recurrence = { cadence: { kind: 'daily', interval: 1 }, end: { kind: 'never' }, exceptions: next === null ? [] : [{ originalStart: `1969-09-10T${next}`, time: null }] }
+  }, accepted)
+}
+assert.equal(calendarCases.find(item => item.name === 'negative-epoch-wall-clock').parsedJson, null)
+assert.notEqual(calendarCases.find(item => item.name === 'negative-epoch-ts-remainder').parsedJson, null)
 calendarCase('historical-shanghai-unsupported', r => {
   r.calendarEvents[0].time = { kind: 'fixed', startAt: '1988-09-09T10:00:00Z', endAt: '1988-09-09T11:00:00Z', timezone: 'Asia/Shanghai' }
   r.calendarEvents[0].recurrence = { cadence: { kind: 'daily', interval: 1 }, end: { kind: 'never' }, exceptions: [{ originalStart: '1988-09-09T10:00:00Z', time: null }] }

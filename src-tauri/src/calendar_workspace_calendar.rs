@@ -329,6 +329,16 @@ fn validate_recurrence(event: &mut Json) -> Result<(), String> {
     }
     let value: Value = serde_json::from_str(&event.encode()?).map_err(|_| INVALID)?;
     let kind = value["time"]["kind"].as_str().ok_or(INVALID)?;
+    if kind == "fixed" {
+        let anchor =
+            chrono::DateTime::parse_from_rfc3339(value["time"]["startAt"].as_str().ok_or(INVALID)?)
+                .map_err(|_| INVALID)?
+                .timestamp_millis();
+        // TS applies a signed epoch remainder; negative sub-minute anchors are unsupported.
+        if anchor < 0 && anchor % 60_000 != 0 {
+            return Err("WORKSPACE_RECURRENCE_UNSUPPORTED".into());
+        }
+    }
     let mut originals = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for exception in value["recurrence"]["exceptions"]
