@@ -1,3 +1,4 @@
+import { prepareFuturePlan, type FuturePlan, type FutureSnapshot, type FutureState } from './future-plan.ts'
 import type { CalendarEventTime } from '../domain/calendar/types.ts'
 import { parseCalendarEventTime } from '../domain/workspace/parse.ts'
 import { record, string } from './types.ts'
@@ -14,9 +15,9 @@ export type WriteIntent =
   | { kind: 'recurring.single'; parent: RecurringRef; originalStart: string; instance: RecurringRef; action: 'cancel' }
   | { kind: 'recurring.series'; parent: RecurringRef; action: 'update'; fields: Omit<WriteFields, 'attendees'>; recurrence?: string[] }
   | { kind: 'recurring.series'; parent: RecurringRef; action: 'cancel' }
-  | { kind: 'recurring.future' }
+  | { kind: 'recurring.future'; parent: RecurringRef; originalStart: string; fields: Pick<WriteFields, 'title'>; plan?: FuturePlan }
 export interface WritePreview { operationId: string; connectionId: string; calendarId: string; eventId: string; lockKeys: string[]; sendUpdates: SendUpdates; intent: WriteIntent; hash: string }
-export interface WriteOperation { preview: WritePreview; version: number; state: 'pending' | 'applying' | 'applied' | 'conflict' | 'failed'; outcomeUnknown: boolean; attempts: number; leaseId: string | null; leaseUntil: number; error: string | null; result: WriteResult | null; localApplied: boolean }
+export interface WriteOperation { future?: FutureState; preview: WritePreview; version: number; state: 'pending' | 'applying' | 'applied' | 'conflict' | 'failed'; outcomeUnknown: boolean; attempts: number; leaseId: string | null; leaseUntil: number; error: string | null; result: WriteResult | null; localApplied: boolean }
 export interface WriteResult { connectionId: string; calendarId: string; eventId: string; etag: string | null; operationId: string }
 export interface WriteOutboxStore {
   insert(operation: WriteOperation): Promise<boolean>
@@ -32,6 +33,7 @@ export interface RemoteWriteIdentity { connectionId: string; calendarId: string;
 export type WriteResponse = { kind: 'applied'; result: WriteResult } | { kind: 'conflict' } | { kind: 'rejected'; code: 'permission' | 'quota' | 'invalid' } | { kind: 'unknown' }
 export interface CalendarWriter {
   mode: 'fake' | 'native'
+  readFuture?(connectionId: string, calendarId: string, parent: RecurringRef, originalStart: string): Promise<FutureSnapshot>
   session(connectionId: string): WriteSession
   inspect(preview: WritePreview): Promise<RemoteWriteIdentity>
   /** Implementations must send the immutable event ID, sendUpdates and If-Match from preview. */
@@ -73,7 +75,15 @@ export class CalendarWriteOutbox {
     string(connectionId); string(calendarId)
     if (!['all', 'externalOnly', 'none'].includes(sendUpdates)) fail('WRITE_INVALID')
     const operationId = crypto.randomUUID(); let normalized: WriteIntent
-    if (intent.kind === 'recurring.future') fail('WRITE_UNSUPPORTED')
+    if (intent.kind === 'recurring.future') {
+      if (this.writer.mode !== 'fake' || !this.writer.readFuture) fail('WRITE_UNSUPPORTED')
+      const base = { operationId, connectionId, calendarId, eventId: intent.parent.eventId, lockKeys: [], sendUpdates, intent: structuredClone(intent) }
+      const snapshot = await this.writer.readFuture(connectionId, calendarId, intent.parent, intent.originalStart)
+      const plan = await prepareFuturePlan(base, snapshot)
+      const value = { ...base, lockKeys: [plan.parent.eventId, plan.pivot.eventId, plan.successor.eventId].sort(), intent: { ...base.intent, plan } }
+      const preview = { ...value, hash: await writePreviewHash(value) }
+      this.previews.set(operationId, structuredClone(preview)); return structuredClone(preview)
+    }
     if (intent.kind === 'create') { keys(intent, ['kind', 'fields']); normalized = { kind: 'create', fields: fields(intent.fields, true) } }
     else {
       if (intent.kind === 'recurring.single') {
@@ -114,7 +124,7 @@ export class CalendarWriteOutbox {
   async enqueue(operationId: string, hash: string, confirmed: true): Promise<WriteOperation> {
     const preview = this.previews.get(operationId)
     if (!preview || preview.hash !== hash || confirmed !== true) fail('PREVIEW_NOT_CONFIRMED')
-    const operation: WriteOperation = { preview: structuredClone(preview), version: 1, state: 'pending', outcomeUnknown: false, attempts: 0, leaseId: null, leaseUntil: 0, error: null, result: null, localApplied: false }
+    const operation: WriteOperation = { ...(preview.intent.kind === 'recurring.future' ? { future: { parent: { state: 'pending' as const }, successor: { state: 'pending' as const }, compensation: { state: 'pending' as const } } } : {}), preview: structuredClone(preview), version: 1, state: 'pending', outcomeUnknown: false, attempts: 0, leaseId: null, leaseUntil: 0, error: null, result: null, localApplied: false }
     if (await this.store.insert(operation)) return operation
     const old = await this.required(operationId); if (old.preview.hash !== hash) fail('OPERATION_COLLISION'); return old
   }
@@ -130,6 +140,7 @@ export class CalendarWriteOutbox {
   async reconcile(id: string): Promise<WriteOperation> { return this.process(id, true) }
   private async process(id: string, reconcile: boolean): Promise<WriteOperation> {
     let operation = await this.required(id)
+    if (operation.preview.intent.kind === 'recurring.future') fail('WRITE_UNSUPPORTED')
     if (operation.state === 'applied') return this.finishLocal(operation)
     if (operation.state === 'conflict') return operation
     if (!reconcile && (operation.outcomeUnknown || operation.state !== 'pending')) fail('RECONCILE_REQUIRED')
@@ -170,7 +181,7 @@ export class CalendarWriteOutbox {
   }
 }
 function recurringRef(raw: unknown): RecurringRef { keys(record(raw), ['eventId', 'etag']); const eventId = string(record(raw).eventId), etag = string(record(raw).etag); if (/[\r\n]/.test(etag)) fail('WRITE_INVALID'); return { eventId, etag } }
-function recurrenceRules(raw: unknown): string[] {
+export function recurrenceRules(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.length !== 1 || typeof raw[0] !== 'string' || !raw[0].startsWith('RRULE:')) fail('WRITE_UNSUPPORTED')
   const parts = raw[0].slice(6).split(';').map((part) => part.split('=')); const rule = Object.fromEntries(parts)
   const positive = (value: string | undefined) => value === undefined || /^[1-9]\d*$/.test(value) && Number(value) <= 10_000
