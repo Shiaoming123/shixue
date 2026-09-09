@@ -11,6 +11,10 @@ export interface ExternalCalendarBatch {
   /** Native-owned write completion binding; absent for ordinary read-only sync. */
   operationId?: string
   expectedWorkspaceHash?: string
+  writeProjection?: {
+    plan: { hash: string; parentEventId: string } & ({ kind: 'recurring.series' } | { kind: 'recurring.single'; instanceEventId: string; originalStart: string })
+    expectedWorkspaceHash: string; observedAt: string
+  }
 }
 export type CalendarSourcePreferences = Pick<CalendarSource, 'selected' | 'hidden' | 'color' | 'group'>
 export type CalendarExternalCommand =
@@ -19,6 +23,7 @@ export type CalendarExternalCommand =
 export type CalendarPreferencesCompensation = { type: 'calendar_source.preferences.restore'; sourceId: string; preferences: CalendarSourcePreferences }
 
 export function applyExternalCalendarBatch(state: WorkspaceStateV4, batch: ExternalCalendarBatch, context: CapabilityCommandContext): CommandApplication {
+  if (batch.writeProjection && (batch.operationId === undefined || batch.writeProjection.expectedWorkspaceHash !== batch.expectedWorkspaceHash || batch.mode !== 'incremental')) invalid('Recurrence projection binding mismatch.')
   if (batch.operationId !== undefined) {
     if (!batch.operationId.trim() || !/^sha256:[a-f0-9]{64}$/.test(batch.expectedWorkspaceHash ?? '')) invalid('Write completion requires a native workspace baseline.')
   } else if (batch.expectedWorkspaceHash !== undefined) invalid('A write completion baseline requires an operation identity.')
@@ -53,7 +58,7 @@ export function applyExternalCalendarBatch(state: WorkspaceStateV4, batch: Exter
     if (batch.access !== 'details') { event.title = '忙碌'; event.notes = ''; event.location = ''; event.meetingUrl = null; event.sourceUrl = null; event.organizer = null; event.attendees = [] }
   }
   const entity: EntityRef = { type: 'calendar_source', id: source.id, revision: source.revision }
-  return { affected: [entity], changes: [{ entity, operation: 'update', fields: ['calendarSources', 'calendarEvents'] }], events: [], compensation: null, data: { batchId: batch.batchId, provider: batch.provider, connectionId: batch.connectionId, calendarId: batch.calendarId, sourceId: batch.sourceId, mode: batch.mode, applied: true, ...(batch.operationId === undefined ? {} : { operationId: batch.operationId }) } }
+  return { affected: [entity], changes: [{ entity, operation: 'update', fields: ['calendarSources', 'calendarEvents'] }], events: [], compensation: null, data: { batchId: batch.batchId, provider: batch.provider, connectionId: batch.connectionId, calendarId: batch.calendarId, sourceId: batch.sourceId, mode: batch.mode, applied: true, ...(batch.operationId === undefined ? {} : { operationId: batch.operationId, ...(batch.writeProjection ? { writeProjection: structuredClone(batch.writeProjection) } : {}) }) } }
 }
 export function applyCalendarSourcePreferences(state: WorkspaceStateV4, command: Extract<CalendarExternalCommand, { type: 'calendar_source.preferences' }>, context: CapabilityCommandContext): CommandApplication {
   const source = state.calendarSources.find(({ id }) => id === command.sourceId)

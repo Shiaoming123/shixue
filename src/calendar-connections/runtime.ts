@@ -1,6 +1,6 @@
 import type { RuntimeInfo } from '../lib/platform.ts'
 import { createGoogleCalendarProvider, normalizeGoogleBatch } from './google.ts'
-import { record, array, string, stableId, CalendarProviderError } from './types.ts'
+import { record, array, string, instant, stableId, CalendarProviderError } from './types.ts'
 import type { CalendarEvent } from '../domain/calendar/types.ts'
 import { createTaskCapabilityService } from '../domain/capabilities/service.ts'
 import { DomainCommandError } from '../domain/capabilities/types.ts'
@@ -31,14 +31,31 @@ export function normalizeNativeCalendarBatch(value: unknown, connectionId: strin
   const timezone = string(batch.timezone)
   const items = array(batch.items)
   if (items.length > 50_000 || new TextEncoder().encode(JSON.stringify(value)).length > 32 * 1024 * 1024) throw new CalendarProviderError('incomplete')
-  if (batch.operationId !== undefined && items.some((item) => { const event = record(item); return event.recurrence !== undefined || event.recurringEventId !== undefined })) {
-    const plan = record(batch.plan)
-    if (!/^sha256:[a-f0-9]{64}$/.test(string(plan.hash)) || !['recurring.single', 'recurring.series'].includes(string(plan.kind)) || string(plan.parentEventId) === '') throw new CalendarProviderError('invalid-response')
-    if (plan.kind === 'recurring.single' && (string(plan.instanceEventId) === '' || string(plan.originalStart) === '')) throw new CalendarProviderError('invalid-response')
+  let writeProjection: ExternalCalendarBatch['writeProjection']
+  const recurring = items.some((item) => { const event = record(item); return event.recurrence !== undefined || event.recurringEventId !== undefined })
+  if (batch.operationId !== undefined && (recurring || batch.plan != null)) {
+    const raw = record(batch.plan), kind = string(raw.kind), hash = string(raw.hash), parentEventId = string(raw.parentEventId)
+    const expectedWorkspaceHash = string(batch.expectedWorkspaceHash), observedAt = instant(batch.observedAt)
+    if (!string(batch.operationId).trim() || batch.mode !== 'incremental' || observedAt !== now || !/^sha256:[a-f0-9]{64}$/.test(expectedWorkspaceHash) || !/^sha256:[a-f0-9]{64}$/.test(hash) || !['recurring.single', 'recurring.series'].includes(kind)) throw new CalendarProviderError('invalid-response')
+    const plan: NonNullable<ExternalCalendarBatch['writeProjection']>['plan'] = kind === 'recurring.single'
+      ? { hash, kind, parentEventId, instanceEventId: string(raw.instanceEventId), originalStart: string(raw.originalStart) }
+      : { hash, kind: 'recurring.series', parentEventId }
+    if (Object.keys(raw).some((key) => !(key in plan))) throw new CalendarProviderError('invalid-response')
+    if (batch.access === 'details') {
+      const parent = items.map(record).find((item) => item.id === parentEventId)
+      if (!parent || parent.recurringEventId !== undefined || (parent.status !== 'cancelled' && parent.recurrence === undefined) || items.length !== (plan.kind === 'recurring.single' ? 2 : 1)) throw new CalendarProviderError('invalid-response')
+      if (plan.kind === 'recurring.single') {
+        const instance = items.map(record).find((item) => item.id === plan.instanceEventId)
+        if (!instance || plan.instanceEventId === parentEventId || instance.recurringEventId !== parentEventId) throw new CalendarProviderError('invalid-response')
+        const original = record(instance.originalStartTime), start = record(parent.start)
+        if ((start.date !== undefined ? string(original.date) : instant(original.dateTime)) !== plan.originalStart) throw new CalendarProviderError('invalid-response')
+      }
+    } else if (items.length !== 0) throw new CalendarProviderError('invalid-response')
+    writeProjection = { plan, expectedWorkspaceHash, observedAt }
   }
   const mode = batch.mode as ExternalCalendarBatch['mode']
   const delta = normalizeGoogleBatch(items, { connectionId, calendarId, timezone, now, cursor: null }, parents, mode)
-  return { batchId: string(batch.batchId), provider: 'google', connectionId, calendarId, sourceId: string(batch.sourceId), mode, access: batch.access as ExternalCalendarBatch['access'], title: string(batch.title), timezone, ...delta }
+  return { batchId: string(batch.batchId), provider: 'google', connectionId, calendarId, sourceId: string(batch.sourceId), mode, access: batch.access as ExternalCalendarBatch['access'], title: string(batch.title), timezone, ...delta, ...(writeProjection ? { writeProjection } : {}) }
 }
 
 /** Only public configuration and whitelisted calendar facts cross this boundary. */
