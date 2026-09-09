@@ -56,13 +56,26 @@ export function createGoogleFutureReader(transport: GoogleWriteTransport, loadWo
     const pivot = instances[0]!
     if (pivot.recurringEventId !== parentRef.eventId || (record(pivot.originalStartTime).date ?? record(pivot.originalStartTime).dateTime) !== originalStart) unsupported()
     if (JSON.stringify(await get(`${base}/${encodeURIComponent(parentRef.eventId)}`)) !== JSON.stringify(parent)) unsupported()
+    const local = await createGoogleFutureLocalReader(transport, loadWorkspace)(connectionId, calendarId, parentRef.eventId)
+    check()
+    return { parent, pivot, exceptions, complete: true, ...local }
+  }
+}
+
+/** Reads only trusted local evidence, including after the remote parent has been truncated. */
+export function createGoogleFutureLocalReader(transport: GoogleWriteTransport, loadWorkspace: () => Promise<unknown>): NonNullable<CalendarWriter['readFutureLocal']> {
+  return async (connectionId, calendarId, parentId) => {
+    const generation = transport.session(connectionId).generation
+    const check = () => { const session = transport.session(connectionId); if (transport.kind !== 'fake' || !session.connected || !session.canWrite || session.generation !== generation) unsupported() }
+    check()
     const raw = structuredClone(await loadWorkspace()), workspace = parseWorkspaceStateV4(raw)
     knownFields(raw, workspace); check()
-    const eventId = stableId('google', connectionId, calendarId, parentRef.eventId)
+    const eventId = stableId('google', connectionId, calendarId, parentId)
     const rules = workspace.reminderRules.filter((rule) => rule.target.kind === 'event' && rule.target.eventId === eventId)
     const ruleIds = new Set(rules.map((rule) => rule.id))
     const attachedFacts = [...workspace.calendarEventLinks.filter((item) => item.eventId === eventId), ...workspace.eventOutcomes.filter((item) => item.eventId === eventId), ...rules, ...workspace.reminderDeliveries.filter((item) => ruleIds.has(item.reminderRuleId))].map((item) => item.id)
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(workspace)))
-    return { parent, pivot, exceptions, complete: true, attachedFacts, workspaceHash: `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}` }
+    check()
+    return { attachedFacts, workspaceHash: `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}` }
   }
 }

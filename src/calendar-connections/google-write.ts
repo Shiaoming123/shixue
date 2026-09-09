@@ -2,7 +2,7 @@ import { normalizeGoogleBatch } from './google-recurrence.ts'
 import { array, record, string } from './types.ts'
 import { parseCalendarEventTime } from '../domain/workspace/parse.ts'
 import { writePreviewHash } from './write-outbox.ts'
-import { createGoogleFutureReader } from './google-future.ts'
+import { createGoogleFutureReader, createGoogleFutureLocalReader } from './google-future.ts'
 import { createGoogleFutureStep } from './google-future-step.ts'
 import type { CalendarWriter, WriteFields, WriteIntent, WritePreview, WriteResponse, WriteSession } from './write-outbox.ts'
 
@@ -130,7 +130,7 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport, loa
   }
   return {
     ...(transport ? { futureStep: createGoogleFutureStep(transport) } : {}),
-    ...(transport && loadWorkspace ? { readFuture: createGoogleFutureReader(transport, loadWorkspace) } : {}),
+    ...(transport && loadWorkspace ? { readFuture: createGoogleFutureReader(transport, loadWorkspace), readFutureLocal: createGoogleFutureLocalReader(transport, loadWorkspace) } : {}),
     mode: transport ? 'fake' : 'native',
     session: (connectionId) => transport?.session(connectionId) ?? { connected: false, generation: 0, canWrite: false },
     inspect,

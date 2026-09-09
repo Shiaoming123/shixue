@@ -36,6 +36,7 @@ export interface CalendarWriter {
   futureStep?(preview: WritePreview, step: keyof FutureState, action: 'mutate' | 'read', etag?: string): Promise<FutureStepResponse>
   mode: 'fake' | 'native'
   readFuture?(connectionId: string, calendarId: string, parent: RecurringRef, originalStart: string): Promise<FutureSnapshot>
+  readFutureLocal?(connectionId: string, calendarId: string, parentId: string): Promise<Pick<FutureSnapshot, 'workspaceHash' | 'attachedFacts'>>
   session(connectionId: string): WriteSession
   inspect(preview: WritePreview): Promise<RemoteWriteIdentity>
   /** Implementations must send the immutable event ID, sendUpdates and If-Match from preview. */
@@ -143,7 +144,7 @@ export class CalendarWriteOutbox {
   private async process(id: string, reconcile: boolean): Promise<WriteOperation> {
     let operation = await this.required(id)
     if (operation.preview.intent.kind === 'recurring.future') {
-      if (!this.writer.readFuture || !this.writer.futureStep) fail('WRITE_UNSUPPORTED')
+      if (!this.writer.readFuture || !this.writer.readFutureLocal || !this.writer.futureStep) fail('WRITE_UNSUPPORTED')
       return processFuture(operation, reconcile, this.store, this.writer, this.now, (epoch) => this.active(operation.preview, epoch))
     }
     if (operation.state === 'applied') return this.finishLocal(operation)

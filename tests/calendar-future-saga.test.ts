@@ -2,13 +2,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { CalendarWriteOutbox, type WriteOperation, type WriteOutboxStore } from '../src/calendar-connections/write-outbox.ts'
 import { createGoogleCalendarWriter, type GoogleWriteRequest } from '../src/calendar-connections/google-write.ts'
+import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
+import { normalizeGoogleBatch } from '../src/calendar-connections/google-recurrence.ts'
 
 const parent = { id: 'parent', etag: 'p1', summary: 'Before', start: { date: '2026-09-01' }, end: { date: '2026-09-02' }, recurrence: ['RRULE:FREQ=DAILY;COUNT=10'] }
 const pivot = { id: 'pivot', etag: 'i1', recurringEventId: 'parent', originalStartTime: { date: '2026-09-04' }, start: { date: '2026-09-04' }, end: { date: '2026-09-05' } }
 const intent = { kind: 'recurring.future' as const, parent: { eventId: 'parent', etag: 'p1' }, originalStart: '2026-09-04', fields: { title: 'After' } }
 async function setup(loss = '', reject = '', crashAfterRejection = false, compensationStatus = 0, divergence: Record<string, unknown> = {}) {
   const rows = new Map<string, WriteOperation>(), events = new Map<string, Record<string, unknown>>([['parent', structuredClone(parent)]]), mutations: GoogleWriteRequest[] = []
-  let offline = false, workspaceHash = 'workspace1', now = 0
+  const workspace = await createInMemoryWorkspaceStore().load()
+  let offline = false, now = 0
   const store: WriteOutboxStore = {
     async insert(op) { rows.set(op.preview.operationId, structuredClone(op)); return true }, async get(id) { return structuredClone(rows.get(id) ?? null) }, async list() { return [...rows.values()] },
     async cas(id, version, next) {
@@ -32,11 +35,11 @@ async function setup(loss = '', reject = '', crashAfterRejection = false, compen
     const body = { ...events.get(id), ...req.body, id, etag: `v${mutations.length}` }; events.set(id, body)
     if (loss === step) { offline = true; throw Error('lost response') }
     return { status: 200, body }
-  } })
-  writer.readFuture = async () => structuredClone({ parent, pivot, exceptions: [], complete: true, attachedFacts: [], workspaceHash })
+  } }, async () => workspace)
+  writer.readFuture = async () => structuredClone({ parent, pivot, exceptions: [], complete: true, ...await writer.readFutureLocal!('c', 'cal', 'parent') })
   const restart = () => { const core = new CalendarWriteOutbox(store, writer, async () => { throw Error('projection belongs to 4B') }, () => now); core.enabled = true; return core }
   const core = restart(), preview = await core.prepare('c', 'cal', intent, 'all'); await core.enqueue(preview.operationId, preview.hash, true)
-  return { core, preview, rows, events, mutations, store, restart, recover: () => { offline = false; crashAfterRejection = false; now += 30_001 }, drift: () => { workspaceHash = 'changed' } }
+  return { core, preview, rows, events, mutations, store, restart, workspace, recover: () => { offline = false; crashAfterRejection = false; now += 30_001 }, drift: () => { workspace.revision++ } }
 }
 test('future split proves both steps with fixed ID and one notification request each', async () => {
   const f = await setup(), op = await f.core.run(f.preview.operationId)
@@ -63,6 +66,27 @@ for (const step of ['parent', 'successor']) test(`future ${step} response loss s
 test('future rejects workspace drift before first mutation', async () => {
   const f = await setup(); f.drift(); const op = await f.core.run(f.preview.operationId)
   assert.equal(op.state, 'conflict'); assert.equal(f.mutations.length, 0)
+})
+for (const drift of ['parent', 'etag', 'workspace', 'attachment']) test(`deferred successor refuses ${drift} drift and retains its lock`, async () => {
+  const f = await setup('parent'); await f.core.run(f.preview.operationId); f.recover()
+  await f.restart().reconcile(f.preview.operationId)
+  if (drift === 'parent') f.events.get('parent')!.summary = 'Third-party edit'
+  if (drift === 'etag') f.events.get('parent')!.etag = 'third-party-version'
+  if (drift === 'workspace') f.drift()
+  if (drift === 'attachment') {
+    const now = '2026-09-09T00:00:00Z'
+    const event = normalizeGoogleBatch([parent], { connectionId: 'c', calendarId: 'cal', timezone: 'UTC', now, cursor: null }, [], 'full').upserts[0]!.event
+    f.workspace.calendarSources.push({ id: event.sourceId, revision: 1, provider: 'google', title: 'Calendar', color: '#000000', group: null, permission: 'write', selected: true, hidden: false, timezone: 'UTC', createdAt: now, updatedAt: now, archivedAt: null })
+    f.workspace.calendarEvents.push(event)
+    f.workspace.eventOutcomes.push({ id: 'attached-outcome', eventId: event.id, occurrenceId: null, action: 'note', taskId: null, note: 'Keep', createdAt: now })
+  }
+  const before = f.mutations.length, op = await f.restart().run(f.preview.operationId)
+  assert.equal(op.state, 'conflict'); assert.equal(op.error, 'WRITE_SNAPSHOT_CHANGED'); assert.equal(op.outcomeUnknown, true)
+  assert.equal(op.result, null); assert.equal(op.future!.successor.state, 'pending'); assert.equal(f.mutations.length, before)
+  const overlap = await f.core.prepare('c', 'cal', { kind: 'recurring.series', parent: intent.parent, action: 'cancel' }, 'all')
+  await f.core.enqueue(overlap.operationId, overlap.hash, true)
+  await assert.rejects(f.restart().run(overlap.operationId), /WRITE_BUSY/)
+  assert.equal(f.mutations.length, before)
 })
 test('unresolved future root keeps the parent lock and rejects an overlapping series write', async () => {
   const f = await setup('parent')

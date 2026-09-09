@@ -68,11 +68,24 @@ export async function processFuture(operation: WriteOperation, reconcile: boolea
         if (JSON.stringify(fresh) !== JSON.stringify(plan)) throw Error('WRITE_SNAPSHOT_CHANGED')
       } catch { return finish({ state: 'conflict', outcomeUnknown: false, error: 'WRITE_SNAPSHOT_CHANGED' }) }
     }
+    if (state.state === 'pending' && step === 'successor') {
+      try {
+        active(epoch)
+        const current = await writer.futureStep!(preview, 'parent', 'read')
+        active(epoch)
+        if (current.kind !== 'proved' || JSON.stringify(current.proof) !== JSON.stringify(operation.future!.parent.proof)) throw Error('WRITE_SNAPSHOT_CHANGED')
+        const local = await writer.readFutureLocal!(preview.connectionId, preview.calendarId, intent.parent.eventId)
+        active(epoch)
+        if (local.workspaceHash !== plan.workspaceHash || local.attachedFacts.length) throw Error('WRITE_SNAPSHOT_CHANGED')
+      } catch { return finish({ state: 'conflict', outcomeUnknown: true, error: 'WRITE_SNAPSHOT_CHANGED' }) }
+    }
     let response: FutureStepResponse = { kind: 'unknown' }
     if (state.state === 'pending') {
       active(epoch)
       if (now() >= operation.leaseUntil) throw Error('WRITE_LEASE_LOST')
       await save({ future: { ...operation.future!, [step]: { state: 'applying', outcomeUnknown: true } }, outcomeUnknown: true })
+      active(epoch)
+      if (now() >= operation.leaseUntil) throw Error('WRITE_LEASE_LOST')
       try { active(epoch); response = await writer.futureStep!(preview, step, 'mutate'); active(epoch) } catch { response = { kind: 'unknown' } }
       if (response.kind === 'rejected' || response.kind === 'conflict') {
         await save({ future: { ...operation.future!, [step]: { state: response.kind, outcomeUnknown: false } } })
