@@ -390,6 +390,16 @@ fn confirmation_message(preview: &Value) -> Result<String, String> {
         "cancel" => "取消日程",
         "delete" => "删除日程",
         "rsvp" => "回复邀请",
+        "recurring.single" => match field(intent, "action")? {
+            "update" => "修改日程",
+            "cancel" => "取消日程",
+            _ => return Err("WRITE_INVALID".into()),
+        },
+        "recurring.series" => match field(intent, "action")? {
+            "update" => "修改日程",
+            "cancel" => "取消日程",
+            _ => return Err("WRITE_INVALID".into()),
+        },
         _ => return Err("WRITE_UNSUPPORTED".into()),
     };
     let notification = match field(preview, "sendUpdates")? {
@@ -402,7 +412,18 @@ fn confirmation_message(preview: &Value) -> Result<String, String> {
         format!("操作：{action}"),
         format!("日历：{}", field(preview, "calendarId")?),
     ];
-    if intent["kind"] != "create" {
+    if intent["kind"] == "recurring.single" {
+        lines.push("范围：单次日程（single occurrence）".into());
+        lines.push(format!("系列 ID：{}", field(&intent["parent"], "eventId")?));
+        lines.push(format!(
+            "实例 ID：{}",
+            field(&intent["instance"], "eventId")?
+        ));
+        lines.push(format!("原始开始：{}", field(intent, "originalStart")?));
+    } else if intent["kind"] == "recurring.series" {
+        lines.push("范围：整个系列（entire series）".into());
+        lines.push(format!("系列 ID：{}", field(&intent["parent"], "eventId")?));
+    } else if intent["kind"] != "create" {
         lines.push(format!("日程 ID：{}", field(preview, "eventId")?));
     }
     if let Some(title) = intent["fields"]["title"].as_str() {
@@ -791,15 +812,20 @@ fn body(preview: &Value) -> Result<Value, String> {
     Ok(body)
 }
 fn proof(preview: &Value, event: &Value) -> Result<bool, String> {
+    let intent = &preview["intent"];
     if !supported(event, &preview["intent"])
         || event["id"] != preview["eventId"]
         || event["etag"].as_str().is_none_or(str::is_empty)
         || event["extendedProperties"]["private"]["meowOperationId"] != preview["operationId"]
         || event["extendedProperties"]["private"]["meowOperationHash"] != preview["hash"]
+        || (intent["kind"] == "recurring.single"
+            && !original_start_matches(
+                &event["originalStartTime"],
+                field(intent, "originalStart")?,
+            ))
     {
         return Ok(false);
     }
-    let intent = &preview["intent"];
     if intent["kind"] == "delete" {
         return Ok(false);
     }
@@ -850,6 +876,20 @@ fn proof(preview: &Value, event: &Value) -> Result<bool, String> {
         }
     }
     Ok(true)
+}
+fn original_start_matches(raw: &Value, frozen: &str) -> bool {
+    let Some(actual) = raw
+        .get("dateTime")
+        .or_else(|| raw.get("date"))
+        .and_then(Value::as_str)
+    else {
+        return false;
+    };
+    if frozen.len() == 10 {
+        return actual == frozen;
+    }
+    chrono::DateTime::parse_from_rfc3339(actual).ok()
+        == chrono::DateTime::parse_from_rfc3339(frozen).ok()
 }
 async fn preflight<H: Http>(http: &H, preview: &Value) -> Result<bool, String> {
     let directory = http
@@ -928,10 +968,7 @@ async fn preflight<H: Http>(http: &H, preview: &Value) -> Result<bool, String> {
         return Err("WRITE_PERMISSION".into());
     }
     if intent["kind"] == "recurring.single"
-        && event["originalStartTime"]
-            .get("dateTime")
-            .or_else(|| event["originalStartTime"].get("date"))
-            != Some(&intent["originalStart"])
+        && !original_start_matches(&event["originalStartTime"], field(intent, "originalStart")?)
     {
         return Err("WRITE_UNSUPPORTED".into());
     }
@@ -1636,7 +1673,13 @@ mod tests {
     fn recurring_single_and_series_use_frozen_target_etags_and_only_reconcile_unknown_results() {
         tauri::async_runtime::block_on(async {
             let single = json!({"kind":"recurring.single","parent":{"eventId":"parent","etag":"p1"},"originalStart":"2026-09-09T09:00:00Z","instance":{"eventId":"instance","etag":"i1"},"action":"update","fields":{"time":{"kind":"fixed","startAt":"2026-09-09T11:00:00Z","endAt":"2026-09-09T12:00:00Z","timezone":"UTC"}}});
-            let (pool, vault, _) = fixture(single).await;
+            let (pool, vault, record) = fixture(single).await;
+            let message = confirmation_message(&record.preview).unwrap();
+            assert!(
+                message.contains("单次日程（single occurrence）")
+                    && message.contains("系列 ID：parent")
+                    && message.contains("实例 ID：instance")
+            );
             let http = FakeHttp::new();
             http.parents.lock().unwrap().insert(
                 "parent".into(),
@@ -1663,7 +1706,10 @@ mod tests {
                 Some("i1")
             );
 
-            let (pool, vault, _) = fixture(json!({"kind":"recurring.series","parent":{"eventId":"parent","etag":"p1"},"action":"cancel"})).await;
+            let (pool, vault, series_record) = fixture(json!({"kind":"recurring.series","parent":{"eventId":"parent","etag":"p1"},"action":"cancel"})).await;
+            assert!(confirmation_message(&series_record.preview)
+                .unwrap()
+                .contains("整个系列（entire series）"));
             let mut http = FakeHttp::new();
             http.reject = 412;
             *http.event.lock().unwrap() = Some(
@@ -1685,6 +1731,48 @@ mod tests {
                 .await
                 .is_err());
             assert_eq!(http.writes.load(Ordering::SeqCst), 0);
+        });
+    }
+
+    #[test]
+    fn recurring_proof_rejects_marker_on_the_wrong_instance_or_original_start_and_locks_parent() {
+        tauri::async_runtime::block_on(async {
+            let intent = json!({"kind":"recurring.single","parent":{"eventId":"parent","etag":"p1"},"originalStart":"2026-09-09T09:00:00Z","instance":{"eventId":"instance","etag":"i1"},"action":"cancel"});
+            let (pool, vault, record) = fixture(intent).await;
+            let http = FakeHttp::new();
+            *http.event.lock().unwrap() = Some(
+                json!({"id":"wrong","etag":"i1","recurringEventId":"parent","originalStartTime":{"dateTime":"2026-09-09T09:00:00Z"},"organizer":{"self":true}}),
+            );
+            assert!(execute(&pool, &vault, &http, "owner", "op", "grant", false)
+                .await
+                .is_err());
+            assert_eq!(http.writes.load(Ordering::SeqCst), 0);
+
+            let mut applying = anchor(&vault, "owner", "op").unwrap();
+            applying.state = "applying".into();
+            applying.previous = Some("op".into());
+            applying.lock_keys = vec!["parent".into(), "other-instance".into()];
+            vault
+                .set(
+                    &anchor_key("owner", "other"),
+                    &serde_json::to_string(&applying).unwrap(),
+                )
+                .unwrap();
+            vault.set(&head_key("owner"), "other").unwrap();
+            *http.event.lock().unwrap() = Some(
+                json!({"id":"instance","etag":"i1","recurringEventId":"parent","originalStartTime":{"dateTime":"2026-09-09T09:00:00Z"},"organizer":{"self":true}}),
+            );
+            assert_eq!(
+                execute(&pool, &vault, &http, "owner", "op", "grant", false)
+                    .await
+                    .unwrap_err(),
+                "WRITE_BUSY"
+            );
+
+            let mut marker_event = json!({"id":"instance","etag":"v2","recurringEventId":"parent","originalStartTime":{"dateTime":"2026-09-10T09:00:00Z"},"status":"cancelled","extendedProperties":{"private":{"meowOperationId":"op","meowOperationHash":record.preview["hash"]}}});
+            assert!(!proof(&record.preview, &marker_event).unwrap());
+            marker_event["originalStartTime"] = json!({"dateTime":"2026-09-09T09:00:00+00:00"});
+            assert!(proof(&record.preview, &marker_event).unwrap());
         });
     }
 }
