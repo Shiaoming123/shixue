@@ -662,7 +662,11 @@ pub(crate) fn wall(time: &Value, value: &str) -> Option<(NaiveDate, Option<chron
     Some((local.date_naive(), Some(local.time())))
 }
 
-fn stable_id(connection: &str, calendar: &str, remote: Option<&str>) -> String {
+pub(in super::super) fn stable_id(
+    connection: &str,
+    calendar: &str,
+    remote: Option<&str>,
+) -> String {
     let tuple = if let Some(id) = remote {
         json!(["google", connection, calendar, id])
     } else {

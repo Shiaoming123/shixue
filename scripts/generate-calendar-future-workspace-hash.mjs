@@ -486,3 +486,36 @@ const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.js
 const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)
 else writeFileSync(taskOutput, taskBytes)
+
+// Exercise the actual trusted TS reader over the full parser fixture.
+const { createGoogleFutureReader } = await import('../src/calendar-connections/google-future.ts')
+const { stableId } = await import('../src/calendar-connections/types.ts')
+const identity = { connection: "owner 中文😀!'", calendar: 'cal/\"', parent: 'parent?😀' }
+const sourceId = stableId('google', identity.connection, identity.calendar)
+const eventId = stableId('google', identity.connection, identity.calendar, identity.parent)
+const remote = { id: identity.parent, etag: 'v1' }
+const readerTransport = { kind: 'fake', session: () => ({ connected: true, canWrite: true, generation: 1 }), request: async (_, request) => {
+  const body = request.path.includes('/calendarList/') ? { id: identity.calendar, accessRole: 'owner' }
+    : request.path.endsWith('/instances') ? { items: [{ id: 'pivot', recurringEventId: identity.parent, originalStartTime: { date: '2026-09-09' } }] }
+    : request.path.endsWith('/events') ? { items: [remote] } : remote
+  return { status: 200, body }
+} }
+const localCases = []
+for (const mode of ['clean', 'link', 'outcome', 'disabled-rule', 'cancelled-delivery', 'all', 'unrelated-change']) {
+ const raw = JSON.parse(taskCases.find(c => c.name === 'full-workspace').rawJson)
+ delete raw.previewReceipts
+ raw.commandReceipts[0].result = cases[1].raw.commandReceipts[0].result
+ raw.calendarSources.push({ ...structuredClone(source), id: sourceId, provider: 'google' })
+ raw.calendarEvents.push({ ...structuredClone(event), id: eventId, sourceId })
+ if (['link', 'all'].includes(mode)) raw.calendarEventLinks.push({ ...raw.calendarEventLinks[0], id: 'target-link', eventId })
+ if (['outcome', 'all'].includes(mode)) raw.eventOutcomes.push({ ...raw.eventOutcomes[0], id: 'target-outcome', eventId })
+ if (['disabled-rule', 'cancelled-delivery', 'all'].includes(mode)) raw.reminderRules.push({ ...raw.reminderRules[0], id: 'target-rule', enabled: false, target: { kind: 'event', eventId, originalStart: null } })
+ if (['cancelled-delivery', 'all'].includes(mode)) raw.reminderDeliveries.push({ ...raw.reminderDeliveries[0], id: 'target-delivery', reminderRuleId: 'target-rule', status: 'cancelled' })
+ if (mode === 'unrelated-change') raw.tasks[0].title += ' unrelated'
+ const result = await createGoogleFutureReader(readerTransport, async () => raw)(identity.connection, identity.calendar, { eventId: identity.parent, etag: 'v1' }, '2026-09-09')
+ localCases.push({ name: mode, ...identity, sourceId, eventId, rawJson: JSON.stringify(raw), parsedJson: JSON.stringify(parseWorkspaceStateV4(structuredClone(raw))), attachedFacts: result.attachedFacts, hash: result.workspaceHash })
+}
+const localOutput = new URL('../tests/fixtures/calendar-future-local-evidence.json', import.meta.url)
+const localBytes = `${JSON.stringify(localCases, null, 2)}\n`
+if (process.argv.includes('--check')) assert.equal(readFileSync(localOutput, 'utf8').replaceAll('\r\n', '\n'), localBytes)
+else writeFileSync(localOutput, localBytes)

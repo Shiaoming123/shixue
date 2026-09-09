@@ -2070,3 +2070,7 @@ mod tests {
 #[allow(dead_code)] // Unwired parser prerequisite; not local attachment evidence.
 #[path = "calendar_workspace_parse.rs"]
 mod workspace_parse;
+
+#[allow(dead_code)] // Internal evidence only; future prepare remains disabled.
+#[path = "calendar_write_future_local.rs"]
+mod future_local;
