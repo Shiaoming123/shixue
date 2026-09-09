@@ -1,4 +1,5 @@
 import { normalizeGoogleBatch } from './google-recurrence.ts'
+import { normalizeGoogleEvent } from './google.ts'
 import { expandCalendarEventOccurrences } from '../domain/calendar/event-occurrences.ts'
 import { addCalendarDays } from '../domain/recurrence/calculate.ts'
 import { record, string } from './types.ts'
@@ -36,7 +37,10 @@ export async function prepareFuturePlan(base: Omit<WritePreview, 'hash'>, snapsh
     const original = record(pivot.originalStartTime), start = string(original.date ?? original.dateTime)
     if (start !== intent.originalStart) unsupported()
     const rules = recurrenceRules(parent.recurrence)
-    const event = normalizeGoogleBatch([parent], { connectionId: base.connectionId, calendarId: base.calendarId, timezone: 'UTC', now: '2026-01-01T00:00:00.000Z', cursor: null }, [], 'full').upserts[0]!.event
+    const request = { connectionId: base.connectionId, calendarId: base.calendarId, timezone: 'UTC', now: '2026-01-01T00:00:00.000Z', cursor: null }
+    const event = normalizeGoogleBatch([parent], request, [], 'full').upserts[0]!.event
+    const { recurringEventId: _parent, originalStartTime: _original, ...plainPivot } = pivot
+    if (normalizeGoogleEvent(plainPivot, request).event.status !== event.status) unsupported()
     const anchor = event.time.kind === 'all-day' ? event.time.startOn : event.time.kind === 'fixed' ? event.time.startAt.slice(0, 10) : unsupported()
     const occurrences = expandCalendarEventOccurrences(event, { start: addCalendarDays(anchor, -1), end: addCalendarDays(start.slice(0, 10), 2) }, 'UTC')
     const index = occurrences.findIndex((item) => item.originalStart === start)

@@ -29,7 +29,7 @@ test('future freezes one serializable root and child cannot enqueue independentl
   await assert.rejects(core.reconcile(preview.operationId), /WRITE_UNSUPPORTED/)
 })
 test('future rejects incomplete, attached, exceptional, lossy and unprovable snapshots', async () => {
-  for (const patch of [{ complete: false }, { attachedFacts: ['link'] }, { exceptions: [pivot] }, { parent: { ...parent, recurrence: ['RRULE:FREQ=DAILY;BYHOUR=9'] } }, { pivot: { ...pivot, originalStartTime: { date: '2026-09-05' } } }, { parent: { ...parent, attachments: [] } }]) {
+  for (const patch of [{ complete: false }, { attachedFacts: ['link'] }, { exceptions: [pivot] }, { parent: { ...parent, recurrence: ['RRULE:FREQ=DAILY;BYHOUR=9'] } }, { pivot: { ...pivot, originalStartTime: { date: '2026-09-05' } } }, { parent: { ...parent, attachments: [] } }, { parent: { ...parent, status: 'confirmed' }, pivot: { ...pivot, status: 'tentative' } }]) {
     await assert.rejects(setup(patch).prepare('c', 'cal', intent, 'all'), /WRITE_UNSUPPORTED/)
   }
 })
