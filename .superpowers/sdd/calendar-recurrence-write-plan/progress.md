@@ -44,3 +44,7 @@ Shared read_body rejects recursive duplicate provider JSON keys while retaining 
 ### 4B1c1c checkpoint
 
 Unwired parent-phase transition now persists applying before its single PATCH, GET-proves the result and uses GET-only unknown/restart recovery. Focused fake/SQLite checks and rust:verify (83 tests) pass. Root lock remains held; successor/compensation/projection are pending. Baseline RED was verified retrospectively against the existing execute rejection. Next: review this slice, then add successor-phase continuation and complete root authorization/lease integration before command wiring. See task-4-report.md for limits; protected research unchanged.
+
+### 4B1c1d checkpoint
+
+Test-only successor continuation now anchors applying before its single POST, GET-proves the fixed child, and persists the exact successful future root result. Unknown/restart is GET-only; deterministic child rejection retains the root lock for compensation. RED/GREEN and rust:verify (84 tests) pass; no command/projection/UI wiring. Next: review the internal phase implementation, then address remaining root authorization/lease/routing and compensation boundaries separately. See task-4-report.md; Task 4 remains incomplete.

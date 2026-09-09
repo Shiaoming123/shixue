@@ -1,4 +1,4 @@
-//! Parent phase only. Test-only until the complete future sender is reviewed.
+//! Parent/successor phases. Test-only until the complete future sender is reviewed.
 use super::*;
 
 async fn parent<V: Vault, H: Http>(
@@ -83,7 +83,7 @@ async fn parent<V: Vault, H: Http>(
         locks(vault, owner, id, &record)?;
         local.revalidate(pool).await?;
         check()?;
-        let reply = call(http, &record.preview, true).await;
+        let reply = call(http, &record.preview, "parent", true).await;
         check()?;
         if let Ok(reply) = reply {
             if matches!(reply["kind"].as_str(), Some("rejected" | "conflict")) {
@@ -99,7 +99,7 @@ async fn parent<V: Vault, H: Http>(
         return Err("WRITE_INVALID".into());
     }
     check()?;
-    let reply = call(http, &record.preview, false).await;
+    let reply = call(http, &record.preview, "parent", false).await;
     check()?;
     record.future.as_mut().unwrap()["parent"] = match reply {
         Ok(value) if value["kind"] == "proved" => {
@@ -125,8 +125,151 @@ fn locks<V: Vault>(vault: &V, owner: &str, id: &str, record: &Ledger) -> Result<
     }
     Ok(())
 }
-async fn call<H: Http>(http: &H, preview: &Value, mutate: bool) -> Result<Value, String> {
-    let request = future_step::request(preview, "parent", mutate)?;
+async fn successor<V: Vault, H: Http>(
+    pool: &SqlitePool,
+    vault: &V,
+    http: &H,
+    owner: &str,
+    id: &str,
+    epoch: &str,
+    authorization: impl Fn() -> Result<(), String>,
+) -> Result<Ledger, String> {
+    let _gate = WRITE_GATE.lock().await;
+    let check = || -> Result<(), String> {
+        authorization()?;
+        http.check_future_session()
+    };
+    check()?;
+    let mut record = ledger(pool, vault, owner, id, epoch).await?;
+    let future = record.future.as_ref().ok_or("WRITE_UNSUPPORTED")?;
+    if record.state == "applied" {
+        return Ok(record);
+    }
+    if record.state != "applying"
+        || future["parent"]["state"] != "proved"
+        || future["compensation"]["state"] != "pending"
+        || future_step::response(
+            &record.preview,
+            "parent",
+            false,
+            200,
+            &future["parent"]["proof"],
+        )["kind"]
+            != "proved"
+        || future["parent"]["etag"] != future["parent"]["proof"]["etag"]
+    {
+        return Err("WRITE_INVALID".into());
+    }
+    let phase = field(&future["successor"], "state")?.to_string();
+    if matches!(phase.as_str(), "rejected" | "conflict") {
+        return Ok(record);
+    }
+    let previous = anchor(vault, owner, id)?.previous;
+    if phase == "pending" {
+        if record.outcome_unknown {
+            return Err("WRITE_RECONCILE_REQUIRED".into());
+        }
+        let preview = &record.preview;
+        let local = future_local::read(
+            pool,
+            field(preview, "connectionId")?,
+            field(preview, "calendarId")?,
+            field(preview, "eventId")?,
+        )
+        .await?;
+        if local.workspace_hash != field(&preview["intent"]["plan"], "workspaceHash")?
+            || !local.attached_facts.is_empty()
+        {
+            return Err("WRITE_PREVIEW_CHANGED".into());
+        }
+        check()?;
+        let directory = http
+            .call(
+                "GET",
+                &format!(
+                    "users/me/calendarList/{}",
+                    segment(field(preview, "calendarId")?)
+                ),
+                None,
+                None,
+                None,
+            )
+            .await?;
+        check()?;
+        if directory.status != 200
+            || directory.body["id"] != preview["calendarId"]
+            || !matches!(
+                directory.body["accessRole"].as_str(),
+                Some("owner" | "writer")
+            )
+        {
+            return Err("WRITE_PERMISSION".into());
+        }
+        let current = call(http, preview, "parent", false).await?;
+        check()?;
+        if current["kind"] != "proved" || current["proof"] != future["parent"]["proof"] {
+            return Err("WRITE_PREVIEW_CHANGED".into());
+        }
+        locks(vault, owner, id, &record)?;
+        local.revalidate(pool).await?;
+        check()?;
+        record.future.as_mut().unwrap()["successor"] =
+            json!({"state":"applying","outcomeUnknown":true});
+        record.outcome_unknown = true;
+        record.version += 1;
+        persist(pool, vault, owner, id, &record, previous.clone()).await?;
+        let trusted = ledger(pool, vault, owner, id, epoch).await?;
+        if serde_json::to_value(&trusted).unwrap() != serde_json::to_value(&record).unwrap() {
+            return Err("WRITE_AUTHORITY_MISMATCH".into());
+        }
+        locks(vault, owner, id, &record)?;
+        local.revalidate(pool).await?;
+        check()?;
+        let reply = call(http, &record.preview, "successor", true).await;
+        check()?;
+        if let Ok(reply) = reply {
+            if matches!(reply["kind"].as_str(), Some("rejected" | "conflict")) {
+                record.future.as_mut().unwrap()["successor"] =
+                    json!({"state":reply["kind"],"outcomeUnknown":false});
+                record.outcome_unknown = false;
+                record.version += 1;
+                persist(pool, vault, owner, id, &record, previous).await?;
+                return Ok(record);
+            }
+        }
+    } else if !matches!(phase.as_str(), "applying" | "unknown") || !record.outcome_unknown {
+        return Err("WRITE_INVALID".into());
+    }
+    check()?;
+    let reply = call(http, &record.preview, "successor", false).await;
+    check()?;
+    match reply {
+        Ok(reply) if reply["kind"] == "proved" => {
+            let future = record.future.as_mut().unwrap();
+            future["successor"] = json!({"state":"proved","outcomeUnknown":false,"etag":reply["proof"]["etag"],"proof":reply["proof"]});
+            record.result = Some(
+                json!({"operationId":record.preview["operationId"],"connectionId":record.preview["connectionId"],"calendarId":record.preview["calendarId"],"eventId":record.preview["eventId"],"etag":future["parent"]["etag"],"future":{"markerHash":record.preview["intent"]["plan"]["markerHash"],"parent":future["parent"]["proof"],"successor":future["successor"]["proof"]}}),
+            );
+            record.state = "applied".into();
+            record.outcome_unknown = false;
+        }
+        _ => {
+            record.future.as_mut().unwrap()["successor"] =
+                json!({"state":"unknown","outcomeUnknown":true});
+            record.outcome_unknown = true;
+        }
+    }
+    record.version += 1;
+    persist(pool, vault, owner, id, &record, previous).await?;
+    Ok(record)
+}
+async fn call<H: Http>(
+    http: &H,
+    preview: &Value,
+    name: &str,
+    mutate: bool,
+) -> Result<Value, String> {
+    let request = future_step::request(preview, name, mutate)?;
     let reply = http
         .call(
             field(&request, "method")?,
@@ -140,7 +283,7 @@ async fn call<H: Http>(http: &H, preview: &Value, mutate: bool) -> Result<Value,
         .await?;
     Ok(future_step::response(
         preview,
-        "parent",
+        name,
         mutate,
         reply.status,
         &reply.body,
@@ -174,6 +317,7 @@ mod tests {
         original: Value,
         pivot: Value,
         event: RefCell<Value>,
+        child: RefCell<Value>,
         requests: RefCell<Vec<String>>,
         fault: &'static str,
     }
@@ -194,6 +338,57 @@ mod tests {
             body: Option<Value>,
         ) -> Result<HttpReply, String> {
             self.requests.borrow_mut().push(method.into());
+            if method == "POST" {
+                let record = ledger(self.pool, self.vault, "owner", &self.id, "grant")
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    record.future.as_ref().unwrap()["successor"]["state"],
+                    "applying"
+                );
+                assert!(record.outcome_unknown);
+                assert_eq!(record.state, "applying");
+                assert!(etag.is_none());
+                assert_eq!(send, Some("all"));
+                assert_eq!(path, "calendars/cal/events");
+                assert_eq!(
+                    body.as_ref().unwrap(),
+                    &record.preview["intent"]["plan"]["successor"]["body"]
+                );
+                if self.fault == "child-reject" {
+                    return Ok(HttpReply {
+                        status: 403,
+                        body: Value::Null,
+                    });
+                }
+                let mut proof = body.unwrap();
+                proof["etag"] = json!("s1");
+                *self.child.borrow_mut() = proof.clone();
+                if self.fault == "child-commit" {
+                    self.vault.fail.set(true);
+                }
+                if self.fault == "child-success" {
+                    return Ok(HttpReply {
+                        status: 201,
+                        body: proof,
+                    });
+                }
+                return Err("WRITE_OUTCOME_UNKNOWN".into());
+            }
+            if method == "GET" && path.ends_with(&format!("m{}", self.id.replace('-', ""))) {
+                assert!(etag.is_none() && send.is_none() && body.is_none());
+                if self.fault == "child-loss" {
+                    return Err("LOST".into());
+                }
+                let mut proof = self.child.borrow().clone();
+                if self.fault == "child-wrong" {
+                    proof["summary"] = json!("third-party");
+                }
+                return Ok(HttpReply {
+                    status: 200,
+                    body: proof,
+                });
+            }
             if method == "PATCH" {
                 let record = ledger(self.pool, self.vault, "owner", &self.id, "grant")
                     .await
@@ -335,6 +530,7 @@ mod tests {
                     original: snapshot["parent"].clone(),
                     pivot: snapshot["pivot"].clone(),
                     event: RefCell::new(Value::Null),
+                    child: RefCell::new(Value::Null),
                     requests: RefCell::new(vec![]),
                     fault,
                 };
@@ -421,6 +617,116 @@ mod tests {
                         "proved"
                     }
                 );
+            }
+        });
+    }
+    #[test]
+    fn native_future_successor_success_rejection_and_read_only_recovery() {
+        tauri::async_runtime::block_on(async {
+            for fault in [
+                "child-success",
+                "",
+                "child-loss",
+                "child-wrong",
+                "child-reject",
+                "child-commit",
+                "keyring",
+                "session",
+                "grant",
+                "wrong-proof",
+                "child-lock",
+            ] {
+                let (pool, vault, preview, snapshot) = setup().await;
+                let id = field(&preview, "operationId").unwrap();
+                let mut http = Fake {
+                    pool: &pool,
+                    vault: &vault,
+                    id: id.into(),
+                    original: snapshot["parent"].clone(),
+                    pivot: snapshot["pivot"].clone(),
+                    event: RefCell::new(Value::Null),
+                    child: RefCell::new(Value::Null),
+                    requests: RefCell::new(vec![]),
+                    fault: "",
+                };
+                let parent_result = parent(&pool, &vault, &http, "owner", id, "grant", || Ok(()))
+                    .await
+                    .unwrap();
+                http.fault = fault;
+                if fault == "keyring" {
+                    vault.fail.set(true);
+                }
+                if fault == "child-lock" {
+                    let mut other = anchor(&vault, "owner", id).unwrap();
+                    other.previous = Some(id.into());
+                    vault
+                        .set(
+                            &anchor_key("owner", "other"),
+                            &serde_json::to_string(&other).unwrap(),
+                        )
+                        .unwrap();
+                    vault.set(&head_key("owner"), "other").unwrap();
+                }
+                let outcome = successor(&pool, &vault, &http, "owner", id, "grant", || {
+                    if fault == "grant" {
+                        Err("WRITE_GRANT_CHANGED".into())
+                    } else {
+                        Ok(())
+                    }
+                })
+                .await;
+                let mutations: Vec<_> = http
+                    .requests
+                    .borrow()
+                    .iter()
+                    .filter(|s| s.as_str() != "GET")
+                    .cloned()
+                    .collect();
+                if ["keyring", "session", "grant", "wrong-proof", "child-lock"].contains(&fault) {
+                    assert!(outcome.is_err());
+                    assert_eq!(mutations, vec!["PATCH"]);
+                    continue;
+                }
+                assert_eq!(mutations, vec!["PATCH", "POST"]);
+                if fault == "child-commit" {
+                    assert!(outcome.is_err());
+                    vault.fail.set(false);
+                    let durable = ledger(&pool, &vault, "owner", id, "grant").await.unwrap();
+                    assert_eq!(durable.state, "applying");
+                    assert_eq!(
+                        durable.future.as_ref().unwrap()["successor"]["state"],
+                        "applying"
+                    );
+                } else {
+                    let record = outcome.unwrap();
+                    if ["child-loss", "child-wrong", "child-reject"].contains(&fault) {
+                        assert_eq!(record.state, "applying");
+                        assert!(record.result.is_none());
+                    }
+                    if fault == "child-reject" {
+                        assert_eq!(
+                            record.future.as_ref().unwrap()["successor"]["state"],
+                            "rejected"
+                        );
+                    }
+                }
+                http.fault = "";
+                http.requests.borrow_mut().clear();
+                let recovered = successor(&pool, &vault, &http, "owner", id, "grant", || Ok(()))
+                    .await
+                    .unwrap();
+                assert!(http.requests.borrow().iter().all(|s| s == "GET"));
+                if fault == "child-reject" {
+                    assert_eq!(recovered.state, "applying");
+                    assert!(recovered.result.is_none());
+                    assert_eq!(anchor(&vault, "owner", id).unwrap().state, "applying");
+                    continue;
+                }
+                assert_eq!(recovered.state, "applied");
+                assert!(!recovered.outcome_unknown);
+                assert!(recovered.local.is_none());
+                let expected = json!({"operationId":preview["operationId"],"connectionId":preview["connectionId"],"calendarId":preview["calendarId"],"eventId":preview["intent"]["plan"]["parent"]["eventId"],"etag":parent_result.future.as_ref().unwrap()["parent"]["etag"],"future":{"markerHash":preview["intent"]["plan"]["markerHash"],"parent":parent_result.future.as_ref().unwrap()["parent"]["proof"],"successor":http.child.borrow().clone()}});
+                assert_eq!(recovered.result, Some(expected));
             }
         });
     }
