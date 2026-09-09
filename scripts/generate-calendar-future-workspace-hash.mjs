@@ -21,7 +21,7 @@ if (process.argv.includes('--check')) assert.equal(readFileSync(output, 'utf8').
 else writeFileSync(output, bytes)
 console.log('Future workspace parsed JSON hash fixtures verified')
 
-// Empty collections are the only root-normalizer subset currently implemented natively.
+// Empty-root contract remains the foundation for populated collection fixtures.
 const rootCases = []
 for (const revision of [1, 1e20, 1e21]) {
   const raw = { version: 4, revision, updatedAt: '2026-09-09T00:00:00Z' }
@@ -116,3 +116,45 @@ const calendarOutput = new URL('../tests/fixtures/calendar-future-workspace-cale
 const calendarBytes = `${JSON.stringify(calendarCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(calendarOutput, 'utf8').replaceAll('\r\n', '\n'), calendarBytes)
 else writeFileSync(calendarOutput, calendarBytes)
+
+const listCases = []
+function listCase(name, change, accepted = true) {
+  const raw = JSON.parse(rootCases[0].rawJson)
+  const common = { title: '学习😀', position: 0, createdAt: stamp, updatedAt: stamp, archivedAt: null }
+  raw.listGroups = [{ id: 'group', ...common }]
+  raw.lists = [{ id: 'list', groupId: 'group', ...common, goal: '', successCriteria: ['完成'], weeklyTargetMinutes: null }]
+  raw.sections = [{ id: 'section', listId: 'list', ...common }]
+  raw.tags = [{ id: 'tag', ...common }]
+  change(raw)
+  let parsedJson = null
+  try { parsedJson = JSON.stringify(parseWorkspaceStateV4(structuredClone(raw))) } catch { assert.equal(accepted, false, name) }
+  const reverse = v => Array.isArray(v) ? v.map(reverse) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).reverse().map(([k, x]) => [k, reverse(x)])) : v
+  listCases.push({ name, rawJson: JSON.stringify(reverse(raw)), accepted, parsedJson, hash: parsedJson === null ? null : `sha256:${createHash('sha256').update(parsedJson).digest('hex')}` })
+}
+listCase('list-core', () => {})
+listCase('numeric-unicode', r => { r.lists[0].position = -0; r.lists[0].weeklyTargetMinutes = 1e21; r.listGroups[0].position = 1e20; r.tags[0].title = '中文\n😀'; r.lists[0].goal = '\uFEFF\u000f'; })
+listCase('archived-duplicate-titles', r => { r.tags.push({ ...r.tags[0], id: 'archived', archivedAt: stamp }); r.lists[0].groupId = null })
+listCase('calendar-coexistence', r => { r.calendarSources = [source]; r.calendarEvents = [event] })
+for (const [name, change] of [
+  ['group-orphan', r => { r.lists[0].groupId = 'missing' }],
+  ['section-orphan', r => { r.sections[0].listId = 'missing' }],
+  ['duplicate-id', r => { r.tags[0].id = 'group' }],
+  ['calendar-duplicate-id', r => { r.calendarSources = [{ ...source, id: 'tag' }] }],
+  ['duplicate-tag-title', r => { r.tags.push({ ...r.tags[0], id: 'other' }) }],
+  ['untrimmed-tag', r => { r.tags[0].title = '\uFEFFtag' }],
+  ['blank-title', r => { r.listGroups[0].title = '\uFEFF' }],
+  ['negative-position', r => { r.lists[0].position = -1 }],
+  ['fraction-position', r => { r.sections[0].position = 0.5 }],
+  ['zero-target', r => { r.lists[0].weeklyTargetMinutes = 0 }],
+  ['target-type', r => { r.lists[0].weeklyTargetMinutes = '2' }],
+  ['criteria-type', r => { r.lists[0].successCriteria = [false] }],
+  ['bad-date', r => { r.tags[0].createdAt = '2026-02-30T00:00:00Z' }],
+  ['missing-required', r => { delete r.lists[0].goal }],
+  ['unknown-field', r => { r.sections[0].extra = 1 }],
+  ['tasks-unmodeled', r => { r.tasks = [{}] }],
+  ['recurrence-unmodeled', r => { r.recurrenceSeries = [{}] }],
+]) listCase(name, change, false)
+const listOutput = new URL('../tests/fixtures/calendar-future-workspace-lists.json', import.meta.url)
+const listBytes = `${JSON.stringify(listCases, null, 2)}\n`
+if (process.argv.includes('--check')) assert.equal(readFileSync(listOutput, 'utf8').replaceAll('\r\n', '\n'), listBytes)
+else writeFileSync(listOutput, listBytes)

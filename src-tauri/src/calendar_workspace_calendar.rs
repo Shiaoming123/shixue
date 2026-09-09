@@ -3,20 +3,20 @@ use super::{valid_timestamp, Json};
 use chrono::{Datelike, NaiveDate};
 use serde_json::Value;
 const INVALID: &str = "WORKSPACE_CALENDAR_INVALID";
-fn whitespace(c: char) -> bool {
+pub(super) fn whitespace(c: char) -> bool {
     matches!(c, '\u{0009}'..='\u{000d}' | '\u{0020}' | '\u{00a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
 }
 fn err<T>() -> Result<T, String> {
     Err(INVALID.into())
 }
-fn text(v: &Json) -> Result<&str, String> {
+pub(super) fn text(v: &Json) -> Result<&str, String> {
     if let Json::String(s) = v {
         Ok(s)
     } else {
         err()
     }
 }
-fn get<'a>(v: &'a Json, key: &str) -> Result<&'a Json, String> {
+pub(super) fn get<'a>(v: &'a Json, key: &str) -> Result<&'a Json, String> {
     if let Json::Object(fields) = v {
         fields
             .iter()
@@ -57,7 +57,7 @@ fn zone(s: &str) -> bool {
         .parse::<u32>()
         .is_ok_and(|n| n <= max && n.to_string() == s[prefix.len()..])
 }
-fn fields(raw: Json, schema: &[(&str, &str)]) -> Result<Json, String> {
+pub(super) fn fields(raw: Json, schema: &[(&str, &str)]) -> Result<Json, String> {
     let Json::Object(mut input) = raw else {
         return err();
     };
@@ -109,6 +109,7 @@ fn checked(v: Json, spec: &str) -> Result<Json, String> {
             text(&v).is_ok_and(|s| spec == "empty" || !s.trim_matches(whitespace).is_empty())
         }
         "number" => matches!(v,Json::Number(n) if n > 0.0 && n.fract() == 0.0),
+        "nonnegative" => matches!(v,Json::Number(n) if n >= 0.0 && n.fract() == 0.0),
         "bool" => matches!(v, Json::Bool(_)),
         "stamp" => text(&v).is_ok_and(valid_timestamp),
         "date" => text(&v).is_ok_and(date),

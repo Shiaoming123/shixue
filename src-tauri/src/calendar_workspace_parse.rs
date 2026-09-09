@@ -1,6 +1,8 @@
-//! Partial workspace parser. Only calendar sources/events may be populated.
+//! Partial workspace parser: calendar entities and list organization only.
 #[path = "calendar_workspace_calendar.rs"]
 mod calendar;
+#[path = "calendar_workspace_lists.rs"]
+mod lists;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use std::fmt;
 
@@ -146,7 +148,7 @@ const ROOT: &[&str] = &[
     "eventOutcomes",
 ];
 
-/// Deliberately incomplete: calendar source/event subset only. No LocalEvidence clearance.
+/// Deliberately incomplete. Tasks and dependent collections remain fail-closed.
 pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     let Json::Object(mut fields) = parse(raw)? else {
         return Err("WORKSPACE_INVALID".into());
@@ -177,6 +179,11 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
             normalized.push((key.to_string(), value));
             continue;
         }
+        if matches!(*key, "listGroups" | "lists" | "sections" | "tags") {
+            value = lists::collection(key, value)?;
+            normalized.push((key.to_string(), value));
+            continue;
+        }
         match (*key, &value) {
             ("version", Json::Number(v)) if *v == 4.0 => {}
             ("revision", Json::Number(v)) if *v > 0.0 && v.fract() == 0.0 => {}
@@ -190,6 +197,7 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     }
     let normalized = Json::Object(normalized);
     calendar::references(&normalized)?;
+    lists::references(&normalized)?;
     Ok(normalized.encode()?.into_bytes())
 }
 
@@ -226,6 +234,30 @@ fn valid_timestamp(value: &str) -> bool {
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+
+    #[test]
+    fn list_entities_match_ts_and_fail_closed() {
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/calendar-future-workspace-lists.json"
+        ))
+        .unwrap();
+        for fixture in fixtures.as_array().unwrap() {
+            let result = normalize_empty_root(fixture["rawJson"].as_str().unwrap().as_bytes());
+            if fixture["accepted"] == true {
+                let bytes = result.unwrap_or_else(|error| panic!("{}: {error}", fixture["name"]));
+                assert_eq!(
+                    String::from_utf8(bytes.clone()).unwrap(),
+                    fixture["parsedJson"]
+                );
+                assert_eq!(
+                    format!("sha256:{:x}", Sha256::digest(&bytes)),
+                    fixture["hash"]
+                );
+            } else {
+                assert!(result.is_err(), "{}", fixture["name"]);
+            }
+        }
+    }
 
     #[test]
     fn calendar_entities_match_ts_and_fail_closed() {
