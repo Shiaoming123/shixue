@@ -121,6 +121,11 @@ test('native projection fixture is the actual service output, with observed time
   }
 })
 
+test('native write batches require a frozen recurrence plan before local projection', () => {
+  const raw = { batchId: 'batch', operationId: 'root', provider: 'google', connectionId: 'connection', calendarId: 'calendar', sourceId: stableId('google', 'connection', 'calendar'), mode: 'incremental', access: 'details', title: 'Remote', timezone: 'UTC', observedAt: '2026-09-09T00:00:00.000Z', expectedWorkspaceHash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', items: [{ id: 'parent', recurrence: ['RRULE:FREQ=DAILY'], start: { date: '2026-09-09' }, end: { date: '2026-09-10' } }] }
+  assert.throws(() => normalizeNativeCalendarBatch(raw, 'connection', 'calendar', raw.observedAt, []), /invalid-response/)
+})
+
 test('sender bridge is default off, preserves native cancellation, and returns only safe whitelisted responses', async () => {
   const config = { clientId: null, connectionId: 'connection' }, runtimeInfo = { platform: 'desktop' as const, capabilities: [] }
   const closed = createNativeCalendarWriteRuntime({ runtime: runtimeInfo, config, invoke: async () => assert.fail('default off cannot invoke IPC') })

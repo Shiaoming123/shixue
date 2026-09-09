@@ -31,6 +31,11 @@ export function normalizeNativeCalendarBatch(value: unknown, connectionId: strin
   const timezone = string(batch.timezone)
   const items = array(batch.items)
   if (items.length > 50_000 || new TextEncoder().encode(JSON.stringify(value)).length > 32 * 1024 * 1024) throw new CalendarProviderError('incomplete')
+  if (batch.operationId !== undefined && items.some((item) => { const event = record(item); return event.recurrence !== undefined || event.recurringEventId !== undefined })) {
+    const plan = record(batch.plan)
+    if (!/^sha256:[a-f0-9]{64}$/.test(string(plan.hash)) || !['recurring.single', 'recurring.series'].includes(string(plan.kind)) || string(plan.parentEventId) === '') throw new CalendarProviderError('invalid-response')
+    if (plan.kind === 'recurring.single' && (string(plan.instanceEventId) === '' || string(plan.originalStart) === '')) throw new CalendarProviderError('invalid-response')
+  }
   const mode = batch.mode as ExternalCalendarBatch['mode']
   const delta = normalizeGoogleBatch(items, { connectionId, calendarId, timezone, now, cursor: null }, parents, mode)
   return { batchId: string(batch.batchId), provider: 'google', connectionId, calendarId, sourceId: string(batch.sourceId), mode, access: batch.access as ExternalCalendarBatch['access'], title: string(batch.title), timezone, ...delta }

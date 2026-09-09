@@ -26,7 +26,8 @@ fn receipt_id(current: &Value, local: &LocalBinding) -> Option<String> {
     let batch = &local.batch;
     current["commandReceipts"].as_array()?.iter().find_map(|r| {
         let data = &r["result"]["data"];
-        (unexpired(r)
+        (plan_matches(&local.batch, &local.base)
+            && unexpired(r)
             && r["commandType"] == "calendar_external.apply"
             && r["idempotencyKey"] == batch["batchId"]
             && r["id"] == r["result"]["receiptId"]
@@ -46,6 +47,35 @@ fn receipt_id(current: &Value, local: &LocalBinding) -> Option<String> {
         .then(|| r["id"].as_str().map(str::to_owned))
         .flatten()
     })
+}
+// The ledger is keyring-anchored; bind a recurrence projection to its immutable preview before ack.
+fn plan_matches(batch: &Value, _base: &Value) -> bool {
+    match batch["plan"]["kind"].as_str() {
+        Some("recurring.single") => {
+            batch["plan"]["hash"]
+                .as_str()
+                .is_some_and(|v| v.starts_with("sha256:"))
+                && batch["plan"]["parentEventId"]
+                    .as_str()
+                    .is_some_and(|v| !v.is_empty())
+                && batch["plan"]["instanceEventId"]
+                    .as_str()
+                    .is_some_and(|v| !v.is_empty())
+                && batch["plan"]["originalStart"]
+                    .as_str()
+                    .is_some_and(|v| !v.is_empty())
+        }
+        Some("recurring.series") => {
+            batch["plan"]["hash"]
+                .as_str()
+                .is_some_and(|v| v.starts_with("sha256:"))
+                && batch["plan"]["parentEventId"]
+                    .as_str()
+                    .is_some_and(|v| !v.is_empty())
+        }
+        None => batch["plan"].is_null(),
+        _ => false,
+    }
 }
 fn reusable(current: &Value, local: &LocalBinding) -> Result<bool, String> {
     if let Some(id) = receipt_id(current, local) {
@@ -99,6 +129,16 @@ pub(super) async fn stage<V: Vault, H: Http>(
             return Ok(local.batch.clone());
         }
     }
+    let intent = &record.preview["intent"];
+    let plan = match intent["kind"].as_str() {
+        Some("recurring.single") => {
+            json!({"hash":record.preview["hash"],"kind":"recurring.single","parentEventId":intent["parent"]["eventId"],"instanceEventId":intent["instance"]["eventId"],"originalStart":intent["originalStart"]})
+        }
+        Some("recurring.series") => {
+            json!({"hash":record.preview["hash"],"kind":"recurring.series","parentEventId":intent["parent"]["eventId"]})
+        }
+        _ => Value::Null,
+    };
     let mut items = vec![];
     if access == "details" {
         let reply = http
@@ -111,6 +151,25 @@ pub(super) async fn stage<V: Vault, H: Http>(
             // Only a durably anchored successful DELETE 204 permits this tombstone. Unknown deletes never enter stage.
             items.push(json!({"id":record.preview["eventId"],"status":"cancelled"}));
         } else if reply.status == 200 && reply.body["id"] == record.preview["eventId"] {
+            if intent["kind"] == "recurring.single" {
+                let parent = http
+                    .call(
+                        "GET",
+                        &format!(
+                            "calendars/{}/events/{}",
+                            segment(calendar),
+                            segment(field(&intent["parent"], "eventId")?)
+                        ),
+                        None,
+                        None,
+                        None,
+                    )
+                    .await?;
+                if parent.status != 200 || parent.body["id"] != intent["parent"]["eventId"] {
+                    return Err("WRITE_LOCAL_REMOTE_UNVERIFIED".into());
+                }
+                items.push(sync_store::safe_event(&parent.body)?);
+            }
             items.push(sync_store::safe_event(&reply.body)?);
         } else {
             return Err("WRITE_LOCAL_REMOTE_UNVERIFIED".into());
@@ -124,7 +183,7 @@ pub(super) async fn stage<V: Vault, H: Http>(
     let batch = json!({"batchId":random()?,"provider":"google","connectionId":connection,"calendarId":calendar,
         "sourceId":sync_store::source_id(connection,calendar),"mode":"incremental","access":access,
         "title":directory.body["summary"].as_str().unwrap_or("Google Calendar"),"timezone":directory.body["timeZone"].as_str().unwrap_or("UTC"),
-        "items":items,"operationId":id,"expectedWorkspaceHash":base_hash,"observedAt":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)});
+        "items":items,"operationId":id,"expectedWorkspaceHash":base_hash,"observedAt":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true),"plan":plan});
     record.local = Some(LocalBinding {
         base,
         batch: batch.clone(),
