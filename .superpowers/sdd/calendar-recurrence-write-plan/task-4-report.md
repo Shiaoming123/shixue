@@ -468,6 +468,12 @@ Verification: doctor passed; rust:verify passed fmt, all-target/all-feature clip
 
 No frontend changes, so frontend gates were not rerun. No local future projection (4B2), native UI, real OAuth/Google, OS keyring, external notification or Stage 7 claim. Final Task 5 public checkpoints are unchanged. Protected research remains untouched and unstaged. Exact task/session token usage is unavailable.
 
+### Task 4 and Task 5 final completion (2026-09-09)
+
+Task 4 is complete within the approved credentials-independent scope through `824b8f0`: native prepare/confirmation, parent/successor saga, GET-only unknown recovery, deterministic compensation, exact post-authorization mutation guard, atomic TypeScript future projection, native dual-event verifier/ack, and receipt-retention parity. Every scoped review is approved after its required fixes.
+
+Final repository verification after the last fix: `npm run verify` passed 970 Node tests plus typecheck, module/protocol/CSP, desktop/Web builds, layout and docs; `npm run rust:verify` passed 97 Rust tests plus fmt, clippy, all-features and no-default-features; default `cargo check --manifest-path src-tauri/Cargo.toml` and `git diff --check` passed. Public stage-6 and development checkpoints now distinguish completed local/fake evidence from NOT_RUN real Google, system keyring and native dialog E2E. Runtime enablement and product write UI remain closed; Stage 7 remains unimplemented.
+
 Final additional gates passed: default cargo check, no-default standalone calendar-connections and calendar-writes checks, npm run check:docs and git diff --check.
 
 

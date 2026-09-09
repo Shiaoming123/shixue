@@ -22,15 +22,19 @@
 - [x] Task 1: TypeScript recurrence contract and fake adapter — `93fad43`, `99c582d`, `e1337a7`, `1eebcfc`, `71af421`; task review approved after four focused fix rounds; focused tests/typecheck/full `npm test` 933/933 passed.
 - [x] Task 2: Native single/series trusted state machine — `963c4ff`, `19f74d0`; task review approved; exact recurrence regression 1/1 and `npm run rust:verify` 53/53 passed with enabled/disabled feature checks.
 - [x] Task 3: Local recurrence projection and receipt — `66ef859`, `4f6e0ef`, `a0fa1d5`, `7330f58`, `0ce2359`, `7d41b0d`, `811f693`, `7c2e283`, `0e3d235`, `f6e7fb6`; TS and Rust scoped reviews approved; Node 939/939 and Rust 58/58 evidence recorded.
-- [ ] Task 4: Future-split recovery state machine
-- [ ] Task 5: Final validation and checkpoint
+- [x] Task 4: Future-split recovery state machine — through `824b8f0`; all scoped reviews approved after transport-deadline and receipt-retention fixes; Node 970/970 and Rust 97/97.
+- [x] Task 5: Final validation and checkpoint — `npm run verify`, `npm run rust:verify`, default cargo check, docs and diff checks passed; public checkpoints updated. Real Google/keyring/dialog E2E remains NOT_RUN by approved boundary.
 
 ## Current checkpoint
 
 - Branch: `feat/calendar-recurrence-write`
-- Latest implementation slice: 4B1b2b native future prepare/confirmation/anchoring, based on `d5548e5`; see task-4-report.md for evidence.
+- Latest implementation slice: completed future split saga, compensation, atomic local projection and receipt retention through `824b8f0`; see task-4-report.md and public checkpoints for evidence.
 - Protected untracked file: `docs/experiments/calendar-competitor-research.md` (untouched and unstaged)
-- Next action: review 4B1b2b native prepare/confirmation/anchor integration; then continue separately authorized sender/recovery/local projection work. Task 4 remains incomplete.
+- Next action: broad whole-branch review. Real account validation remains blocked on an OAuth test project; Stage 7 remains unimplemented.
+
+### Task 4B2b2 and Task 5 completion
+
+Native stage/ack now consumes the exact TypeScript future projection contract, verifies both parent and successor atomically, and mirrors receipt expiry/capacity retention within a fail-closed subset. Review fixes corrected pivot identity and valid receipt pruning. Final gates: Node 970/970, Rust 97/97, default cargo check, typecheck, module/protocol/CSP, desktop/Web builds, layout, docs and diff checks all pass. Runtime enablement, real Google, system keyring and native dialog E2E remain outside the approved local/fake scope.
 
 ### 4B1c1a checkpoint
 

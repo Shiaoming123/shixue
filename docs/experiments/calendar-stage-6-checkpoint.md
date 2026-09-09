@@ -1,6 +1,6 @@
 # 阶段6：协作日历工作检查点
 
-日期：2026-09-09。用户确认暂时没有 Google Desktop OAuth 测试项目，本轮本地实现与 fake 验证已完成。真实账号验收未运行，没有发送邀请、RSVP 或删除远端日程；阶段6真实外部协作尚未完成。
+日期：2026-09-09。用户确认暂时没有 Google Desktop OAuth 测试项目，本轮本地实现与 fake 验证已完成，包括受限的重复日程单次、整组和“本次及以后”写回合同。真实账号验收未运行，没有发送邀请、RSVP、重复日程修改或删除远端日程；阶段6真实外部协作尚未完成。
 
 ## 本地实现
 
@@ -23,12 +23,11 @@
 ## 明确边界
 
 - `calendar-writes` feature 默认关闭，原生运行开关为 false，产品没有写入开启或授权入口；条件编译的原生backend已有Write授权模式，界面仍只读连接。真实OAuth、系统keyring、原生确认框人工验收、外部写入和邮件均NOT_RUN。backend源码及fake不能证明这些环节已联调。
-- 当前写请求只支持单事件创建、标题/时间修改、取消/删除及self RSVP；拒绝全部重复master/instance范围、以后/整组操作和已有事件的整个参与者列表更新。固定时间写入仅支持UTC/Etc UTC及1992年后的Asia/Shanghai。这些是实现边界，不是Google不支持。
-- 后续重复写回需要实例ID/原始开始时间绑定、ETag、拆分子操作状态与补偿，以及本地关联身份规则。只读重复映射对扩展属性的处理也须先与写标记对齐。本轮不增加该能力。
+- 当前凭据无关实现支持受限的重复日程单次、整组和“本次及以后”标题写回：绑定 provider instance/originalStart/ETag，拆分父子状态、固定子ID、补偿和原子本地投影。复杂 RRULE、RDATE/EXDATE、例外或附着 link/outcome/reminder 的“此后”拆分、参与者批量修改仍明确拒绝。固定时间写入仅支持已验证的保守时区与规范时间表示。这些是实现边界，不是 Google 不支持。
 - 真实阶段还需Google桌面OAuth公开clientId、两个隔离测试账号和明确的邀请/撤销测试授权；当前工作树及进程未配置clientId。飞书confidential broker尚未实现，不能把client_secret放入桌面分发物。
 - 阶段7没有实际多时间盒需求证据，保持不实施；按批准方案，阶段8集中全量、性能和发布门禁尚未进入。
 
-开发工作树为 `exp/soft-surface-ui`；开发阶段未提交、合并或推送，后续仅按用户明确授权集成，并保留原始研究文档。协议依据：[条件修改](https://developers.google.com/workspace/calendar/api/guides/version-resources)、[PATCH语义](https://developers.google.com/workspace/calendar/api/v3/reference/events/patch)、[扩展属性](https://developers.google.com/workspace/calendar/api/guides/extended-properties)。真实通知次数、服务端标记保留和RSVP行为仍需账号验收。
+开发工作树分支为 `feat/calendar-recurrence-write`；本轮变更已在该分支提交，尚未合并或推送，并保留未跟踪研究文档。协议依据：[条件修改](https://developers.google.com/workspace/calendar/api/guides/version-resources)、[PATCH语义](https://developers.google.com/workspace/calendar/api/v3/reference/events/patch)、[扩展属性](https://developers.google.com/workspace/calendar/api/guides/extended-properties)。真实通知次数、服务端标记保留、重复日程拆分与 RSVP 行为仍需账号验收。
 
 ## 2026-09-09 Task 4B2b1：future stage/read（补充报告）
 
@@ -63,3 +62,10 @@
 实际 TS 能力服务生成[保留探针](../../tests/fixtures/calendar-receipt-retention.json)，覆盖到期边界清理、503 条输入裁剪至 499 条旧回执、相同时间逆序数字 ID 排序。Rust 重建输入与输出并核对完整 Workspace hash，随后验证合法 ack 投影及保留项篡改拒绝。RED 先复现 expired 样本被拒绝，GREEN 通过。生成器支持 `node --experimental-strip-types scripts/generate-calendar-receipt-retention.ts --check`，现有 TS 测试也重新执行生成器比较 fixture。
 
 最终：rust:verify 97/97；TS 定向 8/8；npm test 970/970；typecheck、desktop/Web build、docs/diff 检查通过。变更仅限 verifier、探针和报告；其他阶段、UI、真实 Google 与运行开关不变。
+
+## 2026-09-09 最终收口
+
+- `npm run verify` 通过：Node 970/970，并覆盖 typecheck、模块、协议、CSP、desktop/Web build、布局与文档检查。
+- `npm run rust:verify` 通过：Rust 97/97，以及 fmt、clippy、all-features 与 no-default-features 检查；默认 `cargo check --manifest-path src-tauri/Cargo.toml` 通过。
+- 本地与 fake 范围已完成。真实 Google OAuth、系统 keyring、原生确认框人工操作、实际通知/邮件与真实重复日程拆分均为 `NOT_RUN`，等待测试项目与隔离账号。
+- 运行开关保持关闭，产品没有写权限入口；阶段7因缺少实际多时间盒证据继续不实现。
