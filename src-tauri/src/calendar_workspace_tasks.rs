@@ -1,4 +1,4 @@
-//! Ordered tasks, recurrence, sessions and lifecycle chains; completion records remain unsupported.
+//! Ordered tasks, recurrence, sessions, completion records and lifecycle chains.
 use super::{
     calendar::{fields, get, text},
     Json,
@@ -15,6 +15,27 @@ pub(super) fn collection(name: &str, raw: Json) -> Result<Json, String> {
         return Err(INVALID.into());
     }
     items.into_iter().map(|v| {
+        if name == "completionRecords" {
+            let mut v = v;
+            if let Json::Object(ref mut props) = v {
+                if !props.iter().any(|(k, _)| k == "tagIdsSnapshot") {
+                    props.push(("tagIdsSnapshot".into(), Json::Array(vec![])));
+                }
+            }
+            let record = fields(v, &[
+                ("id", "text"), ("taskId", "text"), ("topicId", "~text"), ("sessionIds", "[]text"),
+                ("tagIdsSnapshot", "[]text"), ("taskTitleSnapshot", "text"), ("learned", "text"),
+                ("evidence", "text"), ("blocker", "empty"), ("nextAction", "text"), ("mastery", "~number"),
+                ("completedAt", "stamp"), ("reviewStage", "nonnegative"), ("nextReviewOn", "~date"),
+                ("lastReviewResult", "~clear|fuzzy|relearn"), ("lastReviewedAt", "~stamp"),
+                ("createdAt", "stamp"), ("updatedAt", "stamp"), ("deletedAt", "~stamp"),
+            ])?;
+            if matches!(get(&record, "mastery")?, Json::Number(n) if *n > 5.0)
+                || matches!(get(&record, "reviewStage")?, Json::Number(n) if *n > 3.0) {
+                return Err(INVALID.into());
+            }
+            return Ok(record);
+        }
         if name == "studySessions" {
             let session = fields(v, &[
                 ("id", "text"), ("taskId", "text"), ("state", "running|paused|finished"),
@@ -55,9 +76,6 @@ pub(super) fn collection(name: &str, raw: Json) -> Result<Json, String> {
                 ("occurredAt", "stamp"), ("fromStatus", &nullable_status), ("toStatus", &nullable_status),
                 ("reason", "~text"), ("completionRecordId", "~text"),
             ])?;
-            if get(&event, "completionRecordId")? != &Json::Null {
-                return Err("WORKSPACE_COLLECTION_UNSUPPORTED".into());
-            }
             Ok(event)
         }
     }).collect::<Result<Vec<_>, _>>().map(Json::Array)
@@ -135,6 +153,7 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
         statuses.insert(text(get(task, "id")?)?, &Json::Null);
     }
     recurrence_references(root)?;
+    completion_references(root)?;
     for (index, event) in array(get(root, "taskEvents")?)?.iter().enumerate() {
         if get(event, "sequence")? != &Json::Number((index + 1) as f64) {
             return Err(INVALID.into());
@@ -282,6 +301,51 @@ fn recurrence_references(root: &Json) -> Result<(), String> {
                 if get(entry, "taskId")? != get(event, "taskId")? {
                     return Err(INVALID.into());
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn completion_references(root: &Json) -> Result<(), String> {
+    let map = |key| -> Result<HashMap<&str, &Json>, String> {
+        array(get(root, key)?)?
+            .iter()
+            .map(|v| Ok((text(get(v, "id")?)?, v)))
+            .collect()
+    };
+    let tasks = map("tasks")?;
+    let tags = map("tags")?;
+    let sessions = map("studySessions")?;
+    let records = map("completionRecords")?;
+    for record in records.values() {
+        if !tasks.contains_key(text(get(record, "taskId")?)?) {
+            return Err(INVALID.into());
+        }
+        let mut seen = HashSet::new();
+        for tag in array(get(record, "tagIdsSnapshot")?)? {
+            let id = text(tag)?;
+            if !tags.contains_key(id) || !seen.insert(id) {
+                return Err(INVALID.into());
+            }
+        }
+        for id in array(get(record, "sessionIds")?)? {
+            let session = sessions.get(text(id)?).ok_or(INVALID)?;
+            if get(session, "taskId")? != get(record, "taskId")? {
+                return Err(INVALID.into());
+            }
+        }
+        // A live scheduled review requires a matching link; links remain unsupported.
+        if get(record, "deletedAt")? == &Json::Null && get(record, "nextReviewOn")? != &Json::Null {
+            return Err("WORKSPACE_COLLECTION_UNSUPPORTED".into());
+        }
+    }
+    for event in array(get(root, "taskEvents")?)? {
+        let id = get(event, "completionRecordId")?;
+        if id != &Json::Null {
+            let record = records.get(text(id)?).ok_or(INVALID)?;
+            if get(record, "taskId")? != get(event, "taskId")? {
+                return Err(INVALID.into());
             }
         }
     }

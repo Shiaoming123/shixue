@@ -275,6 +275,31 @@ for (const [name, change] of [
  ['invalid-time', r => { r.studySessions[0].startedAt = 'invalid' }],
  ['unknown-field', r => { r.studySessions[0].extra = true }],
 ]) taskCase(`session-${name}`, r => { session(r); change(r) }, false)
+function evidence(r) {
+  r.completionRecords = [{ id: 'record', taskId: 'task', topicId: null, sessionIds: [], taskTitleSnapshot: 'Evidence', learned: 'learned', evidence: 'proof', blocker: '', nextAction: 'next', mastery: null, completedAt: stamp, reviewStage: 0, nextReviewOn: null, lastReviewResult: null, lastReviewedAt: null, createdAt: stamp, updatedAt: stamp, deletedAt: null }]
+  r.taskEvents[0].completionRecordId = 'record'
+}
+taskCase('record-defaults-captured-event', evidence)
+for (const [name, field, value] of [['unknown-task', 'taskId', 'missing'], ['unknown-session', 'sessionIds', ['missing']], ['unknown-tag', 'tagIdsSnapshot', ['missing']], ['duplicate-tag', 'tagIdsSnapshot', ['tag', 'tag']], ['null-tags', 'tagIdsSnapshot', null], ['mastery-range', 'mastery', 6], ['stage-range', 'reviewStage', 4], ['bad-date', 'nextReviewOn', 'bad'], ['bad-stamp', 'completedAt', 'bad'], ['missing-obligation', 'nextReviewOn', '2026-09-10']]) {
+ taskCase(`record-${name}`, r => { evidence(r); r.completionRecords[0][field] = value }, false)
+ assert.equal(taskCases.at(-1).parsedJson, null, name)
+}
+taskCase('record-full-deleted-snapshot', r => { session(r); evidence(r); r.studySessions[0].state = 'finished'; r.studySessions[0].activeSince = null; Object.assign(r.completionRecords[0], { topicId: 'historical-topic', sessionIds: ['session', 'session'], tagIdsSnapshot: ['tag'], taskTitleSnapshot: '证据😀\n', blocker: '', mastery: 5, reviewStage: 3, nextReviewOn: '2026-09-10', lastReviewResult: 'fuzzy', lastReviewedAt: stamp, deletedAt: stamp }) })
+for (const [name, change] of [
+ ['wrong-session-owner', r => { r.tasks.push({ ...r.tasks[0], id: 'other' }); r.taskEvents.push({ ...r.taskEvents[0], id: 'other-event', taskId: 'other', sequence: 2, completionRecordId: null }); r.studySessions = [{ id: 'session', taskId: 'other', state: 'finished', startedAt: stamp, activeSince: null, elapsedSeconds: 0, scratchpad: '', createdAt: stamp, updatedAt: stamp, deletedAt: null }]; r.completionRecords[0].sessionIds = ['session'] }],
+ ['wrong-event-owner', r => { r.tasks.push({ ...r.tasks[0], id: 'other' }); r.taskEvents.push({ ...r.taskEvents[0], id: 'other-event', taskId: 'other', sequence: 2 }) }],
+ ['orphan-event-record', r => { r.taskEvents[0].completionRecordId = 'missing' }],
+ ['global-duplicate', r => { r.completionRecords[0].id = 'tag'; r.taskEvents[0].completionRecordId = 'tag' }],
+ ['record-duplicate', r => { r.completionRecords.push({ ...r.completionRecords[0] }) }],
+ ['missing-topic', r => { delete r.completionRecords[0].topicId }],
+ ['invalid-enum', r => { r.completionRecords[0].lastReviewResult = 'wrong' }],
+ ['mastery-fraction', r => { r.completionRecords[0].mastery = 1.5 }],
+ ['mastery-zero', r => { r.completionRecords[0].mastery = 0 }],
+ ['stage-negative', r => { r.completionRecords[0].reviewStage = -1 }],
+ ['stage-fraction', r => { r.completionRecords[0].reviewStage = 1.5 }],
+ ['empty-evidence', r => { r.completionRecords[0].evidence = ' ' }],
+]) { taskCase(`record-${name}`, r => { evidence(r); change(r) }, false); assert.equal(taskCases.at(-1).parsedJson, null, name) }
+taskCase('record-unknown-field', r => { evidence(r); r.completionRecords[0].extra = 1 }, false)
 const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.json', import.meta.url)
 const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)

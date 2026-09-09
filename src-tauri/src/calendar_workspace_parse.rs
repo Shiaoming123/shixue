@@ -150,7 +150,7 @@ const ROOT: &[&str] = &[
     "eventOutcomes",
 ];
 
-/// Deliberately incomplete. Completion activity and other dependent collections remain fail-closed.
+/// Deliberately incomplete. Review links and other dependent collections remain fail-closed.
 pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     let Json::Object(mut fields) = parse(raw)? else {
         return Err("WORKSPACE_INVALID".into());
@@ -188,7 +188,12 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
         }
         if matches!(
             *key,
-            "tasks" | "taskEvents" | "recurrenceSeries" | "occurrences" | "studySessions"
+            "tasks"
+                | "taskEvents"
+                | "recurrenceSeries"
+                | "occurrences"
+                | "studySessions"
+                | "completionRecords"
         ) {
             value = tasks::collection(key, value)?;
             normalized.push((key.to_string(), value));

@@ -54,6 +54,7 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
         "recurrenceSeries",
         "occurrences",
         "studySessions",
+        "completionRecords",
     ] {
         let Json::Array(items) = get(root, key)? else {
             return Err(INVALID.into());
