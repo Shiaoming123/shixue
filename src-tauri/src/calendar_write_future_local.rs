@@ -6,6 +6,7 @@ pub(super) struct LocalEvidence {
     pub(super) source_id: String,
     pub(super) attached_facts: Vec<String>,
     pub(super) workspace_hash: String,
+    #[allow(dead_code)] // Retained exact normalized evidence bytes for parity checks.
     pub(super) normalized_workspace: Vec<u8>,
     raw_workspace: Vec<u8>,
 }

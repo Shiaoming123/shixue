@@ -3,15 +3,14 @@ use super::*;
 use sqlx::SqlitePool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-#[path = "calendar_workspace_hash.rs"]
-mod workspace_hash;
-// Internal reader stays unwired until workspace and recurrence parity are proved.
-#[allow(dead_code)] // Pure constructor only; native prepare remains disabled.
 #[path = "calendar_write_future_plan.rs"]
 mod future_plan;
-#[allow(dead_code)]
+#[path = "calendar_write_future_prepare.rs"]
+mod future_prepare;
 #[path = "calendar_write_future_read.rs"]
 mod future_read;
+#[path = "calendar_workspace_hash.rs"]
+mod workspace_hash;
 #[path = "calendar_write_local.rs"]
 pub(super) mod write_local;
 const WRITE_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
@@ -419,6 +418,9 @@ fn confirmation_time(time: &Value, key: &str) -> Result<String, String> {
 }
 fn confirmation_message(preview: &Value) -> Result<String, String> {
     let intent = &preview["intent"];
+    if intent["kind"] == "recurring.future" {
+        return future_prepare::confirmation(preview);
+    }
     validate_intent(intent)?;
     let action = match field(intent, "kind")? {
         "create" => "创建日程",
@@ -544,7 +546,9 @@ pub async fn write_prepare<R: tauri::Runtime>(
 ) -> Result<Value, String> {
     let _guard = WRITE_GATE.lock().await;
     let (owner, epoch, generation) = grant(&config)?;
-    validate_intent(&intent)?;
+    if intent["kind"] != "recurring.future" {
+        validate_intent(&intent)?;
+    }
     if calendar_id.is_empty()
         || calendar_id.len() > 1024
         || !["all", "externalOnly", "none"].contains(&send_updates.as_str())
@@ -553,6 +557,27 @@ pub async fn write_prepare<R: tauri::Runtime>(
     }
     if indexed(&Keyring, &owner)?.len() >= 512 {
         return Err("WRITE_OUTBOX_FULL".into());
+    }
+    if intent["kind"] == "recurring.future" {
+        let pool = sync_store::database(&app).await?;
+        schema(&pool).await?;
+        let http = GoogleHttp {
+            config: &config,
+            owner: &owner,
+            epoch: generation,
+        };
+        let id = future_prepare::operation_id()?;
+        let base = json!({"operationId":id,"connectionId":config.connection_id,"calendarId":calendar_id,"eventId":field(&intent["parent"], "eventId")?,"lockKeys":[],"sendUpdates":send_updates,"intent":intent});
+        let check = || {
+            http.check_future_session()?;
+            if grant(&config)? != (owner.clone(), epoch.clone(), generation) {
+                return Err("WRITE_GRANT_CHANGED".into());
+            }
+            Ok(())
+        };
+        let preview =
+            future_prepare::prepare(&pool, &Keyring, &http, &owner, &epoch, &base, check).await?;
+        return prepared_ticket(&preview, generation);
     }
     let id = random()?;
     let event_id = if intent["kind"] == "create" {
@@ -593,14 +618,20 @@ pub async fn write_prepare<R: tauri::Runtime>(
     let previous = Keyring.get(&head_key(&owner))?;
     persist(&pool, &Keyring, &owner, &id, &record, previous).await?;
     Keyring.set(&head_key(&owner), &id)?;
+    prepared_ticket(&preview, generation)
+}
+fn prepared_ticket(preview: &Value, generation: u64) -> Result<Value, String> {
+    let id = field(preview, "operationId")?;
+    let hash = field(preview, "hash")?;
     let expires = now()? + 300;
     TICKETS
         .get_or_init(Default::default)
         .lock()
         .map_err(|_| "WRITE_LOCK_FAILED")?
-        .insert(id.clone(), (hash.clone(), generation, expires, false));
+        .insert(id.into(), (hash.into(), generation, expires, false));
     Ok(json!({"operationId":id,"preview":preview,"hash":hash,"expiresAt":expires*1000}))
 }
+
 #[tauri::command]
 pub async fn write_confirm<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
@@ -611,7 +642,7 @@ pub async fn write_confirm<R: tauri::Runtime>(
     let _guard = WRITE_GATE.lock().await;
     let (owner, epoch, generation) = grant(&config)?;
     let pool = sync_store::database(&app).await?;
-    let mut record = ledger(&pool, &Keyring, &owner, &operation_id, &epoch).await?;
+    let record = ledger(&pool, &Keyring, &owner, &operation_id, &epoch).await?;
     if record.state != "prepared" || record.preview["hash"] != hash {
         return Err("WRITE_CONFIRM_REQUIRED".into());
     }
@@ -632,11 +663,21 @@ pub async fn write_confirm<R: tauri::Runtime>(
     if !accepted || grant(&config)? != (owner.clone(), epoch.clone(), generation) {
         return Err("WRITE_CONFIRM_CANCELLED".into());
     }
-    ticket(&operation_id, &hash, generation, false)?;
-    record.state = "confirmed".into();
-    record.version += 1;
-    let previous = anchor(&Keyring, &owner, &operation_id)?.previous;
-    persist(&pool, &Keyring, &owner, &operation_id, &record, previous).await?;
+    future_prepare::confirm(&pool, &Keyring, &owner, &record, generation, || {
+        if grant(&config)? != (owner.clone(), epoch.clone(), generation) {
+            return Err("WRITE_GRANT_CHANGED".into());
+        }
+        if record.future.is_some() {
+            GoogleHttp {
+                config: &config,
+                owner: &owner,
+                epoch: generation,
+            }
+            .check_future_session()?;
+        }
+        Ok(())
+    })
+    .await?;
     Ok(json!({"confirmed":true}))
 }
 #[tauri::command]
@@ -1458,7 +1499,9 @@ mod tests {
                     .unwrap_err(),
                 "WRITE_UNSUPPORTED"
             );
-            assert!(confirmation_message(&record.preview).is_err());
+            assert!(confirmation_message(&record.preview)
+                .unwrap()
+                .contains("本次及以后"));
             assert_eq!(http.writes.load(Ordering::SeqCst), 0);
             sqlx::query(
                 "UPDATE calendar_write_outbox SET native_payload=?,native_previous=NULL WHERE id=?",
@@ -2074,6 +2117,5 @@ mod tests {
 #[path = "calendar_workspace_parse.rs"]
 mod workspace_parse;
 
-#[allow(dead_code)] // Internal evidence only; future prepare remains disabled.
 #[path = "calendar_write_future_local.rs"]
 mod future_local;
