@@ -109,7 +109,7 @@ export function createNativeCalendarWriteRuntime(options: { enabled?: boolean; r
             const expectedWorkspaceHash = string(raw.expectedWorkspaceHash)
             if (!/^sha256:[a-f0-9]{64}$/.test(expectedWorkspaceHash)) throw new Error('WRITE_LOCAL_IDENTITY')
             const observedAt = instant(raw.observedAt)
-            return { ...normalizeNativeCalendarBatch(raw, config.connectionId, calendarId, observedAt, state.calendarEvents), operationId, expectedWorkspaceHash }
+            return normalizeNativeCalendarBatch(raw, config.connectionId, calendarId, observedAt, state.calendarEvents, { operationId, plan: staged.plan })
           },
         })
         let receiptId: string

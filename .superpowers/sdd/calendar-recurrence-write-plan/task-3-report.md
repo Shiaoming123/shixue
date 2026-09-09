@@ -43,3 +43,18 @@ This supersedes only the TypeScript-side gap in the WIP above. Task 3 is NOT com
 - Rust gates were not run in Task 3A because no Rust code changed; recurrence acceptance remains explicitly unsupported there. Task 3B must consume the new fixture, independently reconstruct RRULE/exception facts, compare writeProjection evidence, reject stale/missing/tampered/restored receipts, verify SQLite ack and unchanged native cursor, and run rust:verify.
 
 Protected competitor research remained untouched. No real sending, UI enablement, or Task 4 work occurred.
+
+## Task 3A review corrections — production boundary checked
+
+- Normalization now returns validated operationId and expectedWorkspaceHash itself. Removed manual reattachment in both the production applyLocal adapter and fixture generator; generated fixture replay remains identical.
+- Recurring writes require an explicit expectedWrite anchor containing the root operation and frozen plan from the separately staged native batch. write_read_local output must match that plan exactly, including hash; missing anchor fails closed. The anchor is supplied by production applyLocal from write_stage_local, whose native keyring authority remains a Task 3B responsibility. A hash regex alone is no longer treated as identity proof.
+- Cancelled series parents must carry recurrence evidence. The existing recurrence normalizer validates the retained parent rule and event facts before accepting the cancellation; an ordinary cancelled resource substituted under the plan's parent id is rejected.
+
+Evidence:
+- Initial RED: `node --experimental-strip-types --test tests/calendar-recurrence-projection.test.ts` failed 2/4: dropped root operation (`undefined !== op`) and substituted ordinary cancellation (`Missing expected exception`).
+- Hash-specific RED: temporarily disabling only the plan-anchor comparison made `node --experimental-strip-types --test --test-name-pattern 'production applyLocal rejects' tests/calendar-recurrence-projection.test.ts` fail: the forged hash reached the saved receipt/ack path (`WRITE_LOCAL_APPLIED_ACK_PENDING`) instead of pre-save invalid-response. The comparison was restored immediately.
+- GREEN: `node --experimental-strip-types --test tests/calendar-recurrence-projection.test.ts tests/calendar-native-write-runtime.test.ts tests/calendar-external.test.ts tests/google-recurrence.test.ts` passed 28/28. The production applyLocal regression uses distinct staged/read replies, verifies the valid receipt root and baseline, and proves a valid-format hash substitution leaves workspace unchanged and never acknowledges.
+- `npm run typecheck` passed.
+- `npm test` passed once, 939/939 (task-3a-review-npm-test.log).
+- `npm run build` and `npm run build:web` passed (task-3a-review-build.log and task-3a-review-build-web.log); chunk-size warnings remain.
+- `git diff --check` passed. No Rust changes or Rust gates in this slice; Task 3B remains pending. No Task 4, UI, sending or protected research changes.

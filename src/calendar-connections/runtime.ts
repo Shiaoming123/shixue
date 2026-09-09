@@ -2,7 +2,7 @@ import type { RuntimeInfo } from '../lib/platform.ts'
 import { createGoogleCalendarProvider, normalizeGoogleBatch } from './google.ts'
 import { record, array, string, instant, stableId, CalendarProviderError } from './types.ts'
 import type { CalendarEvent } from '../domain/calendar/types.ts'
-import { createTaskCapabilityService } from '../domain/capabilities/service.ts'
+import { canonicalJson, createTaskCapabilityService } from '../domain/capabilities/service.ts'
 import { DomainCommandError } from '../domain/capabilities/types.ts'
 import type { ExternalCalendarBatch } from '../domain/capabilities/calendar-external-commands.ts'
 import type { WorkspaceStore } from '../storage/workspace/types.ts'
@@ -25,15 +25,19 @@ function status(value: unknown): CalendarConnectionStatus {
   return { state: data.state as CalendarConnectionStatus['state'], grantedScopes: array(data.grantedScopes).map(string) }
 }
 
-export function normalizeNativeCalendarBatch(value: unknown, connectionId: string, calendarId: string, now: string, parents: readonly CalendarEvent[]): ExternalCalendarBatch {
+export function normalizeNativeCalendarBatch(value: unknown, connectionId: string, calendarId: string, now: string, parents: readonly CalendarEvent[], expectedWrite?: { operationId: string; plan: unknown }): ExternalCalendarBatch {
   const batch = record(value)
   if (batch.provider !== 'google' || batch.connectionId !== connectionId || batch.calendarId !== calendarId || batch.sourceId !== stableId('google', connectionId, calendarId) || !['full', 'incremental'].includes(String(batch.mode)) || !['details', 'freebusy', 'none'].includes(String(batch.access))) throw new CalendarProviderError('invalid-response')
   const timezone = string(batch.timezone)
   const items = array(batch.items)
   if (items.length > 50_000 || new TextEncoder().encode(JSON.stringify(value)).length > 32 * 1024 * 1024) throw new CalendarProviderError('incomplete')
+  const operationId = batch.operationId === undefined ? undefined : string(batch.operationId)
+  const expectedWorkspaceHash = batch.expectedWorkspaceHash === undefined ? undefined : string(batch.expectedWorkspaceHash)
+  if (operationId === undefined ? expectedWorkspaceHash !== undefined : !operationId.trim() || !/^sha256:[a-f0-9]{64}$/.test(expectedWorkspaceHash ?? '')) throw new CalendarProviderError('invalid-response')
   let writeProjection: ExternalCalendarBatch['writeProjection']
   const recurring = items.some((item) => { const event = record(item); return event.recurrence !== undefined || event.recurringEventId !== undefined })
   if (batch.operationId !== undefined && (recurring || batch.plan != null)) {
+    if (!expectedWrite || expectedWrite.operationId !== operationId || canonicalJson(expectedWrite.plan) !== canonicalJson(batch.plan)) throw new CalendarProviderError('invalid-response')
     const raw = record(batch.plan), kind = string(raw.kind), hash = string(raw.hash), parentEventId = string(raw.parentEventId)
     const expectedWorkspaceHash = string(batch.expectedWorkspaceHash), observedAt = instant(batch.observedAt)
     if (!string(batch.operationId).trim() || batch.mode !== 'incremental' || observedAt !== now || !/^sha256:[a-f0-9]{64}$/.test(expectedWorkspaceHash) || !/^sha256:[a-f0-9]{64}$/.test(hash) || !['recurring.single', 'recurring.series'].includes(kind)) throw new CalendarProviderError('invalid-response')
@@ -43,7 +47,8 @@ export function normalizeNativeCalendarBatch(value: unknown, connectionId: strin
     if (Object.keys(raw).some((key) => !(key in plan))) throw new CalendarProviderError('invalid-response')
     if (batch.access === 'details') {
       const parent = items.map(record).find((item) => item.id === parentEventId)
-      if (!parent || parent.recurringEventId !== undefined || (parent.status !== 'cancelled' && parent.recurrence === undefined) || items.length !== (plan.kind === 'recurring.single' ? 2 : 1)) throw new CalendarProviderError('invalid-response')
+      if (!parent || parent.recurringEventId !== undefined || parent.recurrence === undefined || items.length !== (plan.kind === 'recurring.single' ? 2 : 1)) throw new CalendarProviderError('invalid-response')
+      if (parent.status === 'cancelled') normalizeGoogleBatch([{ ...parent, status: 'confirmed' }], { connectionId, calendarId, timezone, now, cursor: null }, [], 'incremental')
       if (plan.kind === 'recurring.single') {
         const instance = items.map(record).find((item) => item.id === plan.instanceEventId)
         if (!instance || plan.instanceEventId === parentEventId || instance.recurringEventId !== parentEventId) throw new CalendarProviderError('invalid-response')
@@ -55,7 +60,7 @@ export function normalizeNativeCalendarBatch(value: unknown, connectionId: strin
   }
   const mode = batch.mode as ExternalCalendarBatch['mode']
   const delta = normalizeGoogleBatch(items, { connectionId, calendarId, timezone, now, cursor: null }, parents, mode)
-  return { batchId: string(batch.batchId), provider: 'google', connectionId, calendarId, sourceId: string(batch.sourceId), mode, access: batch.access as ExternalCalendarBatch['access'], title: string(batch.title), timezone, ...delta, ...(writeProjection ? { writeProjection } : {}) }
+  return { batchId: string(batch.batchId), provider: 'google', connectionId, calendarId, sourceId: string(batch.sourceId), mode, access: batch.access as ExternalCalendarBatch['access'], title: string(batch.title), timezone, ...delta, ...(operationId === undefined ? {} : { operationId, expectedWorkspaceHash }), ...(writeProjection ? { writeProjection } : {}) }
 }
 
 /** Only public configuration and whitelisted calendar facts cross this boundary. */

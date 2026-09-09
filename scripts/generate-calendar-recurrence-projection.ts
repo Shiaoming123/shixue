@@ -23,9 +23,10 @@ export async function generateRecurrenceProjectionFixtures() {
     if (name === 'single-cancel') batch.items[1] = { id: 'instance', recurringEventId: 'parent', originalStartTime: { date: '2026-09-10' }, status: 'cancelled' }
     if (name === 'single-restore') { batch.items[1].start.date = '2026-09-10'; batch.items[1].end.date = '2026-09-11' }
     if (name === 'permission-downgrade') { batch.access = 'none'; batch.items = [] }
+    const expectedWrite = { operationId: batch.operationId, plan: structuredClone(batch.plan) }
     const store = createInMemoryWorkspaceStore(base)
     const service = createTaskCapabilityService(store, () => '2026-09-09T00:01:00.000Z', () => `receipt:${name}`, {
-      loadExternalBatch: async (_id, state) => ({ ...normalizeNativeCalendarBatch(batch, batch.connectionId, batch.calendarId, batch.observedAt, state.calendarEvents), operationId: batch.operationId, expectedWorkspaceHash: batch.expectedWorkspaceHash }),
+      loadExternalBatch: async (_id, state) => normalizeNativeCalendarBatch(batch, batch.connectionId, batch.calendarId, batch.observedAt, state.calendarEvents, expectedWrite),
     })
     await service.execute({ protocolVersion: 1, source: 'human-ui', idempotencyKey: batch.batchId, expectedWorkspaceRevision: base.revision, command: { type: 'calendar_external.apply', batchId: batch.batchId } })
     const current = await store.load()
