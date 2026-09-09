@@ -225,6 +225,62 @@ pub(in super::super) fn future_batch(batch: &Value, base: &Value) -> bool {
     .is_some()
 }
 
+// TS Date.parse parity is restricted to UTC seconds/milliseconds; reject other representations.
+fn receipt_time(value: &Value) -> Option<i64> {
+    let raw = value.as_str()?;
+    if ![20, 24].contains(&raw.len()) {
+        return None;
+    }
+    let canonical = iso(raw)?;
+    if raw != canonical && raw != canonical.replace(".000Z", "Z") {
+        return None;
+    }
+    timestamp(raw)
+}
+fn retained_receipts<'a>(base: &'a Value, batch: &Value, now: &Value) -> Option<Vec<&'a Value>> {
+    let now = receipt_time(now)?;
+    let mut active = Vec::new();
+    for (index, receipt) in base["commandReceipts"].as_array()?.iter().enumerate() {
+        if receipt["idempotencyKey"] == batch["batchId"]
+            || receipt_time(&receipt["expiresAt"])? <= now
+        {
+            continue;
+        }
+        active.push((
+            receipt_time(&receipt["createdAt"])?,
+            receipt["id"].as_str()?,
+            index,
+            receipt,
+        ));
+    }
+    active.sort_by_key(|r| r.0);
+    // Equal timestamps require locale collation. Identical IDs or equal-width digit IDs have exact JS parity.
+    // Other tied IDs fail closed until an equivalent locale comparator is available.
+    for group in active.chunk_by(|a, b| a.0 == b.0) {
+        if group.iter().any(|r| r.1 != group[0].1)
+            && !group.iter().all(|r| {
+                !r.1.is_empty()
+                    && r.1.len() == group[0].1.len()
+                    && r.1.bytes().all(|b| b.is_ascii_digit())
+            })
+        {
+            return None;
+        }
+    }
+    active.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(b.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    Some(
+        active
+            .iter()
+            .skip(active.len().saturating_sub(499))
+            .map(|r| r.3)
+            .collect(),
+    )
+}
+
 fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<bool> {
     if base["version"] != 4
         || current["version"] != 4
@@ -284,12 +340,9 @@ fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<boo
             ]
             .iter()
             .any(|key| receipt["result"]["data"][*key] != batch[*key])
-            || receipts
-                .iter()
-                .filter(|r| *r != receipt)
-                .cloned()
-                .collect::<Vec<_>>()
-                != *base["commandReceipts"].as_array()?
+            || receipts.last()? != receipt
+            || receipts[..receipts.len() - 1].iter().collect::<Vec<_>>()
+                != retained_receipts(base, batch, &receipt["createdAt"])?
         {
             return None;
         }
@@ -1157,6 +1210,93 @@ pub(super) fn fixtures() -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn receipt_retention_rejects_unsupported_date_and_collation() {
+        let case = future_fixture();
+        let mut base = case["base"].clone();
+        let mut first = base["commandReceipts"][0].clone();
+        first["id"] = json!("a");
+        first["expiresAt"] = json!("2999-01-01T00:00:00Z");
+        let mut second = first.clone();
+        second["id"] = json!("B");
+        base["commandReceipts"] = json!([first, second]);
+        assert!(retained_receipts(&base, &case["batch"], &json!("2026-09-09T00:01:00Z")).is_none());
+        base["commandReceipts"][1]["idempotencyKey"] = case["batch"]["batchId"].clone();
+        assert_eq!(
+            retained_receipts(&base, &case["batch"], &json!("2026-09-09T00:01:00Z"))
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(receipt_time(&json!("+10000-01-01T00:00:00Z")).is_none());
+        base["commandReceipts"][0]["expiresAt"] = json!("2999-01-01T00:00:00+00:00");
+        assert!(retained_receipts(&base, &case["batch"], &json!("2026-09-09T00:01:00Z")).is_none());
+    }
+    #[test]
+    fn actual_ts_future_receipt_retention_prunes_expired_and_capacity() {
+        let probes: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/calendar-receipt-retention.json"
+        ))
+        .unwrap();
+        for probe in probes["cases"].as_array().unwrap() {
+            let case = future_fixture();
+            let mut base = case["base"].clone();
+            let mut batch = case["batch"].clone();
+            let mut current = case["current"].clone();
+            let template = base["commandReceipts"][0].clone();
+            let count = probe["count"].as_u64().unwrap();
+            let receipts: Vec<Value> = (0..count)
+                .map(|index| {
+                    let mut r = template.clone();
+                    let id = format!("{:04}", count - index);
+                    r["id"] = json!(id);
+                    r["idempotencyKey"] = json!(id);
+                    r["result"]["receiptId"] = json!(id);
+                    r["createdAt"] = json!("2026-09-09T00:00:00Z");
+                    r["expiresAt"] = json!(if probe["expireFirst"] == true && index == 0 {
+                        "2026-09-09T00:01:00Z"
+                    } else {
+                        "2999-01-01T00:00:00Z"
+                    });
+                    r
+                })
+                .collect();
+            base["commandReceipts"] = json!(receipts);
+            assert_eq!(
+                super::super::workspace_hash::fingerprint(&base).unwrap(),
+                probe["expectedWorkspaceHash"]
+            );
+            batch["expectedWorkspaceHash"] = probe["expectedWorkspaceHash"].clone();
+            let mut new_receipt = current["commandReceipts"]
+                .as_array()
+                .unwrap()
+                .last()
+                .unwrap()
+                .clone();
+            new_receipt["result"]["data"]["writeProjection"]["expectedWorkspaceHash"] =
+                probe["expectedWorkspaceHash"].clone();
+            let mut retained: Vec<Value> = probe["retainedIds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|id| receipts.iter().find(|r| r["id"] == *id).unwrap().clone())
+                .collect();
+            retained.push(new_receipt);
+            current["commandReceipts"] = json!(retained);
+            assert_eq!(
+                super::super::workspace_hash::fingerprint(&current).unwrap(),
+                probe["currentHash"]
+            );
+            current["commandReceipts"]
+                .as_array_mut()
+                .unwrap()
+                .last_mut()
+                .unwrap()["expiresAt"] = json!("2999-01-01T00:00:00Z");
+            assert!(verify(&base, &current, &batch), "{}", probe["name"]);
+            current["commandReceipts"][0]["result"]["data"] = json!({"forged":true});
+            assert!(!verify(&base, &current, &batch));
+        }
+    }
     #[test]
     fn actual_ts_future_projection_requires_atomic_facts() {
         let fixture: Value = serde_json::from_str(include_str!(

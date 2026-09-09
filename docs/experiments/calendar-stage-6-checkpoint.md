@@ -53,3 +53,13 @@
 - 修正 4B2b1 的 pivot 映射：冻结身份位于 intent.plan.pivot，旧代码及旧测试误读 intent.pivot，可能输出 null。新合同检查会拒绝该缺失身份。
 - RED：真实 TS future fixture 在旧 verifier 上失败。GREEN：原始 TS fixture 校验、partial parent/successor、事件身份/标题/规则/source、plan/hash/marker/steps、回执身份/重复/错绑定/过期/revision、stale/restore/permission 拒绝；真实 SQLite 与 keyring-double 覆盖同组无效 Workspace、持久化失败恢复及幂等 ack。SQLite 集成仅将 fixture 的占位 preview hash 替换为本地冻结预览 hash，其余事件事实保持 TS 输出。
 - 最终验证：future 定向 26/26，完整 rust:verify 95/95（fmt/clippy/all-features/no-default-features 通过）；Node recurrence projection 7/7，包含重新运行真实 TS capability generator 并比对已批准 fixture；docs/diff 检查通过。TS 与 fixture 未修改，typecheck 未重复运行。真实 Google、系统 keyring、通知与邮件、UI/Stage 7 均 NOT_RUN。
+
+## 2026-09-09 4B2b2 回执保留修正
+
+修复 verifier 对旧回执数组过度严格的问题：按能力服务移除相同幂等键，按执行时刻保留 expiresAt 严格大于 now 的条目，依 createdAt 毫秒、ID、原索引稳定排序，保留末尾 499 条，最后追加新回执。保留项按原值比较；篡改仍拒绝。
+
+可验证子集：日期必须是四位年、UTC `Z`、整秒或三位毫秒；相同 createdAt 下，不同 ID 仅接受等宽 ASCII 数字，完全相同 ID 保持原顺序。其余日期表示或需要一般 localeCompare 的并列 ID 均保守拒绝，不以 Rust 字节排序猜测 JavaScript locale 行为。
+
+实际 TS 能力服务生成[保留探针](../../tests/fixtures/calendar-receipt-retention.json)，覆盖到期边界清理、503 条输入裁剪至 499 条旧回执、相同时间逆序数字 ID 排序。Rust 重建输入与输出并核对完整 Workspace hash，随后验证合法 ack 投影及保留项篡改拒绝。RED 先复现 expired 样本被拒绝，GREEN 通过。生成器支持 `node --experimental-strip-types scripts/generate-calendar-receipt-retention.ts --check`，现有 TS 测试也重新执行生成器比较 fixture。
+
+最终：rust:verify 97/97；TS 定向 8/8；npm test 970/970；typecheck、desktop/Web build、docs/diff 检查通过。变更仅限 verifier、探针和报告；其他阶段、UI、真实 Google 与运行开关不变。

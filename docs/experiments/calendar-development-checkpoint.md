@@ -36,3 +36,5 @@
 已完成：future 原生双事件投影 verifier、精确唯一 capability receipt 验证及 ack；修复 intent.plan.pivot 身份映射。keyring-double/SQLite 证明 partial/tamper/stale/restore/expiry 拒绝、提交失败可恢复、重复确认不重写 Workspace。future 定向 26/26、完整 rust:verify 95/95、TS fixture 重生成比对 7/7 与 docs/diff 检查通过。
 
 4B2b1 的“ack 仍关闭”是历史状态，现由本次严格 verifier/ack 取代。运行开关仍关闭，真实账号/系统 keyring 未验收；无 UI、Stage 7 或真实 Google 变更。研究文件保持未跟踪并保留。
+
+4B2b2 评审修正：已对齐能力服务的过期与 499 条旧回执保留规则；保留项篡改拒绝。实际 TS 探针与完整 Workspace hash 跨语言比较通过；非 UTC 标准日期/一般 locale 并列 ID 明确保守拒绝，范围详见阶段6报告。最终 rust:verify 97/97、TS 定向 8/8、npm test 970/970、typecheck、两种 build、docs/diff 检查通过。

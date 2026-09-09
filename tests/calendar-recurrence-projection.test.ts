@@ -152,3 +152,12 @@ test('production applyLocal rejects a valid-format read-plan hash substitution b
     }
   }
 })
+
+
+test('future receipt retention probes match the actual capability service', async () => {
+  const { generateReceiptRetentionProbes } = await import('../scripts/generate-calendar-receipt-retention.ts')
+  const expected = JSON.parse(readFileSync(new URL('./fixtures/calendar-receipt-retention.json', import.meta.url), 'utf8'))
+  assert.deepEqual(await generateReceiptRetentionProbes(), expected)
+  assert.equal(expected.cases[0].retainedIds.length, 2)
+  assert.equal(expected.cases[1].retainedIds.length, 499)
+})
