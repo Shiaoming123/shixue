@@ -1290,6 +1290,9 @@ mod tests {
     fn native_future_local_stage_requires_two_current_proofs() {
         tauri::async_runtime::block_on(async {
             let (pool, vault, preview, _) = setup().await;
+            let expected_workspace_hash =
+                workspace_hash::fingerprint(&sync_store::workspace_payload(&pool).await.unwrap())
+                    .unwrap();
             let id = field(&preview, "operationId").unwrap();
             let mut record = ledger(&pool, &vault, "owner", id, "grant").await.unwrap();
             let mut proofs = Vec::new();
@@ -1421,10 +1424,29 @@ mod tests {
                     .keys()
                     .collect::<Vec<_>>()
             );
+            // The TS fixture fixes the shape; this independent expectation binds every value to setup evidence.
             assert_eq!(
-                batch["plan"]["pivotEventId"],
-                preview["intent"]["pivot"]["eventId"]
+                batch["plan"],
+                json!({
+                    "kind": fixture["cases"][0]["batch"]["plan"]["kind"],
+                    "hash": preview["hash"],
+                    "parentEventId": preview["intent"]["parent"]["eventId"],
+                    "pivotEventId": preview["intent"]["pivot"]["eventId"],
+                    "successorEventId": preview["intent"]["plan"]["successor"]["eventId"],
+                    "originalStart": preview["intent"]["originalStart"],
+                    "markerHash": preview["intent"]["plan"]["markerHash"],
+                    "steps": {
+                        "parent": {"state":"proved","proof":proofs[0]},
+                        "successor": {"state":"proved","proof":proofs[1]}
+                    }
+                })
             );
+            assert_eq!(batch["operationId"], preview["operationId"]);
+            assert_eq!(
+                batch["sourceId"],
+                "calendar-provider:%5B%22google%22%2C%22c%22%2C%22cal%22%5D"
+            );
+            assert_eq!(batch["expectedWorkspaceHash"], expected_workspace_hash);
             assert_eq!(
                 batch["plan"]["steps"]["parent"],
                 json!({"state":"proved","proof":proofs[0]})

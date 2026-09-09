@@ -40,3 +40,5 @@
 - 普通 sync 的过滤器会删除 ETag/marker，故 future 使用 TS 合同字段白名单保留已严格证明的原始字段。普通单次/整组路径保留。
 - RED：新增 SQLite/keyring-double 集成测试首次在 stage 返回 `WRITE_UNSUPPORTED`。GREEN：成功、重复读取、部分 proof、root unknown、补偿已执行、结果/证明篡改、权限降级、当前远端 ETag 变化、stale Workspace、keyring 提交失败恢复、TS fixture plan 字段结构、ack 仍拒绝。实际 TS fixture 的双事件投影 verifier/receipt 验证尚未实现。
 - 验证：doctor、`npm run rust:verify`（fmt、clippy、93 个 Rust 测试、all-features/no-default-features check）通过；文档与 diff 检查通过。未改 TS 或 fixture，未运行 Node/typecheck；无 UI、Stage 7、真实 Google、系统 keyring 或运行开关变更。
+
+4B2b1 覆盖补充：SQLite 集成测试在 TS fixture 固定字段结构之外，逐值核对完整 plan（preview hash、parent/pivot/successor ID、originalStart、markerHash、两份 exact proved steps）及 operationId、sourceId、stage 前实际 Workspace 摘要。定向测试 1/1 与完整 rust:verify 93/93 通过；仅测试与报告更新，future ack 继续关闭。
