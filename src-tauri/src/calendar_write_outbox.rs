@@ -100,10 +100,27 @@ fn validate(operation: &Operation) -> Result<(), String> {
         "update" => &["kind", "eventId", "etag", "fields"],
         "cancel" | "delete" => &["kind", "eventId", "etag"],
         "rsvp" => &["kind", "eventId", "etag", "selfEmail", "response"],
+        "recurring.single" => match text_field(intent, "action")? {
+            "update" => &[
+                "kind",
+                "parent",
+                "originalStart",
+                "instance",
+                "action",
+                "fields",
+            ],
+            "cancel" => &["kind", "parent", "originalStart", "instance", "action"],
+            _ => return Err("OUTBOX_INVALID".into()),
+        },
+        "recurring.series" => match text_field(intent, "action")? {
+            "update" => &["kind", "parent", "action", "fields", "recurrence"],
+            "cancel" => &["kind", "parent", "action"],
+            _ => return Err("OUTBOX_INVALID".into()),
+        },
         _ => return Err("OUTBOX_INVALID".into()),
     };
     allow_fields(intent, allowed)?;
-    if kind != "create" {
+    if kind != "create" && !kind.starts_with("recurring.") {
         if text_field(intent, "eventId")? != text_field(&operation.preview, "eventId")? {
             return Err("OUTBOX_INVALID".into());
         }
@@ -115,7 +132,25 @@ fn validate(operation: &Operation) -> Result<(), String> {
             return Err("OUTBOX_INVALID".into());
         }
     }
-    if kind == "create" || kind == "update" {
+    if kind.starts_with("recurring.") {
+        for name in if kind == "recurring.single" {
+            ["parent", "instance"]
+        } else {
+            ["parent", "parent"]
+        } {
+            allow_fields(&intent[name], &["eventId", "etag"])?;
+            text_field(&intent[name], "eventId")?;
+            text_field(&intent[name], "etag")?;
+        }
+        if kind == "recurring.single" {
+            text_field(intent, "originalStart")?;
+        }
+    }
+    if kind == "create"
+        || kind == "update"
+        || (kind == "recurring.single" && intent["action"] == "update")
+        || (kind == "recurring.series" && intent["action"] == "update")
+    {
         let fields = &intent["fields"];
         allow_fields(fields, &["title", "time", "attendees"])?;
         if let Some(title) = fields.get("title") {
@@ -140,6 +175,9 @@ fn validate(operation: &Operation) -> Result<(), String> {
             }
         }
         if let Some(attendees) = fields.get("attendees") {
+            if kind != "create" {
+                return Err("OUTBOX_INVALID".into());
+            }
             let attendees = attendees
                 .as_array()
                 .filter(|items| items.len() <= 200)

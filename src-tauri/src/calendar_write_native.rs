@@ -36,6 +36,8 @@ struct Anchor {
     event_id: String,
     calendar_id: String,
     previous: Option<String>,
+    #[serde(default)]
+    lock_keys: Vec<String>,
 }
 trait Vault {
     fn get(&self, key: &str) -> Result<Option<String>, String>;
@@ -98,10 +100,27 @@ fn validate_intent(intent: &Value) -> Result<(), String> {
             "update" => &["kind", "eventId", "etag", "fields"],
             "cancel" | "delete" => &["kind", "eventId", "etag"],
             "rsvp" => &["kind", "eventId", "etag", "selfEmail", "response"],
+            "recurring.single" => match field(intent, "action")? {
+                "update" => &[
+                    "kind",
+                    "parent",
+                    "originalStart",
+                    "instance",
+                    "action",
+                    "fields",
+                ],
+                "cancel" => &["kind", "parent", "originalStart", "instance", "action"],
+                _ => return Err("WRITE_INVALID".into()),
+            },
+            "recurring.series" => match field(intent, "action")? {
+                "update" => &["kind", "parent", "action", "fields", "recurrence"],
+                "cancel" => &["kind", "parent", "action"],
+                _ => return Err("WRITE_INVALID".into()),
+            },
             _ => return Err("WRITE_UNSUPPORTED".into()),
         },
     )?;
-    if kind != "create" {
+    if kind != "create" && !kind.starts_with("recurring.") {
         field(intent, "eventId")?;
         field(intent, "etag")?;
     }
@@ -111,7 +130,37 @@ fn validate_intent(intent: &Value) -> Result<(), String> {
             return Err("WRITE_INVALID".into());
         }
     }
-    if kind == "create" || kind == "update" {
+    if kind.starts_with("recurring.") {
+        for name in if kind == "recurring.single" {
+            ["parent", "instance"]
+        } else {
+            ["parent", "parent"]
+        } {
+            exact(&intent[name], &["eventId", "etag"])?;
+            field(&intent[name], "eventId")?;
+            field(&intent[name], "etag")?;
+        }
+        if kind == "recurring.single" {
+            let original = field(intent, "originalStart")?;
+            if chrono::DateTime::parse_from_rfc3339(original).is_err()
+                && chrono::NaiveDate::parse_from_str(original, "%Y-%m-%d").is_err()
+            {
+                return Err("WRITE_INVALID".into());
+            }
+        }
+        if let Some(rules) = intent.get("recurrence") {
+            if !rules.as_array().is_some_and(|items| {
+                items.len() == 1 && items[0].as_str().is_some_and(|v| v.starts_with("RRULE:"))
+            }) {
+                return Err("WRITE_UNSUPPORTED".into());
+            }
+        }
+    }
+    if kind == "create"
+        || kind == "update"
+        || (kind == "recurring.single" && intent["action"] == "update")
+        || (kind == "recurring.series" && intent["action"] == "update")
+    {
         let fields = &intent["fields"];
         exact(fields, &["title", "time", "attendees"])?;
         if fields.as_object().is_none_or(|v| v.is_empty()) {
@@ -162,7 +211,7 @@ fn validate_intent(intent: &Value) -> Result<(), String> {
             }
         }
         if let Some(attendees) = fields.get("attendees") {
-            if kind == "update" {
+            if kind != "create" {
                 return Err("WRITE_UNSUPPORTED".into());
             }
             let attendees = attendees
@@ -304,6 +353,11 @@ async fn persist<V: Vault>(
         event_id: field(&record.preview, "eventId")?.into(),
         calendar_id: field(&record.preview, "calendarId")?.into(),
         previous,
+        lock_keys: if record.preview["intent"]["kind"] == "create" {
+            vec![field(&record.preview, "eventId")?.into()]
+        } else {
+            lock_keys(&record.preview["intent"])?
+        },
     };
     vault.set(
         &anchor_key(owner, id),
@@ -447,11 +501,24 @@ pub async fn write_prepare<R: tauri::Runtime>(
     let event_id = if intent["kind"] == "create" {
         format!("m{:x}", Sha256::digest(random()?.as_bytes()))
     } else {
-        field(&intent, "eventId")?.into()
+        intent_event_id(&intent)?.into()
     };
     let mut preview = json!({"operationId":id,"connectionId":config.connection_id,"calendarId":calendar_id,"eventId":event_id,"sendUpdates":send_updates,"intent":intent});
     let hash = digest(&preview)?;
     preview["hash"] = json!(hash);
+    if preview["intent"]["kind"]
+        .as_str()
+        .is_some_and(|kind| kind.starts_with("recurring."))
+    {
+        let http = GoogleHttp {
+            config: &config,
+            owner: &owner,
+            epoch: generation,
+        };
+        if !preflight(&http, &preview).await? {
+            return Err("WRITE_CONFLICT".into());
+        }
+    }
     let pool = sync_store::database(&app).await?;
     schema(&pool).await?;
     let mirror=serde_json::from_value(json!({"preview":preview,"version":1,"state":"pending","outcomeUnknown":false,"attempts":0,"leaseId":null,"leaseUntil":0,"error":null,"result":null,"localApplied":false})).map_err(|_|"WRITE_INVALID")?;
@@ -629,13 +696,50 @@ fn event_path(preview: &Value) -> Result<String, String> {
         segment(field(preview, "eventId")?)
     ))
 }
+fn intent_event_id(intent: &Value) -> Result<&str, String> {
+    match field(intent, "kind")? {
+        "recurring.single" => field(&intent["instance"], "eventId"),
+        "recurring.series" => field(&intent["parent"], "eventId"),
+        _ => field(intent, "eventId"),
+    }
+}
+fn intent_etag(intent: &Value) -> Result<&str, String> {
+    match field(intent, "kind")? {
+        "recurring.single" => field(&intent["instance"], "etag"),
+        "recurring.series" => field(&intent["parent"], "etag"),
+        _ => field(intent, "etag"),
+    }
+}
+fn lock_keys(intent: &Value) -> Result<Vec<String>, String> {
+    let mut keys = match field(intent, "kind")? {
+        "recurring.single" => vec![
+            field(&intent["parent"], "eventId")?.into(),
+            field(&intent["instance"], "eventId")?.into(),
+        ],
+        "recurring.series" => vec![field(&intent["parent"], "eventId")?.into()],
+        _ => vec![intent_event_id(intent)?.into()],
+    };
+    keys.sort();
+    keys.dedup();
+    Ok(keys)
+}
 fn result(preview: &Value, etag: Value) -> Value {
     json!({"operationId":preview["operationId"],"connectionId":preview["connectionId"],"calendarId":preview["calendarId"],"eventId":preview["eventId"],"etag":etag})
 }
-fn supported(event: &Value) -> bool {
-    event.get("recurrence").is_none()
-        && event.get("recurringEventId").is_none()
-        && event.get("eventType").is_none_or(|t| t == "default")
+fn supported(event: &Value, intent: &Value) -> bool {
+    let kind = intent["kind"].as_str();
+    event.get("eventType").is_none_or(|t| t == "default")
+        && event["locked"] != true
+        && match kind {
+            Some("recurring.single") => {
+                event["recurringEventId"] == intent["parent"]["eventId"]
+                    && event["originalStartTime"].is_object()
+            }
+            Some("recurring.series") => {
+                event["recurrence"].as_array().is_some_and(|v| v.len() == 1)
+            }
+            _ => event.get("recurrence").is_none() && event.get("recurringEventId").is_none(),
+        }
 }
 fn body(preview: &Value) -> Result<Value, String> {
     let intent = &preview["intent"];
@@ -643,9 +747,15 @@ fn body(preview: &Value) -> Result<Value, String> {
     let kind = field(intent, "kind")?;
     let mut body = json!({"extendedProperties":{"private":{"meowOperationId":preview["operationId"],"meowOperationHash":preview["hash"]}}});
     match kind {
-        "create" | "update" => {
+        "create" | "update" | "recurring.single" | "recurring.series" => {
             if kind == "create" {
                 body["id"] = preview["eventId"].clone();
+            }
+            if kind == "recurring.single" && intent["action"] == "cancel"
+                || kind == "recurring.series" && intent["action"] == "cancel"
+            {
+                body["status"] = json!("cancelled");
+                return Ok(body);
             }
             let fields = &intent["fields"];
             if let Some(title) = fields.get("title") {
@@ -663,6 +773,11 @@ fn body(preview: &Value) -> Result<Value, String> {
             if let Some(attendees) = fields["attendees"].as_array() {
                 body["attendees"]=Value::Array(attendees.iter().map(|a|json!({"email":a["email"],"optional":a["optional"],"responseStatus":"needsAction"})).collect());
             }
+            if kind == "recurring.series" {
+                if let Some(rules) = intent.get("recurrence") {
+                    body["recurrence"] = rules.clone();
+                }
+            }
         }
         "cancel" => body["status"] = json!("cancelled"),
         "rsvp" => {
@@ -676,7 +791,7 @@ fn body(preview: &Value) -> Result<Value, String> {
     Ok(body)
 }
 fn proof(preview: &Value, event: &Value) -> Result<bool, String> {
-    if !supported(event)
+    if !supported(event, &preview["intent"])
         || event["id"] != preview["eventId"]
         || event["etag"].as_str().is_none_or(str::is_empty)
         || event["extendedProperties"]["private"]["meowOperationId"] != preview["operationId"]
@@ -698,7 +813,7 @@ fn proof(preview: &Value, event: &Value) -> Result<bool, String> {
             })
         }));
     }
-    for name in ["summary", "status", "start", "end"] {
+    for name in ["summary", "status", "start", "end", "recurrence"] {
         if let Some(value) = expected.get(name) {
             if name == "start" || name == "end" {
                 let actual = &event[name];
@@ -769,7 +884,31 @@ async fn preflight<H: Http>(http: &H, preview: &Value) -> Result<bool, String> {
         return Err("WRITE_READ_FAILED".into());
     }
     let event = &remote.body;
-    if event["id"] != preview["eventId"] || !supported(event) || event["locked"] == true {
+    if intent["kind"] == "recurring.single" {
+        let parent = http
+            .call(
+                "GET",
+                &format!(
+                    "calendars/{}/events/{}",
+                    segment(field(preview, "calendarId")?),
+                    segment(field(&intent["parent"], "eventId")?)
+                ),
+                None,
+                None,
+                None,
+            )
+            .await?;
+        if parent.status != 200
+            || parent.body["id"] != intent["parent"]["eventId"]
+            || parent.body["etag"] != intent["parent"]["etag"]
+            || parent.body["recurrence"]
+                .as_array()
+                .is_none_or(|rules| rules.len() != 1)
+        {
+            return Err("WRITE_UNSUPPORTED".into());
+        }
+    }
+    if event["id"] != preview["eventId"] || !supported(event, intent) {
         return Err("WRITE_UNSUPPORTED".into());
     }
     if intent["kind"] == "rsvp"
@@ -781,10 +920,22 @@ async fn preflight<H: Http>(http: &H, preview: &Value) -> Result<bool, String> {
     {
         return Err("WRITE_PERMISSION".into());
     }
-    if intent["kind"] == "cancel" && event["organizer"]["self"] != true {
+    if (intent["kind"] == "cancel"
+        || (intent["kind"] == "recurring.single" && intent["action"] == "cancel")
+        || (intent["kind"] == "recurring.series" && intent["action"] == "cancel"))
+        && event["organizer"]["self"] != true
+    {
         return Err("WRITE_PERMISSION".into());
     }
-    Ok(event["etag"] == intent["etag"])
+    if intent["kind"] == "recurring.single"
+        && event["originalStartTime"]
+            .get("dateTime")
+            .or_else(|| event["originalStartTime"].get("date"))
+            != Some(&intent["originalStart"])
+    {
+        return Err("WRITE_UNSUPPORTED".into());
+    }
+    Ok(event["etag"] == intent_etag(intent)?)
 }
 async fn execute<V: Vault, H: Http>(
     pool: &SqlitePool,
@@ -824,7 +975,7 @@ async fn execute<V: Vault, H: Http>(
     for (other_id, other) in indexed(vault, owner)? {
         if other_id != id
             && other.calendar_id == a.calendar_id
-            && other.event_id == a.event_id
+            && other.lock_keys.iter().any(|key| a.lock_keys.contains(key))
             && other.state == "applying"
         {
             return Err("WRITE_BUSY".into());
@@ -865,7 +1016,7 @@ async fn execute<V: Vault, H: Http>(
             if kind == "create" {
                 None
             } else {
-                Some(field(&record.preview["intent"], "etag")?)
+                Some(intent_etag(&record.preview["intent"])?)
             },
             Some(field(&record.preview, "sendUpdates")?),
             if kind == "delete" {
@@ -975,6 +1126,7 @@ mod tests {
     type RecordedRequest = (String, Option<String>, Option<Value>);
     struct FakeHttp {
         event: Mutex<Option<Value>>,
+        parents: Mutex<HashMap<String, Value>>,
         writes: AtomicUsize,
         lose: bool,
         reject: u16,
@@ -984,6 +1136,7 @@ mod tests {
         fn new() -> Self {
             Self {
                 event: Mutex::new(None),
+                parents: Mutex::new(HashMap::new()),
                 writes: AtomicUsize::new(0),
                 lose: false,
                 reject: 0,
@@ -1014,6 +1167,18 @@ mod tests {
                     return Ok(HttpReply {
                         status: 200,
                         body: json!({"id":"cal","accessRole":"owner"}),
+                    });
+                }
+                if let Some(parent) = self
+                    .parents
+                    .lock()
+                    .unwrap()
+                    .get(path.rsplit('/').next().unwrap())
+                    .cloned()
+                {
+                    return Ok(HttpReply {
+                        status: 200,
+                        body: parent,
                     });
                 }
                 return Ok(match self.event.lock().unwrap().clone() {
@@ -1070,7 +1235,12 @@ mod tests {
             .await
             .unwrap();
         schema(&pool).await.unwrap();
-        let mut preview = json!({"operationId":"op","connectionId":"c","calendarId":"cal","eventId":"mevent123","intent":intent,"sendUpdates":"all"});
+        let event_id = if intent["kind"] == "create" {
+            "mevent123".into()
+        } else {
+            intent_event_id(&intent).unwrap().to_owned()
+        };
+        let mut preview = json!({"operationId":"op","connectionId":"c","calendarId":"cal","eventId":event_id,"intent":intent,"sendUpdates":"all"});
         preview["hash"] = json!(digest(&preview).unwrap());
         let mirror=serde_json::from_value(json!({"preview":preview,"version":1,"state":"pending","outcomeUnknown":false,"attempts":0,"leaseId":null,"leaseUntil":0,"error":null,"result":null,"localApplied":false})).unwrap();
         write_outbox::dispatch(&pool, write_outbox::Request::Insert { operation: mirror })
@@ -1460,5 +1630,61 @@ mod tests {
             .insert(id.into(), ("hash".into(), 7, 0, false));
         assert!(ticket(id, "hash", 7, false).is_err());
         assert!(!ENABLED.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn recurring_single_and_series_use_frozen_target_etags_and_only_reconcile_unknown_results() {
+        tauri::async_runtime::block_on(async {
+            let single = json!({"kind":"recurring.single","parent":{"eventId":"parent","etag":"p1"},"originalStart":"2026-09-09T09:00:00Z","instance":{"eventId":"instance","etag":"i1"},"action":"update","fields":{"time":{"kind":"fixed","startAt":"2026-09-09T11:00:00Z","endAt":"2026-09-09T12:00:00Z","timezone":"UTC"}}});
+            let (pool, vault, _) = fixture(single).await;
+            let http = FakeHttp::new();
+            http.parents.lock().unwrap().insert(
+                "parent".into(),
+                json!({"id":"parent","etag":"p1","recurrence":["RRULE:FREQ=DAILY"]}),
+            );
+            *http.event.lock().unwrap() = Some(
+                json!({"id":"instance","etag":"i1","recurringEventId":"parent","originalStartTime":{"dateTime":"2026-09-09T09:00:00Z"},"start":{"dateTime":"2026-09-09T09:00:00Z","timeZone":"UTC"},"end":{"dateTime":"2026-09-09T10:00:00Z","timeZone":"UTC"}}),
+            );
+            assert_eq!(
+                execute(&pool, &vault, &http, "owner", "op", "grant", false)
+                    .await
+                    .unwrap()["state"],
+                "applied"
+            );
+            assert_eq!(
+                http.requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find(|v| v.0 == "PATCH")
+                    .unwrap()
+                    .1
+                    .as_deref(),
+                Some("i1")
+            );
+
+            let (pool, vault, _) = fixture(json!({"kind":"recurring.series","parent":{"eventId":"parent","etag":"p1"},"action":"cancel"})).await;
+            let mut http = FakeHttp::new();
+            http.reject = 412;
+            *http.event.lock().unwrap() = Some(
+                json!({"id":"parent","etag":"p1","recurrence":["RRULE:FREQ=DAILY"],"organizer":{"self":true}}),
+            );
+            assert_eq!(
+                execute(&pool, &vault, &http, "owner", "op", "grant", false)
+                    .await
+                    .unwrap()["state"],
+                "conflict"
+            );
+
+            let (pool, vault, _) = fixture(json!({"kind":"recurring.single","parent":{"eventId":"parent","etag":"p1"},"originalStart":"2026-09-09T09:00:00Z","instance":{"eventId":"instance","etag":"i1"},"action":"cancel"})).await;
+            let http = FakeHttp::new();
+            *http.event.lock().unwrap() = Some(
+                json!({"id":"instance","etag":"i1","recurringEventId":"parent","originalStartTime":{"dateTime":"2026-09-10T09:00:00Z"},"organizer":{"self":true}}),
+            );
+            assert!(execute(&pool, &vault, &http, "owner", "op", "grant", false)
+                .await
+                .is_err());
+            assert_eq!(http.writes.load(Ordering::SeqCst), 0);
+        });
     }
 }
