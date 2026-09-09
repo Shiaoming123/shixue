@@ -40,3 +40,7 @@ Internal test-only parent/successor request/proof helper and 150 actual TS adapt
 ### 4B1c1b checkpoint
 
 Shared read_body rejects recursive duplicate provider JSON keys while retaining Value scalar semantics and HTTP/size behavior. Actual response-path RED/GREEN, rust:verify (82 tests), standalone calendar-connections feature check, docs and diff checks pass. Next: review this boundary fix, then separately implement the sender phase persistence/authorization and read-only recovery. Full Task 4 remains incomplete; protected research unchanged. See task-4-report.md for evidence.
+
+### 4B1c1c checkpoint
+
+Unwired parent-phase transition now persists applying before its single PATCH, GET-proves the result and uses GET-only unknown/restart recovery. Focused fake/SQLite checks and rust:verify (83 tests) pass. Root lock remains held; successor/compensation/projection are pending. Baseline RED was verified retrospectively against the existing execute rejection. Next: review this slice, then add successor-phase continuation and complete root authorization/lease integration before command wiring. See task-4-report.md for limits; protected research unchanged.

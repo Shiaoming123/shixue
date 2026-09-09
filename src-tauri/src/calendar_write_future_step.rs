@@ -1,7 +1,7 @@
 //! Internal request/proof contract harness; no execute or provider transport wiring.
 use super::*;
 
-fn request(preview: &Value, name: &str, mutate: bool) -> Result<Value, String> {
+pub(super) fn request(preview: &Value, name: &str, mutate: bool) -> Result<Value, String> {
     if !["parent", "successor"].contains(&name) || preview["intent"]["kind"] != "recurring.future" {
         return Err("WRITE_UNSUPPORTED".into());
     }
@@ -47,7 +47,13 @@ fn component(value: &str) -> String {
         })
         .collect()
 }
-fn response(preview: &Value, name: &str, mutate: bool, status: u16, body: &Value) -> Value {
+pub(super) fn response(
+    preview: &Value,
+    name: &str,
+    mutate: bool,
+    status: u16,
+    body: &Value,
+) -> Value {
     if request(preview, name, mutate).is_err() {
         return json!({"kind":"conflict"});
     }
