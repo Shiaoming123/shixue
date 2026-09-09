@@ -540,6 +540,66 @@ mod tests {
     use super::*;
     use std::cell::{Cell, RefCell};
     #[test]
+    fn native_future_shared_deadline_expires_after_parent_proof() {
+        tauri::async_runtime::block_on(async {
+            let _gate = WRITE_GATE.lock().await;
+            for overdue in [0, 1] {
+                let (pool, vault, preview, snapshot) = setup().await;
+                let id = field(&preview, "operationId").unwrap();
+                let http = Fake {
+                    pool: &pool,
+                    vault: &vault,
+                    id: id.into(),
+                    original: snapshot["parent"].clone(),
+                    pivot: snapshot["pivot"].clone(),
+                    event: RefCell::new(Value::Null),
+                    child: RefCell::new(Value::Null),
+                    requests: RefCell::new(vec![]),
+                    fault: "child-success",
+                };
+                let deadline = std::time::Duration::from_secs(30);
+                let now = Cell::new(deadline - std::time::Duration::from_nanos(1));
+                let result = saga(
+                    &pool,
+                    &vault,
+                    &http,
+                    "owner",
+                    id,
+                    "grant",
+                    Mode::Run,
+                    || Ok(()),
+                    deadline,
+                    || {
+                        let anchored = anchor(&vault, "owner", id).unwrap();
+                        // Advance only after the first phase's proof is durably anchored.
+                        if anchored.state == "applying" && anchored.future_unknown == Some(false) {
+                            now.set(deadline + std::time::Duration::from_nanos(overdue));
+                        }
+                        now.get()
+                    },
+                )
+                .await;
+                assert_eq!(result.err().unwrap(), "WRITE_LEASE_LOST");
+                assert!(now.get() >= deadline);
+                let record = ledger(&pool, &vault, "owner", id, "grant").await.unwrap();
+                let future = record.future.unwrap();
+                assert_eq!(future["parent"]["state"], "proved");
+                assert_eq!(future["successor"]["state"], "pending");
+                assert!(!record.outcome_unknown);
+                assert_eq!(
+                    http.requests
+                        .borrow()
+                        .iter()
+                        .filter(|m| *m != "GET")
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    ["PATCH"]
+                );
+                assert!(http.child.borrow().is_null());
+            }
+        });
+    }
+    #[test]
     fn native_future_orchestrator_routes_and_deadline() {
         tauri::async_runtime::block_on(async {
             let _gate = WRITE_GATE.lock().await;
