@@ -16,7 +16,8 @@ export interface FuturePlan {
   originalStart: string; exceptions: Record<string, unknown>[]; markerHash: string
   parent: FutureStep; successor: FutureStep; compensation: FutureStep
 }
-export interface FutureStepState { state: 'pending' | 'applying' | 'unknown' | 'proved' | 'rejected' | 'conflict'; etag?: string; proof?: Record<string, unknown> }
+export interface FutureStepState { state: 'pending' | 'applying' | 'unknown' | 'proved' | 'rejected' | 'conflict'; outcomeUnknown?: boolean; etag?: string; proof?: Record<string, unknown> }
+export type FutureStepResponse = { kind: 'proved'; proof: Record<string, unknown> } | { kind: 'unknown' | 'rejected' | 'conflict' }
 export interface FutureState { parent: FutureStepState; successor: FutureStepState; compensation: FutureStepState }
 function unsupported(): never { throw new Error('WRITE_UNSUPPORTED') }
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)

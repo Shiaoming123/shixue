@@ -2,6 +2,7 @@ import { array, record, string } from './types.ts'
 import { parseCalendarEventTime } from '../domain/workspace/parse.ts'
 import { writePreviewHash } from './write-outbox.ts'
 import { createGoogleFutureReader } from './google-future.ts'
+import { createGoogleFutureStep } from './google-future-step.ts'
 import type { CalendarWriter, WriteFields, WriteIntent, WritePreview, WriteResponse, WriteSession } from './write-outbox.ts'
 
 export interface GoogleWriteRequest { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string; headers: Record<string, string>; query: Record<string, string>; body?: Record<string, unknown> }
@@ -114,6 +115,7 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport, loa
     return { connectionId: preview.connectionId, calendarId: preview.calendarId, eventId: preview.eventId, canWrite: value.locked !== true, etag: string(value.etag), selfEmail: array(value.attendees ?? []).map(record).find((item) => item.self === true)?.email as string | undefined ?? null }
   }
   return {
+    ...(transport ? { futureStep: createGoogleFutureStep(transport) } : {}),
     ...(transport && loadWorkspace ? { readFuture: createGoogleFutureReader(transport, loadWorkspace) } : {}),
     mode: transport ? 'fake' : 'native',
     session: (connectionId) => transport?.session(connectionId) ?? { connected: false, generation: 0, canWrite: false },

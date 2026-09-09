@@ -1,4 +1,5 @@
-import { prepareFuturePlan, type FuturePlan, type FutureSnapshot, type FutureState } from './future-plan.ts'
+import { prepareFuturePlan, type FuturePlan, type FutureSnapshot, type FutureState, type FutureStepResponse } from './future-plan.ts'
+import { processFuture } from './future-saga.ts'
 import type { CalendarEventTime } from '../domain/calendar/types.ts'
 import { parseCalendarEventTime } from '../domain/workspace/parse.ts'
 import { record, string } from './types.ts'
@@ -18,7 +19,7 @@ export type WriteIntent =
   | { kind: 'recurring.future'; parent: RecurringRef; originalStart: string; fields: Pick<WriteFields, 'title'>; plan?: FuturePlan }
 export interface WritePreview { operationId: string; connectionId: string; calendarId: string; eventId: string; lockKeys: string[]; sendUpdates: SendUpdates; intent: WriteIntent; hash: string }
 export interface WriteOperation { future?: FutureState; preview: WritePreview; version: number; state: 'pending' | 'applying' | 'applied' | 'conflict' | 'failed'; outcomeUnknown: boolean; attempts: number; leaseId: string | null; leaseUntil: number; error: string | null; result: WriteResult | null; localApplied: boolean }
-export interface WriteResult { connectionId: string; calendarId: string; eventId: string; etag: string | null; operationId: string }
+export interface WriteResult { connectionId: string; calendarId: string; eventId: string; etag: string | null; operationId: string; future?: { markerHash: string; parent: Record<string, unknown>; successor: Record<string, unknown> } }
 export interface WriteOutboxStore {
   insert(operation: WriteOperation): Promise<boolean>
   get(id: string): Promise<WriteOperation | null>
@@ -32,6 +33,7 @@ export interface WriteSession { connected: boolean; generation: number; canWrite
 export interface RemoteWriteIdentity { connectionId: string; calendarId: string; eventId: string; etag: string | null; canWrite: boolean; selfEmail: string | null }
 export type WriteResponse = { kind: 'applied'; result: WriteResult } | { kind: 'conflict' } | { kind: 'rejected'; code: 'permission' | 'quota' | 'invalid' } | { kind: 'unknown' }
 export interface CalendarWriter {
+  futureStep?(preview: WritePreview, step: keyof FutureState, action: 'mutate' | 'read', etag?: string): Promise<FutureStepResponse>
   mode: 'fake' | 'native'
   readFuture?(connectionId: string, calendarId: string, parent: RecurringRef, originalStart: string): Promise<FutureSnapshot>
   session(connectionId: string): WriteSession
@@ -140,7 +142,10 @@ export class CalendarWriteOutbox {
   async reconcile(id: string): Promise<WriteOperation> { return this.process(id, true) }
   private async process(id: string, reconcile: boolean): Promise<WriteOperation> {
     let operation = await this.required(id)
-    if (operation.preview.intent.kind === 'recurring.future') fail('WRITE_UNSUPPORTED')
+    if (operation.preview.intent.kind === 'recurring.future') {
+      if (!this.writer.readFuture || !this.writer.futureStep) fail('WRITE_UNSUPPORTED')
+      return processFuture(operation, reconcile, this.store, this.writer, this.now, (epoch) => this.active(operation.preview, epoch))
+    }
     if (operation.state === 'applied') return this.finishLocal(operation)
     if (operation.state === 'conflict') return operation
     if (!reconcile && (operation.outcomeUnknown || operation.state !== 'pending')) fail('RECONCILE_REQUIRED')

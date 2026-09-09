@@ -68,3 +68,21 @@ Remaining 4A2b interface/work:
 - RED: malformed/missing-linkage test failed Missing expected rejection (3/4 passed). GREEN: focused future-reader/future-plan/google-write/outbox/google-recurrence 30/30; npm run typecheck and git diff --check passed.
 - Scoped review checks only: full npm test and builds were not rerun for this one-line validation correction; the earlier 944/944 and build evidence belongs to the preceding checkpoint. The existing page ceiling remains tested; no separate item ceiling test was added.
 - Execute/reconcile remain disabled. 4A2b/4B and the documented remote snapshot limitations remain pending; protected research was not modified or staged.
+
+## 4A2b1 checkpoint: fake root execution and read-only recovery
+
+2026-09-09; base `70c5cd2`. Coordinating parent split 4A2b at the compensation boundary; 4A2b2 and Task 4 remain incomplete.
+
+- Added root-only CAS/lease saga with persisted per-step applying/outcomeUnknown/proof. Before the first mutation, authoritative readFuture reconstructs the frozen plan and compares parent/pivot evidence, workspace hash, recurrence and empty exception/attachment evidence. A mismatch terminates before mutation.
+- Fake step adapter PATCHes the parent with frozen If-Match/sendUpdates and POSTs the fixed successor ID only after parent GET proof. Every mutation is preceded by root CAS recording that exact step as applying/unknown. Successful responses also require exact GET proof of identity, markerHash and frozen desired content.
+- Applying/unknown steps use GET only on restart. JSON-serialized unknown roots recover without repeated PATCH/POST or notification requests. Complete result includes parent and successor remote proofs plus markerHash for Task 4B; no local projection callback is invoked and localApplied remains false.
+- Deterministic successor rejection is deliberately fail-closed: rejected/conflict step is persisted, root remains outcomeUnknown with COMPENSATION_REQUIRED and retains the same-series lock. No compensation is sent in this slice. 4A2b2 must implement exact parent reread, freeze latest compensation ETag, restore and GET-only compensation reconciliation/conflict tests.
+- No Rust/native persistence, real Google sender, local projection, UI, product write switch, Task 5 or Stage 7 changes. Protected research remains untouched.
+
+Evidence:
+- RED: four initial saga tests failed WRITE_UNSUPPORTED (0/4).
+- GREEN: focused future-saga/future-plan/future-reader/google-write/outbox/google-recurrence tests 36/36; includes success, both response-loss paths, JSON restart, fixed ID/notification count, workspace drift, parent lock and wrong-marker refusal.
+- Doctor, typecheck and git diff --check passed (doctor filesystem probe unavailable on Windows).
+- Full npm test 951/951: task-4a2b1-test.log. Desktop/Web builds passed with existing chunk-size advisory: task-4a2b1-build.log and task-4a2b1-build-web.log.
+- Remaining concerns: fake memory-store/JSON recovery is not native durable persistence evidence. No remote transactional snapshot guarantee; Task 4A2a limits still apply. Compensation and local atomic projection/receipt are unimplemented and must not be inferred from this successful fake two-step result.
+- Token usage reporting unavailable; no exact count claimed. Next action: implement 4A2b2 compensation against persisted rejected successor and per-step proof interfaces.
