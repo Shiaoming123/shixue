@@ -113,6 +113,8 @@ fn checked(v: Json, spec: &str) -> Result<Json, String> {
         "bool" => matches!(v, Json::Bool(_)),
         "stamp" => text(&v).is_ok_and(valid_timestamp),
         "date" => text(&v).is_ok_and(date),
+        "schedule-value" => text(&v).is_ok_and(|s| date(s) || valid_timestamp(s)),
+        "occurrence-override" => return super::tasks::occurrence_override(v),
         "local" => text(&v).is_ok_and(local),
         "zone" => text(&v).is_ok_and(zone),
         "color" => text(&v).is_ok_and(|s| {

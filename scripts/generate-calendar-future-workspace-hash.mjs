@@ -219,6 +219,35 @@ for (const [name, change] of [
   ['completion-ref', r => { r.taskEvents[0].completionRecordId = 'record' }],
   ['occurrence-ref', r => { r.taskEvents[0].occurrenceId = 'occurrence' }],
 ]) taskCase(name, change, false)
+function recurring(r) {
+ r.tasks[0].recurrenceSeriesId = 'series'
+ r.recurrenceSeries = [{id:'series',taskId:'task',revision:1,cadence:{kind:'weekly',interval:1,weekdays:[1,3]},basis:'fixed_schedule',anchorOn:'2026-09-09',end:{kind:'never'},timezone:'Asia/Shanghai',createdThrough:null,createdCount:1}]
+ r.occurrences = [{id:'occurrence',seriesId:'series',ordinal:1,scheduledOn:'2026-09-09',status:'pending',override:null,completedAt:null,revision:1}]
+ r.taskEvents[0].occurrenceId = 'occurrence'
+}
+taskCase('recurring-defaults', recurring)
+for (const override of [{estimateMinutes:null},{scheduledAt:stamp,estimateMinutes:20},{scheduledOn:'2026-09-10',estimateMinutes:1}]) taskCase('recurring-override', r => {recurring(r); r.occurrences[0].override=override})
+for (const cadence of [{kind:'daily',interval:2},{kind:'monthly',interval:1,dayOfMonth:31},{kind:'yearly',interval:1,month:2,dayOfMonth:31}]) taskCase(`recurring-${cadence.kind}`, r => {recurring(r);r.recurrenceSeries[0].cadence=cadence})
+for (const [name,change] of [
+ ['anchor-none',r=>{delete r.recurrenceSeries[0].anchorOn}],
+ ['anchor-both',r=>{r.recurrenceSeries[0].anchorAt=stamp}],
+ ['schedule-none',r=>{delete r.occurrences[0].scheduledOn}],
+ ['schedule-both',r=>{r.occurrences[0].scheduledAt=stamp}],
+ ['duplicate-days',r=>{r.recurrenceSeries[0].cadence.weekdays=[1,1]}],
+ ['orphan-series',r=>{r.occurrences[0].seriesId='missing'}],
+ ['orphan-task',r=>{r.recurrenceSeries[0].taskId='missing'}],
+ ['unlinked-never',r=>{r.tasks[0].recurrenceSeriesId=null}],
+ ['duplicate-id',r=>{r.occurrences[0].id='series'}],
+]) taskCase(`recurring-${name}`,r=>{recurring(r);change(r)},false)
+for (const end of [{kind:'on',date:'2026-09-10'},{kind:'after',count:2}]) taskCase('recurring-ended-unlinked',r=>{recurring(r);r.recurrenceSeries[0].end=end;r.tasks[0].recurrenceSeriesId=null})
+taskCase('recurring-timestamps',r=>{recurring(r);delete r.recurrenceSeries[0].anchorOn;r.recurrenceSeries[0].anchorAt=stamp;delete r.occurrences[0].scheduledOn;r.occurrences[0].scheduledAt=stamp;r.recurrenceSeries[0].createdThrough=stamp;r.recurrenceSeries[0].basis='after_completion';r.calendarSources=[source];r.calendarEvents=[{...event,id:'calendar-fact'}]})
+for (const [key,values] of Object.entries({revision:[0,1.5,null],basis:['unknown',null],anchorOn:['2026-02-30',null],createdThrough:['bad','2026-02-30'],createdCount:[-1,0.5,null],timezone:['invalid',null],cadence:[null,{kind:'weekly',interval:1,weekdays:[]},{kind:'weekly',interval:1,weekdays:[7]},{kind:'monthly',interval:1,dayOfMonth:32},{kind:'yearly',interval:1,month:13,dayOfMonth:1}],end:[null,{kind:'after',count:0},{kind:'on',date:'2026-02-30'}]})) for (const value of values) taskCase(`recurring-invalid-series-${key}`,r=>{recurring(r);r.recurrenceSeries[0][key]=value},false)
+for (const [key,values] of Object.entries({ordinal:[0,1.5,null],status:['unknown',null],override:[{scheduledAt:stamp,scheduledOn:'2026-09-09',estimateMinutes:null},{estimateMinutes:0},{}],completedAt:['bad']})) for (const value of values) taskCase(`recurring-invalid-occurrence-${key}`,r=>{recurring(r);r.occurrences[0][key]=value},false)
+for (const group of ['recurrenceSeries','occurrences']) for (const key of group==='recurrenceSeries'?['cadence','end','createdThrough','createdCount']:['override','completedAt']) taskCase(`recurring-missing-${key}`,r=>{recurring(r);delete r[group][0][key]},false)
+taskCase('recurring-wrong-task',r=>{recurring(r);r.tasks.push({...r.tasks[0],id:'other',recurrenceSeriesId:null});r.taskEvents.push({...r.taskEvents[0],id:'other-event',sequence:2,taskId:'other'});r.recurrenceSeries[0].taskId='other'},false)
+taskCase('recurring-event-wrong-task',r=>{recurring(r);r.tasks.push({...r.tasks[0],id:'other',recurrenceSeriesId:null});r.taskEvents.push({...r.taskEvents[0],id:'other-event',sequence:2,taskId:'other'})},false)
+taskCase('recurring-duplicate-series',r=>{recurring(r);r.recurrenceSeries.push({...r.recurrenceSeries[0]})},false)
+taskCase('recurring-global-id',r=>{recurring(r);r.occurrences[0].id='tag';r.taskEvents[0].occurrenceId='tag'},false)
 const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.json', import.meta.url)
 const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)

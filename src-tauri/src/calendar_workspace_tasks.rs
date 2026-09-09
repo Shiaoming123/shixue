@@ -1,4 +1,4 @@
-//! Ordered tasks and lifecycle chains; recurrence/activity references remain unsupported.
+//! Ordered tasks, recurrence and lifecycle chains; completion activity remains unsupported.
 use super::{
     calendar::{fields, get, text},
     Json,
@@ -15,6 +15,9 @@ pub(super) fn collection(name: &str, raw: Json) -> Result<Json, String> {
         return Err(INVALID.into());
     }
     items.into_iter().map(|v| {
+        if name == "recurrenceSeries" || name == "occurrences" {
+            return recurrence(name, v);
+        }
         if name == "tasks" {
             let task = fields(v, &[
                 ("id", "text"), ("revision", "number"), ("mode", "general|learning"),
@@ -28,7 +31,6 @@ pub(super) fn collection(name: &str, raw: Json) -> Result<Json, String> {
             if (text(get(&task, "mode")?)? == "learning") != (get(&task, "learning")? != &Json::Null) {
                 return Err(INVALID.into());
             }
-            if get(&task, "recurrenceSeriesId")? != &Json::Null { return Err("WORKSPACE_COLLECTION_UNSUPPORTED".into()); }
             let mut ids = HashSet::new();
             for item in array(get(&task, "checklist")?)? {
                 if !ids.insert(text(get(item, "id")?)?) { return Err(INVALID.into()); }
@@ -42,7 +44,7 @@ pub(super) fn collection(name: &str, raw: Json) -> Result<Json, String> {
                 ("occurredAt", "stamp"), ("fromStatus", &nullable_status), ("toStatus", &nullable_status),
                 ("reason", "~text"), ("completionRecordId", "~text"),
             ])?;
-            if get(&event, "occurrenceId").is_ok_and(|v| v != &Json::Null) || get(&event, "completionRecordId")? != &Json::Null {
+            if get(&event, "completionRecordId")? != &Json::Null {
                 return Err("WORKSPACE_COLLECTION_UNSUPPORTED".into());
             }
             Ok(event)
@@ -121,6 +123,7 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
         }
         statuses.insert(text(get(task, "id")?)?, &Json::Null);
     }
+    recurrence_references(root)?;
     for (index, event) in array(get(root, "taskEvents")?)?.iter().enumerate() {
         if get(event, "sequence")? != &Json::Number((index + 1) as f64) {
             return Err(INVALID.into());
@@ -136,6 +139,126 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
     for task in tasks {
         if statuses[text(get(task, "id")?)?] != get(task, "status")? {
             return Err(INVALID.into());
+        }
+    }
+    Ok(())
+}
+
+fn defaults(mut v: Json, keys: &[&str]) -> Result<Json, String> {
+    let Json::Object(ref mut fields) = v else {
+        return Err(INVALID.into());
+    };
+    for key in keys {
+        if !fields.iter().any(|(k, _)| k == key) {
+            fields.push((key.to_string(), Json::Null));
+        }
+    }
+    Ok(v)
+}
+fn exclusive(v: &Json, a: &str, b: &str, required: bool) -> Result<(), String> {
+    let a = get(v, a)? != &Json::Null;
+    let b = get(v, b)? != &Json::Null;
+    if (a && b) || (required && !a && !b) {
+        return Err(INVALID.into());
+    }
+    Ok(())
+}
+pub(super) fn occurrence_override(v: Json) -> Result<Json, String> {
+    let v = fields(
+        defaults(v, &["scheduledAt", "scheduledOn"])?,
+        &[
+            ("scheduledAt", "~stamp"),
+            ("scheduledOn", "~date"),
+            ("estimateMinutes", "~number"),
+        ],
+    )?;
+    exclusive(&v, "scheduledAt", "scheduledOn", false)?;
+    Ok(v)
+}
+fn recurrence(name: &str, v: Json) -> Result<Json, String> {
+    let (schema, a, b): (&[(&str, &str)], &str, &str) = if name == "recurrenceSeries" {
+        (
+            &[
+                ("id", "text"),
+                ("taskId", "text"),
+                ("revision", "number"),
+                ("cadence", "cadence"),
+                ("basis", "fixed_schedule|after_completion"),
+                ("anchorAt", "~stamp"),
+                ("anchorOn", "~date"),
+                ("end", "end"),
+                ("timezone", "zone"),
+                ("createdThrough", "~schedule-value"),
+                ("createdCount", "nonnegative"),
+            ],
+            "anchorAt",
+            "anchorOn",
+        )
+    } else {
+        (
+            &[
+                ("id", "text"),
+                ("seriesId", "text"),
+                ("ordinal", "number"),
+                ("scheduledAt", "~stamp"),
+                ("scheduledOn", "~date"),
+                ("status", "pending|completed|skipped|cancelled"),
+                ("override", "~occurrence-override"),
+                ("completedAt", "~stamp"),
+                ("revision", "number"),
+            ],
+            "scheduledAt",
+            "scheduledOn",
+        )
+    };
+    let value = fields(defaults(v, &[a, b])?, schema)?;
+    exclusive(&value, a, b, true)?;
+    Ok(value)
+}
+fn recurrence_references(root: &Json) -> Result<(), String> {
+    let map = |key| -> Result<HashMap<&str, &Json>, String> {
+        array(get(root, key)?)?
+            .iter()
+            .map(|v| Ok((text(get(v, "id")?)?, v)))
+            .collect()
+    };
+    let tasks = map("tasks")?;
+    let series = map("recurrenceSeries")?;
+    let occurrences = map("occurrences")?;
+    for entry in series.values() {
+        let task = tasks.get(text(get(entry, "taskId")?)?).ok_or(INVALID)?;
+        if text(get(get(entry, "end")?, "kind")?)? == "never"
+            && get(task, "recurrenceSeriesId")? != get(entry, "id")?
+        {
+            return Err(INVALID.into());
+        }
+    }
+    for task in tasks.values() {
+        if get(task, "recurrenceSeriesId")? != &Json::Null {
+            let entry = series
+                .get(text(get(task, "recurrenceSeriesId")?)?)
+                .ok_or(INVALID)?;
+            if get(entry, "taskId")? != get(task, "id")? {
+                return Err(INVALID.into());
+            }
+        }
+    }
+    for occurrence in occurrences.values() {
+        if !series.contains_key(text(get(occurrence, "seriesId")?)?) {
+            return Err(INVALID.into());
+        }
+    }
+    for event in array(get(root, "taskEvents")?)? {
+        if let Ok(id) = get(event, "occurrenceId") {
+            if id != &Json::Null {
+                let occurrence = occurrences.get(text(id)?).ok_or(INVALID)?;
+                let entry = series
+                    .get(text(get(occurrence, "seriesId")?)?)
+                    .ok_or(INVALID)?;
+                if get(entry, "taskId")? != get(event, "taskId")? {
+                    return Err(INVALID.into());
+                }
+            }
         }
     }
     Ok(())

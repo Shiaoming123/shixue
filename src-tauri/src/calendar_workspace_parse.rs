@@ -1,4 +1,4 @@
-//! Partial workspace parser: calendar, list organization, tasks and task event chains.
+//! Partial workspace parser: calendar, list organization, tasks, recurrence and event chains.
 #[path = "calendar_workspace_calendar.rs"]
 mod calendar;
 #[path = "calendar_workspace_lists.rs"]
@@ -150,7 +150,7 @@ const ROOT: &[&str] = &[
     "eventOutcomes",
 ];
 
-/// Deliberately incomplete. Recurrence and other dependent collections remain fail-closed.
+/// Deliberately incomplete. Completion activity and other dependent collections remain fail-closed.
 pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     let Json::Object(mut fields) = parse(raw)? else {
         return Err("WORKSPACE_INVALID".into());
@@ -186,7 +186,10 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
             normalized.push((key.to_string(), value));
             continue;
         }
-        if matches!(*key, "tasks" | "taskEvents") {
+        if matches!(
+            *key,
+            "tasks" | "taskEvents" | "recurrenceSeries" | "occurrences"
+        ) {
             value = tasks::collection(key, value)?;
             normalized.push((key.to_string(), value));
             continue;
