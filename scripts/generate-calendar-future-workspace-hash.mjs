@@ -20,3 +20,17 @@ const bytes = `${JSON.stringify(cases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(output, 'utf8').replaceAll('\r\n', '\n'), bytes)
 else writeFileSync(output, bytes)
 console.log('Future workspace parsed JSON hash fixtures verified')
+
+// Empty collections are the only root-normalizer subset currently implemented natively.
+const rootCases = []
+for (const revision of [1, 1e20, 1e21]) {
+  const raw = { version: 4, revision, updatedAt: '2026-09-09T00:00:00Z' }
+  for (const [key, value] of Object.entries(seed)) if (Array.isArray(value)) raw[key] = []
+  const parsedJson = JSON.stringify(parseWorkspaceStateV4(structuredClone(raw)))
+  rootCases.push({ name: `empty-${revision}`, rawJson: JSON.stringify(raw), parsedJson,
+    hash: `sha256:${createHash('sha256').update(parsedJson).digest('hex')}` })
+}
+const rootOutput = new URL('../tests/fixtures/calendar-future-workspace-root.json', import.meta.url)
+const rootBytes = `${JSON.stringify(rootCases, null, 2)}\n`
+if (process.argv.includes('--check')) assert.equal(readFileSync(rootOutput, 'utf8').replaceAll('\r\n', '\n'), rootBytes)
+else writeFileSync(rootOutput, rootBytes)

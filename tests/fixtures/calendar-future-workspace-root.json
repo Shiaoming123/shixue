@@ -1,0 +1,20 @@
+[
+  {
+    "name": "empty-1",
+    "rawJson": "{\"version\":4,\"revision\":1,\"updatedAt\":\"2026-09-09T00:00:00Z\",\"listGroups\":[],\"lists\":[],\"sections\":[],\"tags\":[],\"tasks\":[],\"recurrenceSeries\":[],\"occurrences\":[],\"reminderRules\":[],\"reminderDeliveries\":[],\"studySessions\":[],\"taskEvents\":[],\"completionRecords\":[],\"reviewTaskLinks\":[],\"commandReceipts\":[],\"calendarSources\":[],\"calendarEvents\":[],\"calendarEventLinks\":[],\"eventOutcomes\":[]}",
+    "parsedJson": "{\"version\":4,\"revision\":1,\"listGroups\":[],\"lists\":[],\"sections\":[],\"tags\":[],\"tasks\":[],\"recurrenceSeries\":[],\"occurrences\":[],\"reminderRules\":[],\"reminderDeliveries\":[],\"studySessions\":[],\"taskEvents\":[],\"completionRecords\":[],\"reviewTaskLinks\":[],\"commandReceipts\":[],\"updatedAt\":\"2026-09-09T00:00:00Z\",\"calendarSources\":[],\"calendarEvents\":[],\"calendarEventLinks\":[],\"eventOutcomes\":[]}",
+    "hash": "sha256:c91d247f00ed6ab27e9527b17d10a8952156258e033aa8f40d77a1559b0996c8"
+  },
+  {
+    "name": "empty-100000000000000000000",
+    "rawJson": "{\"version\":4,\"revision\":100000000000000000000,\"updatedAt\":\"2026-09-09T00:00:00Z\",\"listGroups\":[],\"lists\":[],\"sections\":[],\"tags\":[],\"tasks\":[],\"recurrenceSeries\":[],\"occurrences\":[],\"reminderRules\":[],\"reminderDeliveries\":[],\"studySessions\":[],\"taskEvents\":[],\"completionRecords\":[],\"reviewTaskLinks\":[],\"commandReceipts\":[],\"calendarSources\":[],\"calendarEvents\":[],\"calendarEventLinks\":[],\"eventOutcomes\":[]}",
+    "parsedJson": "{\"version\":4,\"revision\":100000000000000000000,\"listGroups\":[],\"lists\":[],\"sections\":[],\"tags\":[],\"tasks\":[],\"recurrenceSeries\":[],\"occurrences\":[],\"reminderRules\":[],\"reminderDeliveries\":[],\"studySessions\":[],\"taskEvents\":[],\"completionRecords\":[],\"reviewTaskLinks\":[],\"commandReceipts\":[],\"updatedAt\":\"2026-09-09T00:00:00Z\",\"calendarSources\":[],\"calendarEvents\":[],\"calendarEventLinks\":[],\"eventOutcomes\":[]}",
+    "hash": "sha256:dd19e7263411909d07d7a58e186e2bc94fb6463293f4282feba81e6ff40a75ba"
+  },
+  {
+    "name": "empty-1e+21",
+    "rawJson": "{\"version\":4,\"revision\":1e+21,\"updatedAt\":\"2026-09-09T00:00:00Z\",\"listGroups\":[],\"lists\":[],\"sections\":[],\"tags\":[],\"tasks\":[],\"recurrenceSeries\":[],\"occurrences\":[],\"reminderRules\":[],\"reminderDeliveries\":[],\"studySessions\":[],\"taskEvents\":[],\"completionRecords\":[],\"reviewTaskLinks\":[],\"commandReceipts\":[],\"calendarSources\":[],\"calendarEvents\":[],\"calendarEventLinks\":[],\"eventOutcomes\":[]}",
+    "parsedJson": "{\"version\":4,\"revision\":1e+21,\"listGroups\":[],\"lists\":[],\"sections\":[],\"tags\":[],\"tasks\":[],\"recurrenceSeries\":[],\"occurrences\":[],\"reminderRules\":[],\"reminderDeliveries\":[],\"studySessions\":[],\"taskEvents\":[],\"completionRecords\":[],\"reviewTaskLinks\":[],\"commandReceipts\":[],\"updatedAt\":\"2026-09-09T00:00:00Z\",\"calendarSources\":[],\"calendarEvents\":[],\"calendarEventLinks\":[],\"eventOutcomes\":[]}",
+    "hash": "sha256:682ce40b90733d072b65ef87fcc00cb484e45dd6d16b377ee9c02e5380cffda7"
+  }
+]

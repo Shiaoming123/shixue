@@ -85,6 +85,81 @@ pub(super) async fn workspace_payload(pool: &SqlitePool) -> Result<Value, String
         None => Ok(Value::Null),
     }
 }
+
+#[cfg(feature = "calendar-writes")]
+pub(super) const MAX_WORKSPACE_BYTES: usize = 16 * 1024 * 1024;
+
+#[cfg(feature = "calendar-writes")]
+#[allow(dead_code)] // Future trusted parser input only; existing readers keep their contract.
+pub(super) async fn workspace_payload_v4_bytes(
+    pool: &SqlitePool,
+    expected: Option<&[u8]>,
+) -> Result<Vec<u8>, String> {
+    // One statement bounds the transfer and checks the row version without parsing JSON.
+    let payload: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT CAST(payload AS BLOB) FROM study_state WHERE id=1 AND version=4 AND typeof(payload)='text' AND length(CAST(payload AS BLOB)) BETWEEN 1 AND ?",
+    ).bind(MAX_WORKSPACE_BYTES as i64).fetch_optional(pool).await.map_err(|_| "WORKSPACE_READ_FAILED")?;
+    let payload = payload.ok_or("WORKSPACE_ROW_INVALID")?;
+    if expected.is_some_and(|value| value != payload) {
+        return Err("WORKSPACE_STALE".into());
+    }
+    Ok(payload)
+}
+
+#[cfg(all(test, feature = "calendar-writes"))]
+#[test]
+fn raw_workspace_bytes_preserve_order_and_reject_stale_or_invalid_rows() {
+    tauri::async_runtime::block_on(async {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE study_state(id INTEGER PRIMARY KEY, version INTEGER, payload TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(workspace_payload_v4_bytes(&pool, None).await.is_err());
+        let raw = r#"{ "version":4,"z":1,"a":2,"a":3 }"#;
+        sqlx::query("INSERT INTO study_state VALUES(1,4,?)")
+            .bind(raw)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            workspace_payload_v4_bytes(&pool, None).await.unwrap(),
+            raw.as_bytes()
+        );
+        assert_eq!(
+            workspace_payload_v4_bytes(&pool, Some(raw.as_bytes()))
+                .await
+                .unwrap(),
+            raw.as_bytes()
+        );
+        sqlx::query("UPDATE study_state SET payload='{}'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            workspace_payload_v4_bytes(&pool, Some(raw.as_bytes()))
+                .await
+                .unwrap_err(),
+            "WORKSPACE_STALE"
+        );
+        sqlx::query("UPDATE study_state SET version=3")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(workspace_payload_v4_bytes(&pool, None).await.is_err());
+        sqlx::query("UPDATE study_state SET version=4,payload=zeroblob(16777217)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(workspace_payload_v4_bytes(&pool, None).await.is_err());
+    });
+}
 fn cursor_is_backed(checkpoint: &Checkpoint, workspace: &Value) -> bool {
     checkpoint
         .last_identity

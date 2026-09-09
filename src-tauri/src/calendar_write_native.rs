@@ -2067,3 +2067,6 @@ mod tests {
         });
     }
 }
+#[allow(dead_code)] // Unwired parser prerequisite; not local attachment evidence.
+#[path = "calendar_workspace_parse.rs"]
+mod workspace_parse;
