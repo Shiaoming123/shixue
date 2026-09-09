@@ -28,6 +28,12 @@ pub(super) async fn read(
         return Err("WRITE_IDENTITY_INVALID".into());
     }
     let raw_workspace = sync_store::workspace_payload_v4_bytes(pool, None).await?;
+    // TS future knownFields rejects this field even though the general parser drops it.
+    if let workspace_parse::Json::Object(fields) = workspace_parse::parse(&raw_workspace)? {
+        if fields.iter().any(|(key, _)| key == "previewReceipts") {
+            return Err("WRITE_UNSUPPORTED".into());
+        }
+    }
     let normalized_workspace = workspace_parse::normalize_workspace_root(&raw_workspace)?;
     let workspace_hash = format!("sha256:{:x}", Sha256::digest(&normalized_workspace));
     // Reparse only after full ordered normalization; never reserialize for the hash.
@@ -115,6 +121,24 @@ mod tests {
                     .execute(&pool)
                     .await
                     .unwrap();
+                if case["accepted"] == false {
+                    assert!(workspace_parse::normalize_workspace_root(raw.as_bytes()).is_ok());
+                    assert_eq!(
+                        read(
+                            &pool,
+                            case["connection"].as_str().unwrap(),
+                            case["calendar"].as_str().unwrap(),
+                            case["parent"].as_str().unwrap()
+                        )
+                        .await
+                        .err()
+                        .as_deref(),
+                        Some("WRITE_UNSUPPORTED"),
+                        "{}",
+                        case["name"]
+                    );
+                    continue;
+                }
                 let evidence = read(
                     &pool,
                     case["connection"].as_str().unwrap(),

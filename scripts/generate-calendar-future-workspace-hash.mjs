@@ -515,6 +515,15 @@ for (const mode of ['clean', 'link', 'outcome', 'disabled-rule', 'cancelled-deli
  const result = await createGoogleFutureReader(readerTransport, async () => raw)(identity.connection, identity.calendar, { eventId: identity.parent, etag: 'v1' }, '2026-09-09')
  localCases.push({ name: mode, ...identity, sourceId, eventId, rawJson: JSON.stringify(raw), parsedJson: JSON.stringify(parseWorkspaceStateV4(structuredClone(raw))), attachedFacts: result.attachedFacts, hash: result.workspaceHash })
 }
+for (const nonempty of [false, true]) {
+ const raw = JSON.parse(localCases[0].rawJson)
+ raw.previewReceipts = nonempty ? [{ id: 'legacy-preview', requestFingerprint: 'old', expectedWorkspaceRevision: 1, commandType: 'old', createdAt: stamp, expiresAt: stamp }] : []
+ // General parsing deliberately supports this legacy field; future evidence does not.
+ const parsed = parseWorkspaceStateV4(structuredClone(raw))
+ assert.equal(Object.hasOwn(parsed, 'previewReceipts'), false)
+ await assert.rejects(() => createGoogleFutureReader(readerTransport, async () => raw)(identity.connection, identity.calendar, { eventId: identity.parent, etag: 'v1' }, '2026-09-09'), /WRITE_UNSUPPORTED/)
+ localCases.push({ name: nonempty ? 'preview-receipts-nonempty' : 'preview-receipts-empty', ...identity, rawJson: JSON.stringify(raw), accepted: false })
+}
 const localOutput = new URL('../tests/fixtures/calendar-future-local-evidence.json', import.meta.url)
 const localBytes = `${JSON.stringify(localCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(localOutput, 'utf8').replaceAll('\r\n', '\n'), localBytes)
