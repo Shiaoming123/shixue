@@ -5,6 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 #[path = "calendar_workspace_hash.rs"]
 mod workspace_hash;
+// Internal reader stays unwired until workspace and recurrence parity are proved.
+#[allow(dead_code)]
+#[path = "calendar_write_future_read.rs"]
+mod future_read;
 #[path = "calendar_write_local.rs"]
 pub(super) mod write_local;
 const WRITE_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
@@ -658,6 +662,9 @@ struct HttpReply {
     body: Value,
 }
 trait Http {
+    fn check_future_session(&self) -> Result<(), String> {
+        Err("WRITE_UNSUPPORTED".into())
+    }
     async fn call(
         &self,
         method: &str,
@@ -677,13 +684,31 @@ fn http_scope_allowed(method: &str, path: &str, scopes: &[String]) -> bool {
         scopes.iter().any(|s| s == WRITE_SCOPE)
     } else if path.starts_with("users/me/calendarList/") {
         scopes.iter().any(|s| s == LIST_SCOPE)
-    } else if path.starts_with("calendars/") && path.contains("/events/") {
+    } else if path.starts_with("calendars/")
+        && (path.contains("/events/")
+            || path
+                .split('?')
+                .next()
+                .is_some_and(|p| p.ends_with("/events")))
+    {
         scopes.iter().any(|s| s == EVENT_SCOPE || s == WRITE_SCOPE)
     } else {
         false
     }
 }
 impl Http for GoogleHttp<'_> {
+    fn check_future_session(&self) -> Result<(), String> {
+        let session = load(self.owner)?.ok_or("DISCONNECTED")?;
+        if account(self.config)? != self.owner
+            || generation(self.owner, false)? != self.epoch
+            || session.grant_epoch.is_none()
+            || !session.scopes.iter().any(|s| s == WRITE_SCOPE)
+            || !session.scopes.iter().any(|s| s == LIST_SCOPE)
+        {
+            return Err("WRITE_SCOPE_REQUIRED".into());
+        }
+        Ok(())
+    }
     async fn call(
         &self,
         method: &str,

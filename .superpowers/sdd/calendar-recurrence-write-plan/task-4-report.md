@@ -136,3 +136,21 @@ Evidence:
 - Evidence correction: 1e21 already passed with this installed serde version. 1e20 reproduced the real defect: unchanged TS record rejected with WRITE_PREVIEW_CHANGED. RED log task-4b1a-hash-red.log records that failure. GREEN verifies both fixtures persist/load unchanged through the keyring anchor and changed content still fails the frozen hash.
 - Focused native future tests 4/4; generator --check passed. rust:verify passed fmt, all-target/all-feature clippy, 62 Rust tests, all-features and no-default-features checks (task-4b1a-hash-rust-verify.log). The Windows linker still emits linker stdout warnings when creating import libraries; these are present in focused/full Rust logs and were not hidden or treated as absent.
 - Doctor passed with the existing unavailable Windows filesystem probe. Full Node 967/967, typecheck, desktop/Web builds, docs and diff checks passed; existing build chunk-size advisories remain. No protected research changes. Native future prepare/sender and 4B2 local projection remain pending.
+
+## 4B1b1a checkpoint: native remote evidence reader only
+
+2026-09-09; base `2826650`. Coordinating parent narrowed this slice after source inspection: native has no WorkspaceStateV4 parser equivalent to the TS parser. 4B1b prepare remains incomplete.
+
+- Added an internal, unwired GET-only remote reader: exact calendar access, parent ID/ETag, complete unexpanded list with deleted exceptions, original-start instances pagination, parent reread and calendar access reread. Empty/malformed pages, invalid recurrence linkage, duplicate IDs/tokens, absent or divergent parent, exceptional series, nonunique/wrong/cancelled pivot, non-200 responses and 100-page/25,000-item bounds fail closed.
+- Future session hook defaults to rejection. Google implementation checks configured owner, current generation, grant presence, write and calendar-list scopes; reader checks before/after each request and before returning. Existing native transport still checks generation around authorization/network reads. Event-list GET scope routing now supports the exact events collection path with query parameters.
+- Result is explicitly RemoteEvidence, not a complete FutureSnapshot. It certifies observed read consistency only; Google pagination has no transactional snapshot guarantee. Prepare/confirmation/run/reconcile/local projection remain disabled for future, with existing disabled-sender tests passing. No TS/UI/real network send/Stage 7/protected research changes.
+
+Evidence:
+- RED: new remote success check failed WRITE_UNSUPPORTED (1/2), log task-4b1b1a-red.log. GREEN: three reader tests cover success, pagination/malformed/identity/access/ETag/generation boundaries and both resource ceilings; every fake request asserts GET and absent mutation body/If-Match/sendUpdates.
+- Doctor passed (Windows filesystem probe unavailable). rust:verify passed fmt, all-target/all-feature clippy, 65 tests, all-features and no-default-features checks; task-4b1b1a-rust-verify.log. Existing Windows linker import-library stdout warnings remain visible.
+- No TS/generator changes, so Node/typecheck/build were not rerun for this Rust-only slice. Documentation and diff checks passed.
+
+Pending:
+- 4B1b1b must implement trusted workspace parsing/unknown-field/reference validation and TS reader workspaceHash parity. Current TS reader hashes JSON.stringify(parseWorkspaceStateV4(raw)); native canonical fingerprint is a different contract. A shallow native scan or hashing raw SQLite JSON would not prove parity. No workspace snapshot/hash fixture was added here.
+- 4B1b2 must normalize the approved conservative recurrence/time/status subset, reject moved/status-divergent and first pivots, establish lossless recurrence boundaries, generate byte/hash-compatible immutable plans, anchor full previews and enable explicit native confirmation. This reader deliberately does not perform those semantic checks.
+- 4B1c sender/recovery and 4B2 atomic projection remain pending. Accurate token usage unavailable; no exact count claimed. Next action: review this remote-only checkpoint, then settle the cross-language trusted workspace contract before enabling prepare.
