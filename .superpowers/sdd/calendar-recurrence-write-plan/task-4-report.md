@@ -86,3 +86,11 @@ Evidence:
 - Full npm test 951/951: task-4a2b1-test.log. Desktop/Web builds passed with existing chunk-size advisory: task-4a2b1-build.log and task-4a2b1-build-web.log.
 - Remaining concerns: fake memory-store/JSON recovery is not native durable persistence evidence. No remote transactional snapshot guarantee; Task 4A2a limits still apply. Compensation and local atomic projection/receipt are unimplemented and must not be inferred from this successful fake two-step result.
 - Token usage reporting unavailable; no exact count claimed. Next action: implement 4A2b2 compensation against persisted rejected successor and per-step proof interfaces.
+
+## 4A2b1 review correction: complete semantic proof and rejected-step restart
+
+- GET proof now compares the union of actual and frozen semantic keys; added attendees, attachments, description, unsupported eventType or tentative status cannot produce a proved parent/successor. Only explicitly enumerated provider metadata (etag, created, updated, sequence, kind, htmlLink, iCalUID) is excluded; absent status/eventType normalize to confirmed/default. Nested values remain exact.
+- Recovery from a persisted deterministic parent rejection now returns terminal conflict with outcomeUnknown false and WRITE_REJECTED, matching the non-crash path. Only a rejected successor reached after parent proof retains COMPENSATION_REQUIRED and the unresolved-root lock. No compensation mutation was added.
+- RED: three regression tests failed (7/10); parent and successor accepted added attendees, and parent rejection restart incorrectly returned failed. GREEN: focused future/outbox/google tests 42/42, including both rejection crash boundaries, both semantic proof regressions and allowed metadata/defaults. Existing lost-response tests continue proving GET-only recovery and no repeated mutation/notification requests.
+- Typecheck passed after using the existing target-compatible hasOwnProperty API. Full npm test 957/957 (task-4a2b1-review-test.log); desktop/Web builds passed with existing chunk advisory (task-4a2b1-review-build.log and task-4a2b1-review-build-web.log). Docs/diff checks passed.
+- Native persistence/projection, UI, real sending, product write switch and protected research remain unchanged. 4A2b2 compensation and Task 4B remain pending.

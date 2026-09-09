@@ -22,7 +22,7 @@ export async function processFuture(operation: WriteOperation, reconcile: boolea
   for (const step of ['parent', 'successor'] as const) {
     let state = operation.future![step]
     if (state.state === 'proved') continue
-    if (state.state === 'rejected' || state.state === 'conflict') return finish({ state: 'failed', outcomeUnknown: true, error: 'COMPENSATION_REQUIRED' })
+    if (state.state === 'rejected' || state.state === 'conflict') return finish({ state: step === 'parent' ? 'conflict' : 'failed', outcomeUnknown: step === 'successor', error: step === 'successor' ? 'COMPENSATION_REQUIRED' : 'WRITE_REJECTED' })
     if (state.state === 'pending' && step === 'parent') {
       try {
         active(epoch)

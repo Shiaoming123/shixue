@@ -24,10 +24,12 @@ export function createGoogleFutureStep(transport: GoogleWriteTransport): NonNull
     try {
       const value = record(response.body), marker = record(record(value.extendedProperties).private)
       if (value.id !== step.eventId || typeof value.etag !== 'string' || !value.etag || /[\r\n]/.test(value.etag) || marker.meowOperationId !== preview.operationId || marker.meowOperationHash !== plan.markerHash || value.recurringEventId !== undefined || value.status === 'cancelled') return { kind: 'unknown' }
-      const expected = name === 'parent' ? { ...plan.originalParent, ...step.body } : step.body
-      for (const [key, wanted] of Object.entries(expected)) {
-        if (['etag', 'created', 'updated', 'sequence'].includes(key)) continue
-        if (JSON.stringify(value[key]) !== JSON.stringify(wanted)) return { kind: 'unknown' }
+      const expected: Record<string, unknown> = { status: 'confirmed', eventType: 'default', ...(name === 'parent' ? { ...plan.originalParent, ...step.body } : step.body) }
+      const actual: Record<string, unknown> = { status: 'confirmed', eventType: 'default', ...value }
+      // Only provider-generated transport metadata and these two absent defaults are ignored.
+      for (const key of new Set([...Object.keys(expected), ...Object.keys(actual)])) {
+        if (['etag', 'created', 'updated', 'sequence', 'kind', 'htmlLink', 'iCalUID'].includes(key)) continue
+        if (!Object.prototype.hasOwnProperty.call(expected, key) || !Object.prototype.hasOwnProperty.call(actual, key) || JSON.stringify(actual[key]) !== JSON.stringify(expected[key])) return { kind: 'unknown' }
       }
       return { kind: 'proved', proof: structuredClone(value) }
     } catch { return { kind: 'unknown' } }

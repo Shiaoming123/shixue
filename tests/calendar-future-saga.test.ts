@@ -6,12 +6,15 @@ import { createGoogleCalendarWriter, type GoogleWriteRequest } from '../src/cale
 const parent = { id: 'parent', etag: 'p1', summary: 'Before', start: { date: '2026-09-01' }, end: { date: '2026-09-02' }, recurrence: ['RRULE:FREQ=DAILY;COUNT=10'] }
 const pivot = { id: 'pivot', etag: 'i1', recurringEventId: 'parent', originalStartTime: { date: '2026-09-04' }, start: { date: '2026-09-04' }, end: { date: '2026-09-05' } }
 const intent = { kind: 'recurring.future' as const, parent: { eventId: 'parent', etag: 'p1' }, originalStart: '2026-09-04', fields: { title: 'After' } }
-async function setup(loss = '') {
+async function setup(loss = '', reject = '', crashAfterRejection = false) {
   const rows = new Map<string, WriteOperation>(), events = new Map<string, Record<string, unknown>>([['parent', structuredClone(parent)]]), mutations: GoogleWriteRequest[] = []
-  let offline = false, workspaceHash = 'workspace1'
+  let offline = false, workspaceHash = 'workspace1', now = 0
   const store: WriteOutboxStore = {
     async insert(op) { rows.set(op.preview.operationId, structuredClone(op)); return true }, async get(id) { return structuredClone(rows.get(id) ?? null) }, async list() { return [...rows.values()] },
-    async cas(id, version, next) { if (rows.get(id)?.version !== version) return false; rows.set(id, structuredClone(next)); return true },
+    async cas(id, version, next) {
+      if (crashAfterRejection && next.leaseId === null) throw Error('crash after persisted rejection')
+      if (rows.get(id)?.version !== version) return false; rows.set(id, structuredClone(next)); return true
+    },
     async claim(id, version, leaseId, now, leaseUntil, keys) {
       const op = rows.get(id)!
       if (op.version !== version || op.leaseUntil > now || [...rows.values()].some(other => other !== op && (other.state === 'applying' || other.outcomeUnknown) && other.preview.lockKeys.some(key => keys.includes(key)))) return null
@@ -23,14 +26,15 @@ async function setup(loss = '') {
     const op = [...rows.values()].find(row => row.state === 'applying')!, step = req.method === 'POST' ? 'successor' : 'parent'
     assert.equal(op.future![step].state, 'applying'); assert.equal(op.future![step].outcomeUnknown, true)
     mutations.push(structuredClone(req)); const id = req.method === 'POST' ? String(req.body!.id) : 'parent'
+    if (reject === step) return { status: 403 }
     const body = { ...events.get(id), ...req.body, id, etag: `v${mutations.length}` }; events.set(id, body)
     if (loss === step) { offline = true; throw Error('lost response') }
     return { status: 200, body }
   } })
   writer.readFuture = async () => structuredClone({ parent, pivot, exceptions: [], complete: true, attachedFacts: [], workspaceHash })
-  const restart = () => { const core = new CalendarWriteOutbox(store, writer, async () => { throw Error('projection belongs to 4B') }); core.enabled = true; return core }
+  const restart = () => { const core = new CalendarWriteOutbox(store, writer, async () => { throw Error('projection belongs to 4B') }, () => now); core.enabled = true; return core }
   const core = restart(), preview = await core.prepare('c', 'cal', intent, 'all'); await core.enqueue(preview.operationId, preview.hash, true)
-  return { core, preview, rows, events, mutations, restart, recover: () => { offline = false }, drift: () => { workspaceHash = 'changed' } }
+  return { core, preview, rows, events, mutations, restart, recover: () => { offline = false; crashAfterRejection = false; now += 30_001 }, drift: () => { workspaceHash = 'changed' } }
 }
 test('future split proves both steps with fixed ID and one notification request each', async () => {
   const f = await setup(), op = await f.core.run(f.preview.operationId)
@@ -64,4 +68,32 @@ test('GET content without the exact root marker never permits successor creation
   f.events.get('parent')!.extendedProperties = { private: { meowOperationId: f.preview.operationId, meowOperationHash: 'other' } }
   const result = await f.restart().reconcile(f.preview.operationId)
   assert.equal(result.outcomeUnknown, true); assert.equal(result.result, null); assert.equal(f.mutations.length, 1)
+})
+for (const step of ['parent', 'successor'] as const) test(`${step} proof refuses added semantic facts or status absent from the plan`, async () => {
+  for (const patch of [{ attendees: [] }, { attachments: [{ fileUrl: 'https://example.test/file' }] }, { status: 'tentative' }, { eventType: 'outOfOffice' }, { description: 'third-party edit' }]) {
+    const f = await setup(step); await f.core.run(f.preview.operationId); f.recover()
+    const id = step === 'parent' ? 'parent' : String(f.mutations[1]!.body!.id)
+    Object.assign(f.events.get(id)!, patch)
+    const op = await f.restart().reconcile(f.preview.operationId)
+    assert.equal(op.result, null, JSON.stringify(patch)); assert.equal(op.outcomeUnknown, true)
+    assert.equal(f.mutations.length, step === 'parent' ? 1 : 2)
+  }
+})
+for (const step of ['parent', 'successor'] as const) test(`${step} persisted rejection survives a crash before root finalization`, async () => {
+  const f = await setup('', step, true)
+  await assert.rejects(f.core.run(f.preview.operationId), /crash after persisted rejection/)
+  const persisted = JSON.parse(JSON.stringify(f.rows.get(f.preview.operationId)!)) as WriteOperation
+  assert.equal(persisted.future![step].state, 'rejected'); assert.equal(persisted.future![step].outcomeUnknown, false)
+  f.rows.set(f.preview.operationId, persisted); f.recover()
+  const op = await f.restart().reconcile(f.preview.operationId)
+  assert.equal(op.result, null); assert.equal(op.state, step === 'parent' ? 'conflict' : 'failed')
+  assert.equal(op.outcomeUnknown, step === 'successor'); assert.equal(op.error, step === 'parent' ? 'WRITE_REJECTED' : 'COMPENSATION_REQUIRED')
+  assert.equal(f.mutations.length, step === 'parent' ? 1 : 2)
+})
+for (const step of ['parent', 'successor'] as const) test(`${step} proof accepts only enumerated provider metadata and equivalent defaults`, async () => {
+  const f = await setup(step); await f.core.run(f.preview.operationId); f.recover()
+  const id = step === 'parent' ? 'parent' : String(f.mutations[1]!.body!.id)
+  Object.assign(f.events.get(id)!, { status: 'confirmed', eventType: 'default', created: '2026-09-09T00:00:00Z', updated: '2026-09-09T00:01:00Z', sequence: 2, kind: 'calendar#event', htmlLink: 'https://example.test/event', iCalUID: 'generated' })
+  assert.equal((await f.restart().reconcile(f.preview.operationId)).state, 'applied')
+  assert.equal(f.mutations.length, 2)
 })
