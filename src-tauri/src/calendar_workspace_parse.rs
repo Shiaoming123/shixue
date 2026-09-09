@@ -194,6 +194,7 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
                 | "occurrences"
                 | "studySessions"
                 | "completionRecords"
+                | "reviewTaskLinks"
         ) {
             value = tasks::collection(key, value)?;
             normalized.push((key.to_string(), value));

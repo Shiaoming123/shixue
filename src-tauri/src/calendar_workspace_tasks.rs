@@ -15,6 +15,18 @@ pub(super) fn collection(name: &str, raw: Json) -> Result<Json, String> {
         return Err(INVALID.into());
     }
     items.into_iter().map(|v| {
+        if name == "reviewTaskLinks" {
+            let link = fields(defaults(v, &["completion"])?, &[
+                ("id", "text"), ("completionRecordId", "text"), ("reviewTaskId", "text"),
+                ("occurrenceId", "~text"), ("reviewStage", "nonnegative"), ("dueOn", "date"),
+                ("completedAt", "~stamp"), ("completion", "~task-review-completion"),
+                ("createdAt", "stamp"), ("updatedAt", "stamp"),
+            ])?;
+            if matches!(get(&link, "reviewStage")?, Json::Number(n) if *n > 3.0) {
+                return Err(INVALID.into());
+            }
+            return Ok(link);
+        }
         if name == "completionRecords" {
             let mut v = v;
             if let Json::Object(ref mut props) = v {
@@ -83,6 +95,7 @@ pub(super) fn collection(name: &str, raw: Json) -> Result<Json, String> {
 
 pub(super) fn nested(v: Json, spec: &str) -> Result<Json, String> {
     let schema: &[(&str, &str)] = match spec {
+        "task-review-completion" => &[("result", "clear|fuzzy|relearn"), ("reviewedOn", "date")],
         "task-schedule" => &[
             ("startAt", "~stamp"),
             ("startOn", "~date"),
@@ -335,9 +348,58 @@ fn completion_references(root: &Json) -> Result<(), String> {
                 return Err(INVALID.into());
             }
         }
-        // A live scheduled review requires a matching link; links remain unsupported.
-        if get(record, "deletedAt")? == &Json::Null && get(record, "nextReviewOn")? != &Json::Null {
-            return Err("WORKSPACE_COLLECTION_UNSUPPORTED".into());
+    }
+    let occurrences = map("occurrences")?;
+    let series = map("recurrenceSeries")?;
+    let mut targets = HashSet::new();
+    let mut pending = HashSet::new();
+    for link in array(get(root, "reviewTaskLinks")?)? {
+        let record = records
+            .get(text(get(link, "completionRecordId")?)?)
+            .ok_or(INVALID)?;
+        let task = tasks
+            .get(text(get(link, "reviewTaskId")?)?)
+            .ok_or(INVALID)?;
+        if get(task, "id")? == get(record, "taskId")? || text(get(task, "mode")?)? != "learning" {
+            return Err(INVALID.into());
+        }
+        let is_pending = get(link, "completedAt")? == &Json::Null;
+        let occurrence_id = get(link, "occurrenceId")?;
+        let target = if occurrence_id == &Json::Null {
+            get(link, "reviewTaskId")?
+        } else {
+            let occurrence = occurrences.get(text(occurrence_id)?).ok_or(INVALID)?;
+            let entry = series
+                .get(text(get(occurrence, "seriesId")?)?)
+                .ok_or(INVALID)?;
+            if get(entry, "taskId")? != get(link, "reviewTaskId")?
+                || text(get(occurrence, "status")?)?
+                    != if is_pending { "pending" } else { "completed" }
+            {
+                return Err(INVALID.into());
+            }
+            occurrence_id
+        };
+        if !targets.insert(text(target)?) {
+            return Err(INVALID.into());
+        }
+        if is_pending
+            && (get(link, "completion")? != &Json::Null
+                || get(record, "deletedAt")? != &Json::Null
+                || get(task, "deletedAt")? != &Json::Null
+                || get(record, "nextReviewOn")? != get(link, "dueOn")?
+                || get(record, "reviewStage")? != get(link, "reviewStage")?
+                || !pending.insert(text(get(record, "id")?)?))
+        {
+            return Err(INVALID.into());
+        }
+    }
+    for record in records.values() {
+        if get(record, "deletedAt")? == &Json::Null
+            && get(record, "nextReviewOn")? != &Json::Null
+            && !pending.contains(text(get(record, "id")?)?)
+        {
+            return Err(INVALID.into());
         }
     }
     for event in array(get(root, "taskEvents")?)? {

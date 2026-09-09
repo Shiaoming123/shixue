@@ -145,9 +145,11 @@ fn checked(v: Json, spec: &str) -> Result<Json, String> {
                 ],
             )
         }
-        "task-schedule" | "task-deadline" | "task-learning" | "task-checklist" => {
-            return super::tasks::nested(v, spec)
-        }
+        "task-review-completion"
+        | "task-schedule"
+        | "task-deadline"
+        | "task-learning"
+        | "task-checklist" => return super::tasks::nested(v, spec),
         "time" => return time(v),
         "recurrence" => {
             return fields(

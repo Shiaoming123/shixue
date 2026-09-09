@@ -300,6 +300,38 @@ for (const [name, change] of [
  ['empty-evidence', r => { r.completionRecords[0].evidence = ' ' }],
 ]) { taskCase(`record-${name}`, r => { evidence(r); change(r) }, false); assert.equal(taskCases.at(-1).parsedJson, null, name) }
 taskCase('record-unknown-field', r => { evidence(r); r.completionRecords[0].extra = 1 }, false)
+function review(r) {
+ evidence(r); r.completionRecords[0].nextReviewOn = '2026-09-10'
+ r.tasks.push({ ...structuredClone(r.tasks[0]), id: 'review-task', mode: 'learning', learning: { acceptanceCriteria: [], blockedReason: null } })
+ r.taskEvents.push({ ...r.taskEvents[0], id: 'review-event', taskId: 'review-task', sequence: 2, completionRecordId: null })
+ r.reviewTaskLinks = [{ id: 'link', completionRecordId: 'record', reviewTaskId: 'review-task', occurrenceId: null, reviewStage: 0, dueOn: '2026-09-10', completedAt: null, createdAt: stamp, updatedAt: stamp }]
+}
+taskCase('review-pending-default', review)
+taskCase('review-pending-null', r => { review(r); r.reviewTaskLinks[0].completion = null })
+for (const result of ['clear', 'fuzzy', 'relearn', null]) taskCase(`review-completed-${result}`, r => { review(r); r.completionRecords[0].nextReviewOn = null; r.completionRecords[0].deletedAt = stamp; r.tasks[1].deletedAt = stamp; Object.assign(r.reviewTaskLinks[0], { completedAt: stamp, completion: result === null ? null : { result, reviewedOn: '2026-09-11' } }) })
+for (const [field, value] of [['id', 'tag'], ['completionRecordId', 'missing'], ['reviewTaskId', 'missing'], ['reviewTaskId', 'task'], ['occurrenceId', 'missing'], ['reviewStage', 4], ['reviewStage', 0.5], ['reviewStage', 1], ['dueOn', 'bad'], ['dueOn', '2026-09-11'], ['completedAt', 'bad'], ['completion', {}], ['completion', { result: 'clear', reviewedOn: '2026-09-11' }]]) {
+ taskCase(`review-invalid-${field}-${JSON.stringify(value)}`, r => { review(r); r.reviewTaskLinks[0][field] = value }, false); assert.equal(taskCases.at(-1).parsedJson, null)
+}
+for (const field of ['id', 'completionRecordId', 'reviewTaskId', 'occurrenceId', 'reviewStage', 'dueOn', 'completedAt', 'createdAt', 'updatedAt']) taskCase(`review-missing-${field}`, r => { review(r); delete r.reviewTaskLinks[0][field] }, false)
+for (const target of ['record', 'task']) taskCase(`review-deleted-${target}`, r => { review(r); (target === 'record' ? r.completionRecords[0] : r.tasks[1]).deletedAt = stamp }, false)
+taskCase('review-general', r => { review(r); r.tasks[1].mode = 'general'; r.tasks[1].learning = null }, false)
+taskCase('review-duplicate-target', r => { review(r); r.reviewTaskLinks.push({ ...r.reviewTaskLinks[0], id: 'link2' }) }, false)
+function recurringReview(r) {
+ review(r); recurring(r); r.tasks[0].recurrenceSeriesId = null; r.tasks[1].recurrenceSeriesId = 'series'; r.recurrenceSeries[0].taskId = 'review-task'; delete r.taskEvents[0].occurrenceId; r.reviewTaskLinks[0].occurrenceId = 'occurrence'
+}
+taskCase('review-occurrence-pending', recurringReview)
+taskCase('review-occurrence-completed', r => { recurringReview(r); r.completionRecords[0].nextReviewOn = null; r.reviewTaskLinks[0].completedAt = stamp; r.occurrences[0].status = 'completed' })
+for (const [name, change] of [
+ ['wrong-owner', r => { r.tasks[0].recurrenceSeriesId = 'series'; r.tasks[1].recurrenceSeriesId = null; r.recurrenceSeries[0].taskId = 'task' }],
+ ['pending-status', r => { r.occurrences[0].status = 'completed' }],
+ ['completed-status', r => { r.reviewTaskLinks[0].completedAt = stamp; r.completionRecords[0].nextReviewOn = null }],
+ ['duplicate-pending-record', r => { r.reviewTaskLinks.push({ ...r.reviewTaskLinks[0], id: 'link2', occurrenceId: null }) }],
+ ['completed-obligation', r => { r.reviewTaskLinks[0].completedAt = stamp; r.occurrences[0].status = 'completed' }],
+]) { taskCase(`review-occurrence-${name}`, r => { recurringReview(r); change(r) }, false); assert.equal(taskCases.at(-1).parsedJson, null) }
+for (const completion of [{ result: 'bad', reviewedOn: '2026-09-11' }, { result: 'clear', reviewedOn: null }, { result: 'clear' }, []]) {
+ taskCase(`review-bad-completion-${JSON.stringify(completion)}`, r => { review(r); r.reviewTaskLinks[0].completion = completion }, false); assert.equal(taskCases.at(-1).parsedJson, null)
+}
+for (const nested of [false, true]) taskCase(`review-unknown-${nested}`, r => { review(r); if (nested) { r.completionRecords[0].nextReviewOn = null; r.reviewTaskLinks[0].completedAt = stamp; r.reviewTaskLinks[0].completion = { result: 'clear', reviewedOn: '2026-09-11', extra: true } } else r.reviewTaskLinks[0].extra = true }, false)
 const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.json', import.meta.url)
 const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)
