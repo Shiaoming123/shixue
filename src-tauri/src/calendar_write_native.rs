@@ -1734,6 +1734,17 @@ mod tests {
                     "{}",
                     case["name"]
                 );
+                let cursors: i64 = sqlx::query_scalar(
+                    "SELECT count(*) FROM sqlite_master WHERE name='calendar_connector_sync'",
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+                assert_eq!(
+                    cursors, 0,
+                    "{} must not create or advance ordinary sync cursor state",
+                    case["name"]
+                );
             }
         });
     }

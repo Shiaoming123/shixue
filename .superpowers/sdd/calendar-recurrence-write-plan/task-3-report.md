@@ -77,3 +77,10 @@ Evidence:
 ### Self-review and scope
 
 - No TypeScript, fixture, regular sync cursor, UI, real sending switch, Task 4, or protected competitor research changes were made in Task 3B. The verifier intentionally accepts only the RRULE forms represented by the frozen capability-generated fixture; unsupported RRULE forms fail closed instead of becoming acknowledgeable facts.
+
+## Task 3B review corrections
+
+- Incremental details fixtures now seed a second live event in the same Google source. Rust reconstructs only the target parent and preserves that unrelated event; only the permission downgrade sanitizes it. SQLite recurrence ack verifies every generated case and asserts it creates no `calendar_connector_sync` cursor state.
+- The generated capability fixture adds `RRULE:FREQ=WEEKLY;BYDAY=WE,TH;UNTIL=20261014`. Rust now reconstructs the supported DAILY/WEEKLY/MONTHLY/YEARLY lossless grammar, validates positive numeric interval/count/BY* fields, duplicate and unknown keys, COUNT/UNTIL exclusivity, and materializes UNTIL as a date end. Invalid interval, unknown fields, duplicate keys, non-time exception override, and frozen non-occurrence regressions fail closed.
+- RED: the recurrence verifier initially deleted the injected unrelated source event during incremental details handling; the fixture test exposed the changed deletion/revision facts. GREEN: it preserves the event, while `npm test` replay confirms the capability output byte-for-byte.
+- GREEN commands: `node --experimental-strip-types scripts/generate-calendar-recurrence-projection.ts`; `node --experimental-strip-types --test tests/calendar-recurrence-projection.test.ts` (5/5); `npm run typecheck`; focused Rust projection and SQLite ack tests; `npm run rust:verify` (57/57); `npm test` (939/939).

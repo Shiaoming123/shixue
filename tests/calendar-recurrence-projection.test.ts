@@ -28,7 +28,8 @@ test('real capability fixtures fold exceptions into parents and preserve unrelat
     const receipt = current.commandReceipts.find((entry) => entry.idempotencyKey === batch.batchId)!
     assert.deepEqual((receipt.result.data as any).writeProjection, { plan: batch.plan, expectedWorkspaceHash: batch.expectedWorkspaceHash, observedAt: batch.observedAt })
     assert.equal((receipt.result.data as any).operationId, batch.operationId)
-    assert.equal(current.calendarEvents.filter((event) => event.sourceId === batch.sourceId).length, 1)
+    const sourceEvents = current.calendarEvents.filter((event) => event.sourceId === batch.sourceId)
+    if (name !== 'series-create') assert.ok(sourceEvents.some((event) => event.id.endsWith('unrelated%22%5D') && event.title === (batch.access === 'none' ? '忙碌' : 'Unrelated')), `${name}: unrelated same-source event retained or sanitized`)
     const input = { ...batch, nextSyncToken: 'ordinary-cursor-sentinel' }, before = structuredClone(input)
     normalizeNativeCalendarBatch(input, batch.connectionId, batch.calendarId, batch.observedAt, base.calendarEvents, { operationId: batch.operationId, plan: batch.plan })
     assert.deepEqual(input, before, 'write normalization cannot advance the ordinary cursor')
@@ -38,7 +39,9 @@ test('real capability fixtures fold exceptions into parents and preserve unrelat
   assert.equal(parent(2).recurrence!.exceptions[0]!.time, null)
   assert.deepEqual(parent(3).recurrence!.exceptions[0]!.time, { kind: 'all-day', startOn: '2026-09-10', endOnExclusive: '2026-09-11' })
   assert.deepEqual(parent(4).recurrence!.end, { kind: 'after', count: 10 })
-  assert.equal(parent(5).title, '忙碌')
+  assert.deepEqual(parent(5).recurrence!.cadence, { kind: 'weekly', interval: 1, weekdays: [3, 4] })
+  assert.deepEqual(parent(5).recurrence!.end, { kind: 'on', date: '2026-10-14' })
+  assert.equal(parent(6).title, '忙碌')
 })
 
 test('production normalizer retains root binding and fails closed without a frozen staged plan', () => {

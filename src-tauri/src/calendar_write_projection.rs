@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, Utc};
 use serde_json::{json, Value};
 
 /// Verify actual source/event facts, independently of the receipt's claimed success.
@@ -281,8 +281,10 @@ fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<boo
             batch["timezone"].as_str()?,
             batch["observedAt"].as_str()?,
         )?;
-        projected["recurrence"] =
-            recurrence(parent_raw["recurrence"].as_array()?.first()?.as_str()?)?;
+        projected["recurrence"] = recurrence(
+            parent_raw["recurrence"].as_array()?.first()?.as_str()?,
+            &projected["time"],
+        )?;
         let index = events.iter().position(|event| event["id"] == parent_id);
         if let Some(i) = index {
             projected["createdAt"] = events[i]["createdAt"].clone();
@@ -304,19 +306,39 @@ fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<boo
             {
                 return None;
             }
+            if !occurs(
+                &projected["recurrence"],
+                &projected["time"],
+                plan["originalStart"].as_str()?,
+            ) {
+                return None;
+            }
             let exception = if instance["status"] == "cancelled" {
                 Value::Null
             } else {
                 let mut plain_instance = instance.clone();
                 plain_instance.as_object_mut()?.remove("recurringEventId");
-                normalize(
+                let normalized = normalize(
                     &plain_instance,
                     "ignored",
                     &source_id,
                     batch["timezone"].as_str()?,
                     batch["observedAt"].as_str()?,
-                )?["time"]
-                    .clone()
+                )?;
+                for key in [
+                    "title",
+                    "notes",
+                    "location",
+                    "status",
+                    "availability",
+                    "organizer",
+                    "attendees",
+                ] {
+                    if normalized[key] != projected[key] {
+                        return None;
+                    }
+                }
+                normalized["time"].clone()
             };
             let mut exceptions = projected["recurrence"]["exceptions"].as_array()?.clone();
             exceptions.retain(|e| e["originalStart"] != plan["originalStart"]);
@@ -334,7 +356,7 @@ fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<boo
         return None;
     }
     for event in &mut events {
-        if event["sourceId"] == source_id && (access != "details" || event["id"] != parent_id) {
+        if event["sourceId"] == source_id && access != "details" {
             if event["deletedAt"].is_null() {
                 event["deletedAt"] = json!(context);
                 event["updatedAt"] = json!(context);
@@ -353,25 +375,180 @@ fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<boo
     }
     Some(current["calendarEvents"] == Value::Array(events))
 }
-fn recurrence(rule: &str) -> Option<Value> {
+fn recurrence(rule: &str, time: &Value) -> Option<Value> {
     let fields = rule
         .strip_prefix("RRULE:")?
         .split(';')
         .map(|part| part.split_once('='))
-        .collect::<Option<std::collections::HashMap<_, _>>>()?;
+        .try_fold(std::collections::HashMap::new(), |mut map, part| {
+            let (key, value) = part?;
+            if map.insert(key, value).is_some() {
+                None
+            } else {
+                Some(map)
+            }
+        })?;
+    if fields.keys().any(|key| {
+        ![
+            "FREQ",
+            "INTERVAL",
+            "COUNT",
+            "UNTIL",
+            "BYDAY",
+            "BYMONTHDAY",
+            "BYMONTH",
+            "WKST",
+        ]
+        .contains(key)
+    }) || fields.contains_key("COUNT") && fields.contains_key("UNTIL")
+    {
+        return None;
+    }
+    let number = |value: &str| {
+        value
+            .parse::<u64>()
+            .ok()
+            .filter(|n| *n > 0 && *n <= 10_000)
+            .filter(|_| value.bytes().all(|c| c.is_ascii_digit()))
+    };
+    let interval = match fields.get("INTERVAL") {
+        Some(value) => number(value)?,
+        None => 1,
+    };
+    let anchor = time["startOn"]
+        .as_str()
+        .or_else(|| time["startAt"].as_str().and_then(|v| v.get(..10)))?;
+    let date = NaiveDate::parse_from_str(anchor, "%Y-%m-%d").ok()?;
+    let weekday = date.weekday().num_days_from_sunday();
     let kind = *fields.get("FREQ")?;
     let cadence = match kind {
-        "DAILY" => {
-            json!({"kind":"daily","interval":fields.get("INTERVAL").and_then(|v| v.parse::<u64>().ok()).unwrap_or(1)})
+        "DAILY"
+            if !fields.contains_key("BYDAY")
+                && !fields.contains_key("BYMONTH")
+                && !fields.contains_key("BYMONTHDAY")
+                && !fields.contains_key("WKST") =>
+        {
+            json!({"kind":"daily","interval":interval})
+        }
+        "WEEKLY" if !fields.contains_key("BYMONTH") && !fields.contains_key("BYMONTHDAY") => {
+            let names = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+            let mut days: Vec<u32> = fields
+                .get("BYDAY")
+                .map(|v| {
+                    v.split(',')
+                        .map(|name| names.iter().position(|n| n == &name).map(|n| n as u32))
+                        .collect::<Option<Vec<_>>>()
+                })
+                .unwrap_or_else(|| Some(vec![weekday]))?;
+            days.sort();
+            if days.windows(2).any(|w| w[0] == w[1])
+                || !days.contains(&weekday)
+                || fields.get("WKST").is_some_and(|v| !names.contains(v))
+                || (interval != 1 && (days.len() != 1 || days[0] != weekday))
+            {
+                return None;
+            }
+            json!({"kind":"weekly","interval":interval,"weekdays":days})
+        }
+        "MONTHLY"
+            if !fields.contains_key("BYDAY")
+                && !fields.contains_key("BYMONTH")
+                && !fields.contains_key("WKST")
+                && date.day() <= 28
+                && fields
+                    .get("BYMONTHDAY")
+                    .is_none_or(|v| number(v) == Some(date.day() as u64)) =>
+        {
+            json!({"kind":"monthly","interval":interval,"dayOfMonth":date.day()})
+        }
+        "YEARLY"
+            if !fields.contains_key("BYDAY")
+                && !fields.contains_key("WKST")
+                && !(date.month() == 2 && date.day() == 29)
+                && fields
+                    .get("BYMONTHDAY")
+                    .is_none_or(|v| number(v) == Some(date.day() as u64))
+                && fields
+                    .get("BYMONTH")
+                    .is_none_or(|v| number(v) == Some(date.month() as u64)) =>
+        {
+            json!({"kind":"yearly","interval":interval,"month":date.month(),"dayOfMonth":date.day()})
         }
         _ => return None,
     };
     let end = if let Some(count) = fields.get("COUNT") {
         json!({"kind":"after","count":count.parse::<u64>().ok()?})
+    } else if let Some(until) = fields.get("UNTIL") {
+        let date = if time["kind"] == "all-day" {
+            NaiveDate::parse_from_str(until, "%Y%m%d").ok()?
+        } else {
+            NaiveDate::parse_from_str(until.get(..8)?, "%Y%m%d").ok()?
+        };
+        if date < NaiveDate::parse_from_str(anchor, "%Y-%m-%d").ok()? {
+            return None;
+        }
+        json!({"kind":"on","date":date.format("%Y-%m-%d").to_string()})
     } else {
         json!({"kind":"never"})
     };
     Some(json!({"cadence":cadence,"end":end,"exceptions":[]}))
+}
+fn occurs(recurrence: &Value, time: &Value, original: &str) -> bool {
+    let Some(anchor) = time["startOn"]
+        .as_str()
+        .or_else(|| time["startAt"].as_str())
+    else {
+        return false;
+    };
+    let original = if time["kind"] == "all-day" {
+        original.to_owned()
+    } else {
+        original.get(..10).unwrap_or("").to_owned()
+    };
+    let (Ok(start), Ok(target)) = (
+        NaiveDate::parse_from_str(&anchor[..10], "%Y-%m-%d"),
+        NaiveDate::parse_from_str(&original, "%Y-%m-%d"),
+    ) else {
+        return false;
+    };
+    if target < start
+        || recurrence["end"]["kind"] == "on"
+            && recurrence["end"]["date"]
+                .as_str()
+                .is_none_or(|date| original.as_str() > date)
+    {
+        return false;
+    }
+    let days = (target - start).num_days();
+    let valid = match recurrence["cadence"]["kind"].as_str() {
+        Some("daily") => days % recurrence["cadence"]["interval"].as_i64().unwrap_or(0) == 0,
+        Some("weekly") => {
+            days / 7 % recurrence["cadence"]["interval"].as_i64().unwrap_or(0) == 0
+                && recurrence["cadence"]["weekdays"]
+                    .as_array()
+                    .is_some_and(|days| {
+                        days.iter().any(|day| {
+                            day.as_u64() == Some(target.weekday().num_days_from_sunday() as u64)
+                        })
+                    })
+        }
+        Some("monthly") => {
+            target.day() == start.day()
+                && ((target.year() - start.year()) * 12 + target.month() as i32
+                    - start.month() as i32) as i64
+                    % recurrence["cadence"]["interval"].as_i64().unwrap_or(0)
+                    == 0
+        }
+        Some("yearly") => {
+            target.month() == start.month()
+                && target.day() == start.day()
+                && (target.year() - start.year()) as i64
+                    % recurrence["cadence"]["interval"].as_i64().unwrap_or(0)
+                    == 0
+        }
+        _ => false,
+    };
+    valid
 }
 
 fn stable_id(connection: &str, calendar: &str, remote: Option<&str>) -> String {
@@ -615,6 +792,32 @@ mod tests {
             }
             assert!(!verify(&case["base"], &case["current"], &batch), "{path}");
         }
+        for rule in [
+            "RRULE:FREQ=DAILY;INTERVAL=0",
+            "RRULE:FREQ=DAILY;INTERVAL=bogus",
+            "RRULE:FREQ=DAILY;BYSETPOS=1",
+            "RRULE:FREQ=DAILY;COUNT=1;COUNT=2",
+        ] {
+            let mut batch = case["batch"].clone();
+            batch["items"][0]["recurrence"] = json!([rule]);
+            assert!(!verify(&case["base"], &case["current"], &batch), "{rule}");
+        }
+        let mut overridden = case["batch"].clone();
+        overridden["items"][1]["summary"] = json!("different occurrence title");
+        assert!(!verify(&case["base"], &case["current"], &overridden));
+        let mut impossible = case["batch"].clone();
+        impossible["plan"]["originalStart"] = json!("2026-09-20");
+        impossible["items"][1]["originalStartTime"]["date"] = json!("2026-09-20");
+        let mut receipt = case["current"].clone();
+        let index = receipt["commandReceipts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|r| r["idempotencyKey"] == impossible["batchId"])
+            .unwrap();
+        receipt["commandReceipts"][index]["result"]["data"]["writeProjection"]["plan"]
+            ["originalStart"] = json!("2026-09-20");
+        assert!(!verify(&case["base"], &receipt, &impossible));
     }
     #[test]
     fn malformed_provider_participants_do_not_become_acknowledgeable_facts() {

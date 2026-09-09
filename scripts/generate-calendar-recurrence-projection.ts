@@ -11,14 +11,20 @@ export async function generateRecurrenceProjectionFixtures() {
   const ordinary = JSON.parse(readFileSync(new URL('../tests/fixtures/calendar-write-projection.json', import.meta.url), 'utf8'))
   let base = ordinary.cases[0].base
   const cases = []
-  for (const name of ['series-create', 'single-move', 'single-cancel', 'single-restore', 'series-change', 'permission-downgrade']) {
+  for (const name of ['series-create', 'single-move', 'single-cancel', 'single-restore', 'series-change', 'series-weekly-until', 'permission-downgrade']) {
+    if (name === 'single-move') {
+      const parent = base.calendarEvents.find((event: any) => event.sourceId === stableId('google', 'connection', 'calendar'))!
+      base = structuredClone(base)
+      base.calendarEvents.push({ ...parent, id: stableId('google', 'connection', 'calendar', 'unrelated'), title: 'Unrelated', recurrence: null })
+    }
     const batch: any = recurringBatch()
     batch.batchId = `recurrence:${name}`
     batch.expectedWorkspaceHash = await fingerprintWorkspace(base)
-    if (name === 'series-create' || name === 'series-change') {
+    if (name === 'series-create' || name === 'series-change' || name === 'series-weekly-until') {
       batch.plan = { hash: batch.plan.hash, kind: 'recurring.series', parentEventId: 'parent' }
       batch.items = [batch.items[0]]
       if (name === 'series-change') batch.items[0].recurrence = ['RRULE:FREQ=DAILY;COUNT=10']
+      if (name === 'series-weekly-until') batch.items[0].recurrence = ['RRULE:FREQ=WEEKLY;BYDAY=WE,TH;UNTIL=20261014']
     }
     if (name === 'single-cancel') batch.items[1] = { id: 'instance', recurringEventId: 'parent', originalStartTime: { date: '2026-09-10' }, status: 'cancelled' }
     if (name === 'single-restore') { batch.items[1].start.date = '2026-09-10'; batch.items[1].end.date = '2026-09-11' }
