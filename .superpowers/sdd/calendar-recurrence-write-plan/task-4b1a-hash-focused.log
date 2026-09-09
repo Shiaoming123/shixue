@@ -1,0 +1,27 @@
+   Compiling meow-study v0.3.0 (D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri)
+warning: linker stdout: 正在创建库 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib-1fcf41039d8ee04c.lib 和对象 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib-1fcf41039d8ee04c.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `meow-study` (lib test) generated 1 warning
+warning: linker stdout: 正在创建库 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib.dll.lib 和对象 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib.dll.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `meow-study` (lib) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.90s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\meow_study_lib-1fcf41039d8ee04c.exe)
+
+running 4 tests
+test calendar_connections::write_outbox::future_contract_tests::future_mirror_preserves_typescript_frozen_json ... ok
+test calendar_connections::write_outbox::future_contract_tests::future_mirror_rejects_malformed_fields ... ok
+test calendar_connections::write_native::tests::future_anchor_binds_plan_steps_and_locks_without_enabling_send ... ok
+test calendar_connections::write_native::tests::future_typescript_numeric_boundary_hash_is_accepted_unchanged ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 51 filtered out; finished in 0.01s
+
+     Running unittests src\main.rs (src-tauri\target\debug\deps\meow_study-a15061731877bc08.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

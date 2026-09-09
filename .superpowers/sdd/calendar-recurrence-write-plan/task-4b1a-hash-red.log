@@ -1,0 +1,29 @@
+   Compiling meow-study v0.3.0 (D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri)
+warning: linker stdout: 正在创建库 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib-1fcf41039d8ee04c.lib 和对象 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib-1fcf41039d8ee04c.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `meow-study` (lib test) generated 1 warning
+warning: linker stdout: 正在创建库 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib.dll.lib 和对象 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib.dll.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `meow-study` (lib) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.06s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\meow_study_lib-1fcf41039d8ee04c.exe)
+
+running 1 test
+
+thread 'calendar_connections::write_native::tests::future_typescript_numeric_boundary_hash_is_accepted_unchanged' (75224) panicked at src\calendar_write_native.rs:1364:22:
+called `Result::unwrap()` on an `Err` value: "WRITE_PREVIEW_CHANGED"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test calendar_connections::write_native::tests::future_typescript_numeric_boundary_hash_is_accepted_unchanged ... FAILED
+
+failures:
+
+failures:
+    calendar_connections::write_native::tests::future_typescript_numeric_boundary_hash_is_accepted_unchanged
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 54 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--lib`

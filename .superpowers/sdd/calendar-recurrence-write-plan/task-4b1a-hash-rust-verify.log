@@ -1,0 +1,102 @@
+
+> meow-study@0.3.0 rust:verify
+> node scripts/rust-verify.mjs
+
+Removed 0 AppleDouble file(s).
+    Checking meow-study v0.3.0 (D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.30s
+   Compiling meow-study v0.3.0 (D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri)
+warning: linker stdout: 正在创建库 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib-5bf22087a78de678.lib 和对象 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib-5bf22087a78de678.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `meow-study` (lib test) generated 1 warning
+warning: linker stdout: 正在创建库 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib.dll.lib 和对象 D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri\target\debug\deps\meow_study_lib.dll.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `meow-study` (lib) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.80s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\meow_study_lib-5bf22087a78de678.exe)
+
+running 62 tests
+test calendar_connections::tests::directory_role_requires_the_corresponding_granted_scope ... ok
+test agent::proxy::tests::accepts_only_the_fixed_provider_origins ... ok
+test agent::proxy::tests::rejects_cross_provider_insecure_and_credentialed_targets ... ok
+test agent::secrets::tests::accepts_portable_secret_identifiers ... ok
+test agent::secrets::tests::rejects_empty_oversized_or_unsafe_secret_identifiers ... ok
+test calendar_connections::sync_store::tests::receipt_requires_real_batch_identity_and_success ... ok
+test calendar_connections::sync_store::tests::pending_full_or_receipt_backed_delta_remains_reusable ... ok
+test calendar_connections::sync_store::tests::incomplete_participant_signals_survive_safe_ipc ... ok
+test calendar_connections::sync_store::tests::restored_workspace_discards_unapplied_delta_but_keeps_applied_ack_recovery ... ok
+test calendar_connections::sync_store::tests::pending_permission_downgrade_never_returns_old_details_even_if_applied ... ok
+test calendar_connections::tests::busy_has_bounded_range_and_no_details ... ok
+test calendar_connections::sync_store::tests::source_identity_matches_js_and_safe_events_strip_provider_cursors ... ok
+test calendar_connections::tests::callback_rejects_wrong_state_path_method_and_duplicates ... ok
+test calendar_connections::tests::full_event_write_scope_also_grants_directory_details ... ok
+test calendar_connections::tests::pkce_matches_rfc_vector ... ok
+test calendar_connections::tests::refresh_preserves_previous_refresh_and_status_has_no_credentials ... ok
+test calendar_connections::tests::disconnect_interrupts_backoff_without_another_request ... ok
+test calendar_connections::tests::retries_only_quota_403_429_and_server_errors ... ok
+test calendar_connections::tests::retry_after_seconds_and_dates_are_bounded_and_backoff_has_short_jitter ... ok
+test calendar_connections::write_native::tests::confirmation_tickets_are_process_scoped_expiring_and_single_use ... ok
+test calendar_connections::write_native::tests::read_scope_survives_write_downgrade_but_never_authorizes_mutation ... ok
+test calendar_connections::write_native::tests::confirmation_is_readable_bounded_and_timezones_are_explicitly_supported ... ok
+test calendar_connections::write_native::workspace_hash::tests::javascript_numeric_boundaries_and_utf16_keys_match_golden_bytes ... ok
+test calendar_connections::write_native::workspace_hash::tests::actual_migrated_workspace_matches_javascript_hash_and_content_changes_do_not ... ok
+test calendar_connections::sync_store::tests::sqlite_reset_requires_current_batch_and_preserves_other_sources_and_workspace ... ok
+test calendar_connections::sync_store::tests::sqlite_ack_requires_durable_receipt_and_keeps_pending_after_failure ... ok
+test calendar_connections::write_native::tests::recurring_proof_rejects_marker_on_the_wrong_instance_or_original_start_and_locks_parent ... ok
+test calendar_connections::write_native::write_local::projection::tests::reminder_reconciliation_preserves_delivery_audit_and_other_fields ... ok
+test calendar_connections::write_native::tests::native_authority_detects_sql_tamper_rollback_and_fake_mirror_success ... ok
+test calendar_connections::write_native::write_local::tests::expired_receipt_still_present_is_not_reusable_proof ... ok
+test calendar_connections::write_native::write_local::tests::previously_acknowledged_binding_cannot_replay_after_exact_baseline_restore ... ok
+test calendar_connections::write_native::write_local::projection::tests::timed_recurrence_uses_event_timezone_instant_and_count_membership ... ok
+test calendar_connections::write_native::tests::successful_http_keyring_commit_failure_recovers_anchored_applying_without_resend ... ok
+test calendar_connections::write_native::write_local::tests::recurrence_plan_must_match_the_keyring_anchored_preview ... ok
+test calendar_connections::write_outbox::future_contract_tests::future_mirror_preserves_typescript_frozen_json ... ok
+test calendar_connections::write_native::write_local::projection::tests::malformed_provider_participants_do_not_become_acknowledgeable_facts ... ok
+test calendar_connections::write_outbox::future_contract_tests::future_mirror_rejects_malformed_fields ... ok
+test db::tests::migrations_append_backup_and_reminder_delivery_tables_without_replacing_prior_versions ... ok
+test db::tests::backup_sql_copies_current_state_once_for_the_expected_version ... ok
+test db::tests::replacement_sql_requires_the_backup_before_touching_current_state ... ok
+test reminder_scheduler::tests::legacy_bridge_uses_the_shared_dto_names ... ok
+test calendar_connections::write_native::write_local::projection::tests::actual_ts_service_projection_matches_create_update_delete_and_permission_downgrade ... ok
+test shortcut::tests::only_the_registered_pressed_event_activates_quick_add ... ok
+test calendar_connections::write_native::tests::local_batch_reads_latest_remote_edit_and_is_anchored_without_touching_sync_cursor ... ok
+test study_cloud::tests::session_status_serializes_identity_without_tokens ... ok
+test study_cloud::tests::snapshot_validation_is_closed_to_the_study_state_record ... ok
+test shortcut::tests::registration_changes_are_idempotent_and_propagate_native_errors ... ok
+test calendar_connections::write_native::tests::applying_anchor_precedes_write_and_lost_response_only_reconciles ... ok
+test tests::persistence_smoke_evidence_must_match_its_validated_request ... ok
+test study_cloud::tests::accepts_only_hosted_https_or_explicit_loopback_origins ... ok
+test tests::persistence_smoke_rejects_forged_identity_and_unknown_stage ... ok
+test calendar_connections::write_native::tests::future_anchor_binds_plan_steps_and_locks_without_enabling_send ... ok
+test calendar_connections::write_native::tests::future_typescript_numeric_boundary_hash_is_accepted_unchanged ... ok
+test calendar_connections::write_native::tests::recurring_single_and_series_use_frozen_target_etags_and_only_reconcile_unknown_results ... ok
+test calendar_connections::write_native::write_local::tests::recurrence_receipts_expire_and_cannot_replay_a_restored_workspace ... ok
+test calendar_connections::write_native::tests::single_event_verbs_if_match_rsvp_and_delete_unknown_contract ... ok
+test calendar_connections::write_native::write_local::projection::tests::ts_generated_recurrence_projection_matches_and_rejects_tampering ... ok
+test calendar_connections::write_native::write_local::projection::tests::receipt_cannot_authorize_changed_remote_facts_or_unrelated_workspace_data ... ok
+test calendar_connections::write_native::tests::local_ack_checks_real_sqlite_projection_not_a_forged_success_receipt ... ok
+test calendar_connections::write_native::tests::local_ack_accepts_only_the_ts_recurrence_projection_fixture ... ok
+test calendar_connections::write_outbox::tests::sqlite_reopen_cas_and_unknown_operations_prevent_duplicate_claims ... ok
+test calendar_connections::tests::callback_timeout_closes_listener ... ok
+
+test result: ok. 62 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.06s
+
+     Running unittests src\main.rs (src-tauri\target\debug\deps\meow_study-04da5086ed2d1624.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests meow_study_lib
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Checking meow-study v0.3.0 (D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui\src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.91s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.32s

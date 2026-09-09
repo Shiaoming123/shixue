@@ -1,0 +1,125 @@
+{
+  "future": {
+    "parent": {
+      "state": "pending"
+    },
+    "successor": {
+      "state": "pending"
+    },
+    "compensation": {
+      "state": "pending"
+    }
+  },
+  "preview": {
+    "operationId": "00000000-0000-4000-8000-000000000001",
+    "connectionId": "c",
+    "calendarId": "cal",
+    "eventId": "parent",
+    "lockKeys": [
+      "m00000000000040008000000000000001",
+      "parent",
+      "pivot"
+    ],
+    "sendUpdates": "all",
+    "intent": {
+      "kind": "recurring.future",
+      "parent": {
+        "eventId": "parent",
+        "etag": "p1"
+      },
+      "originalStart": "2026-09-04",
+      "fields": {
+        "title": "After"
+      },
+      "plan": {
+        "version": 1,
+        "workspaceHash": "snapshot1",
+        "originalParent": {
+          "id": "parent",
+          "etag": "p1",
+          "summary": "Before",
+          "sequence": 1e+21,
+          "start": {
+            "date": "2026-09-01"
+          },
+          "end": {
+            "date": "2026-09-02"
+          },
+          "recurrence": [
+            "RRULE:FREQ=DAILY;COUNT=10"
+          ]
+        },
+        "pivot": {
+          "eventId": "pivot",
+          "etag": "i1"
+        },
+        "originalStart": "2026-09-04",
+        "exceptions": [],
+        "markerHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1",
+          "body": {
+            "recurrence": [
+              "RRULE:FREQ=DAILY;COUNT=3"
+            ],
+            "extendedProperties": {
+              "private": {
+                "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+              }
+            }
+          }
+        },
+        "successor": {
+          "eventId": "m00000000000040008000000000000001",
+          "etag": null,
+          "body": {
+            "id": "m00000000000040008000000000000001",
+            "summary": "After",
+            "start": {
+              "date": "2026-09-04"
+            },
+            "end": {
+              "date": "2026-09-05"
+            },
+            "recurrence": [
+              "RRULE:FREQ=DAILY;COUNT=7"
+            ],
+            "extendedProperties": {
+              "private": {
+                "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+              }
+            }
+          }
+        },
+        "compensation": {
+          "eventId": "parent",
+          "etag": null,
+          "body": {
+            "recurrence": [
+              "RRULE:FREQ=DAILY;COUNT=10"
+            ],
+            "extendedProperties": {
+              "private": {
+                "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+              }
+            }
+          }
+        }
+      }
+    },
+    "hash": "sha256:dbf5f11d71cd839bc2e6a4977efd90f192154623f8639b5fb136825094014905"
+  },
+  "version": 1,
+  "state": "pending",
+  "outcomeUnknown": false,
+  "attempts": 0,
+  "leaseId": null,
+  "leaseUntil": 0,
+  "error": null,
+  "result": null,
+  "localApplied": false
+}

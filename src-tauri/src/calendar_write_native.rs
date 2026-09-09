@@ -385,7 +385,7 @@ fn validate_future_record(record: &Ledger) -> Result<(), String> {
             .as_object_mut()
             .ok_or("WRITE_INVALID")?
             .remove("hash");
-        if record.preview["hash"] != digest(&content)? {
+        if record.preview["hash"] != workspace_hash::fingerprint(&content)? {
             return Err("WRITE_PREVIEW_CHANGED".into());
         }
     } else if record.future.is_some() {
@@ -1337,6 +1337,45 @@ mod tests {
             .unwrap();
         vault.set(&head_key("owner"), "op").unwrap();
         (pool, vault, record)
+    }
+    #[test]
+    fn future_typescript_numeric_boundary_hash_is_accepted_unchanged() {
+        tauri::async_runtime::block_on(async {
+            for input in [
+                include_str!("../../tests/fixtures/calendar-future-numeric-boundary.json"),
+                include_str!("../../tests/fixtures/calendar-future-numeric-integer.json"),
+            ] {
+                let (pool, vault, mut record) = fixture(create()).await;
+                let frozen: Value = serde_json::from_str(input).unwrap();
+                let id = frozen["preview"]["operationId"].as_str().unwrap();
+                write_outbox::dispatch(
+                    &pool,
+                    write_outbox::Request::Insert {
+                        operation: serde_json::from_value(frozen.clone()).unwrap(),
+                    },
+                )
+                .await
+                .unwrap();
+                record.preview = frozen["preview"].clone();
+                record.future = Some(frozen["future"].clone());
+
+                persist(&pool, &vault, "owner", id, &record, None)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    ledger(&pool, &vault, "owner", id, "grant")
+                        .await
+                        .unwrap()
+                        .preview,
+                    record.preview
+                );
+                record.preview["intent"]["plan"]["originalParent"]["sequence"] = json!(42);
+                assert_eq!(
+                    validate_future_record(&record).unwrap_err(),
+                    "WRITE_PREVIEW_CHANGED"
+                );
+            }
+        });
     }
     #[test]
     fn future_anchor_binds_plan_steps_and_locks_without_enabling_send() {
