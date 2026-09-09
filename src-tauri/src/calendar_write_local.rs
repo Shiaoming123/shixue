@@ -77,6 +77,24 @@ fn plan_matches(batch: &Value, _base: &Value) -> bool {
         _ => false,
     }
 }
+fn plan_matches_preview(batch: &Value, preview: &Value) -> bool {
+    let expected = match preview["intent"]["kind"].as_str() {
+        Some("recurring.single") => json!({
+            "hash": preview["hash"],
+            "kind": "recurring.single",
+            "parentEventId": preview["intent"]["parent"]["eventId"],
+            "instanceEventId": preview["intent"]["instance"]["eventId"],
+            "originalStart": preview["intent"]["originalStart"],
+        }),
+        Some("recurring.series") => json!({
+            "hash": preview["hash"],
+            "kind": "recurring.series",
+            "parentEventId": preview["intent"]["parent"]["eventId"],
+        }),
+        _ => Value::Null,
+    };
+    batch["operationId"] == preview["operationId"] && batch["plan"] == expected
+}
 fn reusable(current: &Value, local: &LocalBinding) -> Result<bool, String> {
     if let Some(id) = receipt_id(current, local) {
         return Ok(local
@@ -125,7 +143,10 @@ pub(super) async fn stage<V: Vault, H: Http>(
         _ => "none",
     };
     if let Some(local) = &record.local {
-        if local.batch["access"] == access && reusable(&base, local)? {
+        if local.batch["access"] == access
+            && plan_matches_preview(&local.batch, &record.preview)
+            && reusable(&base, local)?
+        {
             return Ok(local.batch.clone());
         }
     }
@@ -280,6 +301,7 @@ pub(super) async fn ack<V: Vault>(
     }
     let local = record.local.as_mut().ok_or("WRITE_LOCAL_BASELINE_STALE")?;
     if local.batch["batchId"] != batch_id
+        || !plan_matches_preview(&local.batch, &record.preview)
         || receipt_id(&workspace(pool).await?, local).as_deref() != Some(receipt)
     {
         return Err("WRITE_LOCAL_BASELINE_STALE".into());
@@ -349,5 +371,41 @@ mod tests {
         assert!(reusable(&base, &local).unwrap());
         local.receipt_id = Some("old-receipt".into());
         assert!(!reusable(&base, &local).unwrap());
+    }
+    #[test]
+    fn recurrence_plan_must_match_the_keyring_anchored_preview() {
+        let batch = json!({"operationId":"op","plan":{"hash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","kind":"recurring.single","parentEventId":"parent","instanceEventId":"instance","originalStart":"2026-09-10"}});
+        let preview = json!({"operationId":"op","hash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","intent":{"kind":"recurring.single","parent":{"eventId":"parent"},"instance":{"eventId":"instance"},"originalStart":"2026-09-10"}});
+        assert!(plan_matches_preview(&batch, &preview));
+        let mut tampered = batch.clone();
+        tampered["plan"]["originalStart"] = json!("2026-09-11");
+        assert!(!plan_matches_preview(&tampered, &preview));
+    }
+    #[test]
+    fn recurrence_receipts_expire_and_cannot_replay_a_restored_workspace() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/calendar-recurrence-projection.json"
+        ))
+        .unwrap();
+        let case = &fixture["cases"].as_array().unwrap()[1];
+        let local = LocalBinding {
+            base: case["base"].clone(),
+            batch: case["batch"].clone(),
+            receipt_id: None,
+        };
+        let mut expired = case["current"].clone();
+        let receipt = expired["commandReceipts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|r| r["idempotencyKey"] == local.batch["batchId"])
+            .unwrap();
+        expired["commandReceipts"][receipt]["expiresAt"] = json!("2000-01-01T00:00:00.000Z");
+        assert!(receipt_id(&expired, &local).is_none());
+        let restored = LocalBinding {
+            receipt_id: Some("old-receipt".into()),
+            ..local
+        };
+        assert!(!reusable(&case["base"], &restored).unwrap());
     }
 }

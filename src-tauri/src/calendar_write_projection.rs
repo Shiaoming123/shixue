@@ -7,6 +7,9 @@ pub(super) fn verify(base: &Value, current: &Value, batch: &Value) -> bool {
 }
 
 fn checked(base: &Value, current: &Value, batch: &Value) -> Option<bool> {
+    if batch["plan"].is_object() {
+        return recurring_checked(base, current, batch);
+    }
     if base["version"] != 4
         || current["version"] != 4
         || batch["provider"] != "google"
@@ -156,6 +159,219 @@ fn checked(base: &Value, current: &Value, batch: &Value) -> Option<bool> {
         }
     }
     Some(current["calendarEvents"] == Value::Array(events))
+}
+
+fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<bool> {
+    if base["version"] != 4
+        || current["version"] != 4
+        || batch["provider"] != "google"
+        || batch["mode"] != "incremental"
+    {
+        return None;
+    }
+    let plan = &batch["plan"];
+    let kind = plan["kind"].as_str()?;
+    if !["recurring.single", "recurring.series"].contains(&kind)
+        || !plan["hash"].as_str()?.starts_with("sha256:")
+    {
+        return None;
+    }
+    let parent = plan["parentEventId"].as_str()?;
+    if kind == "recurring.single"
+        && (plan["instanceEventId"].as_str().is_none() || plan["originalStart"].as_str().is_none())
+    {
+        return None;
+    }
+    let receipt = current["commandReceipts"].as_array()?.iter().find(|r| {
+        r["commandType"] == "calendar_external.apply"
+            && r["idempotencyKey"] == batch["batchId"]
+            && r["result"]["data"]["operationId"] == batch["operationId"]
+    })?;
+    if receipt["id"] != receipt["result"]["receiptId"]
+        || receipt["result"]["data"]["applied"] != true
+        || receipt["result"]["data"]["writeProjection"]
+            != json!({"plan":plan,"expectedWorkspaceHash":batch["expectedWorkspaceHash"],"observedAt":batch["observedAt"]})
+    {
+        return None;
+    }
+    let base_map = base.as_object()?;
+    let current_map = current.as_object()?;
+    let mutable = [
+        "calendarSources",
+        "calendarEvents",
+        "commandReceipts",
+        "updatedAt",
+        "revision",
+        "reminderDeliveries",
+    ];
+    if base_map
+        .keys()
+        .any(|key| !mutable.contains(&key.as_str()) && current.get(key) != base.get(key))
+        || current_map.keys().any(|key| !base_map.contains_key(key))
+        || current["revision"].as_u64()? != base["revision"].as_u64()?.checked_add(1)?
+        || !deliveries_valid(base, current)
+    {
+        return None;
+    }
+    let context = receipt["createdAt"].as_str()?;
+    let previous = timestamp(base["updatedAt"].as_str()?)?;
+    let now = timestamp(context)?;
+    if current["updatedAt"]
+        != if now > previous {
+            Value::String(context.into())
+        } else {
+            Value::String(iso_millis(previous.checked_add(1)?)?)
+        }
+    {
+        return None;
+    }
+    let connection = batch["connectionId"].as_str()?;
+    let calendar = batch["calendarId"].as_str()?;
+    let source_id = stable_id(connection, calendar, None);
+    if batch["sourceId"] != source_id {
+        return None;
+    }
+    let access = batch["access"].as_str()?;
+    if !["details", "freebusy", "none"].contains(&access) {
+        return None;
+    }
+    let mut sources = base["calendarSources"].as_array()?.clone();
+    let source_index = sources.iter().position(|s| s["id"] == source_id);
+    let mut source = source_index.map(|i| sources[i].clone()).unwrap_or_else(|| json!({"id":source_id,"revision":1,"provider":"google","color":"#668575","group":null,"permission":"read","selected":true,"hidden":false,"createdAt":context}));
+    if source["provider"] != "google" {
+        return None;
+    }
+    if source_index.is_some() {
+        source["revision"] = json!(source["revision"].as_u64()?.checked_add(1)?);
+    }
+    source["title"] = json!(batch["title"].as_str()?);
+    source["timezone"] = json!(batch["timezone"].as_str()?);
+    source["updatedAt"] = json!(context);
+    source["permission"] = json!("read");
+    source["archivedAt"] = if access == "none" {
+        json!(context)
+    } else {
+        Value::Null
+    };
+    if let Some(i) = source_index {
+        sources[i] = source;
+    } else {
+        sources.push(source);
+    }
+    if current["calendarSources"] != Value::Array(sources) {
+        return None;
+    }
+    let mut events = base["calendarEvents"].as_array()?.clone();
+    let parent_id = stable_id(connection, calendar, Some(parent));
+    if access == "details" {
+        let items = batch["items"].as_array()?;
+        let parent_raw = items.iter().find(|item| item["id"] == parent)?;
+        if parent_raw["recurrence"]
+            .as_array()
+            .is_none_or(|rules| rules.len() != 1)
+        {
+            return None;
+        }
+        let mut plain = parent_raw.clone();
+        plain.as_object_mut()?.remove("recurrence");
+        let mut projected = normalize(
+            &plain,
+            &parent_id,
+            &source_id,
+            batch["timezone"].as_str()?,
+            batch["observedAt"].as_str()?,
+        )?;
+        projected["recurrence"] =
+            recurrence(parent_raw["recurrence"].as_array()?.first()?.as_str()?)?;
+        let index = events.iter().position(|event| event["id"] == parent_id);
+        if let Some(i) = index {
+            projected["createdAt"] = events[i]["createdAt"].clone();
+            projected["revision"] = json!(events[i]["revision"].as_u64()?.checked_add(1)?);
+            projected["recurrence"]["exceptions"] = events[i]["recurrence"]["exceptions"].clone();
+        }
+        if kind == "recurring.single" {
+            if items.len() != 2 {
+                return None;
+            }
+            let instance = items
+                .iter()
+                .find(|item| item["id"] == plan["instanceEventId"])?;
+            if instance["recurringEventId"] != parent
+                || instance["originalStartTime"]["date"]
+                    .as_str()
+                    .or_else(|| instance["originalStartTime"]["dateTime"].as_str())
+                    != plan["originalStart"].as_str()
+            {
+                return None;
+            }
+            let exception = if instance["status"] == "cancelled" {
+                Value::Null
+            } else {
+                let mut plain_instance = instance.clone();
+                plain_instance.as_object_mut()?.remove("recurringEventId");
+                normalize(
+                    &plain_instance,
+                    "ignored",
+                    &source_id,
+                    batch["timezone"].as_str()?,
+                    batch["observedAt"].as_str()?,
+                )?["time"]
+                    .clone()
+            };
+            let mut exceptions = projected["recurrence"]["exceptions"].as_array()?.clone();
+            exceptions.retain(|e| e["originalStart"] != plan["originalStart"]);
+            exceptions.push(json!({"originalStart":plan["originalStart"],"time":exception}));
+            projected["recurrence"]["exceptions"] = json!(exceptions);
+        } else if items.len() != 1 {
+            return None;
+        }
+        if let Some(i) = index {
+            events[i] = projected;
+        } else {
+            events.push(projected);
+        }
+    } else if !batch["items"].as_array()?.is_empty() {
+        return None;
+    }
+    for event in &mut events {
+        if event["sourceId"] == source_id && (access != "details" || event["id"] != parent_id) {
+            if event["deletedAt"].is_null() {
+                event["deletedAt"] = json!(context);
+                event["updatedAt"] = json!(context);
+                event["revision"] = json!(event["revision"].as_u64()?.checked_add(1)?);
+            }
+            if access != "details" {
+                event["title"] = json!("忙碌");
+                event["notes"] = json!("");
+                event["location"] = json!("");
+                event["meetingUrl"] = Value::Null;
+                event["sourceUrl"] = Value::Null;
+                event["organizer"] = Value::Null;
+                event["attendees"] = json!([]);
+            }
+        }
+    }
+    Some(current["calendarEvents"] == Value::Array(events))
+}
+fn recurrence(rule: &str) -> Option<Value> {
+    let fields = rule
+        .strip_prefix("RRULE:")?
+        .split(';')
+        .map(|part| part.split_once('='))
+        .collect::<Option<std::collections::HashMap<_, _>>>()?;
+    let kind = *fields.get("FREQ")?;
+    let cadence = match kind {
+        "DAILY" => {
+            json!({"kind":"daily","interval":fields.get("INTERVAL").and_then(|v| v.parse::<u64>().ok()).unwrap_or(1)})
+        }
+        _ => return None,
+    };
+    let end = if let Some(count) = fields.get("COUNT") {
+        json!({"kind":"after","count":count.parse::<u64>().ok()?})
+    } else {
+        json!({"kind":"never"})
+    };
+    Some(json!({"cadence":cadence,"end":end,"exceptions":[]}))
 }
 
 fn stable_id(connection: &str, calendar: &str, remote: Option<&str>) -> String {
@@ -368,6 +584,38 @@ pub(super) fn fixtures() -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ts_generated_recurrence_projection_matches_and_rejects_tampering() {
+        let cases: Vec<Value> = serde_json::from_str::<Value>(include_str!(
+            "../../tests/fixtures/calendar-recurrence-projection.json"
+        ))
+        .unwrap()["cases"]
+            .as_array()
+            .unwrap()
+            .clone();
+        for case in &cases {
+            assert!(
+                verify(&case["base"], &case["current"], &case["batch"]),
+                "{}",
+                case["name"]
+            );
+        }
+        let case = &cases[1];
+        for (path, value) in [
+            ("plan.hash", json!("sha256:forged")),
+            ("plan.originalStart", json!("2026-09-11")),
+            ("items.1.originalStartTime.date", json!("2026-09-11")),
+        ] {
+            let mut batch = case["batch"].clone();
+            let parts: Vec<_> = path.split('.').collect();
+            if parts[0] == "items" {
+                batch[parts[0]][parts[1].parse::<usize>().unwrap()][parts[2]][parts[3]] = value;
+            } else {
+                batch[parts[0]][parts[1]] = value;
+            }
+            assert!(!verify(&case["base"], &case["current"], &batch), "{path}");
+        }
+    }
     #[test]
     fn malformed_provider_participants_do_not_become_acknowledgeable_facts() {
         let case = &fixtures()[0];

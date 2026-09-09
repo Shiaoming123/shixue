@@ -1647,6 +1647,97 @@ mod tests {
         });
     }
     #[test]
+    fn local_ack_accepts_only_the_ts_recurrence_projection_fixture() {
+        tauri::async_runtime::block_on(async {
+            let fixtures: Value = serde_json::from_str(include_str!(
+                "../../tests/fixtures/calendar-recurrence-projection.json"
+            ))
+            .unwrap();
+            for case in fixtures["cases"].as_array().unwrap() {
+                let (pool, vault, mut record) = fixture(create()).await;
+                let batch = case["batch"].clone();
+                let plan = &batch["plan"];
+                let intent = if plan["kind"] == "recurring.single" {
+                    json!({"kind":"recurring.single","parent":{"eventId":plan["parentEventId"],"etag":"p1"},"originalStart":plan["originalStart"],"instance":{"eventId":plan["instanceEventId"],"etag":"i1"},"action":"cancel"})
+                } else {
+                    json!({"kind":"recurring.series","parent":{"eventId":plan["parentEventId"],"etag":"p1"},"fields":{"title":"Series"}})
+                };
+                record.preview = json!({"operationId":"op","connectionId":batch["connectionId"],"calendarId":batch["calendarId"],"eventId":if plan["kind"] == "recurring.single" {plan["instanceEventId"].clone()} else {plan["parentEventId"].clone()},"hash":plan["hash"],"intent":intent,"sendUpdates":"all"});
+                record.state = "applied".into();
+                record.result = Some(result(&record.preview, json!("v2")));
+                record.version += 1;
+                record.local = Some(write_local::LocalBinding {
+                    base: case["base"].clone(),
+                    batch: batch.clone(),
+                    receipt_id: None,
+                });
+                persist(&pool, &vault, "owner", "op", &record, None)
+                    .await
+                    .unwrap();
+                sqlx::query("CREATE TABLE study_state(id INTEGER,version INTEGER,payload TEXT)")
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                let mut current = case["current"].clone();
+                let receipt_index = current["commandReceipts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .position(|r| r["idempotencyKey"] == batch["batchId"])
+                    .unwrap();
+                current["commandReceipts"][receipt_index]["expiresAt"] =
+                    json!("2999-01-01T00:00:00.000Z");
+                sqlx::query("INSERT INTO study_state VALUES(1,4,?)")
+                    .bind(current.to_string())
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                let receipt = current["commandReceipts"][receipt_index]["id"]
+                    .as_str()
+                    .unwrap();
+                assert_eq!(
+                    write_local::ack(
+                        &pool,
+                        &vault,
+                        "owner",
+                        "op",
+                        "grant",
+                        batch["batchId"].as_str().unwrap(),
+                        receipt
+                    )
+                    .await
+                    .unwrap()["applied"],
+                    true,
+                    "{}",
+                    case["name"]
+                );
+                let mut tampered = current.clone();
+                tampered["commandReceipts"][receipt_index]["result"]["data"]["writeProjection"]
+                    ["plan"]["hash"] = json!("sha256:forged");
+                sqlx::query("UPDATE study_state SET payload=?")
+                    .bind(tampered.to_string())
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                assert!(
+                    write_local::ack(
+                        &pool,
+                        &vault,
+                        "owner",
+                        "op",
+                        "grant",
+                        batch["batchId"].as_str().unwrap(),
+                        receipt
+                    )
+                    .await
+                    .is_err(),
+                    "{}",
+                    case["name"]
+                );
+            }
+        });
+    }
+    #[test]
     fn confirmation_tickets_are_process_scoped_expiring_and_single_use() {
         let id = "ticket-test";
         TICKETS
