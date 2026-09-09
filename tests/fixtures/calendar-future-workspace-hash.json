@@ -1,0 +1,630 @@
+[
+  {
+    "name": "defaulted-receipt",
+    "raw": {
+      "version": 4,
+      "revision": 1,
+      "listGroups": [],
+      "lists": [
+        {
+          "id": "synthetic-list",
+          "groupId": null,
+          "title": "Synthetic calendar baseline",
+          "position": 0,
+          "goal": "",
+          "successCriteria": [],
+          "weeklyTargetMinutes": null,
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "archivedAt": null
+        }
+      ],
+      "sections": [],
+      "tags": [],
+      "tasks": [
+        {
+          "id": "timed",
+          "revision": 1,
+          "mode": "general",
+          "listId": "synthetic-list",
+          "sectionId": null,
+          "tagIds": [],
+          "title": "Synthetic timed task",
+          "notes": "",
+          "status": "planned",
+          "schedule": {
+            "startAt": "2026-09-09T09:00:00+08:00",
+            "startOn": null,
+            "estimateMinutes": 45
+          },
+          "deadline": {
+            "dueAt": null,
+            "dueOn": null
+          },
+          "priority": "high",
+          "checklist": [],
+          "learning": null,
+          "recurrenceSeriesId": null,
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "deletedAt": null
+        },
+        {
+          "id": "all-day",
+          "revision": 1,
+          "mode": "general",
+          "listId": "synthetic-list",
+          "sectionId": null,
+          "tagIds": [],
+          "title": "Synthetic all-day task",
+          "notes": "",
+          "status": "planned",
+          "schedule": {
+            "startAt": null,
+            "startOn": "2026-09-09",
+            "estimateMinutes": null
+          },
+          "deadline": {
+            "dueAt": null,
+            "dueOn": "2026-09-10"
+          },
+          "priority": "none",
+          "checklist": [],
+          "learning": null,
+          "recurrenceSeriesId": null,
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "deletedAt": null
+        },
+        {
+          "id": "deadline",
+          "revision": 1,
+          "mode": "general",
+          "listId": "synthetic-list",
+          "sectionId": null,
+          "tagIds": [],
+          "title": "Synthetic deadline task",
+          "notes": "",
+          "status": "planned",
+          "schedule": {
+            "startAt": null,
+            "startOn": null,
+            "estimateMinutes": null
+          },
+          "deadline": {
+            "dueAt": "2026-09-09T23:30:00-07:00",
+            "dueOn": null
+          },
+          "priority": "none",
+          "checklist": [],
+          "learning": null,
+          "recurrenceSeriesId": null,
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "deletedAt": null
+        },
+        {
+          "id": "unscheduled",
+          "revision": 1,
+          "mode": "general",
+          "listId": "synthetic-list",
+          "sectionId": null,
+          "tagIds": [],
+          "title": "Synthetic unscheduled task",
+          "notes": "",
+          "status": "inbox",
+          "schedule": {
+            "startAt": null,
+            "startOn": null,
+            "estimateMinutes": null
+          },
+          "deadline": {
+            "dueAt": null,
+            "dueOn": null
+          },
+          "priority": "none",
+          "checklist": [],
+          "learning": null,
+          "recurrenceSeriesId": null,
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "deletedAt": null
+        },
+        {
+          "id": "recurring",
+          "revision": 1,
+          "mode": "general",
+          "listId": "synthetic-list",
+          "sectionId": null,
+          "tagIds": [],
+          "title": "Synthetic recurring task",
+          "notes": "",
+          "status": "planned",
+          "schedule": {
+            "startAt": "2026-09-09T09:00:00-07:00",
+            "startOn": null,
+            "estimateMinutes": 30
+          },
+          "deadline": {
+            "dueAt": null,
+            "dueOn": null
+          },
+          "priority": "none",
+          "checklist": [],
+          "learning": null,
+          "recurrenceSeriesId": "synthetic-series",
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "deletedAt": null
+        }
+      ],
+      "recurrenceSeries": [
+        {
+          "id": "synthetic-series",
+          "taskId": "recurring",
+          "revision": 1,
+          "cadence": {
+            "kind": "daily",
+            "interval": 1
+          },
+          "basis": "fixed_schedule",
+          "anchorAt": "2026-09-09T09:00:00-07:00",
+          "anchorOn": null,
+          "end": {
+            "kind": "after",
+            "count": 2
+          },
+          "timezone": "America/Los_Angeles",
+          "createdThrough": "2026-09-10T09:00:00-07:00",
+          "createdCount": 2
+        }
+      ],
+      "occurrences": [
+        {
+          "id": "synthetic-occurrence-1",
+          "seriesId": "synthetic-series",
+          "ordinal": 1,
+          "scheduledAt": "2026-09-09T09:00:00-07:00",
+          "scheduledOn": null,
+          "status": "pending",
+          "override": {
+            "scheduledAt": null,
+            "scheduledOn": "2026-09-10",
+            "estimateMinutes": 30
+          },
+          "completedAt": null,
+          "revision": 1
+        },
+        {
+          "id": "synthetic-occurrence-2",
+          "seriesId": "synthetic-series",
+          "ordinal": 2,
+          "scheduledAt": "2026-09-10T09:00:00-07:00",
+          "scheduledOn": null,
+          "status": "pending",
+          "override": null,
+          "completedAt": null,
+          "revision": 1
+        }
+      ],
+      "reminderRules": [],
+      "reminderDeliveries": [],
+      "studySessions": [],
+      "taskEvents": [
+        {
+          "id": "synthetic-event-1",
+          "sequence": 1,
+          "taskId": "timed",
+          "type": "captured",
+          "occurredAt": "2026-09-09T00:00:00.000Z",
+          "fromStatus": null,
+          "toStatus": "planned",
+          "reason": null,
+          "completionRecordId": null
+        },
+        {
+          "id": "synthetic-event-2",
+          "sequence": 2,
+          "taskId": "all-day",
+          "type": "captured",
+          "occurredAt": "2026-09-09T00:00:00.000Z",
+          "fromStatus": null,
+          "toStatus": "planned",
+          "reason": null,
+          "completionRecordId": null
+        },
+        {
+          "id": "synthetic-event-3",
+          "sequence": 3,
+          "taskId": "deadline",
+          "type": "captured",
+          "occurredAt": "2026-09-09T00:00:00.000Z",
+          "fromStatus": null,
+          "toStatus": "planned",
+          "reason": null,
+          "completionRecordId": null
+        },
+        {
+          "id": "synthetic-event-4",
+          "sequence": 4,
+          "taskId": "unscheduled",
+          "type": "captured",
+          "occurredAt": "2026-09-09T00:00:00.000Z",
+          "fromStatus": null,
+          "toStatus": "inbox",
+          "reason": null,
+          "completionRecordId": null
+        },
+        {
+          "id": "synthetic-event-5",
+          "sequence": 5,
+          "taskId": "recurring",
+          "type": "captured",
+          "occurredAt": "2026-09-09T00:00:00.000Z",
+          "fromStatus": null,
+          "toStatus": "planned",
+          "reason": null,
+          "completionRecordId": null
+        }
+      ],
+      "completionRecords": [],
+      "reviewTaskLinks": [],
+      "commandReceipts": [
+        {
+          "id": "hash-contract",
+          "idempotencyKey": "hash-contract",
+          "commandType": "test",
+          "source": "agent",
+          "workspaceRevision": 1,
+          "result": {},
+          "createdAt": "2026-09-09T00:00:00Z",
+          "expiresAt": "2026-09-10T00:00:00Z"
+        }
+      ],
+      "updatedAt": "2026-09-09T00:00:00.000Z",
+      "calendarSources": [
+        {
+          "id": "calendar:local",
+          "revision": 1,
+          "provider": "local",
+          "title": "个人日历",
+          "color": "#668575",
+          "group": null,
+          "permission": "write",
+          "selected": true,
+          "hidden": false,
+          "timezone": "UTC",
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "archivedAt": null
+        }
+      ],
+      "calendarEvents": [],
+      "calendarEventLinks": [],
+      "eventOutcomes": []
+    },
+    "parsedJson": "{\"version\":4,\"revision\":1,\"listGroups\":[],\"lists\":[{\"id\":\"synthetic-list\",\"groupId\":null,\"title\":\"Synthetic calendar baseline\",\"position\":0,\"goal\":\"\",\"successCriteria\":[],\"weeklyTargetMinutes\":null,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"archivedAt\":null}],\"sections\":[],\"tags\":[],\"tasks\":[{\"id\":\"timed\",\"revision\":1,\"mode\":\"general\",\"listId\":\"synthetic-list\",\"sectionId\":null,\"tagIds\":[],\"title\":\"Synthetic timed task\",\"notes\":\"\",\"status\":\"planned\",\"schedule\":{\"startAt\":\"2026-09-09T09:00:00+08:00\",\"startOn\":null,\"estimateMinutes\":45},\"deadline\":{\"dueAt\":null,\"dueOn\":null},\"priority\":\"high\",\"checklist\":[],\"learning\":null,\"recurrenceSeriesId\":null,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"deletedAt\":null},{\"id\":\"all-day\",\"revision\":1,\"mode\":\"general\",\"listId\":\"synthetic-list\",\"sectionId\":null,\"tagIds\":[],\"title\":\"Synthetic all-day task\",\"notes\":\"\",\"status\":\"planned\",\"schedule\":{\"startAt\":null,\"startOn\":\"2026-09-09\",\"estimateMinutes\":null},\"deadline\":{\"dueAt\":null,\"dueOn\":\"2026-09-10\"},\"priority\":\"none\",\"checklist\":[],\"learning\":null,\"recurrenceSeriesId\":null,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"deletedAt\":null},{\"id\":\"deadline\",\"revision\":1,\"mode\":\"general\",\"listId\":\"synthetic-list\",\"sectionId\":null,\"tagIds\":[],\"title\":\"Synthetic deadline task\",\"notes\":\"\",\"status\":\"planned\",\"schedule\":{\"startAt\":null,\"startOn\":null,\"estimateMinutes\":null},\"deadline\":{\"dueAt\":\"2026-09-09T23:30:00-07:00\",\"dueOn\":null},\"priority\":\"none\",\"checklist\":[],\"learning\":null,\"recurrenceSeriesId\":null,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"deletedAt\":null},{\"id\":\"unscheduled\",\"revision\":1,\"mode\":\"general\",\"listId\":\"synthetic-list\",\"sectionId\":null,\"tagIds\":[],\"title\":\"Synthetic unscheduled task\",\"notes\":\"\",\"status\":\"inbox\",\"schedule\":{\"startAt\":null,\"startOn\":null,\"estimateMinutes\":null},\"deadline\":{\"dueAt\":null,\"dueOn\":null},\"priority\":\"none\",\"checklist\":[],\"learning\":null,\"recurrenceSeriesId\":null,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"deletedAt\":null},{\"id\":\"recurring\",\"revision\":1,\"mode\":\"general\",\"listId\":\"synthetic-list\",\"sectionId\":null,\"tagIds\":[],\"title\":\"Synthetic recurring task\",\"notes\":\"\",\"status\":\"planned\",\"schedule\":{\"startAt\":\"2026-09-09T09:00:00-07:00\",\"startOn\":null,\"estimateMinutes\":30},\"deadline\":{\"dueAt\":null,\"dueOn\":null},\"priority\":\"none\",\"checklist\":[],\"learning\":null,\"recurrenceSeriesId\":\"synthetic-series\",\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"deletedAt\":null}],\"recurrenceSeries\":[{\"id\":\"synthetic-series\",\"taskId\":\"recurring\",\"revision\":1,\"cadence\":{\"kind\":\"daily\",\"interval\":1},\"basis\":\"fixed_schedule\",\"anchorAt\":\"2026-09-09T09:00:00-07:00\",\"anchorOn\":null,\"end\":{\"kind\":\"after\",\"count\":2},\"timezone\":\"America/Los_Angeles\",\"createdThrough\":\"2026-09-10T09:00:00-07:00\",\"createdCount\":2}],\"occurrences\":[{\"id\":\"synthetic-occurrence-1\",\"seriesId\":\"synthetic-series\",\"ordinal\":1,\"scheduledAt\":\"2026-09-09T09:00:00-07:00\",\"scheduledOn\":null,\"status\":\"pending\",\"override\":{\"scheduledAt\":null,\"scheduledOn\":\"2026-09-10\",\"estimateMinutes\":30},\"completedAt\":null,\"revision\":1},{\"id\":\"synthetic-occurrence-2\",\"seriesId\":\"synthetic-series\",\"ordinal\":2,\"scheduledAt\":\"2026-09-10T09:00:00-07:00\",\"scheduledOn\":null,\"status\":\"pending\",\"override\":null,\"completedAt\":null,\"revision\":1}],\"reminderRules\":[],\"reminderDeliveries\":[],\"studySessions\":[],\"taskEvents\":[{\"id\":\"synthetic-event-1\",\"sequence\":1,\"taskId\":\"timed\",\"type\":\"captured\",\"occurredAt\":\"2026-09-09T00:00:00.000Z\",\"fromStatus\":null,\"toStatus\":\"planned\",\"reason\":null,\"completionRecordId\":null},{\"id\":\"synthetic-event-2\",\"sequence\":2,\"taskId\":\"all-day\",\"type\":\"captured\",\"occurredAt\":\"2026-09-09T00:00:00.000Z\",\"fromStatus\":null,\"toStatus\":\"planned\",\"reason\":null,\"completionRecordId\":null},{\"id\":\"synthetic-event-3\",\"sequence\":3,\"taskId\":\"deadline\",\"type\":\"captured\",\"occurredAt\":\"2026-09-09T00:00:00.000Z\",\"fromStatus\":null,\"toStatus\":\"planned\",\"reason\":null,\"completionRecordId\":null},{\"id\":\"synthetic-event-4\",\"sequence\":4,\"taskId\":\"unscheduled\",\"type\":\"captured\",\"occurredAt\":\"2026-09-09T00:00:00.000Z\",\"fromStatus\":null,\"toStatus\":\"inbox\",\"reason\":null,\"completionRecordId\":null},{\"id\":\"synthetic-event-5\",\"sequence\":5,\"taskId\":\"recurring\",\"type\":\"captured\",\"occurredAt\":\"2026-09-09T00:00:00.000Z\",\"fromStatus\":null,\"toStatus\":\"planned\",\"reason\":null,\"completionRecordId\":null}],\"completionRecords\":[],\"reviewTaskLinks\":[],\"commandReceipts\":[{\"id\":\"hash-contract\",\"idempotencyKey\":\"hash-contract\",\"requestFingerprint\":null,\"commandType\":\"test\",\"source\":\"agent\",\"workspaceRevision\":1,\"result\":{},\"createdAt\":\"2026-09-09T00:00:00Z\",\"expiresAt\":\"2026-09-10T00:00:00Z\"}],\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"calendarSources\":[{\"id\":\"calendar:local\",\"revision\":1,\"provider\":\"local\",\"title\":\"个人日历\",\"color\":\"#668575\",\"group\":null,\"permission\":\"write\",\"selected\":true,\"hidden\":false,\"timezone\":\"UTC\",\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"archivedAt\":null}],\"calendarEvents\":[],\"calendarEventLinks\":[],\"eventOutcomes\":[]}",
+    "hash": "sha256:0773ca5d6328f11ee866cc9787df4290e877934f3fd8db3f18f0f14f5a4ea5c3"
+  },
+  {
+    "name": "numbers-unicode-index-keys",
+    "raw": {
+      "version": 4,
+      "revision": 1,
+      "listGroups": [],
+      "lists": [
+        {
+          "id": "synthetic-list",
+          "groupId": null,
+          "title": "Synthetic calendar baseline",
+          "position": 0,
+          "goal": "",
+          "successCriteria": [],
+          "weeklyTargetMinutes": null,
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "archivedAt": null
+        }
+      ],
+      "sections": [],
+      "tags": [],
+      "tasks": [
+        {
+          "id": "timed",
+          "revision": 1,
+          "mode": "general",
+          "listId": "synthetic-list",
+          "sectionId": null,
+          "tagIds": [],
+          "title": "Synthetic timed task",
+          "notes": "",
+          "status": "planned",
+          "schedule": {
+            "startAt": "2026-09-09T09:00:00+08:00",
+            "startOn": null,
+            "estimateMinutes": 45
+          },
+          "deadline": {
+            "dueAt": null,
+            "dueOn": null
+          },
+          "priority": "high",
+          "checklist": [],
+          "learning": null,
+          "recurrenceSeriesId": null,
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "deletedAt": null
+        },
+        {
+          "id": "all-day",
+          "revision": 1,
+          "mode": "general",
+          "listId": "synthetic-list",
+          "sectionId": null,
+          "tagIds": [],
+          "title": "Synthetic all-day task",
+          "notes": "",
+          "status": "planned",
+          "schedule": {
+            "startAt": null,
+            "startOn": "2026-09-09",
+            "estimateMinutes": null
+          },
+          "deadline": {
+            "dueAt": null,
+            "dueOn": "2026-09-10"
+          },
+          "priority": "none",
+          "checklist": [],
+          "learning": null,
+          "recurrenceSeriesId": null,
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "deletedAt": null
+        },
+        {
+          "id": "deadline",
+          "revision": 1,
+          "mode": "general",
+          "listId": "synthetic-list",
+          "sectionId": null,
+          "tagIds": [],
+          "title": "Synthetic deadline task",
+          "notes": "",
+          "status": "planned",
+          "schedule": {
+            "startAt": null,
+            "startOn": null,
+            "estimateMinutes": null
+          },
+          "deadline": {
+            "dueAt": "2026-09-09T23:30:00-07:00",
+            "dueOn": null
+          },
+          "priority": "none",
+          "checklist": [],
+          "learning": null,
+          "recurrenceSeriesId": null,
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "deletedAt": null
+        },
+        {
+          "id": "unscheduled",
+          "revision": 1,
+          "mode": "general",
+          "listId": "synthetic-list",
+          "sectionId": null,
+          "tagIds": [],
+          "title": "Synthetic unscheduled task",
+          "notes": "",
+          "status": "inbox",
+          "schedule": {
+            "startAt": null,
+            "startOn": null,
+            "estimateMinutes": null
+          },
+          "deadline": {
+            "dueAt": null,
+            "dueOn": null
+          },
+          "priority": "none",
+          "checklist": [],
+          "learning": null,
+          "recurrenceSeriesId": null,
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "deletedAt": null
+        },
+        {
+          "id": "recurring",
+          "revision": 1,
+          "mode": "general",
+          "listId": "synthetic-list",
+          "sectionId": null,
+          "tagIds": [],
+          "title": "Synthetic recurring task",
+          "notes": "",
+          "status": "planned",
+          "schedule": {
+            "startAt": "2026-09-09T09:00:00-07:00",
+            "startOn": null,
+            "estimateMinutes": 30
+          },
+          "deadline": {
+            "dueAt": null,
+            "dueOn": null
+          },
+          "priority": "none",
+          "checklist": [],
+          "learning": null,
+          "recurrenceSeriesId": "synthetic-series",
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "deletedAt": null
+        }
+      ],
+      "recurrenceSeries": [
+        {
+          "id": "synthetic-series",
+          "taskId": "recurring",
+          "revision": 1,
+          "cadence": {
+            "kind": "daily",
+            "interval": 1
+          },
+          "basis": "fixed_schedule",
+          "anchorAt": "2026-09-09T09:00:00-07:00",
+          "anchorOn": null,
+          "end": {
+            "kind": "after",
+            "count": 2
+          },
+          "timezone": "America/Los_Angeles",
+          "createdThrough": "2026-09-10T09:00:00-07:00",
+          "createdCount": 2
+        }
+      ],
+      "occurrences": [
+        {
+          "id": "synthetic-occurrence-1",
+          "seriesId": "synthetic-series",
+          "ordinal": 1,
+          "scheduledAt": "2026-09-09T09:00:00-07:00",
+          "scheduledOn": null,
+          "status": "pending",
+          "override": {
+            "scheduledAt": null,
+            "scheduledOn": "2026-09-10",
+            "estimateMinutes": 30
+          },
+          "completedAt": null,
+          "revision": 1
+        },
+        {
+          "id": "synthetic-occurrence-2",
+          "seriesId": "synthetic-series",
+          "ordinal": 2,
+          "scheduledAt": "2026-09-10T09:00:00-07:00",
+          "scheduledOn": null,
+          "status": "pending",
+          "override": null,
+          "completedAt": null,
+          "revision": 1
+        }
+      ],
+      "reminderRules": [],
+      "reminderDeliveries": [],
+      "studySessions": [],
+      "taskEvents": [
+        {
+          "id": "synthetic-event-1",
+          "sequence": 1,
+          "taskId": "timed",
+          "type": "captured",
+          "occurredAt": "2026-09-09T00:00:00.000Z",
+          "fromStatus": null,
+          "toStatus": "planned",
+          "reason": null,
+          "completionRecordId": null
+        },
+        {
+          "id": "synthetic-event-2",
+          "sequence": 2,
+          "taskId": "all-day",
+          "type": "captured",
+          "occurredAt": "2026-09-09T00:00:00.000Z",
+          "fromStatus": null,
+          "toStatus": "planned",
+          "reason": null,
+          "completionRecordId": null
+        },
+        {
+          "id": "synthetic-event-3",
+          "sequence": 3,
+          "taskId": "deadline",
+          "type": "captured",
+          "occurredAt": "2026-09-09T00:00:00.000Z",
+          "fromStatus": null,
+          "toStatus": "planned",
+          "reason": null,
+          "completionRecordId": null
+        },
+        {
+          "id": "synthetic-event-4",
+          "sequence": 4,
+          "taskId": "unscheduled",
+          "type": "captured",
+          "occurredAt": "2026-09-09T00:00:00.000Z",
+          "fromStatus": null,
+          "toStatus": "inbox",
+          "reason": null,
+          "completionRecordId": null
+        },
+        {
+          "id": "synthetic-event-5",
+          "sequence": 5,
+          "taskId": "recurring",
+          "type": "captured",
+          "occurredAt": "2026-09-09T00:00:00.000Z",
+          "fromStatus": null,
+          "toStatus": "planned",
+          "reason": null,
+          "completionRecordId": null
+        }
+      ],
+      "completionRecords": [],
+      "reviewTaskLinks": [],
+      "commandReceipts": [
+        {
+          "id": "hash-contract",
+          "idempotencyKey": "hash-contract",
+          "commandType": "test",
+          "source": "agent",
+          "workspaceRevision": 1,
+          "result": {
+            "2": false,
+            "10": null,
+            "z": [
+              0,
+              1e-7,
+              0.000001,
+              100000000000000000000,
+              1e+21,
+              333333333.3333333
+            ],
+            "😀": "中文\n\u000f",
+            "": true,
+            "a": "/"
+          },
+          "createdAt": "2026-09-09T00:00:00Z",
+          "expiresAt": "2026-09-10T00:00:00Z"
+        }
+      ],
+      "updatedAt": "2026-09-09T00:00:00.000Z",
+      "calendarSources": [
+        {
+          "id": "calendar:local",
+          "revision": 1,
+          "provider": "local",
+          "title": "个人日历",
+          "color": "#668575",
+          "group": null,
+          "permission": "write",
+          "selected": true,
+          "hidden": false,
+          "timezone": "UTC",
+          "createdAt": "2026-09-09T00:00:00.000Z",
+          "updatedAt": "2026-09-09T00:00:00.000Z",
+          "archivedAt": null
+        }
+      ],
+      "calendarEvents": [],
+      "calendarEventLinks": [],
+      "eventOutcomes": []
+    },
+    "parsedJson": "{\"version\":4,\"revision\":1,\"listGroups\":[],\"lists\":[{\"id\":\"synthetic-list\",\"groupId\":null,\"title\":\"Synthetic calendar baseline\",\"position\":0,\"goal\":\"\",\"successCriteria\":[],\"weeklyTargetMinutes\":null,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"archivedAt\":null}],\"sections\":[],\"tags\":[],\"tasks\":[{\"id\":\"timed\",\"revision\":1,\"mode\":\"general\",\"listId\":\"synthetic-list\",\"sectionId\":null,\"tagIds\":[],\"title\":\"Synthetic timed task\",\"notes\":\"\",\"status\":\"planned\",\"schedule\":{\"startAt\":\"2026-09-09T09:00:00+08:00\",\"startOn\":null,\"estimateMinutes\":45},\"deadline\":{\"dueAt\":null,\"dueOn\":null},\"priority\":\"high\",\"checklist\":[],\"learning\":null,\"recurrenceSeriesId\":null,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"deletedAt\":null},{\"id\":\"all-day\",\"revision\":1,\"mode\":\"general\",\"listId\":\"synthetic-list\",\"sectionId\":null,\"tagIds\":[],\"title\":\"Synthetic all-day task\",\"notes\":\"\",\"status\":\"planned\",\"schedule\":{\"startAt\":null,\"startOn\":\"2026-09-09\",\"estimateMinutes\":null},\"deadline\":{\"dueAt\":null,\"dueOn\":\"2026-09-10\"},\"priority\":\"none\",\"checklist\":[],\"learning\":null,\"recurrenceSeriesId\":null,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"deletedAt\":null},{\"id\":\"deadline\",\"revision\":1,\"mode\":\"general\",\"listId\":\"synthetic-list\",\"sectionId\":null,\"tagIds\":[],\"title\":\"Synthetic deadline task\",\"notes\":\"\",\"status\":\"planned\",\"schedule\":{\"startAt\":null,\"startOn\":null,\"estimateMinutes\":null},\"deadline\":{\"dueAt\":\"2026-09-09T23:30:00-07:00\",\"dueOn\":null},\"priority\":\"none\",\"checklist\":[],\"learning\":null,\"recurrenceSeriesId\":null,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"deletedAt\":null},{\"id\":\"unscheduled\",\"revision\":1,\"mode\":\"general\",\"listId\":\"synthetic-list\",\"sectionId\":null,\"tagIds\":[],\"title\":\"Synthetic unscheduled task\",\"notes\":\"\",\"status\":\"inbox\",\"schedule\":{\"startAt\":null,\"startOn\":null,\"estimateMinutes\":null},\"deadline\":{\"dueAt\":null,\"dueOn\":null},\"priority\":\"none\",\"checklist\":[],\"learning\":null,\"recurrenceSeriesId\":null,\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"deletedAt\":null},{\"id\":\"recurring\",\"revision\":1,\"mode\":\"general\",\"listId\":\"synthetic-list\",\"sectionId\":null,\"tagIds\":[],\"title\":\"Synthetic recurring task\",\"notes\":\"\",\"status\":\"planned\",\"schedule\":{\"startAt\":\"2026-09-09T09:00:00-07:00\",\"startOn\":null,\"estimateMinutes\":30},\"deadline\":{\"dueAt\":null,\"dueOn\":null},\"priority\":\"none\",\"checklist\":[],\"learning\":null,\"recurrenceSeriesId\":\"synthetic-series\",\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"deletedAt\":null}],\"recurrenceSeries\":[{\"id\":\"synthetic-series\",\"taskId\":\"recurring\",\"revision\":1,\"cadence\":{\"kind\":\"daily\",\"interval\":1},\"basis\":\"fixed_schedule\",\"anchorAt\":\"2026-09-09T09:00:00-07:00\",\"anchorOn\":null,\"end\":{\"kind\":\"after\",\"count\":2},\"timezone\":\"America/Los_Angeles\",\"createdThrough\":\"2026-09-10T09:00:00-07:00\",\"createdCount\":2}],\"occurrences\":[{\"id\":\"synthetic-occurrence-1\",\"seriesId\":\"synthetic-series\",\"ordinal\":1,\"scheduledAt\":\"2026-09-09T09:00:00-07:00\",\"scheduledOn\":null,\"status\":\"pending\",\"override\":{\"scheduledAt\":null,\"scheduledOn\":\"2026-09-10\",\"estimateMinutes\":30},\"completedAt\":null,\"revision\":1},{\"id\":\"synthetic-occurrence-2\",\"seriesId\":\"synthetic-series\",\"ordinal\":2,\"scheduledAt\":\"2026-09-10T09:00:00-07:00\",\"scheduledOn\":null,\"status\":\"pending\",\"override\":null,\"completedAt\":null,\"revision\":1}],\"reminderRules\":[],\"reminderDeliveries\":[],\"studySessions\":[],\"taskEvents\":[{\"id\":\"synthetic-event-1\",\"sequence\":1,\"taskId\":\"timed\",\"type\":\"captured\",\"occurredAt\":\"2026-09-09T00:00:00.000Z\",\"fromStatus\":null,\"toStatus\":\"planned\",\"reason\":null,\"completionRecordId\":null},{\"id\":\"synthetic-event-2\",\"sequence\":2,\"taskId\":\"all-day\",\"type\":\"captured\",\"occurredAt\":\"2026-09-09T00:00:00.000Z\",\"fromStatus\":null,\"toStatus\":\"planned\",\"reason\":null,\"completionRecordId\":null},{\"id\":\"synthetic-event-3\",\"sequence\":3,\"taskId\":\"deadline\",\"type\":\"captured\",\"occurredAt\":\"2026-09-09T00:00:00.000Z\",\"fromStatus\":null,\"toStatus\":\"planned\",\"reason\":null,\"completionRecordId\":null},{\"id\":\"synthetic-event-4\",\"sequence\":4,\"taskId\":\"unscheduled\",\"type\":\"captured\",\"occurredAt\":\"2026-09-09T00:00:00.000Z\",\"fromStatus\":null,\"toStatus\":\"inbox\",\"reason\":null,\"completionRecordId\":null},{\"id\":\"synthetic-event-5\",\"sequence\":5,\"taskId\":\"recurring\",\"type\":\"captured\",\"occurredAt\":\"2026-09-09T00:00:00.000Z\",\"fromStatus\":null,\"toStatus\":\"planned\",\"reason\":null,\"completionRecordId\":null}],\"completionRecords\":[],\"reviewTaskLinks\":[],\"commandReceipts\":[{\"id\":\"hash-contract\",\"idempotencyKey\":\"hash-contract\",\"requestFingerprint\":null,\"commandType\":\"test\",\"source\":\"agent\",\"workspaceRevision\":1,\"result\":{\"2\":false,\"10\":null,\"z\":[0,1e-7,0.000001,100000000000000000000,1e+21,333333333.3333333],\"😀\":\"中文\\n\\u000f\",\"\":true,\"a\":\"/\"},\"createdAt\":\"2026-09-09T00:00:00Z\",\"expiresAt\":\"2026-09-10T00:00:00Z\"}],\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"calendarSources\":[{\"id\":\"calendar:local\",\"revision\":1,\"provider\":\"local\",\"title\":\"个人日历\",\"color\":\"#668575\",\"group\":null,\"permission\":\"write\",\"selected\":true,\"hidden\":false,\"timezone\":\"UTC\",\"createdAt\":\"2026-09-09T00:00:00.000Z\",\"updatedAt\":\"2026-09-09T00:00:00.000Z\",\"archivedAt\":null}],\"calendarEvents\":[],\"calendarEventLinks\":[],\"eventOutcomes\":[]}",
+    "hash": "sha256:864280583b62221d093aaf1e657900bd0ccdb75e75622ff65d379976bd8db86a"
+  }
+]
