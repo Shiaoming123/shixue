@@ -1,0 +1,3484 @@
+[
+  {
+    "name": "daily-count",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY;COUNT=10"
+              ]
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04",
+            "exceptions": [],
+            "markerHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2026-09-04"
+                },
+                "end": {
+                  "date": "2026-09-05"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=7"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:e8666b1f74d8cab537531f959120441352aedb8772df0bb0154197af5d427592"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "number-100000000000000000000",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ],
+        "sequence": 100000000000000000000
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY;COUNT=10"
+              ],
+              "sequence": 100000000000000000000
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04",
+            "exceptions": [],
+            "markerHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2026-09-04"
+                },
+                "end": {
+                  "date": "2026-09-05"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=7"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:e2471ab8387c9fad82ce4584911e58f8101970497ed9546e535e0c31b3bd1309"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "number-1e+21",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ],
+        "sequence": 1e+21
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY;COUNT=10"
+              ],
+              "sequence": 1e+21
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04",
+            "exceptions": [],
+            "markerHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2026-09-04"
+                },
+                "end": {
+                  "date": "2026-09-05"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=7"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:dbf5f11d71cd839bc2e6a4977efd90f192154623f8639b5fb136825094014905"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "number-1e-7",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ],
+        "sequence": 1e-7
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY;COUNT=10"
+              ],
+              "sequence": 1e-7
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04",
+            "exceptions": [],
+            "markerHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2026-09-04"
+                },
+                "end": {
+                  "date": "2026-09-05"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=7"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:6f1a493c733eddf8f3f8e525ac129b0ca8651e51727eab52e221638a10ce4e38"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "number-9007199254740992",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ],
+        "sequence": 9007199254740992
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY;COUNT=10"
+              ],
+              "sequence": 9007199254740992
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04",
+            "exceptions": [],
+            "markerHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2026-09-04"
+                },
+                "end": {
+                  "date": "2026-09-05"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=7"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:3c80aea0710cc448598a2aa2c36b21f7ff15734cdb89c8165763d0e66385dfc7"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "private-marker",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ],
+        "extendedProperties": {
+          "private": {
+            "2": "two",
+            "10": "ten",
+            "existing": "保留"
+          }
+        }
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "never",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY"
+              ]
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04",
+            "exceptions": [],
+            "markerHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2026-09-04"
+                },
+                "end": {
+                  "date": "2026-09-05"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:6105a0a06b075db1c57cda1f18728ef6dc7ee9df7ffe35ab64558f717fdaeb92"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "until",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;UNTIL=20260910"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY;UNTIL=20260910"
+              ]
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04",
+            "exceptions": [],
+            "markerHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2026-09-04"
+                },
+                "end": {
+                  "date": "2026-09-05"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;UNTIL=20260910"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;UNTIL=20260910"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:5eb871f009ac94bc80e1504f03db292837bad403224ff1ece2ae9713b9f5054a"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "first",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-01",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-01"
+        },
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "moved",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-05"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "status",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        },
+        "status": "tentative"
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "attachment",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [
+        "link"
+      ],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "provider-field",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ],
+        "attachments": []
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "unsupported-rule",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;BYHOUR=9"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "title-only",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After",
+          "attendees": []
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "parent-drift",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "changed",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "existing-marker",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ],
+        "extendedProperties": {
+          "private": {
+            "meowOperationId": "old",
+            "meowOperationHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY;COUNT=10"
+              ],
+              "extendedProperties": {
+                "private": {
+                  "meowOperationId": "old",
+                  "meowOperationHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                }
+              }
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04",
+            "exceptions": [],
+            "markerHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2026-09-04"
+                },
+                "end": {
+                  "date": "2026-09-05"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=7"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:1a1314d9673df5916dcec4fb3f8c49b26db100b1b2f3e03072dc9c2eec7ef183"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "FREQ=WEEKLY;BYDAY=TU,FR;COUNT=10",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=WEEKLY;BYDAY=TU,FR;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=WEEKLY;BYDAY=TU,FR;COUNT=10"
+              ]
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04",
+            "exceptions": [],
+            "markerHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=WEEKLY;BYDAY=TU,FR;COUNT=1"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2026-09-04"
+                },
+                "end": {
+                  "date": "2026-09-05"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=WEEKLY;BYDAY=TU,FR;COUNT=9"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=WEEKLY;BYDAY=TU,FR;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:1cab0db0b6e2c51fb4334300d507f1c4e0d3246fb196e53fcfee35dc455af348"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:228092dd6ab79cc1b3ec022ae707ea576f65734b7f321cc26ca9b7ec68d88189"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "FREQ=MONTHLY;COUNT=10",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-10-01",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=MONTHLY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-10-01"
+        },
+        "start": {
+          "date": "2026-10-01"
+        },
+        "end": {
+          "date": "2026-10-02"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-10-01",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=MONTHLY;COUNT=10"
+              ]
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-10-01",
+            "exceptions": [],
+            "markerHash": "sha256:e3a82b7abeaa80d8b265fcc44d43b59c60019aae9ae42a2a912f1923d885abf9",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=MONTHLY;COUNT=1"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:e3a82b7abeaa80d8b265fcc44d43b59c60019aae9ae42a2a912f1923d885abf9"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2026-10-01"
+                },
+                "end": {
+                  "date": "2026-10-02"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=MONTHLY;COUNT=9"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:e3a82b7abeaa80d8b265fcc44d43b59c60019aae9ae42a2a912f1923d885abf9"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=MONTHLY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:e3a82b7abeaa80d8b265fcc44d43b59c60019aae9ae42a2a912f1923d885abf9"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:19bc847415d13655c6e47a4146bef1af986c235db530bad197036adb1ccacc8c"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "FREQ=YEARLY;COUNT=10",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2027-09-01",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=YEARLY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2027-09-01"
+        },
+        "start": {
+          "date": "2027-09-01"
+        },
+        "end": {
+          "date": "2027-09-02"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2027-09-01",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "date": "2026-09-01"
+              },
+              "end": {
+                "date": "2026-09-02"
+              },
+              "recurrence": [
+                "RRULE:FREQ=YEARLY;COUNT=10"
+              ]
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2027-09-01",
+            "exceptions": [],
+            "markerHash": "sha256:f3df771f9c7291543021c21392414b8ce480aa45c3bab7bfcc8609fad572f3e7",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=YEARLY;COUNT=1"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:f3df771f9c7291543021c21392414b8ce480aa45c3bab7bfcc8609fad572f3e7"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "date": "2027-09-01"
+                },
+                "end": {
+                  "date": "2027-09-02"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=YEARLY;COUNT=9"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:f3df771f9c7291543021c21392414b8ce480aa45c3bab7bfcc8609fad572f3e7"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=YEARLY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:f3df771f9c7291543021c21392414b8ce480aa45c3bab7bfcc8609fad572f3e7"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:92dbd98d37761696f6dd5d03425dead344a61123d5fdc3d98fa322ebb9933892"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "fixed-UTC",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04T09:00:00.000Z",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "dateTime": "2026-09-01T09:00:00.000Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-01T10:00:00.000Z",
+          "timeZone": "UTC"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "dateTime": "2026-09-04T09:00:00.000Z"
+        },
+        "start": {
+          "dateTime": "2026-09-04T09:00:00.000Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-04T10:00:00.000Z",
+          "timeZone": "UTC"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04T09:00:00.000Z",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "dateTime": "2026-09-01T09:00:00.000Z",
+                "timeZone": "UTC"
+              },
+              "end": {
+                "dateTime": "2026-09-01T10:00:00.000Z",
+                "timeZone": "UTC"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY;COUNT=10"
+              ]
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04T09:00:00.000Z",
+            "exceptions": [],
+            "markerHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "dateTime": "2026-09-04T09:00:00.000Z",
+                  "timeZone": "UTC"
+                },
+                "end": {
+                  "dateTime": "2026-09-04T10:00:00.000Z",
+                  "timeZone": "UTC"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=7"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:56446b27db092d1c52e6703b0ac942ae566b4f3c791642d7ffba1faf3e097fdf"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "fixed-Asia/Shanghai",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04T09:00:00.000Z",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "dateTime": "2026-09-01T09:00:00.000Z",
+          "timeZone": "Asia/Shanghai"
+        },
+        "end": {
+          "dateTime": "2026-09-01T10:00:00.000Z",
+          "timeZone": "Asia/Shanghai"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "dateTime": "2026-09-04T09:00:00.000Z"
+        },
+        "start": {
+          "dateTime": "2026-09-04T09:00:00.000Z",
+          "timeZone": "Asia/Shanghai"
+        },
+        "end": {
+          "dateTime": "2026-09-04T10:00:00.000Z",
+          "timeZone": "Asia/Shanghai"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04T09:00:00.000Z",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "dateTime": "2026-09-01T09:00:00.000Z",
+                "timeZone": "Asia/Shanghai"
+              },
+              "end": {
+                "dateTime": "2026-09-01T10:00:00.000Z",
+                "timeZone": "Asia/Shanghai"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY;COUNT=10"
+              ]
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04T09:00:00.000Z",
+            "exceptions": [],
+            "markerHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "dateTime": "2026-09-04T09:00:00.000Z",
+                  "timeZone": "Asia/Shanghai"
+                },
+                "end": {
+                  "dateTime": "2026-09-04T10:00:00.000Z",
+                  "timeZone": "Asia/Shanghai"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=7"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:21074133b376d900a854495f443fe3c05e14ff133f130c42b435e2527acaaa94"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "fixed-Etc/GMT+2",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04T09:00:00.000Z",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "dateTime": "2026-09-01T09:00:00.000Z",
+          "timeZone": "Etc/GMT+2"
+        },
+        "end": {
+          "dateTime": "2026-09-01T10:00:00.000Z",
+          "timeZone": "Etc/GMT+2"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "dateTime": "2026-09-04T09:00:00.000Z"
+        },
+        "start": {
+          "dateTime": "2026-09-04T09:00:00.000Z",
+          "timeZone": "Etc/GMT+2"
+        },
+        "end": {
+          "dateTime": "2026-09-04T10:00:00.000Z",
+          "timeZone": "Etc/GMT+2"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": {
+      "preview": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "connectionId": "c",
+        "calendarId": "cal",
+        "eventId": "parent",
+        "lockKeys": [
+          "m00000000000040008000000000000001",
+          "parent",
+          "pivot"
+        ],
+        "sendUpdates": "all",
+        "intent": {
+          "kind": "recurring.future",
+          "parent": {
+            "eventId": "parent",
+            "etag": "p1"
+          },
+          "originalStart": "2026-09-04T09:00:00.000Z",
+          "fields": {
+            "title": "After"
+          },
+          "plan": {
+            "version": 1,
+            "workspaceHash": "snapshot1",
+            "originalParent": {
+              "id": "parent",
+              "etag": "p1",
+              "summary": "Before",
+              "start": {
+                "dateTime": "2026-09-01T09:00:00.000Z",
+                "timeZone": "Etc/GMT+2"
+              },
+              "end": {
+                "dateTime": "2026-09-01T10:00:00.000Z",
+                "timeZone": "Etc/GMT+2"
+              },
+              "recurrence": [
+                "RRULE:FREQ=DAILY;COUNT=10"
+              ]
+            },
+            "pivot": {
+              "eventId": "pivot",
+              "etag": "i1"
+            },
+            "originalStart": "2026-09-04T09:00:00.000Z",
+            "exceptions": [],
+            "markerHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343",
+            "parent": {
+              "eventId": "parent",
+              "etag": "p1",
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=3"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "eventId": "m00000000000040008000000000000001",
+              "etag": null,
+              "body": {
+                "id": "m00000000000040008000000000000001",
+                "summary": "After",
+                "start": {
+                  "dateTime": "2026-09-04T09:00:00.000Z",
+                  "timeZone": "Etc/GMT+2"
+                },
+                "end": {
+                  "dateTime": "2026-09-04T10:00:00.000Z",
+                  "timeZone": "Etc/GMT+2"
+                },
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=7"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343"
+                  }
+                }
+              }
+            },
+            "compensation": {
+              "eventId": "parent",
+              "etag": null,
+              "body": {
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=10"
+                ],
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "00000000-0000-4000-8000-000000000001",
+                    "meowOperationHash": "sha256:9ed66d3dc2d7b6792b51285471f7c2a788b73a4a1f2825436bdcb7cef4ee6343"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hash": "sha256:e80a2d7f40a6f9dd96f7306019a8be320a596bd31aa61d13c543c601aaba742b"
+      },
+      "future": {
+        "parent": {
+          "state": "pending"
+        },
+        "successor": {
+          "state": "pending"
+        },
+        "compensation": {
+          "state": "pending"
+        }
+      }
+    }
+  },
+  {
+    "name": "fixed-America/New_York",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04T09:00:00.000Z",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "dateTime": "2026-09-01T09:00:00.000Z",
+          "timeZone": "America/New_York"
+        },
+        "end": {
+          "dateTime": "2026-09-01T10:00:00.000Z",
+          "timeZone": "America/New_York"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "dateTime": "2026-09-04T09:00:00.000Z"
+        },
+        "start": {
+          "dateTime": "2026-09-04T09:00:00.000Z",
+          "timeZone": "America/New_York"
+        },
+        "end": {
+          "dateTime": "2026-09-04T10:00:00.000Z",
+          "timeZone": "America/New_York"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "FREQ=DAILY;COUNT=01",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=01"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "FREQ=DAILY;COUNT=0",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=0"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "FREQ=DAILY;COUNT=2",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=2"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "FREQ=DAILY;COUNT=10;COUNT=11",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10;COUNT=11"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "FREQ=DAILY;UNTIL=20260903",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;UNTIL=20260903"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "cancelled",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        },
+        "status": "cancelled"
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "foreign-pivot",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        }
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "elsewhere",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  },
+  {
+    "name": "intent-plan",
+    "base": {
+      "operationId": "00000000-0000-4000-8000-000000000001",
+      "connectionId": "c",
+      "calendarId": "cal",
+      "eventId": "parent",
+      "lockKeys": [],
+      "sendUpdates": "all",
+      "intent": {
+        "kind": "recurring.future",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1"
+        },
+        "originalStart": "2026-09-04",
+        "fields": {
+          "title": "After"
+        },
+        "plan": {}
+      }
+    },
+    "snapshot": {
+      "parent": {
+        "id": "parent",
+        "etag": "p1",
+        "summary": "Before",
+        "start": {
+          "date": "2026-09-01"
+        },
+        "end": {
+          "date": "2026-09-02"
+        },
+        "recurrence": [
+          "RRULE:FREQ=DAILY;COUNT=10"
+        ]
+      },
+      "pivot": {
+        "id": "pivot",
+        "etag": "i1",
+        "recurringEventId": "parent",
+        "originalStartTime": {
+          "date": "2026-09-04"
+        },
+        "start": {
+          "date": "2026-09-04"
+        },
+        "end": {
+          "date": "2026-09-05"
+        }
+      },
+      "complete": true,
+      "exceptions": [],
+      "attachedFacts": [],
+      "workspaceHash": "snapshot1"
+    },
+    "expected": null
+  }
+]

@@ -15,6 +15,17 @@ impl LocalEvidence {
         Ok(())
     }
 }
+#[cfg(test)]
+pub(super) fn fixture_evidence(snapshot: &Value) -> LocalEvidence {
+    LocalEvidence {
+        event_id: write_local::projection::stable_id("c", "cal", Some("parent")),
+        source_id: write_local::projection::stable_id("c", "cal", None),
+        attached_facts: serde_json::from_value(snapshot["attachedFacts"].clone()).unwrap(),
+        workspace_hash: snapshot["workspaceHash"].as_str().unwrap().into(),
+        normalized_workspace: vec![],
+        raw_workspace: vec![],
+    }
+}
 pub(super) async fn read(
     pool: &SqlitePool,
     connection: &str,

@@ -6,6 +6,9 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 #[path = "calendar_workspace_hash.rs"]
 mod workspace_hash;
 // Internal reader stays unwired until workspace and recurrence parity are proved.
+#[allow(dead_code)] // Pure constructor only; native prepare remains disabled.
+#[path = "calendar_write_future_plan.rs"]
+mod future_plan;
 #[allow(dead_code)]
 #[path = "calendar_write_future_read.rs"]
 mod future_read;

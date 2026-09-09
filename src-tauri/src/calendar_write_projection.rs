@@ -530,6 +530,99 @@ fn recurrence(rule: &str, time: &Value) -> Option<Value> {
     };
     Some(json!({"cadence":cadence,"end":end,"exceptions":[]}))
 }
+/// Reuse the projection's bounded rule/time semantics for the pure future plan.
+pub(in super::super) fn future_occurrence(
+    parent: &Value,
+    pivot: &Value,
+    original: &str,
+) -> Option<(u64, Value)> {
+    let mut plain = parent.clone();
+    plain.as_object_mut()?.remove("recurrence");
+    let event = normalize(
+        &plain,
+        "parent",
+        "source",
+        "UTC",
+        "2026-01-01T00:00:00.000Z",
+    )?;
+    let mut plain = pivot.clone();
+    plain.as_object_mut()?.remove("recurringEventId");
+    plain.as_object_mut()?.remove("originalStartTime");
+    let instance = normalize(&plain, "pivot", "source", "UTC", "2026-01-01T00:00:00.000Z")?;
+    if instance["status"] != event["status"] {
+        return None;
+    }
+    let time = &event["time"];
+    let rules = parent["recurrence"].as_array()?;
+    if rules.len() != 1 {
+        return None;
+    }
+    let recurrence = recurrence(rules[0].as_str()?, time)?;
+    for part in rules[0].as_str()?.strip_prefix("RRULE:")?.split(';') {
+        let (key, value) = part.split_once('=')?;
+        if ["INTERVAL", "COUNT", "BYMONTH", "BYMONTHDAY"].contains(&key) && value.starts_with('0') {
+            return None;
+        }
+        if key == "UNTIL"
+            && time["kind"] == "all-day"
+            && (value.len() != 8 || !value.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return None;
+        }
+    }
+    let anchor = time["startOn"]
+        .as_str()
+        .or_else(|| time["startAt"].as_str())?;
+    let start = wall(time, anchor)?.0;
+    let target = wall(time, original)?.0;
+    if time["timezone"] == "Asia/Shanghai" && start < NaiveDate::from_ymd_opt(1992, 1, 1)? {
+        return None;
+    }
+    if time["kind"] == "all-day" {
+        for value in [anchor, original, time["endOnExclusive"].as_str()?] {
+            let date = NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
+            if !(100..=9999).contains(&date.year()) || date.format("%Y-%m-%d").to_string() != value
+            {
+                return None;
+            }
+        }
+    }
+    let days = (target - start).num_days();
+    // ponytail: bounded day scan; larger spans need an independently proved ordinal algorithm.
+    if !(1..=9996).contains(&days)
+        || start.year() < 100
+        || target.year() > 9999
+        || !occurs(&recurrence, time, original)
+    {
+        return None;
+    }
+    let index = (0..days)
+        .filter(|d| cadence_occurrence(&recurrence["cadence"], start, start + Duration::days(*d)))
+        .count() as u64;
+    if index == 0 {
+        return None;
+    }
+    let times = if time["kind"] == "all-day" {
+        let end = NaiveDate::parse_from_str(time["endOnExclusive"].as_str()?, "%Y-%m-%d").ok()?;
+        if target.checked_add_signed(end - start)?.year() > 9999 {
+            return None;
+        }
+        json!({"start":{"date":target.format("%Y-%m-%d").to_string()},"end":{"date":target.checked_add_signed(end-start)?.format("%Y-%m-%d").to_string()}})
+    } else {
+        let end = timestamp(time["endAt"].as_str()?)?;
+        let original_ms = timestamp(original)?;
+        let target_end =
+            iso_millis(original_ms.checked_add(end.checked_sub(timestamp(anchor)?)?)?)?;
+        if DateTime::parse_from_rfc3339(&target_end).ok()?.year() > 9999 {
+            return None;
+        }
+        json!({"start":{"dateTime":iso(original)?,"timeZone":time["timezone"]},"end":{"dateTime":target_end,"timeZone":time["timezone"]}})
+    };
+    if pivot["start"] != times["start"] || pivot["end"] != times["end"] {
+        return None;
+    }
+    Some((index, times))
+}
 fn occurs(recurrence: &Value, time: &Value, original: &str) -> bool {
     let Some((start, clock)) = (if time["kind"] == "all-day" {
         time["startOn"]
