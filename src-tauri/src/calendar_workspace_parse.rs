@@ -1,4 +1,6 @@
-//! Bounded parser foundation only. Nonempty collections are not validated yet.
+//! Partial workspace parser. Only calendar sources/events may be populated.
+#[path = "calendar_workspace_calendar.rs"]
+mod calendar;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use std::fmt;
 
@@ -144,8 +146,7 @@ const ROOT: &[&str] = &[
     "eventOutcomes",
 ];
 
-/// Deliberately incomplete: emits bytes only for the empty-collection subset.
-/// No LocalEvidence or hash clearance; populated collections require full graph validation.
+/// Deliberately incomplete: calendar source/event subset only. No LocalEvidence clearance.
 pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     let Json::Object(mut fields) = parse(raw)? else {
         return Err("WORKSPACE_INVALID".into());
@@ -170,7 +171,12 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
             .iter()
             .position(|(name, _)| name == key)
             .ok_or("WORKSPACE_MISSING_FIELD")?;
-        let (_, value) = fields.remove(index);
+        let (_, mut value) = fields.remove(index);
+        if matches!(*key, "calendarSources" | "calendarEvents") {
+            value = calendar::collection(key, value)?;
+            normalized.push((key.to_string(), value));
+            continue;
+        }
         match (*key, &value) {
             ("version", Json::Number(v)) if *v == 4.0 => {}
             ("revision", Json::Number(v)) if *v > 0.0 && v.fract() == 0.0 => {}
@@ -182,7 +188,9 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
         }
         normalized.push((key.to_string(), value));
     }
-    Ok(Json::Object(normalized).encode()?.into_bytes())
+    let normalized = Json::Object(normalized);
+    calendar::references(&normalized)?;
+    Ok(normalized.encode()?.into_bytes())
 }
 
 fn valid_timestamp(value: &str) -> bool {
@@ -218,6 +226,30 @@ fn valid_timestamp(value: &str) -> bool {
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+
+    #[test]
+    fn calendar_entities_match_ts_and_fail_closed() {
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/calendar-future-workspace-calendar.json"
+        ))
+        .unwrap();
+        for fixture in fixtures.as_array().unwrap() {
+            let result = normalize_empty_root(fixture["rawJson"].as_str().unwrap().as_bytes());
+            if fixture["accepted"] == true {
+                let bytes = result.unwrap_or_else(|error| panic!("{}: {error}", fixture["name"]));
+                assert_eq!(
+                    String::from_utf8(bytes.clone()).unwrap(),
+                    fixture["parsedJson"]
+                );
+                assert_eq!(
+                    format!("sha256:{:x}", Sha256::digest(&bytes)),
+                    fixture["hash"]
+                );
+            } else {
+                assert!(result.is_err(), "{}", fixture["name"]);
+            }
+        }
+    }
 
     #[test]
     fn ordered_ast_matches_ts_numeric_unicode_defaulted_receipt_fixtures() {

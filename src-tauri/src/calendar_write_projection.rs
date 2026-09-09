@@ -636,7 +636,7 @@ fn cadence_occurrence(cadence: &Value, start: NaiveDate, target: NaiveDate) -> b
         _ => false,
     }
 }
-fn wall(time: &Value, value: &str) -> Option<(NaiveDate, Option<chrono::NaiveTime>)> {
+pub(crate) fn wall(time: &Value, value: &str) -> Option<(NaiveDate, Option<chrono::NaiveTime>)> {
     if time["kind"] == "all-day" {
         return Some((NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?, None));
     }

@@ -1,7 +1,7 @@
 //! Post-write reads use a separate keyring-anchored batch; ordinary sync cursors are untouched.
 use super::*;
 #[path = "calendar_write_projection.rs"]
-mod projection;
+pub(super) mod projection;
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct LocalBinding {
