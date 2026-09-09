@@ -128,10 +128,14 @@ fn original_start(raw: Json) -> Result<Json, String> {
     )?;
     let value = text(get(&validated, "start")?)?;
     Ok(Json::String(if spec == "stamp" {
-        chrono::DateTime::parse_from_rfc3339(value)
+        let utc = chrono::DateTime::parse_from_rfc3339(value)
             .map_err(|_| INVALID)?
-            .with_timezone(&chrono::Utc)
-            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+            .with_timezone(&chrono::Utc);
+        // Keep normalized UTC in the same year range as the native input validator.
+        if !(100..=9999).contains(&chrono::Datelike::year(&utc)) {
+            return Err(INVALID.into());
+        }
+        utc.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
     } else {
         value.into()
     }))

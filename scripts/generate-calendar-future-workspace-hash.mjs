@@ -351,6 +351,15 @@ taskCase('rule-occurrence', r => { recurring(r); reminder(r); r.reminderRules[0]
 taskCase('rule-occurrence-foreign', r => { recurring(r); reminder(r); r.tasks.push({ ...r.tasks[0], id: 'other', recurrenceSeriesId: null }); r.taskEvents.push({ ...r.taskEvents[0], id: 'other-event', taskId: 'other', occurrenceId: null, sequence: 2 }); r.reminderRules[0].target = { kind: 'task', taskId: 'other', occurrenceId: 'occurrence' } }, false)
 for (const field of ['id', 'trigger', 'enabled', 'revision']) taskCase(`rule-missing-${field}`, r => { reminder(r); delete r.reminderRules[0][field] }, false)
 taskCase('rule-event-before-due-existing', r => { reminder(r); r.calendarSources = [structuredClone(source)]; r.calendarEvents = [{ ...structuredClone(event), id: 'reminder-event' }]; r.reminderRules[0].target = { kind: 'event', eventId: 'reminder-event', originalStart: null }; r.reminderRules[0].trigger = { kind: 'before_due', minutes: 5 } }, false)
+for (const [name, start, expected, accepted] of [
+ ['expanded-utc-year', '9999-12-31T23:30:00-01:00', '+010000-01-01T00:30:00.000Z', false],
+ ['upper-utc-year-boundary', '9999-12-31T23:30:00-00:29', '9999-12-31T23:59:00.000Z', true],
+ ['lower-utc-year-boundary', '0100-01-01T00:30:00+00:30', '0100-01-01T00:00:00.000Z', true],
+ ['below-native-utc-year', '0100-01-01T00:30:00+01:00', '0099-12-31T23:30:00.000Z', false],
+]) {
+ taskCase(`rule-event-${name}`, r => { reminder(r); r.calendarSources = [structuredClone(source)]; r.calendarEvents = [{ ...structuredClone(event), id: 'reminder-event' }]; r.reminderRules[0].target = { kind: 'event', eventId: 'reminder-event', originalStart: start } }, accepted)
+ assert.equal(JSON.parse(taskCases.at(-1).parsedJson).reminderRules[0].target.originalStart, expected)
+}
 const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.json', import.meta.url)
 const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)
