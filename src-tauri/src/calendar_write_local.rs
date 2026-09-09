@@ -116,6 +116,9 @@ pub(super) async fn stage<V: Vault, H: Http>(
     scopes: &[String],
 ) -> Result<Value, String> {
     let mut record = ledger(pool, vault, owner, id, epoch).await?;
+    if record.future.is_some() {
+        return Err("WRITE_UNSUPPORTED".into());
+    }
     if record.state != "applied" || record.outcome_unknown {
         return Err("WRITE_LOCAL_NOT_APPLIED".into());
     }
@@ -296,6 +299,9 @@ pub(super) async fn ack<V: Vault>(
     receipt: &str,
 ) -> Result<Value, String> {
     let mut record = ledger(pool, vault, owner, id, epoch).await?;
+    if record.future.is_some() {
+        return Err("WRITE_UNSUPPORTED".into());
+    }
     if record.state != "applied" || record.outcome_unknown {
         return Err("WRITE_LOCAL_NOT_APPLIED".into());
     }

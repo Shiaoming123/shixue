@@ -1,0 +1,124 @@
+{
+  "future": {
+    "parent": {
+      "state": "pending"
+    },
+    "successor": {
+      "state": "pending"
+    },
+    "compensation": {
+      "state": "pending"
+    }
+  },
+  "preview": {
+    "operationId": "76dbbab2-f27b-4d8f-a114-fbcb87b22c9b",
+    "connectionId": "c",
+    "calendarId": "cal",
+    "eventId": "parent",
+    "lockKeys": [
+      "m76dbbab2f27b4d8fa114fbcb87b22c9b",
+      "parent",
+      "pivot"
+    ],
+    "sendUpdates": "all",
+    "intent": {
+      "kind": "recurring.future",
+      "parent": {
+        "eventId": "parent",
+        "etag": "p1"
+      },
+      "originalStart": "2026-09-04",
+      "fields": {
+        "title": "After"
+      },
+      "plan": {
+        "version": 1,
+        "workspaceHash": "snapshot1",
+        "originalParent": {
+          "id": "parent",
+          "etag": "p1",
+          "summary": "Before",
+          "start": {
+            "date": "2026-09-01"
+          },
+          "end": {
+            "date": "2026-09-02"
+          },
+          "recurrence": [
+            "RRULE:FREQ=DAILY;COUNT=10"
+          ]
+        },
+        "pivot": {
+          "eventId": "pivot",
+          "etag": "i1"
+        },
+        "originalStart": "2026-09-04",
+        "exceptions": [],
+        "markerHash": "sha256:8430dc630045bc3a95104d8073341b202e109f2ea926c09e086d30ae8322bf06",
+        "parent": {
+          "eventId": "parent",
+          "etag": "p1",
+          "body": {
+            "recurrence": [
+              "RRULE:FREQ=DAILY;COUNT=3"
+            ],
+            "extendedProperties": {
+              "private": {
+                "meowOperationId": "76dbbab2-f27b-4d8f-a114-fbcb87b22c9b",
+                "meowOperationHash": "sha256:8430dc630045bc3a95104d8073341b202e109f2ea926c09e086d30ae8322bf06"
+              }
+            }
+          }
+        },
+        "successor": {
+          "eventId": "m76dbbab2f27b4d8fa114fbcb87b22c9b",
+          "etag": null,
+          "body": {
+            "id": "m76dbbab2f27b4d8fa114fbcb87b22c9b",
+            "summary": "After",
+            "start": {
+              "date": "2026-09-04"
+            },
+            "end": {
+              "date": "2026-09-05"
+            },
+            "recurrence": [
+              "RRULE:FREQ=DAILY;COUNT=7"
+            ],
+            "extendedProperties": {
+              "private": {
+                "meowOperationId": "76dbbab2-f27b-4d8f-a114-fbcb87b22c9b",
+                "meowOperationHash": "sha256:8430dc630045bc3a95104d8073341b202e109f2ea926c09e086d30ae8322bf06"
+              }
+            }
+          }
+        },
+        "compensation": {
+          "eventId": "parent",
+          "etag": null,
+          "body": {
+            "recurrence": [
+              "RRULE:FREQ=DAILY;COUNT=10"
+            ],
+            "extendedProperties": {
+              "private": {
+                "meowOperationId": "76dbbab2-f27b-4d8f-a114-fbcb87b22c9b",
+                "meowOperationHash": "sha256:8430dc630045bc3a95104d8073341b202e109f2ea926c09e086d30ae8322bf06"
+              }
+            }
+          }
+        }
+      }
+    },
+    "hash": "sha256:0a875c7f53da8aaccd61d2d36cfc644f1b6330decdf5117f3dd6769100495caf"
+  },
+  "version": 1,
+  "state": "pending",
+  "outcomeUnknown": false,
+  "attempts": 0,
+  "leaseId": null,
+  "leaseUntil": 0,
+  "error": null,
+  "result": null,
+  "localApplied": false
+}

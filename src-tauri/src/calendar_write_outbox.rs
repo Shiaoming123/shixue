@@ -1,10 +1,14 @@
 //! Device persistence only. These WebView-supplied records are never authority to send provider writes.
 use super::*;
 use sqlx::SqlitePool;
+#[path = "calendar_write_future.rs"]
+pub(super) mod future;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Operation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    future: Option<Value>,
     preview: Value,
     version: u64,
     state: String,
@@ -58,7 +62,7 @@ fn validate(operation: &Operation) -> Result<(), String> {
         return Err("OUTBOX_INVALID".into());
     }
     let preview = operation.preview.as_object().ok_or("OUTBOX_INVALID")?;
-    if preview.len() != 7
+    if !(preview.len() == 7 || preview.len() == 8)
         || preview.keys().any(|k| {
             ![
                 "operationId",
@@ -68,6 +72,7 @@ fn validate(operation: &Operation) -> Result<(), String> {
                 "sendUpdates",
                 "intent",
                 "hash",
+                "lockKeys",
             ]
             .contains(&k.as_str())
         })
@@ -117,9 +122,21 @@ fn validate(operation: &Operation) -> Result<(), String> {
             "cancel" => &["kind", "parent", "action"],
             _ => return Err("OUTBOX_INVALID".into()),
         },
+        "recurring.future" => &["kind", "parent", "originalStart", "fields", "plan"],
         _ => return Err("OUTBOX_INVALID".into()),
     };
     allow_fields(intent, allowed)?;
+    if kind == "recurring.future" {
+        future::validate(
+            &operation.preview,
+            operation.future.as_ref().ok_or("OUTBOX_INVALID")?,
+        )?;
+        if operation.local_applied {
+            return Err("OUTBOX_INVALID".into());
+        }
+    } else if operation.future.is_some() {
+        return Err("OUTBOX_INVALID".into());
+    }
     if kind != "create" && !kind.starts_with("recurring.") {
         if text_field(intent, "eventId")? != text_field(&operation.preview, "eventId")? {
             return Err("OUTBOX_INVALID".into());
@@ -200,6 +217,7 @@ fn validate(operation: &Operation) -> Result<(), String> {
                 "calendarId",
                 "eventId",
                 "etag",
+                "future",
             ],
         )?;
         for field in ["operationId", "connectionId", "calendarId", "eventId"] {
@@ -210,12 +228,33 @@ fn validate(operation: &Operation) -> Result<(), String> {
         if kind != "delete" {
             text_field(result, "etag")?;
         }
+        if kind == "recurring.future" {
+            let proof = &result["future"];
+            allow_fields(proof, &["markerHash", "parent", "successor"])?;
+            if proof["markerHash"] != intent["plan"]["markerHash"]
+                || !proof["parent"].is_object()
+                || !proof["successor"].is_object()
+            {
+                return Err("OUTBOX_INVALID".into());
+            }
+        } else if result.get("future").is_some() {
+            return Err("OUTBOX_INVALID".into());
+        }
     }
-    if operation
-        .error
-        .as_deref()
-        .is_some_and(|code| !["permission", "quota", "invalid", "OUTCOME_UNKNOWN"].contains(&code))
-    {
+    if operation.error.as_deref().is_some_and(|code| {
+        ![
+            "permission",
+            "quota",
+            "invalid",
+            "OUTCOME_UNKNOWN",
+            "COMPENSATION_REQUIRED",
+            "COMPENSATION_CONFLICT",
+            "COMPENSATED",
+            "WRITE_REJECTED",
+            "WRITE_SNAPSHOT_CHANGED",
+        ]
+        .contains(&code)
+    }) {
         return Err("OUTBOX_INVALID".into());
     }
     Ok(())
@@ -243,7 +282,11 @@ async fn get(pool: &SqlitePool, id: &str) -> Result<Option<Operation>, String> {
             .await
             .map_err(|_| "OUTBOX_STORE_FAILED")?;
     payload
-        .map(|s| serde_json::from_str(&s).map_err(|_| "OUTBOX_INVALID".into()))
+        .map(|s| {
+            let operation: Operation = serde_json::from_str(&s).map_err(|_| "OUTBOX_INVALID")?;
+            validate(&operation)?;
+            Ok(operation)
+        })
         .transpose()
 }
 #[tauri::command]
@@ -302,8 +345,15 @@ pub(super) async fn dispatch(pool: &SqlitePool, request: Request) -> Result<Valu
             if rows.len() > 10000 {
                 return Err("OUTBOX_TOO_LARGE".into());
             }
-            let operations: Result<Vec<Operation>, _> =
-                rows.iter().map(|s| serde_json::from_str(s)).collect();
+            let operations: Result<Vec<Operation>, _> = rows
+                .iter()
+                .map(|s| {
+                    let operation: Operation =
+                        serde_json::from_str(s).map_err(|_| "OUTBOX_INVALID")?;
+                    validate(&operation)?;
+                    Ok::<_, String>(operation)
+                })
+                .collect();
             serde_json::to_value(operations.map_err(|_| "OUTBOX_INVALID")?)
                 .map_err(|_| "OUTBOX_INVALID".into())
         }
@@ -577,5 +627,45 @@ mod tests {
             pool.close().await;
             std::fs::remove_file(path).unwrap();
         });
+    }
+}
+
+#[cfg(test)]
+mod future_contract_tests {
+    use super::*;
+    #[test]
+    fn future_mirror_rejects_malformed_fields() {
+        let value: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/calendar-future-operation.json"
+        ))
+        .unwrap();
+        for (pointer, replacement) in [
+            ("/future/compensation/etag", json!(42)),
+            ("/future/parent/proof", json!([])),
+            ("/future/successor/state", json!("sent")),
+            ("/preview/intent/plan/version", json!(2)),
+            ("/preview/intent/plan/compensation/etag", json!("stale")),
+            ("/preview/lockKeys", json!(["parent"])),
+        ] {
+            let mut bad = value.clone();
+            let (parent, key) = pointer.rsplit_once('/').unwrap();
+            bad.pointer_mut(parent).unwrap()[key] = replacement;
+            assert!(serde_json::from_value::<Operation>(bad)
+                .map(|v| validate(&v).is_err())
+                .unwrap_or(true));
+        }
+        let mut bad = value;
+        bad["future"]["parent"]["resend"] = json!(true);
+        assert!(validate(&serde_json::from_value(bad).unwrap()).is_err());
+    }
+    #[test]
+    fn future_mirror_preserves_typescript_frozen_json() {
+        let value: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/calendar-future-operation.json"
+        ))
+        .unwrap();
+        let operation: Operation = serde_json::from_value(value.clone()).unwrap();
+        validate(&operation).unwrap();
+        assert_eq!(serde_json::to_value(operation).unwrap(), value);
     }
 }

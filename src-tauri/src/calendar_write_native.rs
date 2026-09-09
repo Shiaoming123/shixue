@@ -16,6 +16,8 @@ static TICKETS: OnceLock<Mutex<HashMap<String, ConfirmationTicket>>> = OnceLock:
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Ledger {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    future: Option<Value>,
     preview: Value,
     grant_epoch: String,
     version: u64,
@@ -311,6 +313,10 @@ async fn ledger<V: Vault>(
     {
         return Err("WRITE_AUTHORITY_MISMATCH".into());
     }
+    validate_future_record(&record)?;
+    if record.future.is_some() && a.lock_keys != lock_keys(&record.preview["intent"])? {
+        return Err("WRITE_AUTHORITY_MISMATCH".into());
+    }
     Ok(record)
 }
 async fn persist<V: Vault>(
@@ -321,6 +327,7 @@ async fn persist<V: Vault>(
     record: &Ledger,
     previous: Option<String>,
 ) -> Result<(), String> {
+    validate_future_record(record)?;
     let value = serde_json::to_value(record).map_err(|_| "WRITE_INVALID")?;
     // Keep the exact anchored version when a SQL commit precedes a failed keyring commit.
     let trusted = match ledger(pool, vault, owner, id, &record.grant_epoch).await {
@@ -363,6 +370,28 @@ async fn persist<V: Vault>(
         &anchor_key(owner, id),
         &serde_json::to_string(&a).map_err(|_| "WRITE_INVALID")?,
     )
+}
+fn validate_future_record(record: &Ledger) -> Result<(), String> {
+    if record.preview["intent"]["kind"] == "recurring.future" {
+        write_outbox::future::validate(
+            &record.preview,
+            record.future.as_ref().ok_or("WRITE_INVALID")?,
+        )?;
+        if record.local.is_some() {
+            return Err("WRITE_UNSUPPORTED".into());
+        }
+        let mut content = record.preview.clone();
+        content
+            .as_object_mut()
+            .ok_or("WRITE_INVALID")?
+            .remove("hash");
+        if record.preview["hash"] != digest(&content)? {
+            return Err("WRITE_PREVIEW_CHANGED".into());
+        }
+    } else if record.future.is_some() {
+        return Err("WRITE_INVALID".into());
+    }
+    Ok(())
 }
 fn safe(record: &Ledger) -> Value {
     json!({"operationId":record.preview["operationId"],"state":record.state,"outcomeUnknown":record.outcome_unknown,"result":record.result})
@@ -552,6 +581,7 @@ pub async fn write_prepare<R: tauri::Runtime>(
         outcome_unknown: false,
         result: None,
         local: None,
+        future: None,
     };
     let previous = Keyring.get(&head_key(&owner))?;
     persist(&pool, &Keyring, &owner, &id, &record, previous).await?;
@@ -736,6 +766,11 @@ fn lock_keys(intent: &Value) -> Result<Vec<String>, String> {
         "recurring.single" => vec![
             field(&intent["parent"], "eventId")?.into(),
             field(&intent["instance"], "eventId")?.into(),
+        ],
+        "recurring.future" => vec![
+            field(&intent["plan"]["parent"], "eventId")?.into(),
+            field(&intent["plan"]["pivot"], "eventId")?.into(),
+            field(&intent["plan"]["successor"], "eventId")?.into(),
         ],
         "recurring.series" => vec![field(&intent["parent"], "eventId")?.into()],
         _ => vec![intent_event_id(intent)?.into()],
@@ -984,6 +1019,9 @@ async fn execute<V: Vault, H: Http>(
     reconcile: bool,
 ) -> Result<Value, String> {
     let mut record = ledger(pool, vault, owner, id, epoch).await?;
+    if record.preview["intent"]["kind"] == "recurring.future" {
+        return Err("WRITE_UNSUPPORTED".into());
+    }
     let a = anchor(vault, owner, id)?;
     if record.state == "applied" {
         return Ok(safe(&record));
@@ -1292,12 +1330,79 @@ mod tests {
             outcome_unknown: false,
             result: None,
             local: None,
+            future: None,
         };
         persist(&pool, &vault, "owner", "op", &record, None)
             .await
             .unwrap();
         vault.set(&head_key("owner"), "op").unwrap();
         (pool, vault, record)
+    }
+    #[test]
+    fn future_anchor_binds_plan_steps_and_locks_without_enabling_send() {
+        tauri::async_runtime::block_on(async {
+            let (pool, vault, mut record) = fixture(create()).await;
+            let frozen: Value = serde_json::from_str(include_str!(
+                "../../tests/fixtures/calendar-future-operation.json"
+            ))
+            .unwrap();
+            let id = frozen["preview"]["operationId"].as_str().unwrap();
+            write_outbox::dispatch(
+                &pool,
+                write_outbox::Request::Insert {
+                    operation: serde_json::from_value(frozen.clone()).unwrap(),
+                },
+            )
+            .await
+            .unwrap();
+            record.preview = frozen["preview"].clone();
+            record.future = Some(frozen["future"].clone());
+            persist(&pool, &vault, "owner", id, &record, None)
+                .await
+                .unwrap();
+            assert_eq!(
+                json!(anchor(&vault, "owner", id).unwrap().lock_keys),
+                record.preview["lockKeys"]
+            );
+            assert_eq!(
+                ledger(&pool, &vault, "owner", id, "grant")
+                    .await
+                    .unwrap()
+                    .future,
+                record.future
+            );
+            let mut next = record.clone();
+            next.version += 1;
+            next.future.as_mut().unwrap()["compensation"] = json!({"state":"applying","outcomeUnknown":true,"etag":"latest","proof":{"etag":"p2"}});
+            persist(&pool, &vault, "owner", id, &next, None)
+                .await
+                .unwrap();
+            assert_eq!(
+                ledger(&pool, &vault, "owner", id, "grant")
+                    .await
+                    .unwrap()
+                    .future,
+                next.future
+            );
+            let http = FakeHttp::new();
+            assert_eq!(
+                execute(&pool, &vault, &http, "owner", id, "grant", true)
+                    .await
+                    .unwrap_err(),
+                "WRITE_UNSUPPORTED"
+            );
+            assert!(confirmation_message(&record.preview).is_err());
+            assert_eq!(http.writes.load(Ordering::SeqCst), 0);
+            sqlx::query(
+                "UPDATE calendar_write_outbox SET native_payload=?,native_previous=NULL WHERE id=?",
+            )
+            .bind(serde_json::to_string(&record).unwrap())
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+            assert!(ledger(&pool, &vault, "owner", id, "grant").await.is_err());
+        });
     }
     fn create() -> Value {
         json!({"kind":"create","fields":{"title":"Meeting","time":{"kind":"all-day","startOn":"2026-09-09","endOnExclusive":"2026-09-10"},"attendees":[{"email":"guest@example.com","optional":false}]}})
