@@ -575,6 +575,7 @@ pub async fn write_prepare<R: tauri::Runtime>(
         let pool = sync_store::database(&app).await?;
         schema(&pool).await?;
         let http = GoogleHttp {
+            mutation_guard: None,
             config: &config,
             owner: &owner,
             epoch: generation,
@@ -606,6 +607,7 @@ pub async fn write_prepare<R: tauri::Runtime>(
         .is_some_and(|kind| kind.starts_with("recurring."))
     {
         let http = GoogleHttp {
+            mutation_guard: None,
             config: &config,
             owner: &owner,
             epoch: generation,
@@ -683,6 +685,7 @@ pub async fn write_confirm<R: tauri::Runtime>(
         }
         if record.future.is_some() {
             GoogleHttp {
+                mutation_guard: None,
                 config: &config,
                 owner: &owner,
                 epoch: generation,
@@ -733,6 +736,7 @@ trait Http {
     ) -> Result<HttpReply, String>;
 }
 struct GoogleHttp<'a> {
+    mutation_guard: Option<&'a (dyn Fn() -> Result<(), String> + Sync)>,
     config: &'a Config,
     owner: &'a str,
     epoch: u64,
@@ -752,6 +756,20 @@ fn http_scope_allowed(method: &str, path: &str, scopes: &[String]) -> bool {
         scopes.iter().any(|s| s == EVENT_SCOPE || s == WRITE_SCOPE)
     } else {
         false
+    }
+}
+impl GoogleHttp<'_> {
+    async fn send<T, F: std::future::Future<Output = Result<T, String>>>(
+        &self,
+        method: &str,
+        send: impl FnOnce() -> F,
+    ) -> Result<T, String> {
+        if method != "GET" {
+            if let Some(guard) = self.mutation_guard {
+                guard()?;
+            }
+        }
+        send().await
     }
 }
 impl Http for GoogleHttp<'_> {
@@ -805,7 +823,14 @@ impl Http for GoogleHttp<'_> {
             return Err("WRITE_UNAVAILABLE".into());
         }
         // Exactly one transport attempt, including on 401/5xx. Read retry policy is never used here.
-        let response = request.send().await.map_err(|_| "WRITE_OUTCOME_UNKNOWN")?;
+        let response = self
+            .send(method, || async {
+                request
+                    .send()
+                    .await
+                    .map_err(|_| "WRITE_OUTCOME_UNKNOWN".into())
+            })
+            .await?;
         let status = response.status().as_u16();
         let body = if status == 204 {
             Value::Null
@@ -1260,10 +1285,30 @@ pub async fn write_run<R: tauri::Runtime>(
     let pool = sync_store::database(&app).await?;
     let record = ledger(&pool, &Keyring, &owner, &operation_id, &epoch).await?;
     consume_run_ticket(&operation_id, &record, generation)?;
-    let http = GoogleHttp {
+    let session_http = GoogleHttp {
+        mutation_guard: None,
         config: &config,
         owner: &owner,
         epoch: generation,
+    };
+    let guard = || {
+        require_enabled()?;
+        if grant(&config)? != (owner.clone(), epoch.clone(), generation) {
+            return Err("WRITE_GRANT_CHANGED".into());
+        }
+        session_http.check_future_session()?;
+        if started.elapsed() >= std::time::Duration::from_secs(30) {
+            return Err("WRITE_LEASE_LOST".into());
+        }
+        Ok(())
+    };
+    let http = GoogleHttp {
+        mutation_guard: if record.future.is_some() {
+            Some(&guard)
+        } else {
+            None
+        },
+        ..session_http
     };
     execute(
         &pool,
@@ -1273,13 +1318,7 @@ pub async fn write_run<R: tauri::Runtime>(
         &operation_id,
         &epoch,
         false,
-        || {
-            require_enabled()?;
-            if grant(&config)? != (owner.clone(), epoch.clone(), generation) {
-                return Err("WRITE_GRANT_CHANGED".into());
-            }
-            http.check_future_session()
-        },
+        &guard,
         std::time::Duration::from_secs(30),
         || started.elapsed(),
     )
@@ -1296,6 +1335,7 @@ pub async fn write_reconcile<R: tauri::Runtime>(
     let (owner, epoch, generation) = grant(&config)?;
     let pool = sync_store::database(&app).await?;
     let http = GoogleHttp {
+        mutation_guard: None,
         config: &config,
         owner: &owner,
         epoch: generation,
@@ -1324,6 +1364,59 @@ pub async fn write_reconcile<R: tauri::Runtime>(
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+    #[test]
+    fn future_transport_guard_rechecks_after_authorization_before_send() {
+        tauri::async_runtime::block_on(async {
+            for refusal in [
+                "WRITE_LEASE_LOST",
+                "WRITE_GRANT_CHANGED",
+                "WRITE_SCOPE_REQUIRED",
+                "DISCONNECTED",
+                "WRITE_UNAVAILABLE",
+            ] {
+                let changed = AtomicBool::new(false);
+                let sends = AtomicUsize::new(0);
+                let guard = || {
+                    if changed.load(Ordering::SeqCst) {
+                        Err(refusal.into())
+                    } else {
+                        Ok(())
+                    }
+                };
+                let config = Config {
+                    client_id: None,
+                    connection_id: "test".into(),
+                };
+                let http = GoogleHttp {
+                    config: &config,
+                    owner: "owner",
+                    epoch: 7,
+                    mutation_guard: Some(&guard),
+                };
+                guard().unwrap(); // Saga precheck succeeds before token authorization awaits.
+                async {
+                    tokio::task::yield_now().await;
+                    changed.store(true, Ordering::SeqCst);
+                }
+                .await;
+                let result = http
+                    .send("PATCH", || async {
+                        sends.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    })
+                    .await;
+                assert_eq!(result.unwrap_err(), refusal);
+                assert_eq!(sends.load(Ordering::SeqCst), 0);
+                // GET and transports without a future guard preserve their existing behavior.
+                http.send("GET", || async { Ok(()) }).await.unwrap();
+                let ordinary = GoogleHttp {
+                    mutation_guard: None,
+                    ..http
+                };
+                ordinary.send("PATCH", || async { Ok(()) }).await.unwrap();
+            }
+        });
+    }
     #[test]
     fn public_write_run_closed_before_grant_database_or_http() {
         assert_eq!(require_enabled().unwrap_err(), "WRITE_UNAVAILABLE");

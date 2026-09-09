@@ -61,3 +61,8 @@ Production-compilable internal saga now owns Run/Reconcile routing and one injec
 ### 4B1c3b checkpoint
 
 Production execute/Run/Reconcile now route future records to the reviewed saga under the command-owned WRITE_GATE and one 30-second monotonic invocation deadline. Initial Run still consumes a confirmation ticket; native-anchored applying/unknown future progress may resume after volatile tickets disappear. Reconcile remains GET-only and never starts a pending successor/compensation. Runtime ENABLED remains false with no enable command. RED/GREEN and rust:verify (91 tests) pass; command guard proof is unit/source-level, not native command E2E. No local future projection, UI, real Google or Stage 7. Next: review this slice before separately authorized 4B2. Task 4 remains incomplete; research untouched/unstaged.
+
+
+#### 4B1c3b P2 transport review checkpoint
+
+Future Run now reuses its exact invocation guard at the GoogleHttp send boundary after token authorization awaits. The new delayed-authorization fake guard test proves zero send on expiry/authority changes; GET and nonfuture paths remain unchanged. RED/GREEN and rust:verify 92/92 pass. Continue review of this slice; Task 4 remains incomplete and 4B2 is not implemented.

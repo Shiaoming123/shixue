@@ -237,6 +237,7 @@ pub async fn write_stage_local<R: tauri::Runtime>(
     let pool = sync_store::database(&app).await?;
     schema(&pool).await?;
     let http = GoogleHttp {
+        mutation_guard: None,
         config: &config,
         owner: &owner,
         epoch: generation,
@@ -269,6 +270,7 @@ pub async fn write_read_local<R: tauri::Runtime>(
     let pool = sync_store::database(&app).await?;
     schema(&pool).await?;
     let http = GoogleHttp {
+        mutation_guard: None,
         config: &config,
         owner: &owner,
         epoch: generation,

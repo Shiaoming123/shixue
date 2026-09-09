@@ -469,3 +469,10 @@ Verification: doctor passed; rust:verify passed fmt, all-target/all-feature clip
 No frontend changes, so frontend gates were not rerun. No local future projection (4B2), native UI, real OAuth/Google, OS keyring, external notification or Stage 7 claim. Final Task 5 public checkpoints are unchanged. Protected research remains untouched and unstaged. Exact task/session token usage is unavailable.
 
 Final additional gates passed: default cargo check, no-default standalone calendar-connections and calendar-writes checks, npm run check:docs and git diff --check.
+
+
+#### 4B1c3b P2 review follow-up: post-authorization transport guard
+
+Base dc9c2d6. Future Run now passes the exact invocation guard used by execute to an optional GoogleHttp mutation guard. The send boundary calls it after authorized() has finished and immediately before invoking request.send(), with no intervening await. It rechecks ENABLED, exact owner/grantEpoch/generation, current full future scopes (write and calendar list), and expiry against the same entry Instant and 30-second budget. This closes the token-refresh wait gap. Prepare/confirm/local-read and nonfuture transports use None; GET does not invoke the mutation guard, so Reconcile remains read-only and does not require ENABLED.
+
+RED: the focused test failed compiling the missing mutation_guard/send boundary. GREEN: an injectable authorization wait changes guard state after a successful saga precheck; deadline, grant, scope, disconnect and disabled refusals all prevent the fake send closure from running. GET and unguarded nonfuture calls retain their prior behavior. The production GoogleHttp implementation uses that tested send boundary around reqwest request.send(). Focused test passes; rust:verify passes fmt, all-target/all-feature clippy, all 92 tests, all-feature and no-default-feature checks. No actual OAuth refresh, Google mutation, system-keyring or native command E2E claim. Research untouched/unstaged; no UI, projection or Stage 7 changes.
