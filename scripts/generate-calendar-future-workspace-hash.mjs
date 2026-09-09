@@ -427,6 +427,61 @@ for (const key of ['id', 'idempotencyKey', 'commandType', 'source', 'workspaceRe
 for (const [key, value] of [['result', []], ['result', null], ['source', 'bad'], ['workspaceRevision', 0], ['requestFingerprint', ''], ['createdAt', 'bad'], ['expiresAt', null], ['extra', true], ['id', 'task']]) taskCase(`receipt-invalid-${key}-${value}`, r => { receiptWorkspace(r); r.commandReceipts[0][key] = value }, false)
 taskCase('receipt-idempotency-duplicate', r => { receiptWorkspace(r); r.commandReceipts.push({ ...r.commandReceipts[0], id: 'other' }) }, false)
 taskCase('receipt-id-duplicate', r => { receiptWorkspace(r); r.commandReceipts.push({ ...r.commandReceipts[0], idempotencyKey: 'other' }) }, false)
+function migration(r) {
+ delivery(r)
+ r.reminderMigration = { version: 1, completedAt: stamp, mapped: [{ row: { taskId: 'task', reminderAt: '2026-09-09T08:00:00+08:00', deliveredAt: 'historical text' }, deliveryIds: ['delivery', 'delivery'] }], quarantined: [{ row: { taskId: 'absent', reminderAt: 'invalid date', deliveredAt: 'arbitrary' }, reason: 'unknown legacy record' }] }
+}
+function fullWorkspace(r) {
+ review(r); recurring(r); session(r); outcomeCalendar(r); receiptWorkspace(r); migration(r)
+ r.calendarEventLinks[0].id = 'calendar-link'
+ r.completionRecords[0].sessionIds = ['session']
+ r.completionRecords[0].tagIdsSnapshot = ['tag']
+ r.commandReceipts[0].result = { z: [null, -0, 1e-7, 1e21, { '10': false, '2': '中文', x: [] }], '00': '😀' }
+ r.previewReceipts = [{ id: 'task', requestFingerprint: 'old', expectedWorkspaceRevision: 1, commandType: 'old', createdAt: stamp, expiresAt: stamp, extra: true }]
+ r.previewReceipts.push(structuredClone(r.previewReceipts[0]))
+ for (const [key, value] of Object.entries(r)) if (Array.isArray(value)) assert.ok(value.length, key)
+}
+taskCase('full-workspace', fullWorkspace)
+taskCase('migration-empty', r => { r.reminderMigration = { version: 1, completedAt: stamp, mapped: [], quarantined: [] } })
+taskCase('migration-duplicate-rows', r => { migration(r); r.reminderMigration.mapped.push(structuredClone(r.reminderMigration.mapped[0])) })
+for (const status of ['pending', 'cancelled', 'delivered']) taskCase(`migration-status-${status}`, r => { migration(r); r.reminderDeliveries[0].status = status })
+for (const [name, change] of [
+ ['version', r => { r.reminderMigration.version = 2 }],
+ ['no-ids', r => { r.reminderMigration.mapped[0].deliveryIds = [] }],
+ ['orphan-delivery', r => { r.reminderMigration.mapped[0].deliveryIds = ['missing'] }],
+ ['wrong-task', r => { r.reminderMigration.mapped[0].row.taskId = 'review-task' }],
+ ['wrong-time', r => { r.reminderMigration.mapped[0].row.reminderAt = 'bad' }],
+ ['event-delivery', r => { r.reminderRules[0].target = { kind: 'event', eventId: 'calendar', originalStart: null } }],
+ ['global-id', r => { r.commandReceipts[0].id = 'calendar' }],
+ ['idempotency', r => { r.commandReceipts.push({ ...r.commandReceipts[0], id: 'receipt2' }) }],
+ ['two-sessions', r => { r.studySessions.push({ ...r.studySessions[0], id: 'session2' }) }],
+ ['graph-ref', r => { r.calendarEventLinks[0].taskId = 'missing' }],
+ ['unknown-root', r => { r.extra = true }],
+ ['unknown-migration', r => { r.reminderMigration.extra = true }],
+ ['unknown-row', r => { r.reminderMigration.mapped[0].row.extra = true }],
+ ['preview-invalid', r => { r.previewReceipts[0].expectedWorkspaceRevision = 0 }],
+ ['timestamp-ceiling', r => { r.updatedAt = '2026-09-09T00:00Z' }],
+ ['timezone-ceiling', r => { r.calendarSources[0].timezone = 'America/New_York' }],
+ ['surrogate-ceiling', r => { r.tasks[0].title = '\ud800' }],
+]) taskCase(`full-invalid-${name}`, r => { fullWorkspace(r); change(r) }, false)
+for (const key of ['version', 'completedAt', 'mapped', 'quarantined']) taskCase(`migration-missing-${key}`, r => { migration(r); delete r.reminderMigration[key] }, false)
+for (const [key, value] of [['completedAt', 'bad'], ['mapped', null], ['quarantined', {}]]) taskCase(`migration-invalid-${key}`, r => { migration(r); r.reminderMigration[key] = value }, false)
+for (const key of ['taskId', 'reminderAt', 'deliveredAt']) taskCase(`migration-row-empty-${key}`, r => { migration(r); r.reminderMigration.mapped[0].row[key] = '' }, false)
+taskCase('migration-empty-reason', r => { migration(r); r.reminderMigration.quarantined[0].reason = ' ' }, false)
+taskCase('migration-date-only', r => { migration(r); r.reminderMigration.mapped[0].row.reminderAt = '2026-09-09' })
+for (const key of ['id', 'requestFingerprint', 'expectedWorkspaceRevision', 'commandType', 'createdAt', 'expiresAt']) taskCase(`full-preview-missing-${key}`, r => { fullWorkspace(r); delete r.previewReceipts[0][key] }, false)
+for (const [name, change] of [
+ ['missing-row', m => { delete m.mapped[0].row }],
+ ['missing-ids', m => { delete m.mapped[0].deliveryIds }],
+ ['empty-id', m => { m.mapped[0].deliveryIds = [''] }],
+ ['ids-type', m => { m.mapped[0].deliveryIds = 'delivery' }],
+ ['mapped-entry-type', m => { m.mapped = [null] }],
+ ['quarantine-entry-type', m => { m.quarantined = [null] }],
+ ['missing-reason', m => { delete m.quarantined[0].reason }],
+ ['unknown-mapping', m => { m.mapped[0].extra = true }],
+ ['unknown-quarantine', m => { m.quarantined[0].extra = true }],
+ ['dateparse-ceiling', m => { m.mapped[0].row.reminderAt = 'September 9, 2026 GMT' }],
+]) taskCase(`migration-boundary-${name}`, r => { migration(r); change(r.reminderMigration) }, false)
 const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.json', import.meta.url)
 const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)

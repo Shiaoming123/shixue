@@ -265,5 +265,106 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
             return Err(INVALID.into());
         }
     }
+    if let Ok(migration) = get(root, "reminderMigration") {
+        let Json::Array(mapped) = get(migration, "mapped")? else {
+            unreachable!()
+        };
+        for mapping in mapped {
+            let row = get(mapping, "row")?;
+            let Json::Array(ids) = get(mapping, "deliveryIds")? else {
+                unreachable!()
+            };
+            if ids.is_empty() {
+                return Err(INVALID.into());
+            }
+            for id in ids {
+                // ponytail: linear lookup per mapping ID; index deliveries if large migrations matter.
+                let delivery = deliveries
+                    .iter()
+                    .find(|delivery| get(delivery, "id").ok() == Some(id))
+                    .ok_or(INVALID)?;
+                let rule = collections["reminderRules"]
+                    .get(text(get(delivery, "reminderRuleId")?)?)
+                    .ok_or(INVALID)?;
+                let target = get(rule, "target")?;
+                if text(get(target, "kind")?)? != "task"
+                    || get(target, "taskId")? != get(row, "taskId")?
+                {
+                    return Err(INVALID.into());
+                }
+                let raw_time = text(get(row, "reminderAt")?)?;
+                // Native date ceiling: date-only UTC or the supported RFC3339 subset.
+                let row_time = if raw_time.len() == 10 {
+                    format!("{raw_time}T00:00:00Z")
+                } else {
+                    raw_time.to_string()
+                };
+                if !super::valid_timestamp(&row_time) {
+                    return Err("WORKSPACE_TIMESTAMP_UNSUPPORTED".into());
+                }
+                let instant = |value: &str| {
+                    chrono::DateTime::parse_from_rfc3339(value)
+                        .map(|v| v.timestamp_millis())
+                        .map_err(|_| INVALID)
+                };
+                if instant(&row_time)? != instant(text(get(delivery, "scheduledFor")?)?)? {
+                    return Err(INVALID.into());
+                }
+            }
+        }
+    }
+
     Ok(())
+}
+
+pub(super) fn migration(raw: Json) -> Result<Json, String> {
+    let Json::Object(mut props) = raw else {
+        return Err(INVALID.into());
+    };
+    let mut groups = Vec::new();
+    for name in ["mapped", "quarantined"] {
+        let Json::Array(items) = take(&mut props, name).ok_or(INVALID)? else {
+            return Err(INVALID.into());
+        };
+        if items.len() > 100_000 {
+            return Err(INVALID.into());
+        }
+        let mut entries = Vec::new();
+        for item in items {
+            let Json::Object(mut entry) = item else {
+                return Err(INVALID.into());
+            };
+            let row = fields(
+                take(&mut entry, "row").ok_or(INVALID)?,
+                &[
+                    ("taskId", "text"),
+                    ("reminderAt", "text"),
+                    ("deliveredAt", "text"),
+                ],
+            )?;
+            let schema = if name == "mapped" {
+                ("deliveryIds", "[]text")
+            } else {
+                ("reason", "text")
+            };
+            let Json::Object(mut output) = fields(Json::Object(entry), &[schema])? else {
+                unreachable!()
+            };
+            output.insert(0, ("row".into(), row));
+            entries.push(Json::Object(output));
+        }
+        groups.push((name.into(), Json::Array(entries)));
+    }
+    let Json::Object(mut output) = fields(
+        Json::Object(props),
+        &[("version", "number"), ("completedAt", "stamp")],
+    )?
+    else {
+        unreachable!()
+    };
+    if output[0].1 != Json::Number(1.0) {
+        return Err(INVALID.into());
+    }
+    output.extend(groups);
+    Ok(Json::Object(output))
 }

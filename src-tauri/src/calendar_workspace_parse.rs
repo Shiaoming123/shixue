@@ -1,4 +1,4 @@
-//! Partial workspace parser: calendar, list organization, tasks, recurrence and event chains.
+//! Ordered WorkspaceStateV4 parser within the explicit native scalar ceilings.
 #[path = "calendar_workspace_calendar.rs"]
 mod calendar;
 #[path = "calendar_workspace_lists.rs"]
@@ -152,8 +152,8 @@ const ROOT: &[&str] = &[
     "eventOutcomes",
 ];
 
-/// Deliberately incomplete. Migration and legacy preview receipts remain fail-closed.
-pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
+/// Validates every collection; does not authorize LocalEvidence or prepare.
+pub(super) fn normalize_workspace_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     let Json::Object(mut fields) = parse(raw)? else {
         return Err("WORKSPACE_INVALID".into());
     };
@@ -162,15 +162,47 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     }) {
         return Err("WORKSPACE_UNKNOWN_FIELD".into());
     }
-    // Legacy empty receipts are validated then omitted by the TS parser.
     if let Some(index) = fields.iter().position(|(key, _)| key == "previewReceipts") {
-        if fields.remove(index).1 != Json::Array(vec![]) {
-            return Err("WORKSPACE_COLLECTION_UNSUPPORTED".into());
+        let Json::Array(items) = fields.remove(index).1 else {
+            return Err("WORKSPACE_INVALID".into());
+        };
+        if items.len() > 100_000 {
+            return Err("WORKSPACE_INVALID".into());
+        }
+        for item in items {
+            // TS validates these six legacy fields, ignores extras and drops the receipt.
+            let Json::Object(mut props) = item else {
+                return Err("WORKSPACE_INVALID".into());
+            };
+            props.retain(|(key, _)| {
+                [
+                    "id",
+                    "requestFingerprint",
+                    "expectedWorkspaceRevision",
+                    "commandType",
+                    "createdAt",
+                    "expiresAt",
+                ]
+                .contains(&key.as_str())
+            });
+            calendar::fields(
+                Json::Object(props),
+                &[
+                    ("id", "text"),
+                    ("requestFingerprint", "text"),
+                    ("expectedWorkspaceRevision", "number"),
+                    ("commandType", "text"),
+                    ("createdAt", "stamp"),
+                    ("expiresAt", "stamp"),
+                ],
+            )?;
         }
     }
-    if fields.iter().any(|(key, _)| key == "reminderMigration") {
-        return Err("WORKSPACE_COLLECTION_UNSUPPORTED".into());
-    }
+    let migration = fields
+        .iter()
+        .position(|(key, _)| key == "reminderMigration")
+        .map(|index| reminders::migration(fields.remove(index).1))
+        .transpose()?;
     let mut normalized = Vec::new();
     for key in ROOT {
         let index = fields
@@ -234,6 +266,13 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
             _ => return Err("WORKSPACE_INVALID".into()),
         }
         normalized.push((key.to_string(), value));
+    }
+    if let Some(migration) = migration {
+        let index = normalized
+            .iter()
+            .position(|(key, _)| key == "reminderDeliveries")
+            .unwrap();
+        normalized.insert(index, ("reminderMigration".into(), migration));
     }
     let normalized = Json::Object(normalized);
     calendar::references(&normalized)?;
@@ -349,7 +388,7 @@ mod tests {
         ))
         .unwrap();
         for fixture in fixtures.as_array().unwrap() {
-            let result = normalize_empty_root(fixture["rawJson"].as_str().unwrap().as_bytes());
+            let result = normalize_workspace_root(fixture["rawJson"].as_str().unwrap().as_bytes());
             if fixture["accepted"] == true {
                 let bytes = result.unwrap_or_else(|error| panic!("{}: {error}", fixture["name"]));
                 assert_eq!(
@@ -393,13 +432,37 @@ mod tests {
         }
     }
     #[test]
+    fn combined_root_rejects_duplicate_keys() {
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/calendar-future-workspace-tasks.json"
+        ))
+        .unwrap();
+        let raw = fixtures
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == "full-workspace")
+            .unwrap()["rawJson"]
+            .as_str()
+            .unwrap();
+        for changed in [
+            raw.replacen("{", "{\"revision\":1,", 1),
+            raw.replacen("\"deliveryIds\":", "\"row\":{},\"deliveryIds\":", 1),
+        ] {
+            assert_eq!(
+                normalize_workspace_root(changed.as_bytes()).unwrap_err(),
+                "WORKSPACE_JSON_INVALID"
+            );
+        }
+    }
+    #[test]
     fn list_entities_match_ts_and_fail_closed() {
         let fixtures: serde_json::Value = serde_json::from_str(include_str!(
             "../../tests/fixtures/calendar-future-workspace-lists.json"
         ))
         .unwrap();
         for fixture in fixtures.as_array().unwrap() {
-            let result = normalize_empty_root(fixture["rawJson"].as_str().unwrap().as_bytes());
+            let result = normalize_workspace_root(fixture["rawJson"].as_str().unwrap().as_bytes());
             if fixture["accepted"] == true {
                 let bytes = result.unwrap_or_else(|error| panic!("{}: {error}", fixture["name"]));
                 assert_eq!(
@@ -423,7 +486,7 @@ mod tests {
         ))
         .unwrap();
         for fixture in fixtures.as_array().unwrap() {
-            let result = normalize_empty_root(fixture["rawJson"].as_str().unwrap().as_bytes());
+            let result = normalize_workspace_root(fixture["rawJson"].as_str().unwrap().as_bytes());
             if fixture["accepted"] == true {
                 let bytes = result.unwrap_or_else(|error| panic!("{}: {error}", fixture["name"]));
                 assert_eq!(
@@ -455,7 +518,7 @@ mod tests {
                 fixture["hash"]
             );
             // Codec parity is not collection parsing or attachment clearance.
-            assert!(normalize_empty_root(expected.as_bytes()).is_err());
+            assert!(normalize_workspace_root(expected.as_bytes()).is_err());
         }
         assert_eq!(
             parse(br#"{"z":-0,"10":1,"2":1e20,"a":1e-7}"#)
@@ -498,14 +561,14 @@ mod tests {
             raw.replace("2026-09-09", "2026-02-30"),
         ] {
             assert!(
-                normalize_empty_root(changed.as_bytes()).is_err(),
+                normalize_workspace_root(changed.as_bytes()).is_err(),
                 "{changed}"
             );
         }
         let legacy = raw.replacen("{", "{\"previewReceipts\":[],", 1);
         assert_eq!(
-            normalize_empty_root(legacy.as_bytes()).unwrap(),
-            normalize_empty_root(raw.as_bytes()).unwrap()
+            normalize_workspace_root(legacy.as_bytes()).unwrap(),
+            normalize_workspace_root(raw.as_bytes()).unwrap()
         );
     }
 
@@ -517,7 +580,7 @@ mod tests {
         .unwrap();
         for fixture in fixtures.as_array().unwrap() {
             let raw = fixture["rawJson"].as_str().unwrap();
-            let bytes = normalize_empty_root(raw.as_bytes()).unwrap();
+            let bytes = normalize_workspace_root(raw.as_bytes()).unwrap();
             assert_eq!(
                 String::from_utf8(bytes.clone()).unwrap(),
                 fixture["parsedJson"]
