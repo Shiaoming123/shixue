@@ -76,6 +76,11 @@ test('non-time edits, fake keys and orphaned old exceptions never silently overw
   rejects(() => normalizeGoogleBatch([{ ...master, recurrence: ['RRULE:FREQ=WEEKLY;COUNT=1'] }], request, [parent], 'incremental'), 'cursor-expired')
   assert.equal(parent.recurrence?.exceptions.length, 1)
 })
+test('reader accepts only the recurrence write marker it can prove', () => {
+  const marker = { extendedProperties: { private: { meowOperationId: 'operation', meowOperationHash: `sha256:${'a'.repeat(64)}` } } }
+  assert.ok(normalizeGoogleBatch([{ ...master, ...marker }], request, [], 'full').upserts[0]!.event.recurrence)
+  rejects(() => normalizeGoogleBatch([{ ...master, extendedProperties: { private: { unrelated: 'value' } } }], request, [], 'full'))
+})
 test('all-day spans remain exclusive; month-end and leap recurrence cannot clamp dates', () => {
   const event = { id: 'all-day', summary: 'Days', start: { date: '2026-09-09' }, end: { date: '2026-09-11' }, recurrence: ['RRULE:FREQ=DAILY;COUNT=3'] }
   const result = normalizeGoogleBatch([event], request, [], 'full').upserts[0]!.event

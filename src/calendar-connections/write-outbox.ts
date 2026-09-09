@@ -4,11 +4,17 @@ import { record, string } from './types.ts'
 
 export type SendUpdates = 'all' | 'externalOnly' | 'none'
 export interface WriteFields { title?: string; time?: CalendarEventTime; attendees?: Array<{ email: string; optional: boolean }> }
+export interface RecurringRef { eventId: string; etag: string }
 export type WriteIntent =
   | { kind: 'create'; fields: WriteFields }
   | { kind: 'update'; eventId: string; etag: string; fields: WriteFields }
   | { kind: 'cancel' | 'delete'; eventId: string; etag: string }
   | { kind: 'rsvp'; eventId: string; etag: string; selfEmail: string; response: 'accepted' | 'declined' | 'tentative' }
+  | { kind: 'recurring.single'; parent: RecurringRef; originalStart: string; instance: RecurringRef; action: 'update'; fields: Pick<WriteFields, 'time'> }
+  | { kind: 'recurring.single'; parent: RecurringRef; originalStart: string; instance: RecurringRef; action: 'cancel' }
+  | { kind: 'recurring.series'; parent: RecurringRef; action: 'update'; fields: Omit<WriteFields, 'attendees'>; recurrence?: string[] }
+  | { kind: 'recurring.series'; parent: RecurringRef; action: 'cancel' }
+  | { kind: 'recurring.future' }
 export interface WritePreview { operationId: string; connectionId: string; calendarId: string; eventId: string; sendUpdates: SendUpdates; intent: WriteIntent; hash: string }
 export interface WriteOperation { preview: WritePreview; version: number; state: 'pending' | 'applying' | 'applied' | 'conflict' | 'failed'; outcomeUnknown: boolean; attempts: number; leaseId: string | null; leaseUntil: number; error: string | null; result: WriteResult | null; localApplied: boolean }
 export interface WriteResult { connectionId: string; calendarId: string; eventId: string; etag: string | null; operationId: string }
@@ -67,15 +73,39 @@ export class CalendarWriteOutbox {
     string(connectionId); string(calendarId)
     if (!['all', 'externalOnly', 'none'].includes(sendUpdates)) fail('WRITE_INVALID')
     const operationId = crypto.randomUUID(); let normalized: WriteIntent
+    if (intent.kind === 'recurring.future') fail('WRITE_UNSUPPORTED')
     if (intent.kind === 'create') { keys(intent, ['kind', 'fields']); normalized = { kind: 'create', fields: fields(intent.fields, true) } }
     else {
+      if (intent.kind === 'recurring.single') {
+        keys(intent, intent.action === 'update' ? ['kind', 'parent', 'originalStart', 'instance', 'action', 'fields'] : ['kind', 'parent', 'originalStart', 'instance', 'action'])
+        const parent = recurringRef(intent.parent), instance = recurringRef(intent.instance)
+        const originalStart = string(intent.originalStart)
+        if (!Number.isFinite(Date.parse(originalStart))) fail('WRITE_INVALID')
+        if (intent.action === 'update') {
+          const update = fields(intent.fields, false)
+          if (!update.time || update.title !== undefined || update.attendees !== undefined) fail('WRITE_INVALID')
+          normalized = { kind: 'recurring.single', parent, originalStart: new Date(originalStart).toISOString(), instance, action: 'update', fields: { time: update.time } }
+        } else if (intent.action === 'cancel') normalized = { kind: 'recurring.single', parent, originalStart: new Date(originalStart).toISOString(), instance, action: 'cancel' }
+        else fail('WRITE_INVALID')
+      } else if (intent.kind === 'recurring.series') {
+        keys(intent, intent.action === 'update' ? ['kind', 'parent', 'action', 'fields', 'recurrence'] : ['kind', 'parent', 'action'])
+        const parent = recurringRef(intent.parent)
+        if (intent.action === 'update') {
+          const update = fields(intent.fields, false)
+          if (update.attendees !== undefined || (Object.keys(update).length === 0 && intent.recurrence === undefined)) fail('WRITE_INVALID')
+          const recurrence = intent.recurrence === undefined ? undefined : recurrenceRules(intent.recurrence)
+          normalized = { kind: 'recurring.series', parent, action: 'update', fields: update, ...(recurrence ? { recurrence } : {}) }
+        } else if (intent.action === 'cancel') normalized = { kind: 'recurring.series', parent, action: 'cancel' }
+        else fail('WRITE_INVALID')
+      } else {
       const eventId = string(intent.eventId); const etag = string(intent.etag)
       if (intent.kind === 'update') { keys(intent, ['kind', 'eventId', 'etag', 'fields']); normalized = { kind: 'update', eventId, etag, fields: fields(intent.fields, false) } }
       else if (intent.kind === 'cancel' || intent.kind === 'delete') { keys(intent, ['kind', 'eventId', 'etag']); normalized = { kind: intent.kind, eventId, etag } }
       else if (intent.kind === 'rsvp') { keys(intent, ['kind', 'eventId', 'etag', 'selfEmail', 'response']); if (!['accepted', 'declined', 'tentative'].includes(intent.response)) fail('WRITE_INVALID'); normalized = { kind: 'rsvp', eventId, etag, selfEmail: string(intent.selfEmail), response: intent.response } }
       else fail('WRITE_UNSUPPORTED')
+      }
     }
-    const eventId = normalized.kind === 'create' ? `m${operationId.replace(/-/g, '')}` : normalized.eventId
+    const eventId = normalized.kind === 'create' ? `m${operationId.replace(/-/g, '')}` : normalized.kind === 'recurring.single' ? normalized.instance.eventId : normalized.kind === 'recurring.series' ? normalized.parent.eventId : normalized.eventId
     const value = { operationId, connectionId, calendarId, eventId, sendUpdates, intent: normalized }
     const preview = { ...value, hash: await writePreviewHash(value) }
     this.previews.set(operationId, structuredClone(preview)); return structuredClone(preview)
@@ -114,7 +144,8 @@ export class CalendarWriteOutbox {
         const remote = await this.writer.inspect(structuredClone(operation.preview)); this.active(operation.preview, epoch)
         const preview = operation.preview; const intent = preview.intent
         if (remote.connectionId !== preview.connectionId || remote.calendarId !== preview.calendarId || remote.eventId !== preview.eventId || !remote.canWrite) fail('WRITE_IDENTITY')
-        if (intent.kind === 'create' ? remote.etag !== null : remote.etag !== intent.etag) response = { kind: 'conflict' }
+        const expectedEtag = intent.kind === 'recurring.single' ? intent.instance.etag : intent.kind === 'recurring.series' ? intent.parent.etag : 'etag' in intent ? intent.etag : null
+        if (intent.kind === 'create' ? remote.etag !== null : remote.etag !== expectedEtag) response = { kind: 'conflict' }
         else if (intent.kind === 'rsvp' && remote.selfEmail !== intent.selfEmail) response = { kind: 'rejected', code: 'permission' }
         else { sent = true; response = await this.writer.execute(structuredClone(preview)) }
       }
@@ -137,3 +168,5 @@ export class CalendarWriteOutbox {
     return await this.store.cas(operation.preview.operationId, operation.version, next) ? next : this.required(operation.preview.operationId)
   }
 }
+function recurringRef(raw: unknown): RecurringRef { keys(record(raw), ['eventId', 'etag']); const eventId = string(record(raw).eventId), etag = string(record(raw).etag); if (/[\r\n]/.test(etag)) fail('WRITE_INVALID'); return { eventId, etag } }
+function recurrenceRules(raw: unknown): string[] { if (!Array.isArray(raw) || raw.length !== 1 || typeof raw[0] !== 'string' || !raw[0].startsWith('RRULE:')) fail('WRITE_UNSUPPORTED'); return [raw[0]] }

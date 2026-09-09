@@ -50,7 +50,11 @@ function recurrence(raw: unknown, event: CalendarEvent): NonNullable<CalendarEve
 }
 
 function metadata(value: Record<string, unknown>): void {
-  if (value.unsupportedRecurrenceFields === true || value.conferenceData !== undefined || value.attachments !== undefined || value.extendedProperties !== undefined) unsupported()
+  if (value.unsupportedRecurrenceFields === true || value.conferenceData !== undefined || value.attachments !== undefined) unsupported()
+  if (value.extendedProperties !== undefined) {
+    const properties = record(value.extendedProperties), privateProperties = record(properties.private ?? {})
+    if (Object.keys(properties).some((key) => key !== 'private') || Object.keys(privateProperties).some((key) => !['meowOperationId', 'meowOperationHash'].includes(key)) || typeof privateProperties.meowOperationId !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(String(privateProperties.meowOperationHash))) unsupported()
+  }
 }
 
 /** Fold provider exceptions into their parent facts only; never create task/instance entities. */

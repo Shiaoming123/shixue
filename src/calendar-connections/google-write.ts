@@ -1,7 +1,7 @@
 import { array, record, string } from './types.ts'
 import { parseCalendarEventTime } from '../domain/workspace/parse.ts'
 import { writePreviewHash } from './write-outbox.ts'
-import type { CalendarWriter, WriteFields, WritePreview, WriteResponse, WriteSession } from './write-outbox.ts'
+import type { CalendarWriter, WriteFields, WriteIntent, WritePreview, WriteResponse, WriteSession } from './write-outbox.ts'
 
 export interface GoogleWriteRequest { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string; headers: Record<string, string>; query: Record<string, string>; body?: Record<string, unknown> }
 export interface GoogleWriteTransport {
@@ -12,6 +12,13 @@ export interface GoogleWriteTransport {
 const unknown = (): WriteResponse => ({ kind: 'unknown' })
 const invalid = (): never => { throw new Error('GOOGLE_WRITE_UNSUPPORTED') }
 function single(value: Record<string, unknown>) { if (value.recurrence !== undefined || value.recurringEventId !== undefined || (value.eventType !== undefined && value.eventType !== 'default')) invalid() }
+function eventId(intent: WriteIntent) { return intent.kind === 'recurring.single' ? intent.instance.eventId : intent.kind === 'recurring.series' ? intent.parent.eventId : 'eventId' in intent ? intent.eventId : null }
+function etag(intent: WriteIntent) { return intent.kind === 'recurring.single' ? intent.instance.etag : intent.kind === 'recurring.series' ? intent.parent.etag : 'etag' in intent ? intent.etag : null }
+function recurring(value: Record<string, unknown>, intent: WriteIntent) {
+  if (intent.kind === 'recurring.single') { const start = record(value.originalStartTime).dateTime; if (value.recurringEventId !== intent.parent.eventId || typeof start !== 'string' || new Date(start).toISOString() !== intent.originalStart) invalid(); return }
+  if (intent.kind === 'recurring.series') { if (!Array.isArray(value.recurrence) || value.recurringEventId !== undefined) invalid(); return }
+  single(value)
+}
 function bodyFields(fields: WriteFields): Record<string, unknown> {
   const body: Record<string, unknown> = {}
   if (Object.keys(fields).some((key) => !['title', 'time', 'attendees'].includes(key))) invalid()
@@ -54,8 +61,8 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport): Ca
     if (!transport || transport.kind !== 'fake') throw new Error('WRITE_UNAVAILABLE')
     const session = transport.session(preview.connectionId)
     if (!session.connected || !session.canWrite || (epoch !== undefined && session.generation !== epoch)) throw new Error('WRITE_DISCONNECTED')
-    if (!['all', 'externalOnly', 'none'].includes(preview.sendUpdates) || Object.keys(preview.intent).some((key) => !['kind', 'fields', 'eventId', 'etag', 'selfEmail', 'response'].includes(key))) invalid()
-    if (preview.intent.kind !== 'create' && (preview.intent.eventId !== preview.eventId || /[\r\n]/.test(preview.intent.etag))) invalid()
+    if (!['all', 'externalOnly', 'none'].includes(preview.sendUpdates) || preview.intent.kind === 'recurring.future') invalid()
+    if (eventId(preview.intent) !== null && eventId(preview.intent) !== preview.eventId) invalid()
     return session.generation
   }
   const path = (preview: WritePreview) => `/calendar/v3/calendars/${encodeURIComponent(preview.calendarId)}/events`
@@ -74,10 +81,23 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport): Ca
     check(preview, epoch)
     const descriptor = record(calendar.body)
     if (calendar.status !== 200 || descriptor.id !== preview.calendarId || !['owner', 'writer'].includes(String(descriptor.accessRole))) throw new Error('WRITE_PERMISSION')
-    const response = await read(preview); check(preview, epoch)
+    let response = await read(preview); check(preview, epoch)
+    if (preview.intent.kind === 'recurring.single') {
+      let pageToken: string | undefined; const seen = new Set<string>(); let found: Record<string, unknown> | null = null
+      for (let page = 0; page < 100; page++) {
+        const listed = await transport!.request(preview.connectionId, { method: 'GET', path: `${path(preview)}/${encodeURIComponent(preview.intent.parent.eventId)}/instances`, headers: {}, query: { showDeleted: 'true', maxResults: '250', ...(pageToken ? { pageToken } : {}) } })
+        check(preview, epoch); if (listed.status !== 200) throw new Error('WRITE_READ_FAILED')
+        const body = record(listed.body)
+        for (const raw of array(body.items ?? [])) { const item = record(raw); if (item.id === preview.intent.instance.eventId) found = item }
+        if (body.nextPageToken === undefined) break
+        pageToken = string(body.nextPageToken); if (seen.has(pageToken)) invalid(); seen.add(pageToken)
+      }
+      if (!found) throw new Error('WRITE_READ_FAILED')
+      response = { status: 200, body: found }
+    }
     if (response.status === 404 && preview.intent.kind === 'create') return { connectionId: preview.connectionId, calendarId: preview.calendarId, eventId: preview.eventId, canWrite: true, etag: null, selfEmail: null }
     if (response.status !== 200) throw new Error('WRITE_READ_FAILED')
-    const value = record(response.body); single(value)
+    const value = record(response.body); recurring(value, preview.intent)
     if (value.id !== preview.eventId) invalid()
     return { connectionId: preview.connectionId, calendarId: preview.calendarId, eventId: preview.eventId, canWrite: value.locked !== true, etag: string(value.etag), selfEmail: array(value.attendees ?? []).map(record).find((item) => item.self === true)?.email as string | undefined ?? null }
   }
@@ -90,7 +110,7 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport): Ca
       const epoch = check(preview); const remote = await inspect(preview); check(preview, epoch)
       const intent = preview.intent
       if (!remote.canWrite) return { kind: 'rejected', code: 'permission' }
-      if (intent.kind === 'create' ? remote.etag !== null : remote.etag !== intent.etag) return { kind: 'conflict' }
+      if (intent.kind === 'create' ? remote.etag !== null : remote.etag !== etag(intent)) return { kind: 'conflict' }
       if (intent.kind === 'rsvp' && remote.selfEmail !== intent.selfEmail) return { kind: 'rejected', code: 'permission' }
       const marker = { extendedProperties: { private: { meowOperationId: preview.operationId, meowOperationHash: preview.hash } } }
       let body: Record<string, unknown> | undefined
@@ -99,9 +119,11 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport): Ca
         if (intent.fields.attendees) invalid() // Full attendee edits need a complete authoritative read/merge contract.
         body = { ...bodyFields(intent.fields), ...marker }
       } else if (intent.kind === 'cancel') body = { status: 'cancelled', ...marker }
+      else if (intent.kind === 'recurring.single') body = intent.action === 'cancel' ? { status: 'cancelled', ...marker } : { ...bodyFields(intent.fields), ...marker }
+      else if (intent.kind === 'recurring.series') body = intent.action === 'cancel' ? { status: 'cancelled', ...marker } : { ...bodyFields(intent.fields), ...(intent.recurrence === undefined ? {} : { recurrence: intent.recurrence }), ...marker }
       else if (intent.kind === 'rsvp') body = { attendeesOmitted: true, attendees: [{ email: intent.selfEmail, responseStatus: intent.response }], ...marker }
       else if (intent.kind !== 'delete') invalid()
-      const request: GoogleWriteRequest = { method: intent.kind === 'create' ? 'POST' : intent.kind === 'delete' ? 'DELETE' : 'PATCH', path: `${path(preview)}${intent.kind === 'create' ? '' : `/${encodeURIComponent(preview.eventId)}`}`, headers: intent.kind === 'create' ? {} : { 'If-Match': intent.etag }, query: { sendUpdates: preview.sendUpdates }, ...(body ? { body } : {}) }
+      const request: GoogleWriteRequest = { method: intent.kind === 'create' ? 'POST' : intent.kind === 'delete' ? 'DELETE' : 'PATCH', path: `${path(preview)}${intent.kind === 'create' ? '' : `/${encodeURIComponent(preview.eventId)}`}`, headers: intent.kind === 'create' ? {} : { 'If-Match': etag(intent)! }, query: { sendUpdates: preview.sendUpdates }, ...(body ? { body } : {}) }
       check(preview, epoch)
       let response: { status: number; body?: unknown }
       try { response = await transport!.request(preview.connectionId, request); check(preview, epoch) } catch { return unknown() }
@@ -114,7 +136,7 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport): Ca
     },
     async reconcile(preview) {
       preview = structuredClone(preview)
-      try { const response = await read(preview); if (response.status !== 200) return unknown(); const value = record(response.body); single(value); return proof(preview, value) } catch { return unknown() }
+      try { const response = await read(preview); if (response.status !== 200) return unknown(); const value = record(response.body); recurring(value, preview.intent); return proof(preview, value) } catch { return unknown() }
     },
   }
 }

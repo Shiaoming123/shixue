@@ -9,6 +9,7 @@ function fake() {
   const transport: GoogleWriteTransport = { kind: 'fake', session: () => ({ connected: true, canWrite: true, generation: 1 }), async request(_connection, request) {
     calls.push(structuredClone(request))
     if (request.path.includes('/calendarList/')) return { status: 200, body: { id: 'a@b', accessRole: 'owner' } }
+    if (request.path.endsWith('/instances')) return { status: 200, body: { items: event ? [structuredClone(event)] : [] } }
     if (request.method === 'GET') return event ? { status: 200, body: structuredClone(event) } : { status: 404 }
     if (status !== 200) return { status }
     if (request.method === 'DELETE') { event = null; if (lose) throw new Error('lost'); return { status: 204 } }
@@ -55,4 +56,15 @@ test('missing delete response remains unknown on 404; changed preview and all re
   for (const recurrence of [{ recurrence: ['RRULE:FREQ=DAILY'] }, { recurringEventId: 'parent' }]) { const series = fake(); series.setEvent({ id: 'e', etag: 'v1', ...recurrence }); await assert.rejects(series.writer.execute(preview), /UNSUPPORTED/); assert.ok(series.calls.every((call) => call.method === 'GET')) }
   const changed = fake(); await assert.rejects(changed.writer.execute({ ...preview, sendUpdates: 'none' }), /WRITE_PREVIEW_CHANGED/); assert.equal(changed.calls.length, 0)
   await assert.rejects(createGoogleCalendarWriter().execute(preview), /WRITE_UNAVAILABLE/)
+})
+test('recurring future remains disabled before it can send', async () => {
+  await assert.rejects(prepare({ kind: 'recurring.future' } as WriteIntent), /WRITE_UNSUPPORTED/)
+})
+test('recurring single freezes the parent, original instance and instance ETag', async () => {
+  const f = fake(); f.setEvent({ id: 'instance', etag: 'v1', recurringEventId: 'parent', originalStartTime: { dateTime: '2026-09-09T09:00:00.000Z' }, start: { dateTime: '2026-09-09T09:00:00.000Z', timeZone: 'UTC' }, end: { dateTime: '2026-09-09T10:00:00.000Z', timeZone: 'UTC' } })
+  const preview = await prepare({ kind: 'recurring.single', parent: { eventId: 'parent', etag: 'parent-v1' }, originalStart: '2026-09-09T09:00:00.000Z', instance: { eventId: 'instance', etag: 'v1' }, action: 'update', fields: { time: { kind: 'fixed', startAt: '2026-09-09T11:00:00.000Z', endAt: '2026-09-09T12:00:00.000Z', timezone: 'UTC' } } })
+  assert.equal((await f.writer.execute(preview)).kind, 'applied')
+  const request = f.calls.find((call) => call.method === 'PATCH')!
+  assert.equal(request.path.endsWith('/events/instance'), true); assert.deepEqual(request.headers, { 'If-Match': 'v1' })
+  assert.ok(f.calls.some((call) => call.path.endsWith('/events/parent/instances') && call.query.maxResults === '250'))
 })

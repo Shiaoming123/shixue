@@ -56,7 +56,8 @@ export function createNativeCalendarWriteRuntime(options: { enabled?: boolean; r
       const value = record(raw.preview), operationId = string(raw.operationId), hash = string(raw.hash)
       if (!/^sha256:[a-f0-9]{64}$/.test(hash) || value.hash !== hash || value.operationId !== operationId || value.connectionId !== config.connectionId || value.calendarId !== calendarId || updates(value.sendUpdates) !== policy || !Number.isSafeInteger(raw.expiresAt) || Number(raw.expiresAt) <= Date.now()) invalid()
       const responseIntent = safeIntent(value.intent), eventId = string(value.eventId)
-      if (canonicalJson(responseIntent) !== canonicalJson(requested) || (requested.kind === 'create' ? !/^[a-v0-9]{5,1024}$/.test(eventId) : eventId !== requested.eventId)) invalid()
+      const requestedEventId = requested.kind === 'recurring.single' ? requested.instance.eventId : requested.kind === 'recurring.series' ? requested.parent.eventId : 'eventId' in requested ? requested.eventId : null
+      if (canonicalJson(responseIntent) !== canonicalJson(requested) || (requested.kind === 'create' ? !/^[a-v0-9]{5,1024}$/.test(eventId) : eventId !== requestedEventId)) invalid()
       const preview: WritePreview = { operationId, connectionId: config.connectionId, calendarId, eventId, sendUpdates: policy, intent: responseIntent, hash }
       return { operationId, preview, hash, expiresAt: Number(raw.expiresAt) }
     },
