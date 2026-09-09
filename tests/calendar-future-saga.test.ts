@@ -12,8 +12,9 @@ async function setup(loss = '', reject = '', crashAfterRejection = false, compen
   const store: WriteOutboxStore = {
     async insert(op) { rows.set(op.preview.operationId, structuredClone(op)); return true }, async get(id) { return structuredClone(rows.get(id) ?? null) }, async list() { return [...rows.values()] },
     async cas(id, version, next) {
-      if (crashAfterRejection && next.leaseId === null) throw Error('crash after persisted rejection')
-      if (rows.get(id)?.version !== version) return false; rows.set(id, structuredClone(next)); return true
+      if (rows.get(id)?.version !== version) return false; rows.set(id, structuredClone(next))
+      if (crashAfterRejection && Object.values(next.future ?? {}).some(step => step.state === 'rejected')) throw Error('crash after persisted rejection')
+      return true
     },
     async claim(id, version, leaseId, now, leaseUntil, keys) {
       const op = rows.get(id)!
@@ -49,8 +50,15 @@ for (const step of ['parent', 'successor']) test(`future ${step} response loss s
   const f = await setup(step), op = await f.core.run(f.preview.operationId)
   assert.equal(op.outcomeUnknown, true); assert.equal(op.result, null)
   f.rows.set(f.preview.operationId, JSON.parse(JSON.stringify(op))); f.recover()
+  const before = f.mutations.length
   const result = await f.restart().reconcile(f.preview.operationId)
-  assert.equal(result.state, 'applied'); assert.equal(f.mutations.length, 2)
+  assert.equal(f.mutations.length, before)
+  assert.equal(result.state, step === 'parent' ? 'applying' : 'applied'); assert.equal(result.outcomeUnknown, false)
+  if (step === 'parent') {
+    assert.equal(result.future!.successor.state, 'pending')
+    assert.equal((await f.restart().run(f.preview.operationId)).state, 'applied')
+  }
+  assert.equal(f.mutations.length, 2)
 })
 test('future rejects workspace drift before first mutation', async () => {
   const f = await setup(); f.drift(); const op = await f.core.run(f.preview.operationId)
@@ -61,6 +69,11 @@ test('unresolved future root keeps the parent lock and rejects an overlapping se
   const overlap = await f.core.prepare('c', 'cal', { kind: 'recurring.series', parent: intent.parent, action: 'cancel' }, 'all')
   await f.core.enqueue(overlap.operationId, overlap.hash, true)
   await f.core.run(f.preview.operationId)
+  await assert.rejects(f.restart().run(overlap.operationId), /WRITE_BUSY/)
+  assert.equal(f.mutations.length, 1)
+  f.recover()
+  const restored = await f.restart().reconcile(f.preview.operationId)
+  assert.equal(restored.outcomeUnknown, false); assert.equal(restored.state, 'applying')
   await assert.rejects(f.restart().run(overlap.operationId), /WRITE_BUSY/)
   assert.equal(f.mutations.length, 1)
 })
@@ -86,17 +99,25 @@ for (const step of ['parent', 'successor'] as const) test(`${step} persisted rej
   const persisted = JSON.parse(JSON.stringify(f.rows.get(f.preview.operationId)!)) as WriteOperation
   assert.equal(persisted.future![step].state, 'rejected'); assert.equal(persisted.future![step].outcomeUnknown, false)
   f.rows.set(f.preview.operationId, persisted); f.recover()
-  const op = await f.restart().reconcile(f.preview.operationId)
-  assert.equal(op.result, null); assert.equal(op.state, step === 'parent' ? 'conflict' : 'failed')
-  assert.equal(op.outcomeUnknown, false); assert.equal(op.error, step === 'parent' ? 'WRITE_REJECTED' : 'COMPENSATED')
+  const before = f.mutations.length
+  let op = await f.restart().reconcile(f.preview.operationId)
+  assert.equal(f.mutations.length, before)
+  assert.equal(op.result, null); assert.equal(op.state, step === 'parent' ? 'conflict' : 'applying')
+  assert.equal(op.outcomeUnknown, false); assert.equal(op.error, step === 'parent' ? 'WRITE_REJECTED' : 'COMPENSATION_REQUIRED')
+  if (step === 'successor') {
+    assert.equal(op.future!.compensation.state, 'pending')
+    op = await f.restart().run(f.preview.operationId)
+    assert.equal(op.error, 'COMPENSATED'); assert.equal(op.outcomeUnknown, false)
+  }
   assert.equal(f.mutations.length, step === 'parent' ? 1 : 3)
 })
 for (const step of ['parent', 'successor'] as const) test(`${step} proof accepts only enumerated provider metadata and equivalent defaults`, async () => {
   const f = await setup(step); await f.core.run(f.preview.operationId); f.recover()
   const id = step === 'parent' ? 'parent' : String(f.mutations[1]!.body!.id)
   Object.assign(f.events.get(id)!, { status: 'confirmed', eventType: 'default', created: '2026-09-09T00:00:00Z', updated: '2026-09-09T00:01:00Z', sequence: 2, kind: 'calendar#event', htmlLink: 'https://example.test/event', iCalUID: 'generated' })
-  assert.equal((await f.restart().reconcile(f.preview.operationId)).state, 'applied')
-  assert.equal(f.mutations.length, 2)
+  const before = f.mutations.length
+  assert.equal((await f.restart().reconcile(f.preview.operationId)).state, step === 'parent' ? 'applying' : 'applied')
+  assert.equal(f.mutations.length, before)
 })
 
 for (const loss of ['', 'compensation']) test(`child rejection restores original parent once, loss=${loss}`, async () => {
@@ -105,7 +126,9 @@ for (const loss of ['', 'compensation']) test(`child rejection restores original
   if (loss) {
     assert.equal(op.outcomeUnknown, true); assert.equal(op.future!.compensation.etag, 'latest')
     f.rows.set(f.preview.operationId, JSON.parse(JSON.stringify(op))); f.recover()
+    const before = f.mutations.length
     op = await f.restart().reconcile(f.preview.operationId)
+    assert.equal(f.mutations.length, before)
   }
   assert.equal(op.state, 'failed'); assert.equal(op.error, 'COMPENSATED'); assert.equal(op.outcomeUnknown, false)
   assert.equal(op.result, null); assert.equal(op.localApplied, false); assert.equal(op.future!.compensation.state, 'proved')

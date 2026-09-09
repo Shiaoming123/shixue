@@ -6,7 +6,7 @@ export async function processFuture(operation: WriteOperation, reconcile: boolea
   const preview = operation.preview, intent = preview.intent
   if (intent.kind !== 'recurring.future' || !intent.plan || !operation.future) throw Error('WRITE_UNSUPPORTED')
   if (operation.state === 'applied' || operation.state === 'conflict' || operation.error === 'COMPENSATED') return operation
-  if (!reconcile && (operation.outcomeUnknown || operation.state !== 'pending')) throw Error('RECONCILE_REQUIRED')
+  if (!reconcile && (operation.outcomeUnknown || !['pending', 'applying'].includes(operation.state))) throw Error('RECONCILE_REQUIRED')
   if (reconcile && !operation.outcomeUnknown && operation.state !== 'applying') throw Error('RECONCILE_NOT_REQUIRED')
   const { hash, ...content } = preview
   if (await writePreviewHash(content) !== hash) throw Error('WRITE_PREVIEW_CHANGED')
@@ -30,6 +30,7 @@ export async function processFuture(operation: WriteOperation, reconcile: boolea
     }
     if (state.state === 'conflict' || state.state === 'rejected' || operation.future!.parent.state !== 'proved' || operation.future!.successor.state === 'conflict') return conflict()
     if (state.state === 'pending') {
+      if (reconcile) return finish({ state: 'applying', outcomeUnknown: false, error: 'COMPENSATION_REQUIRED' })
       const parent = await read('parent')
       if (parent.kind === 'conflict' || parent.kind === 'rejected') return conflict()
       if (parent.kind !== 'proved') return finish({ state: 'failed', outcomeUnknown: true, error: 'COMPENSATION_REQUIRED' })
@@ -56,6 +57,7 @@ export async function processFuture(operation: WriteOperation, reconcile: boolea
     let state = operation.future![step]
     if (state.state === 'proved') continue
     if (state.state === 'rejected' || state.state === 'conflict') return step === 'successor' ? compensate() : finish({ state: 'conflict', outcomeUnknown: false, error: 'WRITE_REJECTED' })
+    if (reconcile && state.state === 'pending') return finish({ state: 'applying', outcomeUnknown: false, error: null })
     if (state.state === 'pending' && step === 'parent') {
       try {
         active(epoch)
@@ -85,6 +87,7 @@ export async function processFuture(operation: WriteOperation, reconcile: boolea
     }
     state = { state: 'proved', outcomeUnknown: false, etag: String(response.proof.etag), proof: structuredClone(response.proof) }
     await save({ future: { ...operation.future!, [step]: state } })
+    if (reconcile && step === 'parent') return finish({ state: 'applying', outcomeUnknown: false, error: null })
   }
   return finish({ state: 'applied', outcomeUnknown: false, error: null, result: { operationId: id, connectionId: preview.connectionId, calendarId: preview.calendarId, eventId: plan.parent.eventId, etag: operation.future!.parent.etag!, future: { markerHash: plan.markerHash, parent: operation.future!.parent.proof!, successor: operation.future!.successor.proof! } } })
 }
