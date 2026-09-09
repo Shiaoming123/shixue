@@ -3,6 +3,8 @@
 mod calendar;
 #[path = "calendar_workspace_lists.rs"]
 mod lists;
+#[path = "calendar_workspace_reminders.rs"]
+mod reminders;
 #[path = "calendar_workspace_tasks.rs"]
 mod tasks;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -176,6 +178,11 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
             .position(|(name, _)| name == key)
             .ok_or("WORKSPACE_MISSING_FIELD")?;
         let (_, mut value) = fields.remove(index);
+        if *key == "reminderRules" {
+            value = reminders::rules(value)?;
+            normalized.push((key.to_string(), value));
+            continue;
+        }
         if matches!(*key, "calendarSources" | "calendarEvents") {
             value = calendar::collection(key, value)?;
             normalized.push((key.to_string(), value));
@@ -215,6 +222,7 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     calendar::references(&normalized)?;
     lists::references(&normalized)?;
     tasks::references(&normalized)?;
+    reminders::references(&normalized)?;
     Ok(normalized.encode()?.into_bytes())
 }
 

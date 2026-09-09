@@ -332,6 +332,25 @@ for (const completion of [{ result: 'bad', reviewedOn: '2026-09-11' }, { result:
  taskCase(`review-bad-completion-${JSON.stringify(completion)}`, r => { review(r); r.reviewTaskLinks[0].completion = completion }, false); assert.equal(taskCases.at(-1).parsedJson, null)
 }
 for (const nested of [false, true]) taskCase(`review-unknown-${nested}`, r => { review(r); if (nested) { r.completionRecords[0].nextReviewOn = null; r.reviewTaskLinks[0].completedAt = stamp; r.reviewTaskLinks[0].completion = { result: 'clear', reviewedOn: '2026-09-11', extra: true } } else r.reviewTaskLinks[0].extra = true }, false)
+const reminder = r => { r.reminderRules = [{ id: 'rule', target: { kind: 'task', taskId: 'task', occurrenceId: null }, trigger: { kind: 'at_start' }, enabled: true, revision: 1 }] }
+for (const trigger of [{ kind: 'at_start' }, { kind: 'before_start', minutes: 5 }, { kind: 'before_due', minutes: 1e21 }, { kind: 'absolute', at: stamp }]) taskCase(`rule-${trigger.kind}`, r => { reminder(r); r.reminderRules[0].trigger = trigger })
+taskCase('rule-legacy-order', r => { reminder(r); const x = r.reminderRules[0]; delete x.target; Object.assign(x, { taskId: 'task', occurrenceId: null, owner: 'legacy', enabled: false }) })
+taskCase('rule-current-legacy-consistent', r => { reminder(r); Object.assign(r.reminderRules[0], { taskId: 'task', occurrenceId: null, owner: 'user' }) })
+for (const start of [null, '2026-09-09', '2026-09-09T10:00', '2026-09-09T10:00:00+08:00']) taskCase(`rule-event-${start}`, r => { reminder(r); r.calendarSources = [structuredClone(source)]; r.calendarEvents = [{ ...structuredClone(event), id: 'reminder-event' }]; r.reminderRules[0].target = { kind: 'event', eventId: 'reminder-event', originalStart: start }; r.reminderRules[0].enabled = false })
+for (const [name, change] of [
+ ['orphan-task', x => x.target.taskId = 'missing'], ['orphan-occurrence', x => x.target.occurrenceId = 'missing'],
+ ['null-target', x => x.target = null], ['bad-kind', x => x.target.kind = 'other'], ['missing-occurrence', x => delete x.target.occurrenceId],
+ ['bad-enabled', x => x.enabled = 1], ['bad-owner', x => x.owner = null], ['bad-revision', x => x.revision = 0],
+ ['bad-minutes', x => x.trigger = { kind: 'before_start', minutes: 0 }], ['bad-stamp', x => x.trigger = { kind: 'absolute', at: 'bad' }],
+ ['legacy-conflict', x => x.taskId = 'other'], ['global-id', x => x.id = 'task'],
+ ['unknown', x => x.extra = true], ['nested-unknown', x => x.trigger.extra = true],
+]) taskCase(`rule-invalid-${name}`, r => { reminder(r); change(r.reminderRules[0]) }, false)
+taskCase('rule-duplicate', r => { reminder(r); r.reminderRules.push(structuredClone(r.reminderRules[0])) }, false)
+for (const kind of ['before_due', 'at_start']) taskCase(`rule-event-invalid-${kind}`, r => { reminder(r); r.reminderRules[0].target = { kind: 'event', eventId: 'missing', originalStart: null }; r.reminderRules[0].trigger = kind === 'before_due' ? { kind, minutes: 1 } : { kind } }, false)
+taskCase('rule-occurrence', r => { recurring(r); reminder(r); r.reminderRules[0].target.occurrenceId = 'occurrence' })
+taskCase('rule-occurrence-foreign', r => { recurring(r); reminder(r); r.tasks.push({ ...r.tasks[0], id: 'other', recurrenceSeriesId: null }); r.taskEvents.push({ ...r.taskEvents[0], id: 'other-event', taskId: 'other', occurrenceId: null, sequence: 2 }); r.reminderRules[0].target = { kind: 'task', taskId: 'other', occurrenceId: 'occurrence' } }, false)
+for (const field of ['id', 'trigger', 'enabled', 'revision']) taskCase(`rule-missing-${field}`, r => { reminder(r); delete r.reminderRules[0][field] }, false)
+taskCase('rule-event-before-due-existing', r => { reminder(r); r.calendarSources = [structuredClone(source)]; r.calendarEvents = [{ ...structuredClone(event), id: 'reminder-event' }]; r.reminderRules[0].target = { kind: 'event', eventId: 'reminder-event', originalStart: null }; r.reminderRules[0].trigger = { kind: 'before_due', minutes: 5 } }, false)
 const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.json', import.meta.url)
 const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)

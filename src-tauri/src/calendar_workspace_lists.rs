@@ -56,6 +56,7 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
         "studySessions",
         "completionRecords",
         "reviewTaskLinks",
+        "reminderRules",
     ] {
         let Json::Array(items) = get(root, key)? else {
             return Err(INVALID.into());
