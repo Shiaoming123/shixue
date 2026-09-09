@@ -6,7 +6,7 @@ import { createGoogleCalendarWriter, type GoogleWriteRequest } from '../src/cale
 const parent = { id: 'parent', etag: 'p1', summary: 'Before', start: { date: '2026-09-01' }, end: { date: '2026-09-02' }, recurrence: ['RRULE:FREQ=DAILY;COUNT=10'] }
 const pivot = { id: 'pivot', etag: 'i1', recurringEventId: 'parent', originalStartTime: { date: '2026-09-04' }, start: { date: '2026-09-04' }, end: { date: '2026-09-05' } }
 const intent = { kind: 'recurring.future' as const, parent: { eventId: 'parent', etag: 'p1' }, originalStart: '2026-09-04', fields: { title: 'After' } }
-async function setup(loss = '', reject = '', crashAfterRejection = false) {
+async function setup(loss = '', reject = '', crashAfterRejection = false, compensationStatus = 0, divergence: Record<string, unknown> = {}) {
   const rows = new Map<string, WriteOperation>(), events = new Map<string, Record<string, unknown>>([['parent', structuredClone(parent)]]), mutations: GoogleWriteRequest[] = []
   let offline = false, workspaceHash = 'workspace1', now = 0
   const store: WriteOutboxStore = {
@@ -23,10 +23,11 @@ async function setup(loss = '', reject = '', crashAfterRejection = false) {
   }
   const writer = createGoogleCalendarWriter({ kind: 'fake', session: () => ({ connected: true, canWrite: true, generation: 1 }), async request(_connection, req) {
     if (req.method === 'GET') { if (offline) throw Error('offline'); const body = events.get(decodeURIComponent(req.path.split('/').at(-1)!)); return { status: body ? 200 : 404, body } }
-    const op = [...rows.values()].find(row => row.state === 'applying')!, step = req.method === 'POST' ? 'successor' : 'parent'
+    const op = [...rows.values()].find(row => row.state === 'applying')!, step = req.method === 'POST' ? 'successor' : op.future!.compensation.state === 'applying' ? 'compensation' : 'parent'
     assert.equal(op.future![step].state, 'applying'); assert.equal(op.future![step].outcomeUnknown, true)
     mutations.push(structuredClone(req)); const id = req.method === 'POST' ? String(req.body!.id) : 'parent'
-    if (reject === step) return { status: 403 }
+    if (reject === step) { Object.assign(events.get('parent')!, { etag: 'latest' }, divergence); return { status: 403 } }
+    if (step === 'compensation') { assert.equal(op.future!.compensation.etag, 'latest'); assert.equal(req.headers['If-Match'], 'latest'); if (compensationStatus) return { status: compensationStatus } }
     const body = { ...events.get(id), ...req.body, id, etag: `v${mutations.length}` }; events.set(id, body)
     if (loss === step) { offline = true; throw Error('lost response') }
     return { status: 200, body }
@@ -34,7 +35,7 @@ async function setup(loss = '', reject = '', crashAfterRejection = false) {
   writer.readFuture = async () => structuredClone({ parent, pivot, exceptions: [], complete: true, attachedFacts: [], workspaceHash })
   const restart = () => { const core = new CalendarWriteOutbox(store, writer, async () => { throw Error('projection belongs to 4B') }, () => now); core.enabled = true; return core }
   const core = restart(), preview = await core.prepare('c', 'cal', intent, 'all'); await core.enqueue(preview.operationId, preview.hash, true)
-  return { core, preview, rows, events, mutations, restart, recover: () => { offline = false; crashAfterRejection = false; now += 30_001 }, drift: () => { workspaceHash = 'changed' } }
+  return { core, preview, rows, events, mutations, store, restart, recover: () => { offline = false; crashAfterRejection = false; now += 30_001 }, drift: () => { workspaceHash = 'changed' } }
 }
 test('future split proves both steps with fixed ID and one notification request each', async () => {
   const f = await setup(), op = await f.core.run(f.preview.operationId)
@@ -87,8 +88,8 @@ for (const step of ['parent', 'successor'] as const) test(`${step} persisted rej
   f.rows.set(f.preview.operationId, persisted); f.recover()
   const op = await f.restart().reconcile(f.preview.operationId)
   assert.equal(op.result, null); assert.equal(op.state, step === 'parent' ? 'conflict' : 'failed')
-  assert.equal(op.outcomeUnknown, step === 'successor'); assert.equal(op.error, step === 'parent' ? 'WRITE_REJECTED' : 'COMPENSATION_REQUIRED')
-  assert.equal(f.mutations.length, step === 'parent' ? 1 : 2)
+  assert.equal(op.outcomeUnknown, false); assert.equal(op.error, step === 'parent' ? 'WRITE_REJECTED' : 'COMPENSATED')
+  assert.equal(f.mutations.length, step === 'parent' ? 1 : 3)
 })
 for (const step of ['parent', 'successor'] as const) test(`${step} proof accepts only enumerated provider metadata and equivalent defaults`, async () => {
   const f = await setup(step); await f.core.run(f.preview.operationId); f.recover()
@@ -96,4 +97,49 @@ for (const step of ['parent', 'successor'] as const) test(`${step} proof accepts
   Object.assign(f.events.get(id)!, { status: 'confirmed', eventType: 'default', created: '2026-09-09T00:00:00Z', updated: '2026-09-09T00:01:00Z', sequence: 2, kind: 'calendar#event', htmlLink: 'https://example.test/event', iCalUID: 'generated' })
   assert.equal((await f.restart().reconcile(f.preview.operationId)).state, 'applied')
   assert.equal(f.mutations.length, 2)
+})
+
+for (const loss of ['', 'compensation']) test(`child rejection restores original parent once, loss=${loss}`, async () => {
+  const f = await setup(loss, 'successor'); let op = await f.core.run(f.preview.operationId)
+  assert.equal(f.mutations.length, 3)
+  if (loss) {
+    assert.equal(op.outcomeUnknown, true); assert.equal(op.future!.compensation.etag, 'latest')
+    f.rows.set(f.preview.operationId, JSON.parse(JSON.stringify(op))); f.recover()
+    op = await f.restart().reconcile(f.preview.operationId)
+  }
+  assert.equal(op.state, 'failed'); assert.equal(op.error, 'COMPENSATED'); assert.equal(op.outcomeUnknown, false)
+  assert.equal(op.result, null); assert.equal(op.localApplied, false); assert.equal(op.future!.compensation.state, 'proved')
+  assert.deepEqual(f.events.get('parent')!.recurrence, parent.recurrence); assert.equal(f.events.size, 1)
+  assert.deepEqual(f.mutations.map(req => [req.method, req.query.sendUpdates]), [['PATCH', 'all'], ['POST', 'all'], ['PATCH', 'all']])
+  await f.restart().run(f.preview.operationId); assert.equal(f.mutations.length, 3)
+})
+for (const divergence of [{ summary: 'Other' }, { recurrence: parent.recurrence }, { id: 'other' }, { extendedProperties: { private: { meowOperationHash: 'other' } } }]) test(`compensation refuses divergent parent ${JSON.stringify(divergence)}`, async () => {
+  const f = await setup('', 'successor', false, 0, divergence), op = await f.core.run(f.preview.operationId)
+  assert.equal(op.state, 'conflict'); assert.equal(op.error, 'COMPENSATION_CONFLICT'); assert.equal(op.outcomeUnknown, true)
+  assert.equal(op.result, null); assert.equal(op.localApplied, false); assert.equal(f.mutations.length, 2)
+  await f.restart().reconcile(f.preview.operationId); assert.equal(f.mutations.length, 2)
+})
+for (const status of [412, 403]) test(`restore rejection ${status} retains explicit compensation conflict`, async () => {
+  const f = await setup('', 'successor', false, status), op = await f.core.run(f.preview.operationId)
+  assert.equal(op.state, 'conflict'); assert.equal(op.error, 'COMPENSATION_CONFLICT'); assert.equal(op.outcomeUnknown, true)
+  assert.equal(op.result, null); assert.equal(op.localApplied, false)
+  await f.restart().reconcile(f.preview.operationId); assert.equal(f.mutations.length, 3)
+})
+
+test('lost restore proof rejects third-party change without another notification', async () => {
+  const f = await setup('compensation', 'successor'); await f.core.run(f.preview.operationId); f.recover()
+  f.events.get('parent')!.summary = 'Third party'
+  const op = await f.restart().reconcile(f.preview.operationId)
+  assert.equal(op.error, 'COMPENSATION_CONFLICT'); assert.equal(op.result, null); assert.equal(f.mutations.length, 3)
+})
+test('only proven compensation releases the same-series lock', async () => {
+  for (const status of [0, 412]) {
+    const f = await setup('', 'successor', false, status)
+    const overlap = await f.core.prepare('c', 'cal', { kind: 'recurring.series', parent: intent.parent, action: 'cancel' }, 'all')
+    await f.core.enqueue(overlap.operationId, overlap.hash, true)
+    await f.core.run(f.preview.operationId)
+    const row = f.rows.get(overlap.operationId)!
+    const claimed = await f.store.claim(row.preview.operationId, row.version, 'overlap', 0, 30_000, row.preview.lockKeys)
+    assert.equal(claimed !== null, status === 0)
+  }
 })

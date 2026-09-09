@@ -94,3 +94,20 @@ Evidence:
 - RED: three regression tests failed (7/10); parent and successor accepted added attendees, and parent rejection restart incorrectly returned failed. GREEN: focused future/outbox/google tests 42/42, including both rejection crash boundaries, both semantic proof regressions and allowed metadata/defaults. Existing lost-response tests continue proving GET-only recovery and no repeated mutation/notification requests.
 - Typecheck passed after using the existing target-compatible hasOwnProperty API. Full npm test 957/957 (task-4a2b1-review-test.log); desktop/Web builds passed with existing chunk advisory (task-4a2b1-review-build.log and task-4a2b1-review-build-web.log). Docs/diff checks passed.
 - Native persistence/projection, UI, real sending, product write switch and protected research remain unchanged. 4A2b2 compensation and Task 4B remain pending.
+
+## 4A2b2 checkpoint: fake compensation and conflict recovery
+
+2026-09-09; base `c35295c`. TypeScript Task 4A compensation is implemented; Task 4B and Task 4 remain pending.
+
+- Deterministically rejected successor enters parent exact-GET preflight. Identity, root markerHash and complete truncated semantic content must match. Divergence/missing parent is terminal COMPENSATION_CONFLICT with no restore request. Transient read failure retains COMPENSATION_REQUIRED for read recovery.
+- The latest observed ETag is persisted in compensation step applying/outcomeUnknown before PATCH, and sent as If-Match with frozen body/sendUpdates. Restore proof compares original parent semantics plus the frozen root marker; original recurrence is restored without producing a complete split result.
+- Applying/unknown compensation uses exact GET only after response loss or JSON restart. Proof is persisted before terminal failed/COMPENSATED with outcomeUnknown=false; result remains null and localApplied=false. Only proven compensation releases the unresolved root lock. Compensation rejection/divergence remains terminal conflict with outcomeUnknown=true, preserving the partial-state lock and forbidding local acknowledgement.
+- Successor conflict (e.g. occupied fixed ID/409) cannot establish absence and therefore enters COMPENSATION_CONFLICT without restore. A deterministically rejected creation is the supported compensation path. Unknown successor outcome remains read-only recovery, never compensation.
+
+Evidence:
+- RED: saga 11/20 passed, 9 failed (new compensation cases and updated successor rejection restart expectation).
+- GREEN: focused future saga/plan/reader, Google write/recurrence and outbox 52/52, including latest-ETag assertion inside the transport, fixed notification counts, successful restore, parent divergence, 412/403, response loss + JSON restart, restored-content divergence, lock retention/release, and null result/localApplied=false.
+- Doctor and typecheck passed; doctor filesystem probe remains unavailable on Windows.
+- Full npm test 967/967 (`task-4a2b2-test.log`). Desktop/Web builds passed (`task-4a2b2-build.log`, `task-4a2b2-build-web.log`) with existing dynamic-import/chunk-size advisories.
+- Docs and diff checks passed. Protected research remains untouched/unstaged. No native/Rust persistence, local projection, real Google sending, UI, Task 5 or Stage 7 changes.
+- Remaining limitations: fake in-memory CAS plus JSON restart is not native durability evidence; remote snapshot limitations from 4A2a persist. Terminal compensation conflicts intentionally retain locks and require a future explicit resolution path. Accurate token usage reporting unavailable; no count invented.
