@@ -65,7 +65,8 @@
 
 ## 2026-09-09 最终收口
 
-- `npm run verify` 通过：Node 970/970，并覆盖 typecheck、模块、协议、CSP、desktop/Web build、布局与文档检查。
-- `npm run rust:verify` 通过：Rust 97/97，以及 fmt、clippy、all-features 与 no-default-features 检查；默认 `cargo check --manifest-path src-tauri/Cargo.toml` 通过。
+- 整分支审查修复了四项合同缺口：TS 单次实例范围证明、TS/Rust 当前系列支持校验、原生重复写入成功后的 exact GET、fake future reconcile 的纯只读恢复；复审随后补齐延迟 successor 前的父 proof 与本地 workspace/attachments 重验。最终审查无剩余 Critical、Important 或 Minor finding。
+- `npm run verify` 通过：Node 976/976，并覆盖 typecheck、模块、协议、CSP、desktop/Web build、布局与文档检查。
+- `npm run rust:verify` 最终通过：Rust 99/99，以及 fmt、clippy、all-features 与 no-default-features 检查；首次运行仅在既有 Windows 临时 SQLite 清理处遇到 OS code 32 文件占用，串行重跑通过。默认 `cargo check --manifest-path src-tauri/Cargo.toml` 通过。
 - 本地与 fake 范围已完成。真实 Google OAuth、系统 keyring、原生确认框人工操作、实际通知/邮件与真实重复日程拆分均为 `NOT_RUN`，等待测试项目与隔离账号。
 - 运行开关保持关闭，产品没有写权限入口；阶段7因缺少实际多时间盒证据继续不实现。

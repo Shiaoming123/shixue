@@ -474,6 +474,12 @@ Task 4 is complete within the approved credentials-independent scope through `82
 
 Final repository verification after the last fix: `npm run verify` passed 970 Node tests plus typecheck, module/protocol/CSP, desktop/Web builds, layout and docs; `npm run rust:verify` passed 97 Rust tests plus fmt, clippy, all-features and no-default-features; default `cargo check --manifest-path src-tauri/Cargo.toml` and `git diff --check` passed. Public stage-6 and development checkpoints now distinguish completed local/fake evidence from NOT_RUN real Google, system keyring and native dialog E2E. Runtime enablement and product write UI remain closed; Stage 7 remains unimplemented.
 
+### Whole-branch review fixes and final revalidation
+
+The final reviewer found four Important gaps and one follow-up interaction; all are fixed and re-reviewed. `b20151f` makes TypeScript direct and reconcile proofs share exact recurring parent/originalStart validation and validates authoritative current recurrence/default metadata before mutation. `2494e0e` freezes expected native recurrence and requires an exact GET after recurring PATCH before applied. `e01ea7b` makes fake future reconcile GET-only. `7faf6f5` revalidates the proved parent plus trusted workspace hash/attachments before a deferred successor POST. The final reviewer reports no remaining Critical, Important or Minor findings within the approved local/fake scope.
+
+Post-review repository gates: `npm run verify` passed 976/976; `npm run rust:verify` passed 99/99 on the final serial run after one recorded Windows OS code 32 temporary-SQLite cleanup failure; default cargo check passed. Real Google/OAuth, system keyring and native dialog E2E remain NOT_RUN. Runtime enablement and Stage 7 remain closed.
+
 Final additional gates passed: default cargo check, no-default standalone calendar-connections and calendar-writes checks, npm run check:docs and git diff --check.
 
 

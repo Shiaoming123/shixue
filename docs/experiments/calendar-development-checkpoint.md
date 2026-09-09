@@ -5,7 +5,7 @@
 ## 已核对
 
 - 工作树：`D:\Project\Github\Meow\.worktrees\shixue-soft-surface-ui`。
-- 分支：`feat/calendar-recurrence-write`；当前功能提交 HEAD：`824b8f0`。
+- 分支：`feat/calendar-recurrence-write`；当前功能提交 HEAD：`7faf6f5`。
 - 开始时唯一未跟踪文件：`docs/experiments/calendar-competitor-research.md`。必须保留，不覆盖或删除。
 - 原方案来自任务 `01a07edc-02cc-7911-8620-39116e31c3a8` 的 `01a081bc-3f5c-78e3-b898-ec88ff0cf2c8` 回合（最终技术方案，阶段0–8）；不要使用此前竞品研究回合的阶段编号。
 - 已读取根 AGENTS、README 双语、docs 入口、开发/发布及视觉合同；应用 codebase-design 与 simplify。
@@ -41,6 +41,6 @@
 
 ## 2026-09-09 最终状态
 
-Task 4 的凭据无关实现与 fake 验收完成：受限的单次、整组与“本次及以后”写回均具备冻结预览、原生可信状态机、丢响应只读恢复、子创建失败补偿，以及双事件原子本地投影与回执。最终 `npm run verify` 为 970/970，`npm run rust:verify` 为 97/97，默认 cargo check 通过。
+Task 4 的凭据无关实现与 fake 验收完成：受限的单次、整组与“本次及以后”写回均具备冻结预览、原生可信状态机、丢响应只读恢复、子创建失败补偿，以及双事件原子本地投影与回执。整分支审查及两轮复审已清除全部 finding；最终 `npm run verify` 为 976/976，`npm run rust:verify` 为 99/99，默认 cargo check 通过。
 
 真实 Google、系统 keyring 和原生弹窗 E2E 因没有测试项目而 `NOT_RUN`；真实发送和产品写权限入口继续关闭。阶段7未实现。功能分支尚未合并或推送，唯一未跟踪研究文档保持不变。
