@@ -647,7 +647,7 @@ fn wall(time: &Value, value: &str) -> Option<(NaiveDate, Option<chrono::NaiveTim
             let hours = zone[8..]
                 .parse::<i32>()
                 .ok()
-                .filter(|hours| (1..=14).contains(hours))?;
+                .filter(|hours| (0..=14).contains(hours))?;
             FixedOffset::east_opt(if zone.as_bytes()[7] == b'+' {
                 -hours * 3600
             } else {
@@ -981,6 +981,13 @@ mod tests {
             recurrence("RRULE:FREQ=MONTHLY;COUNT=1", &gmt).unwrap()["cadence"]["dayOfMonth"],
             9
         );
+        for timezone in ["Etc/GMT+0", "Etc/GMT-0"] {
+            let zero = json!({"kind":"fixed","startAt":"2026-09-10T01:00:00Z","endAt":"2026-09-10T02:00:00Z","timezone":timezone});
+            assert_eq!(
+                recurrence("RRULE:FREQ=MONTHLY;COUNT=1", &zero).unwrap()["cadence"]["dayOfMonth"],
+                10
+            );
+        }
     }
     #[test]
     fn malformed_provider_participants_do_not_become_acknowledgeable_facts() {

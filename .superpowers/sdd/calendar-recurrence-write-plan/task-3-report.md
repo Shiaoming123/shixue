@@ -96,3 +96,8 @@ Evidence:
 - COUNT ordinal now enumerates only actual cadence occurrences, including interval-aware daily/weekly and monthly/yearly cadence. Direct tests cover second/last valid and first beyond COUNT for all four supported cadence kinds.
 - Timed UNTIL now requires exact ASCII `YYYYMMDDTHHMMSSZ` before slicing; short, non-ASCII, and separator regressions fail closed. `Etc/GMT±N` is accepted with IANA reversed-sign semantics and parity-tested with a date-boundary monthly anchor.
 - GREEN: focused timed recurrence test and `npm run rust:verify` passed (58/58).
+
+## Task 3B review round 4
+
+- Fixed-offset parser now accepts `Etc/GMT+0` and `Etc/GMT-0`; explicit recurrence assertions prove both resolve to the UTC calendar day while nonzero offsets retain reversed-sign behavior.
+- `cargo test --manifest-path src-tauri/Cargo.toml --all-features timed_recurrence_uses_event_timezone_instant_and_count_membership -- --nocapture` and `npm run rust:verify` passed (58/58).
