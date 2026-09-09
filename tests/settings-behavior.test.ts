@@ -313,7 +313,7 @@ test('quick add refreshes and selects a learning task with an actionable criteri
   const recurrenceWorkspace = ref({ tasks: [{ id: 'learning', mode: 'learning' }] })
   const api = handlers('App.vue', ['quickAddCreated'], {
     refreshState: async () => {}, selectedTaskId, selectedOccurrenceId, recurrenceWorkspace,
-    activeSmartView: ref('inbox'), notify: (message: string) => messages.push(message),
+    page: ref('tasks'), activeSmartView: ref('inbox'), notify: (message: string) => messages.push(message),
   })
   await api.quickAddCreated({ type: 'task', id: 'learning', revision: 1 })
   assert.equal(selectedTaskId.value, 'learning')
@@ -328,13 +328,13 @@ test('summary validates the whole candidate without writing and counts records t
   const preview = prepareWorkspaceImport(content)
   assert.equal(preview.content, content)
   assert.equal(preview.exportedAt, '2026-09-05T00:00:00.000Z')
-  assert.equal(preview.summary, `${current.tasks.length} 项任务 · ${current.lists.length} 个清单 · ${current.completionRecords.length} 条完成证据`)
+  assert.equal(preview.summary, `${current.tasks.length} 项任务 · ${current.lists.length} 个清单 · ${current.completionRecords.length} 条完成证据 · ${current.calendarSources.length} 个日历 · ${current.calendarEvents.length} 项日程`)
   assert.deepEqual(await store.load(), current)
   assert.throws(() => prepareWorkspaceImport('{broken'))
   const invalid = JSON.parse(content)
   invalid.state.tasks[0].listId = 'missing-list'
   assert.throws(() => prepareWorkspaceImport(JSON.stringify(invalid)))
-  assert.equal(summarizeWorkspace({ ...current, tasks: [], lists: [], completionRecords: [] }), '0 项任务 · 0 个清单 · 0 条完成证据')
+  assert.equal(summarizeWorkspace({ ...current, tasks: [], lists: [], completionRecords: [] }), `0 项任务 · 0 个清单 · 0 条完成证据 · ${current.calendarSources.length} 个日历 · ${current.calendarEvents.length} 项日程`)
 })
 
 test('failed import keeps the verified candidate for retry and duplicate confirmation cannot execute', async () => {
@@ -737,7 +737,7 @@ test('learning reminder completion opens evidence entry without completing eithe
   const completionOpen = ref(false)
   const completionReminderId = ref('')
   const reminderCenterOpen = ref(true)
-  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'learning' }], reviewTaskLinks: [] }
+  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', target: { kind: 'task', taskId: 'task', occurrenceId: null } }], tasks: [{ id: 'task', mode: 'learning' }], reviewTaskLinks: [] }
   const api = handlers('App.vue', ['handleReminderAction'], {
     reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''), completionOpen, completionReminderId, completionOccurrenceId: ref('stale-occurrence'), completionTaskId: ref('stale-task'), reminderCenterOpen, nextTick: async () => {},
     executeReminderCommand: async () => assert.fail('no completion before evidence'),
@@ -752,7 +752,7 @@ test('linked review reminder completion opens the exact recall link instead of e
   const opened: string[] = []
   const workspace = {
     reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence:exact' }],
-    reminderRules: [{ id: 'rule', taskId: 'review-task' }],
+    reminderRules: [{ id: 'rule', target: { kind: 'task', taskId: 'review-task', occurrenceId: null } }],
     tasks: [{ id: 'review-task', mode: 'learning' }],
     reviewTaskLinks: [
       { id: 'review:other', reviewTaskId: 'review-task', occurrenceId: 'occurrence:other', completedAt: null },
@@ -768,9 +768,30 @@ test('linked review reminder completion opens the exact recall link instead of e
   assert.deepEqual(opened, ['review:exact'])
 })
 
+test('event reminder actions open the exact occurrence and never cross task completion', async () => {
+  const commands: any[] = []
+  const opened: unknown[] = []
+  const reminderError = ref('')
+  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', originalStart: '2026-09-09', revision: 2 }],
+    reminderRules: [{ id: 'rule', target: { kind: 'event', eventId: 'meeting', originalStart: null } }], tasks: [] }
+  const api = handlers('App.vue', ['handleReminderAction'], {
+    reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError, reminderCenterOpen: ref(true),
+    openCalendarEvent: (...args: unknown[]) => opened.push(args),
+    executeReminderCommand: async (command: unknown) => { commands.push(command) },
+  })
+  await api.handleReminderAction({ deliveryId: 'delivery', action: 'complete' })
+  assert.match(reminderError.value, /不支持完成任务/)
+  assert.deepEqual(commands, [])
+  await api.handleReminderAction({ deliveryId: 'delivery', action: 'open' })
+  assert.deepEqual(opened, [['meeting', '2026-09-09']])
+  await api.handleReminderAction({ deliveryId: 'delivery', action: 'dismiss' })
+  await api.handleReminderAction({ deliveryId: 'delivery', action: 'snooze' })
+  assert.deepEqual(commands.map(({ type }) => type), ['reminder.dismiss', 'reminder.snooze'])
+})
+
 test('general recurring reminder completes exactly its occurrence, and snooze changes only delivery time', async () => {
   const commands: any[] = []
-  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', taskId: 'task' }], tasks: [{ id: 'task', mode: 'general' }], occurrences: [{ id: 'occurrence', revision: 2 }], reviewTaskLinks: [] }
+  const workspace = { reminderDeliveries: [{ id: 'delivery', reminderRuleId: 'rule', occurrenceId: 'occurrence' }], reminderRules: [{ id: 'rule', target: { kind: 'task', taskId: 'task', occurrenceId: null } }], tasks: [{ id: 'task', mode: 'general' }], occurrences: [{ id: 'occurrence', revision: 2 }], reviewTaskLinks: [] }
   const before = structuredClone(workspace)
   const api = handlers('App.vue', ['handleReminderAction'], {
     reminderBusy: ref(false), recurrenceWorkspace: ref(workspace), reminderError: ref(''),

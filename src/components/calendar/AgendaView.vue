@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import type { CalendarItem } from '../../domain/calendar/project.ts'
+import CalendarTaskLabel from './CalendarTaskLabel.vue'
+import CalendarTaskToggle from './CalendarTaskToggle.vue'
 import {
   agendaWindow,
   createAgendaMeasurementState,
@@ -15,6 +17,7 @@ type AgendaRow =
   | { kind: 'item'; key: string; date: string; item: CalendarItem; position: number }
 
 const props = defineProps<{ items: readonly CalendarItem[]; titles: ReadonlyMap<string, string> }>()
+const emit = defineEmits<{ open: [item: CalendarItem]; 'toggle-task': [value: { taskId: string; occurrenceId: string | null }] }>()
 const viewport = ref<HTMLElement | null>(null)
 const scrollTop = ref(0)
 const viewportHeight = ref(0)
@@ -104,7 +107,7 @@ function onBlur(event: FocusEvent) {
   const row = event.currentTarget as HTMLElement
   nextTick(() => { if (!row.contains(document.activeElement)) focusedKey.value = '' })
 }
-function titleFor(item: CalendarItem) { return props.titles.get(item.taskId) ?? '未命名任务' }
+function titleFor(item: CalendarItem) { return props.titles.get(item.eventId ?? item.taskId) ?? '未命名任务' }
 function dateLabel(date: string) { return dateFormatter.format(new Date(`${date}T00:00:00.000Z`)).replace('星期', '周') }
 function itemTime(item: CalendarItem) {
   if (item.kind === 'all-day') return '全天'
@@ -121,22 +124,25 @@ function formatMinute(minute: number) { return `${String(Math.floor(minute / 60)
     <ol v-else class="agenda-view__list" :style="listStyle" :aria-label="`议程，共 ${items.length} 项`">
       <li v-for="row in visibleRows" :key="row.key" :ref="(element) => setRowElement(row.key, element as Element | null)" :class="`agenda-view__${row.kind}`">
         <h2 v-if="row.kind === 'header'">{{ dateLabel(row.date) }}</h2>
-        <div v-else tabindex="0" class="agenda-view__row" :class="`agenda-view__row--${row.item.kind}`" :aria-label="`${dateLabel(row.date)} ${itemTime(row.item)} ${titleFor(row.item)}`" :aria-posinset="row.position" :aria-setsize="items.length" @focus="onFocus(row.key)" @blur="onBlur">
+        <div v-else class="agenda-view__entry"><CalendarTaskToggle :item="row.item" :title="titleFor(row.item)" @toggle="emit('toggle-task', $event)" /><button type="button" tabindex="0" class="agenda-view__row" :data-priority="row.item.presentation?.priority" :class="`agenda-view__row--${row.item.kind}`" :aria-label="`打开 ${titleFor(row.item)}，${dateLabel(row.date)} ${itemTime(row.item)}`" :aria-posinset="row.position" :aria-setsize="items.length" @focus="onFocus(row.key)" @blur="onBlur" @click="emit('open', row.item)">
           <time :datetime="row.item.start">{{ itemTime(row.item) }}</time>
-          <strong>{{ titleFor(row.item) }}</strong>
+          <CalendarTaskLabel :item="row.item" :title="titleFor(row.item)" />
           <span>{{ row.item.kind === 'deadline-marker' ? '截止事项' : row.item.kind === 'all-day' ? '全天安排' : '日程' }}</span>
-        </div>
+        </button></div>
       </li>
     </ol>
   </section>
 </template>
 
 <style scoped>
+.agenda-view__entry { display: flex; align-items: center; min-width: 0; gap: 6px; }.agenda-view__entry .agenda-view__row { flex: 1; min-width: 0; }
 .agenda-view { min-width: 0; flex: 1; overflow: auto; background: var(--surface); scrollbar-gutter: stable; }
 .agenda-view__list { width: min(100%, 900px); margin: 0 auto; padding-right: 22px; padding-left: 22px; list-style: none; }
 .agenda-view__header { position: sticky; top: 0; z-index: 1; padding-top: 18px; background: var(--surface); }
 .agenda-view__header h2 { margin: 0; padding: 8px 0; border-bottom: 1px solid var(--hairline); color: var(--text); font-size: var(--text-sm); font-weight: var(--font-semibold); }
 .agenda-view__item { border-bottom: 1px solid var(--hairline); }
+.agenda-view__row[data-priority='high'] { border-left-color: var(--danger); }
+.agenda-view__row[data-priority='medium'] { border-left-color: var(--warning); }
 .agenda-view__row { width: 100%; min-height: 52px; display: grid; grid-template-columns: 86px minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: 8px 6px; border: 0; border-left: 3px solid var(--accent); background: transparent; color: var(--text); text-align: left; font: inherit; }
 .agenda-view__row:hover { background: var(--control-fill); }
 .agenda-view__row:focus-visible { outline: 0; box-shadow: inset var(--focus-ring); }

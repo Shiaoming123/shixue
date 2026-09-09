@@ -24,7 +24,7 @@
   },
   "modulePolicy": {
     "enabled": ["core", "storage", "sqlite", "indexedDb", "tray", "updater", "themes", "shortcut", "notification", "autostart"],
-    "disabled": ["sync", "agent", "clipboard", "mcp"]
+    "disabled": ["sync", "calendarConnections", "agent", "clipboard", "mcp"]
   },
   "data": {
     "defaultMode": "local-first",
@@ -32,10 +32,11 @@
       {
         "id": "workspace",
         "format": "meow-study/workspace-export",
-        "version": 3
+        "version": 4
       }
     ],
     "legacyInputs": [
+      { "format": "meow-study/workspace-export", "versions": [3] },
       {
         "format": "meow-study/study-export",
         "versions": [1, 2]

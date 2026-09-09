@@ -23,6 +23,7 @@ const props = defineProps<{
   occurrenceScheduleLabel?: string
   deadlineLabel?: string
   mobile?: boolean
+  overlay?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -43,7 +44,7 @@ const emit = defineEmits<{
 
 const checklistDraft = ref('')
 const viewportWidth = ref(window.innerWidth)
-const detailPlacement = computed(() => resolveTaskDetailPlacement(viewportWidth.value))
+const detailPlacement = computed(() => props.overlay && viewportWidth.value >= 820 ? 'right' : resolveTaskDetailPlacement(viewportWidth.value))
 const covering = computed(() => detailPlacement.value !== 'inline')
 function updateViewportWidth() { viewportWidth.value = window.innerWidth }
 onMounted(() => {
@@ -133,6 +134,7 @@ function addChecklistItem() {
     </div>
 
     <footer class="drawer-actions">
+      <p v-if="occurrenceId" class="empty-copy">本次暂不支持专注或重开；完成只作用于本次发生项。</p>
       <div v-if="occurrenceId && occurrenceStatus === 'pending'" class="secondary-actions">
         <button @click="emit('occurrenceReschedule', occurrenceId)">本次改期</button>
         <button class="danger" @click="emit('occurrenceSkip', occurrenceId)">跳过本次</button>

@@ -8,6 +8,7 @@ export interface BuildQuickAddCommandInput {
   candidates: readonly QuickAddCandidate[]
   destinationListId: string
   defaultStartOn?: string
+  defaultStartAt?: string
   fallbackRecurrenceAnchorOn?: string
   timezone: string
   defaultEstimateMinutes?: number | null
@@ -19,6 +20,7 @@ export interface BuildQuickAddCommandInput {
 }
 
 export function buildQuickAddCommand(options: BuildQuickAddCommandInput): TaskCreateCommand {
+  if (options.defaultStartOn && options.defaultStartAt) throw new Error('Quick Add defaults require one schedule kind.')
   const candidates = [...options.candidates]
   if (candidates.some(({ status }) => status === 'ambiguous')) {
     throw new Error('AMBIGUOUS_QUICK_ADD_CANDIDATE')
@@ -34,7 +36,7 @@ export function buildQuickAddCommand(options: BuildQuickAddCommandInput): TaskCr
     : options.input.trim()
   if (!title) throw new Error('QUICK_ADD_TITLE_REQUIRED')
 
-  const schedule = candidates.find(({ kind }) => kind === 'schedule')?.value ?? options.defaultStartOn
+  const schedule = candidates.find(({ kind }) => kind === 'schedule')?.value ?? options.defaultStartAt ?? options.defaultStartOn
   const deadline = candidates.find(({ kind }) => kind === 'deadline')?.value
   const priority = candidates.find(({ kind }) => kind === 'priority')?.value
   const recurrence = candidates.find(({ kind }) => kind === 'recurrence')?.value

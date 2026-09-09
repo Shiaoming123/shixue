@@ -1,12 +1,12 @@
 import { addCalendarDays } from '../../storage/study/types.ts'
 import { projectTaskItems, type TaskProjection } from '../../lib/study-task-query.ts'
-import type { WorkspaceStateV3 } from '../workspace/types.ts'
+import type { WorkspaceStateV4 } from '../workspace/types.ts'
 import { canonicalReasons, createProjectionComparator } from './today.ts'
 
 export interface DayGroup { date: string; items: TaskProjection[] }
 
 export function selectUpcoming(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   start: string,
   days: number,
   timezone: string,

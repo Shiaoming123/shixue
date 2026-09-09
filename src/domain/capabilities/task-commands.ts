@@ -1,4 +1,4 @@
-import type { RecurrenceSeries, ReminderRule, StudySession, Task, TaskEvent, TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { RecurrenceSeries, ReminderRule, StudySession, Task, TaskEvent, TaskOccurrence, WorkspaceStateV4 } from '../workspace/types.ts'
 import { materializeOccurrenceWindow } from '../recurrence/materialize.ts'
 import { assertIanaTimezone } from '../recurrence/timezone.ts'
 import { assertPlanningDuration } from './duration-validation.ts'
@@ -11,7 +11,7 @@ import {
 } from './types.ts'
 
 export function applyTaskCommand(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: TaskCapabilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -31,7 +31,7 @@ export function applyTaskCommand(
 }
 
 function createTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TaskCapabilityCommand, { type: 'task.create' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -101,7 +101,7 @@ function createTask(
 }
 
 function createInitialRecurrence(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   task: Task,
   recurrence: NonNullable<Extract<TaskCapabilityCommand, { type: 'task.create' }>['recurrence']>,
   context: CapabilityCommandContext,
@@ -156,14 +156,14 @@ function createInitialRecurrence(
 }
 
 function updateTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TaskCapabilityCommand, { type: 'task.update' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
   const task = requireTask(state, command.taskId, command.expectedRevision)
   const before = structuredClone(task)
   const reminders = command.patch.reminderAt === undefined ? {} : {
-    reminderRules: structuredClone(state.reminderRules.filter(({ taskId }) => taskId === task.id)),
+    reminderRules: structuredClone(state.reminderRules.filter(({ target }) => target.kind === 'task' && target.taskId === task.id)),
   }
   const fields = applyPatch(state, task, command.patch, context, command.reminderRuleId)
   task.revision += 1
@@ -179,7 +179,7 @@ function updateTask(
 }
 
 function deleteTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TaskCapabilityCommand, { type: 'task.delete' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -202,7 +202,7 @@ function deleteTask(
 }
 
 function completeTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TaskCapabilityCommand, { type: 'task.complete' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -249,7 +249,7 @@ function completeTask(
 }
 
 function reopenTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TaskCapabilityCommand, { type: 'task.reopen' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -273,7 +273,7 @@ function reopenTask(
 }
 
 function rescheduleTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TaskCapabilityCommand, { type: 'task.reschedule' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -304,7 +304,7 @@ function rescheduleTask(
 }
 
 function batchReschedule(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TaskCapabilityCommand, { type: 'task.batch_reschedule' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -328,7 +328,7 @@ function batchReschedule(
 }
 
 function batchCancel(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TaskCapabilityCommand, { type: 'task.batch_cancel' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -349,7 +349,7 @@ function batchCancel(
 }
 
 function batchDelete(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TaskCapabilityCommand, { type: 'task.batch_delete' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -381,7 +381,7 @@ function batchApplication(
 }
 
 function applyPatch(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   task: Task,
   patch: TaskUpdatePatch,
   context: CapabilityCommandContext,
@@ -427,14 +427,14 @@ function applyPatch(
 }
 
 function setLegacyReminder(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   taskId: string,
   reminderAt: string | null,
   context: CapabilityCommandContext,
   reminderRuleId?: string,
 ): void {
   const matches = state.reminderRules.filter((rule) =>
-    rule.taskId === taskId && rule.occurrenceId === null && rule.trigger.kind === 'absolute' && rule.owner !== 'user')
+    rule.target.kind === 'task' && rule.target.taskId === taskId && rule.target.occurrenceId === null && rule.trigger.kind === 'absolute' && rule.owner !== 'user')
   const explicit = reminderRuleId ? matches.find(({ id }) => id === reminderRuleId) : undefined
   if (!explicit && matches.length > 1) throw new DomainCommandError('VALIDATION_ERROR', 'Legacy reminder ownership is ambiguous.')
   const existing = explicit ?? matches[0]
@@ -451,8 +451,7 @@ function setLegacyReminder(
   const rule: ReminderRule = {
     id: reminderRuleId ?? context.id('reminder'),
     owner: 'legacy',
-    taskId,
-    occurrenceId: null,
+    target: { kind: 'task', taskId, occurrenceId: null },
     trigger: { kind: 'absolute', at: reminderAt },
     enabled: true,
     revision: 1,
@@ -460,7 +459,7 @@ function setLegacyReminder(
   state.reminderRules.push(rule)
 }
 
-function requireTask(state: WorkspaceStateV3, taskId: string, expectedRevision?: number): Task {
+function requireTask(state: WorkspaceStateV4, taskId: string, expectedRevision?: number): Task {
   const task = state.tasks.find(({ id }) => id === taskId)
   if (!task) throw new DomainCommandError('TASK_NOT_FOUND', `Task not found: ${taskId}.`, { taskId })
   if (task.deletedAt !== null) throw new DomainCommandError('TASK_ALREADY_DELETED', `Task is deleted: ${taskId}.`, { taskId })
@@ -473,7 +472,7 @@ function requireTask(state: WorkspaceStateV3, taskId: string, expectedRevision?:
 }
 
 function requireTasks(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   taskIds: readonly string[],
   expectedRevisions: Readonly<Record<string, number>> | undefined,
 ): Task[] {
@@ -484,7 +483,7 @@ function requireTasks(
 }
 
 function assertReferences(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   listId: string,
   sectionId: string | null,
   tagIds: readonly string[],
@@ -544,7 +543,7 @@ function assertRecurrenceSchedule(anchorAt: string | null, anchorOn: string | nu
 }
 
 function activeTaskSessions(
-  state: WorkspaceStateV3, taskIds: readonly string[], explicitSessionId?: string,
+  state: WorkspaceStateV4, taskIds: readonly string[], explicitSessionId?: string,
 ): { current: StudySession[]; before: StudySession[] } {
   let current = state.studySessions.filter(({ taskId, state: sessionState, deletedAt }) =>
     taskIds.includes(taskId) && deletedAt === null && (sessionState === 'running' || sessionState === 'paused'))
@@ -570,7 +569,7 @@ function finishSessions(sessions: readonly StudySession[], now: string): void {
 }
 
 function appendEvent(
-  state: WorkspaceStateV3, task: Task, type: TaskEvent['type'],
+  state: WorkspaceStateV4, task: Task, type: TaskEvent['type'],
   fromStatus: TaskEvent['fromStatus'], toStatus: TaskEvent['toStatus'],
   context: CapabilityCommandContext, reason?: string, completionRecordId?: string,
   explicitId?: string,

@@ -1,9 +1,9 @@
 import type { CalendarCapabilityCommand } from '../../domain/capabilities/calendar-commands.ts'
 import type { LaidOutCalendarItem } from '../../domain/calendar/layout.ts'
-import type { WorkspaceStateV3 } from '../../domain/workspace/types.ts'
+import type { WorkspaceStateV4 } from '../../domain/workspace/types.ts'
 import { durationMinutes } from './use-calendar-drag.ts'
 
-export function calendarDeadlineConflict(workspace: WorkspaceStateV3 | null, command: CalendarCapabilityCommand): string | null {
+export function calendarDeadlineConflict(workspace: WorkspaceStateV4 | null, command: CalendarCapabilityCommand): string | null {
   if (command.type !== 'calendar.move') return null
   const task = workspace?.tasks.find(({ id }) => id === command.taskId)
   const target = command.startAt ?? command.startOn

@@ -5,7 +5,7 @@ import type {
   CommandResult,
 } from '../domain/capabilities/types.ts'
 import { CAPABILITY_PROTOCOL_VERSION } from '../domain/capabilities/types.ts'
-import type { WorkspaceStateV3 } from '../domain/workspace/types.ts'
+import type { WorkspaceStateV4 } from '../domain/workspace/types.ts'
 import {
   calendarCommandErrorDetail,
   runCalendarCommand,
@@ -16,7 +16,7 @@ type BatchRescheduleCommand = Extract<CapabilityCommand, { type: 'task.batch_res
 type BatchRescheduleEnvelope = CommandEnvelope<BatchRescheduleCommand>
 
 export interface OverdueBatchRuntime {
-  snapshot(): Promise<WorkspaceStateV3>
+  snapshot(): Promise<WorkspaceStateV4>
   preview(envelope: BatchRescheduleEnvelope): Promise<CommandPreview>
   execute(envelope: BatchRescheduleEnvelope): Promise<CommandResult>
   refresh(): Promise<void>
@@ -30,7 +30,7 @@ export async function runOverdueBatchMove(
   today: string,
   runtime: OverdueBatchRuntime,
 ): Promise<CommandResult | null> {
-  let workspace: WorkspaceStateV3
+  let workspace: WorkspaceStateV4
   try {
     workspace = await runtime.snapshot()
   } catch (error) {

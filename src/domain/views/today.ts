@@ -1,5 +1,5 @@
 import { createTimeZoneFormatter } from '../recurrence/timezone.ts'
-import type { WorkspaceStateV3 } from '../workspace/types.ts'
+import type { WorkspaceStateV4 } from '../workspace/types.ts'
 import { projectTaskItems, type TaskProjection, type TaskProjectionReason } from '../../lib/study-task-query.ts'
 
 export const TODAY_GROUP_KINDS = ['overdue', 'planned', 'due', 'recurring'] as const
@@ -9,7 +9,7 @@ export interface TodayGroup { kind: TodayGroupKind; items: TaskProjection[] }
 const reasonOrder = new Map<TaskProjectionReason, number>(TODAY_GROUP_KINDS.map((reason, index) => [reason, index]))
 const priorityOrder = { high: 0, medium: 1, low: 2, none: 3 } as const
 
-export function selectToday(state: WorkspaceStateV3, now: string, timezone: string): TodayGroup[] {
+export function selectToday(state: WorkspaceStateV4, now: string, timezone: string): TodayGroup[] {
   const today = localDate(now, timezone)
   const taskOrder = new Map(state.tasks.map((task, index) => [task.id, index]))
   const compare = createProjectionComparator(taskOrder, timezone)

@@ -1,5 +1,6 @@
 import type { ReminderCapabilityCommand } from '../domain/capabilities/reminder-commands'
 import type { ReminderRule, RecurrenceCadence } from '../domain/workspace/types'
+import { reminderTarget } from '../domain/reminders/target.ts'
 
 export async function runTaskEditCommit<Reminder, Recurrence>(input: {
   reminders: readonly Reminder[]
@@ -62,7 +63,7 @@ function reminderKey(value: ReminderRule | ReminderSetCommand | undefined): stri
   const trigger = value.trigger.kind === 'absolute'
     ? { kind: value.trigger.kind, at: instantKey(value.trigger.at) }
     : { ...value.trigger }
-  return JSON.stringify({ id: 'id' in value ? value.id : value.ruleId, taskId: value.taskId, occurrenceId: value.occurrenceId, trigger, enabled: value.enabled })
+  return JSON.stringify({ id: 'id' in value ? value.id : value.ruleId, target: reminderTarget(value), trigger, enabled: value.enabled })
 }
 
 export function resolveReminderEditWrite(

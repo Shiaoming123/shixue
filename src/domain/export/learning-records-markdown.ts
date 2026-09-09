@@ -1,4 +1,4 @@
-import type { CompletionRecord, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { CompletionRecord, WorkspaceStateV4 } from '../workspace/types.ts'
 
 const REVIEW_RESULT_LABELS: Record<NonNullable<CompletionRecord['lastReviewResult']>, string> = {
   clear: '记得',
@@ -6,7 +6,7 @@ const REVIEW_RESULT_LABELS: Record<NonNullable<CompletionRecord['lastReviewResul
   relearn: '忘记',
 }
 
-export function createLearningRecordsMarkdown(state: WorkspaceStateV3): string {
+export function createLearningRecordsMarkdown(state: WorkspaceStateV4): string {
   const records = state.completionRecords
     .filter(({ deletedAt }) => deletedAt === null)
     .sort((left, right) =>

@@ -7,6 +7,7 @@ import {
 } from '../src/domain/workspace/migrate.ts'
 import {
   createWorkspaceExport,
+  createTaskOnlyWorkspaceExportV3,
   parseWorkspaceExport,
   WORKSPACE_EXPORT_FORMAT,
 } from '../src/storage/workspace/data-port.ts'
@@ -22,6 +23,7 @@ import {
   createTauriSqliteStudyStore,
   createTauriSqliteWorkspaceStore,
   REPLACE_LEGACY_AFTER_BACKUP_SQL,
+  STAGE_WORKSPACE_MIGRATION_SQL,
   VERIFY_LEGACY_WORKSPACE_STATE_BACKUP_SQL,
 } from '../src/storage/study/tauri-sqlite.ts'
 import type {
@@ -31,12 +33,17 @@ import type {
 } from '../src/storage/study/types.ts'
 import { createSeedStudyState } from '../src/storage/study/types.ts'
 import type { WorkspaceStore } from '../src/storage/workspace/types.ts'
+import { parseWorkspaceState } from '../src/domain/workspace/parse.ts'
 
 const MIGRATED_AT = '2026-09-04T12:00:00.000Z'
 const REPAIRED_AT = '2026-09-07T12:00:00.000Z'
 
+function v3Fixture() {
+  return createTaskOnlyWorkspaceExportV3(parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT), MIGRATED_AT).state
+}
+
 function legacyDeletedPendingReviewWorkspace() {
-  const state = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
+  const state = v3Fixture()
   const link = state.reviewTaskLinks[0]!
   delete (link as Partial<typeof link>).completion
   const reviewTask = state.tasks.find(({ id }) => id === link.reviewTaskId)!
@@ -172,7 +179,7 @@ test('v2 migration preserves legacy ids and maps every learning field', () => {
   const old = v2Fixture()
   const next = parseWorkspaceStateOrMigrate(old, MIGRATED_AT)
 
-  assert.equal(next.version, 3)
+  assert.equal(next.version, 4)
   assert.equal(next.revision, 1)
   assert.deepEqual(next.listGroups, old.listGroups)
   assert.equal(next.lists.find(({ id }) => id === 'topic-1')?.groupId, 'group-1')
@@ -201,7 +208,7 @@ test('v2 migration preserves legacy ids and maps every learning field', () => {
   })))
   assert.equal(next.studySessions[0].taskId, old.tasks[0].id)
   assert.equal(next.completionRecords[0].taskId, old.tasks[0].id)
-  assert.deepEqual(next.reminderRules, [{
+  assert.deepEqual(createTaskOnlyWorkspaceExportV3(next, MIGRATED_AT).state.reminderRules, [{
     id: 'reminder:migrated:task-1', taskId: 'task-1', occurrenceId: null,
     trigger: { kind: 'absolute', at: '2026-09-03T09:30:00.000Z' },
     enabled: true, revision: 1,
@@ -247,7 +254,7 @@ test('pending reviews create one visible deterministic task and link, while comp
   assert.equal(next.tasks.some(({ id }) => id === 'task:review:completion-finished'), false)
 })
 
-test('v3 input is idempotent and ignores a new migration timestamp', () => {
+test('v4 input is idempotent and ignores a new migration timestamp', () => {
   const migrated = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
   assert.deepEqual(
     parseWorkspaceStateOrMigrate(migrated, '2030-01-01T00:00:00.000Z'),
@@ -262,11 +269,11 @@ test('v1 input migrates through v2 and always starts workspace revision at one',
   assert.equal(next.tasks.some(({ id }) => id === 'legacy-step'), true)
 })
 
-test('workspace export is v3 and imports legacy study envelopes only after full migration', () => {
+test('workspace export is v4 and imports legacy study envelopes only after full migration', () => {
   const workspace = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
   const payload = createWorkspaceExport(workspace, '2026-09-05T00:00:00.000Z')
   assert.equal(payload.format, WORKSPACE_EXPORT_FORMAT)
-  assert.equal(payload.version, 3)
+  assert.equal(payload.version, 4)
   assert.deepEqual(parseWorkspaceExport(JSON.stringify(payload)).state, workspace)
 
   for (const [version, state] of [[1, v1Fixture()], [2, v2Fixture()]] as const) {
@@ -275,8 +282,8 @@ test('workspace export is v3 and imports legacy study envelopes only after full 
       exportedAt: MIGRATED_AT, state,
     })
     assert.equal(imported.format, WORKSPACE_EXPORT_FORMAT)
-    assert.equal(imported.version, 3)
-    assert.equal(imported.state.version, 3)
+    assert.equal(imported.version, 4)
+    assert.equal(imported.state.version, 4)
   }
 })
 
@@ -309,7 +316,7 @@ test('malformed import leaves the destination snapshot byte-for-byte unchanged',
   assert.equal(JSON.stringify(await store.load()), before)
 })
 
-test('IndexedDB backs up v2 before replacing the same physical current record with v3', async () => {
+test('IndexedDB backs up v2 before replacing the same physical current record with v4', async () => {
   const databaseName = `meow-workspace-v3-${Date.now()}`
   await deleteDB(databaseName)
   const database = await openDB(databaseName, 2, {
@@ -324,9 +331,9 @@ test('IndexedDB backs up v2 before replacing the same physical current record wi
   database.close()
 
   const loaded = await createIndexedDbWorkspaceStore({ databaseName }).load()
-  assert.equal(loaded.version, 3)
+  assert.equal(loaded.version, 4)
   const verification = await openDB(databaseName, 2)
-  assert.equal((await verification.get('studyState', 'current')).state.version, 3)
+  assert.equal((await verification.get('studyState', 'current')).state.version, 4)
   assert.deepEqual(
     (await verification.get('studyState', V2_WORKSPACE_STATE_BACKUP_KEY)).state,
     legacy,
@@ -366,7 +373,7 @@ test('legacy IndexedDB facade rejects v3 without rewriting it as v2', async () =
       db.createObjectStore('studyState', { keyPath: 'key' })
     },
   })
-  const workspace = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
+  const workspace = v3Fixture()
   await database.put('studyState', { key: 'current', state: workspace })
   database.close()
 
@@ -388,7 +395,7 @@ test('legacy IndexedDB save rejects a current v3 snapshot with and without CAS',
         db.createObjectStore('studyState', { keyPath: 'key' })
       },
     })
-    const workspace = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
+    const workspace = v3Fixture()
     const original = JSON.stringify(workspace)
     await database.put('studyState', { key: 'current', state: workspace })
     database.close()
@@ -445,7 +452,7 @@ test('SQLite replaces v2 only after a byte-identical backup is independently ver
     },
     async execute(sql: string, binds?: unknown[]) {
       calls.push({ sql, binds })
-      if (sql === BACKUP_LEGACY_WORKSPACE_STATE_SQL) {
+      if (sql === BACKUP_LEGACY_WORKSPACE_STATE_SQL || sql === STAGE_WORKSPACE_MIGRATION_SQL) {
         backups.set(String(binds?.[0]), {
           version: Number(binds?.[1]), payload: String(binds?.[2]),
         })
@@ -463,12 +470,13 @@ test('SQLite replaces v2 only after a byte-identical backup is independently ver
     },
   }), undefined, () => MIGRATED_AT)
 
-  assert.equal((await store.load()).version, 3)
+  assert.equal((await store.load()).version, 4)
   assert.equal(calls[0].sql, BACKUP_LEGACY_WORKSPACE_STATE_SQL)
   assert.equal(calls[0].binds?.[2], originalPayload)
-  assert.equal(calls[1].sql, REPLACE_LEGACY_AFTER_BACKUP_SQL)
+  assert.equal(calls[1].sql, STAGE_WORKSPACE_MIGRATION_SQL)
+  assert.equal(calls[2].sql, REPLACE_LEGACY_AFTER_BACKUP_SQL)
   assert.equal(backups.get(String(calls[0].binds?.[0]))?.payload, originalPayload)
-  assert.equal(current.version, 3)
+  assert.equal(current.version, 4)
 })
 
 test('SQLite backs up and restores a legacy v3 pending review whose task was deleted', async () => {
@@ -485,7 +493,7 @@ test('SQLite backs up and restores a legacy v3 pending review whose task was del
       return [current] as T
     },
     async execute(sql: string, binds?: unknown[]) {
-      if (sql === BACKUP_LEGACY_WORKSPACE_STATE_SQL) {
+      if (sql === BACKUP_LEGACY_WORKSPACE_STATE_SQL || sql === STAGE_WORKSPACE_MIGRATION_SQL) {
         backups.set(String(binds?.[0]), {
           version: Number(binds?.[1]), payload: String(binds?.[2]),
         })
@@ -515,7 +523,7 @@ test('SQLite backs up and restores a legacy v3 pending review whose task was del
   assert.equal([...backups.values()][0]?.payload, originalPayload)
   assert.notEqual(current.payload, originalPayload)
   assert.deepEqual(await store.load(), repaired)
-  assert.equal(backups.size, 1)
+  assert.deepEqual([...backups.values()].map(({ version }) => version), [3, 4], 'Original backup and validated candidate are retained; reload adds neither')
 })
 
 test('IndexedDB backs up and restores a legacy v3 pending review whose task was deleted', async () => {
@@ -553,18 +561,19 @@ for (const failure of ['backup insert', 'backup proof', 'replacement'] as const)
   test(`SQLite legacy v3 review repair leaves the original bytes when ${failure} fails`, async () => {
     const originalPayload = JSON.stringify(legacyDeletedPendingReviewWorkspace())
     let currentPayload = originalPayload
-    let backup: { version: number; payload: string } | undefined
+    const backups = new Map<string, { version: number; payload: string }>()
     const store = createTauriSqliteWorkspaceStore(async () => ({
-      async select<T>(sql: string): Promise<T> {
+      async select<T>(sql: string, binds?: unknown[]): Promise<T> {
         if (sql === VERIFY_LEGACY_WORKSPACE_STATE_BACKUP_SQL) {
+          const backup = backups.get(String(binds?.[0]))
           return (failure === 'backup proof' || !backup ? [] : [backup]) as T
         }
         return [{ version: 3, payload: currentPayload }] as T
       },
       async execute(sql: string, binds?: unknown[]) {
-        if (sql === BACKUP_LEGACY_WORKSPACE_STATE_SQL) {
+        if (sql === BACKUP_LEGACY_WORKSPACE_STATE_SQL || sql === STAGE_WORKSPACE_MIGRATION_SQL) {
           if (failure === 'backup insert') return { rowsAffected: 0 }
-          backup = { version: Number(binds?.[1]), payload: String(binds?.[2]) }
+          backups.set(String(binds?.[0]), { version: Number(binds?.[1]), payload: String(binds?.[2]) })
           return { rowsAffected: 1 }
         }
         if (sql === REPLACE_LEGACY_AFTER_BACKUP_SQL) {
@@ -670,21 +679,23 @@ test('SQLite backup failure leaves the original v2 payload unchanged and never r
 
 test('SQLite replacement failure is loud after backup and leaves the original row unchanged', async () => {
   const originalPayload = JSON.stringify(v2Fixture())
-  let currentPayload = originalPayload
+  const backups = new Map<string, { version: number; payload: string }>()
   let executions = 0
   const store = createTauriSqliteWorkspaceStore(async () => ({
-    async select<T>(): Promise<T> {
-      return [{ version: 2, payload: currentPayload }] as T
+    async select<T>(sql: string, binds?: unknown[]): Promise<T> {
+      if (sql === VERIFY_LEGACY_WORKSPACE_STATE_BACKUP_SQL) return [backups.get(String(binds?.[0]))] as T
+      return [{ version: 2, payload: originalPayload }] as T
     },
-    async execute() {
+    async execute(sql: string, binds?: unknown[]) {
       executions += 1
-      return { rowsAffected: executions === 1 ? 1 : 0 }
+      if (sql === REPLACE_LEGACY_AFTER_BACKUP_SQL) return { rowsAffected: 0 }
+      backups.set(String(binds?.[0]), { version: Number(binds?.[1]), payload: String(binds?.[2]) })
+      return { rowsAffected: 1 }
     },
   }), undefined, () => MIGRATED_AT)
 
   await assert.rejects(store.load(), /not replaced/i)
-  assert.equal(executions, 2)
-  assert.equal(currentPayload, originalPayload)
+  assert.equal(executions, 3)
 })
 
 test('SQLite save refuses to bypass legacy migration and its backup', async () => {
@@ -723,7 +734,7 @@ test('SQLite rejects a row whose version does not match its JSON before backup o
 
 test('legacy SQLite facade rejects v3 without executing a v2 overwrite', async () => {
   let executions = 0
-  const workspace = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
+  const workspace = v3Fixture()
   const store = createTauriSqliteStudyStore(async () => ({
     async select<T>(): Promise<T> {
       return [{ version: 3, payload: JSON.stringify(workspace) }] as T
@@ -740,7 +751,7 @@ test('legacy SQLite facade rejects v3 without executing a v2 overwrite', async (
 
 test('legacy SQLite save rejects a current v3 row with and without CAS', async () => {
   for (const expectedUpdatedAt of [undefined, MIGRATED_AT]) {
-    const workspace = parseWorkspaceStateOrMigrate(v2Fixture(), MIGRATED_AT)
+    const workspace = v3Fixture()
     const originalPayload = JSON.stringify(workspace)
     let currentPayload = originalPayload
     let executions = 0

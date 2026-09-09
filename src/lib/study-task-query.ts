@@ -1,6 +1,6 @@
 import { addCalendarDays } from '../storage/study/types.ts'
 import type { StudyTask, StudyTaskStatus, StudyTopic } from '../storage/study/types.ts'
-import type { Task, TaskOccurrence, WorkspaceStateV3 } from '../domain/workspace/types.ts'
+import type { Task, TaskOccurrence, WorkspaceStateV4 } from '../domain/workspace/types.ts'
 import { createTimeZoneFormatter, zonedDateTimeToInstant } from '../domain/recurrence/timezone.ts'
 
 export type StudyTaskSort = 'manual' | 'updatedAt' | 'dueOn' | 'title'
@@ -42,7 +42,7 @@ export interface TaskProjection {
 }
 
 export function projectTaskItems(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   range: TaskProjectionRange,
   timezone: string,
 ): TaskProjection[] {

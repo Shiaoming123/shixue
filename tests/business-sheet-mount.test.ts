@@ -8,6 +8,7 @@ import { buildQuickAddCommand } from '../src/domain/quick-add/command.ts'
 import { parseQuickAdd } from '../src/domain/quick-add/parse.ts'
 import * as recurrenceTimezone from '../src/domain/recurrence/timezone.ts'
 import { useQuickAddCandidateState } from '../src/components/study/use-quick-add-candidate-state.ts'
+import { reminderTarget } from '../src/domain/reminders/target.ts'
 
 if (!globalThis.Document) Object.assign(globalThis, { Document: class { activeElement = null } })
 
@@ -197,15 +198,15 @@ test('mounted QuickAdd reports a committed task when catalog refresh fails after
 test('mounted TaskEditSheet stages child reminder and recurrence events until outer Save', async () => {
   const controls: Record<string, (...args: any[]) => any> = {}
   const events: any[][] = []
-  const Component = componentFrom('TaskEditSheet', controls)
-  const rule = { id: 'rule:one', taskId: task.id, occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true, revision: 4 }
+  const Component = componentFrom('TaskEditSheet', controls, { '/reminders/target': { reminderTarget } })
+  const rule = { id: 'rule:one', target: { kind: 'task', taskId: task.id, occurrenceId: null }, trigger: { kind: 'at_start' }, enabled: true, revision: 4 }
   const app = renderer.createApp(Component, {
     open: true, task, topics: [], plannedAt: '2026-09-06T01:00:00.000Z', dueAt: null, reminderRules: [rule], recurrenceRule: null,
     onClose: () => events.push(['close']), onSave: (...args: any[]) => events.push(['save', ...args]),
   })
   const root = new HostNode()
   app.mount(root)
-  const addition = { type: 'reminder.set', ruleId: 'rule:new', taskId: task.id, occurrenceId: null, trigger: { kind: 'before_start', minutes: 10 }, enabled: true }
+  const addition = { type: 'reminder.set', ruleId: 'rule:new', target: { kind: 'task', taskId: task.id, occurrenceId: null }, trigger: { kind: 'before_start', minutes: 10 }, enabled: true }
   const recurrence = { cadence: { kind: 'daily', interval: 2 }, basis: 'fixed_schedule', end: { kind: 'never' } }
   controls.reminderSet(addition)
   controls.recurrenceSave(recurrence)

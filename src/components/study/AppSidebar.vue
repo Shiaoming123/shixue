@@ -44,7 +44,7 @@ const icons: Record<WorkspaceView['kind'], typeof Inbox> = {
   lists: ListTodo, list: Folder, completed: CircleCheckBig, learning: BookOpen,
 }
 const primaryItems = desktopWorkspaceNavigation.map((item) => ({ ...item, icon: icons[item.view.kind] }))
-const reviewItem = { ...learningWorkspaceNavigation[1], icon: History }
+const reviewItem = { ...learningWorkspaceNavigation.find(({ preferenceKey }) => preferenceKey === 'page:review')!, icon: History }
 const primaryKeys = primaryItems.map(({ preferenceKey }) => preferenceKey)
 const orderedPrimaryItems = computed(() => sortItems(primaryItems, ({ preferenceKey }) => preferenceKey))
 const orderedListSections = computed(() => {

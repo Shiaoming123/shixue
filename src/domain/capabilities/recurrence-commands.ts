@@ -7,7 +7,7 @@ import type {
   Task,
   TaskEvent,
   TaskOccurrence,
-  WorkspaceStateV3,
+  WorkspaceStateV4,
 } from '../workspace/types.ts'
 import {
   DomainCommandError,
@@ -18,7 +18,7 @@ import {
 } from './types.ts'
 
 export function applyRecurrenceCommand(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: RecurrenceCapabilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -88,7 +88,7 @@ export function seriesMovePatchForOccurrence(
 }
 
 function createRecurrence(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<RecurrenceCapabilityCommand, { type: 'recurrence.create' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -162,7 +162,7 @@ function createRecurrence(
 }
 
 function updateRecurrence(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<RecurrenceCapabilityCommand, { type: 'recurrence.update' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -231,7 +231,7 @@ function updateRecurrence(
 }
 
 function completeOccurrence(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<RecurrenceCapabilityCommand, { type: 'recurrence.complete' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -271,7 +271,7 @@ function completeOccurrence(
 }
 
 function skipOccurrence(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<RecurrenceCapabilityCommand, { type: 'recurrence.skip' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -297,7 +297,7 @@ function skipOccurrence(
 }
 
 function splitFutureSeries(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   task: Task,
   series: RecurrenceSeries,
   occurrence: TaskOccurrence,
@@ -359,7 +359,7 @@ function successorEnd(end: RecurrenceSeries['end'], splitOrdinal: number): Recur
 }
 
 function recomputePendingOccurrences(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   series: RecurrenceSeries,
   priorBasis: RecurrenceSeries['basis'],
 ): TaskOccurrence[] {
@@ -433,7 +433,7 @@ function relocateAfterCompletionOccurrence(
 }
 
 function createAfterCompletionSuccessor(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   series: RecurrenceSeries,
   completed: TaskOccurrence,
   completedAt: string,
@@ -516,7 +516,7 @@ function applyOccurrencePatch(occurrence: TaskOccurrence, patch: RecurrenceUpdat
   occurrence.revision += 1
 }
 
-function recurrenceSnapshot(task: Task, state: WorkspaceStateV3, activeSeriesId: string) {
+function recurrenceSnapshot(task: Task, state: WorkspaceStateV4, activeSeriesId: string) {
   return {
     tasks: [structuredClone(task)],
     recurrenceSeries: state.recurrenceSeries
@@ -528,7 +528,7 @@ function recurrenceSnapshot(task: Task, state: WorkspaceStateV3, activeSeriesId:
   }
 }
 
-function fillSeriesWindow(state: WorkspaceStateV3, series: RecurrenceSeries, now: string): TaskOccurrence[] {
+function fillSeriesWindow(state: WorkspaceStateV4, series: RecurrenceSeries, now: string): TaskOccurrence[] {
   const created = materializeOccurrenceWindow(state, series.id, now).created
   state.occurrences.push(...created)
   const last = created[created.length - 1]
@@ -540,7 +540,7 @@ function fillSeriesWindow(state: WorkspaceStateV3, series: RecurrenceSeries, now
 }
 
 function appendOccurrenceEvent(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   task: Task,
   occurrence: TaskOccurrence,
   type: TaskEvent['type'],
@@ -593,7 +593,7 @@ function recurrenceApplication(input: {
   }
 }
 
-function requireTask(state: WorkspaceStateV3, taskId: string, expectedRevision?: number): Task {
+function requireTask(state: WorkspaceStateV4, taskId: string, expectedRevision?: number): Task {
   const task = state.tasks.find(({ id }) => id === taskId)
   if (!task) throw new DomainCommandError('TASK_NOT_FOUND', `Task not found: ${taskId}.`, { taskId })
   if (task.deletedAt !== null) throw new DomainCommandError('TASK_ALREADY_DELETED', `Task is deleted: ${taskId}.`, { taskId })
@@ -605,13 +605,13 @@ function requireTask(state: WorkspaceStateV3, taskId: string, expectedRevision?:
   return task
 }
 
-function requireSeries(state: WorkspaceStateV3, seriesId: string): RecurrenceSeries {
+function requireSeries(state: WorkspaceStateV4, seriesId: string): RecurrenceSeries {
   const series = state.recurrenceSeries.find(({ id }) => id === seriesId)
   if (!series) throw validation(`Recurrence series not found: ${seriesId}.`, { seriesId })
   return series
 }
 
-function requireOccurrence(state: WorkspaceStateV3, occurrenceId: string, expectedRevision?: number): TaskOccurrence {
+function requireOccurrence(state: WorkspaceStateV4, occurrenceId: string, expectedRevision?: number): TaskOccurrence {
   const occurrence = state.occurrences.find(({ id }) => id === occurrenceId)
   if (!occurrence) throw validation(`Occurrence not found: ${occurrenceId}.`, { occurrenceId })
   if (expectedRevision !== undefined && occurrence.revision !== expectedRevision) {

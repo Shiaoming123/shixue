@@ -338,6 +338,7 @@ function planSourceLabel(fact: WeeklyLearningPlanFact): string {
         </div>
         <p v-else class="weekly-empty">本周还没有可归因的学习证据或回顾。</p>
       </section>
+      <slot name="calendar-review" />
     </template>
 
     <template v-else>

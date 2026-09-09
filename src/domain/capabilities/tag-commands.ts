@@ -1,4 +1,4 @@
-import type { Tag, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { Tag, WorkspaceStateV4 } from '../workspace/types.ts'
 import {
   DomainCommandError,
   type CapabilityCommandContext,
@@ -7,7 +7,7 @@ import {
 } from './types.ts'
 
 export function applyTagCommand(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: TagCapabilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -17,7 +17,7 @@ export function applyTagCommand(
 }
 
 function createTag(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TagCapabilityCommand, { type: 'tag.create' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -47,7 +47,7 @@ function createTag(
 }
 
 function renameTag(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TagCapabilityCommand, { type: 'tag.rename' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -68,7 +68,7 @@ function renameTag(
 }
 
 function archiveTag(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<TagCapabilityCommand, { type: 'tag.archive' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -86,7 +86,7 @@ function archiveTag(
   }
 }
 
-function requireActiveTag(state: WorkspaceStateV3, tagId: string): Tag {
+function requireActiveTag(state: WorkspaceStateV4, tagId: string): Tag {
   const tag = state.tags.find(({ id, archivedAt }) => id === tagId && archivedAt === null)
   if (!tag) throw new DomainCommandError('TAG_NOT_FOUND', `Active tag not found: ${tagId}.`, { tagId })
   return tag
@@ -98,13 +98,13 @@ function normalizedTitle(title: string): string {
   return normalized
 }
 
-function assertUniqueActiveTitle(state: WorkspaceStateV3, title: string, exceptId?: string): void {
+function assertUniqueActiveTitle(state: WorkspaceStateV4, title: string, exceptId?: string): void {
   if (state.tags.some(({ id, archivedAt, title: candidate }) => id !== exceptId && archivedAt === null && candidate === title)) {
     throw new DomainCommandError('TAG_ALREADY_EXISTS', `Active tag title already exists: ${title}.`, { title })
   }
 }
 
-function workspaceHasId(state: WorkspaceStateV3, id: string): boolean {
+function workspaceHasId(state: WorkspaceStateV4, id: string): boolean {
   return [
     state.listGroups, state.lists, state.sections, state.tags, state.tasks,
     state.recurrenceSeries, state.occurrences, state.reminderRules,

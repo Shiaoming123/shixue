@@ -8,8 +8,9 @@ import {
 import {
   parseWorkspaceStateOrMigrate,
   repairLegacyDeletedPendingReviewTasks,
+  migrateWorkspaceV4,
 } from '../../domain/workspace/migrate.ts'
-import { parseWorkspaceState } from '../../domain/workspace/parse.ts'
+import { parseWorkspaceStateV4 } from '../../domain/workspace/parse.ts'
 import type { WorkspaceStore } from '../workspace/types.ts'
 
 const DB_URL = 'sqlite:study.db'
@@ -40,34 +41,34 @@ export const SAVE_STUDY_STATE_WITH_CAS_SQL = `INSERT INTO study_state
   (id, version, payload, updated_at)
   SELECT 1, $1, $2, $3
   WHERE (NOT EXISTS (SELECT 1 FROM study_state WHERE id = 1) AND $4 = $5)
-     OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND version != 3 AND updated_at = $4)
+     OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND version IN (1, 2) AND updated_at = $4)
   ON CONFLICT(id) DO UPDATE SET
     version = excluded.version,
     payload = excluded.payload,
     updated_at = excluded.updated_at
-  WHERE study_state.version != 3 AND study_state.updated_at = $4`
+  WHERE study_state.version IN (1, 2) AND study_state.updated_at = $4`
 
 export const SAVE_STUDY_STATE_WITH_VERSION_GUARD_SQL = `INSERT INTO study_state
   (id, version, payload, updated_at)
   SELECT 1, $1, $2, $3
   WHERE NOT EXISTS (SELECT 1 FROM study_state WHERE id = 1)
-     OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND version != 3)
+     OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND version IN (1, 2))
   ON CONFLICT(id) DO UPDATE SET
     version = excluded.version,
     payload = excluded.payload,
     updated_at = excluded.updated_at
-  WHERE study_state.version != 3`
+  WHERE study_state.version IN (1, 2)`
 
 export const SAVE_WORKSPACE_STATE_WITH_CAS_SQL = `INSERT INTO study_state
   (id, version, payload, updated_at)
   SELECT 1, $1, $2, $3
   WHERE (NOT EXISTS (SELECT 1 FROM study_state WHERE id = 1) AND $4 = $5)
-     OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND version = 3 AND updated_at = $4)
+     OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND version = 4 AND updated_at = $4)
   ON CONFLICT(id) DO UPDATE SET
     version = excluded.version,
     payload = excluded.payload,
     updated_at = excluded.updated_at
-  WHERE study_state.version = 3 AND study_state.updated_at = $4`
+  WHERE study_state.version = 4 AND study_state.updated_at = $4`
 
 export const BACKUP_LEGACY_WORKSPACE_STATE_SQL = `INSERT INTO study_state_backups
   (backup_key, version, payload, created_at)
@@ -78,6 +79,11 @@ export const BACKUP_LEGACY_WORKSPACE_STATE_SQL = `INSERT INTO study_state_backup
 export const VERIFY_LEGACY_WORKSPACE_STATE_BACKUP_SQL = `SELECT version, payload
   FROM study_state_backups
   WHERE backup_key = $1`
+
+export const STAGE_WORKSPACE_MIGRATION_SQL = `INSERT INTO study_state_backups
+  (backup_key, version, payload, created_at)
+  VALUES ($1, $2, $3, $4)
+  ON CONFLICT(backup_key) DO NOTHING`
 
 export const REPLACE_LEGACY_AFTER_BACKUP_SQL = `INSERT INTO study_state
   (id, version, payload, updated_at)
@@ -176,8 +182,8 @@ export function createTauriSqliteStudyStore(
       const rows = await database.select<StudyStateRow[]>(
         'SELECT version, payload FROM study_state WHERE id = 1',
       )
-      if (rows[0]?.version === 3) {
-        throw new Error('Legacy StudyStore cannot save over Workspace state version 3.')
+      if (rows[0] && rows[0].version !== 1 && rows[0].version !== 2) {
+        throw new Error(`Legacy StudyStore cannot save over Workspace state version ${rows[0].version}.`)
       }
       if (expectedUpdatedAt === undefined) {
         const saved = await database.execute(
@@ -219,46 +225,24 @@ export function createTauriSqliteWorkspaceStore(
       if (rows.length === 0) return structuredClone(initial)
       const stored = parsePayload(rows[0].payload)
       assertPayloadVersion(stored, rows[0].version)
-      if (rows[0].version === 3) {
-        try {
-          return parseWorkspaceState(stored)
-        } catch (originalError) {
-          const repairedAt = now()
-          const repaired = repairLegacyDeletedPendingReviewTasks(stored, repairedAt)
-          if (!repaired) throw originalError
-          const sourcePayload = rows[0].payload
-          const backupKey = `workspace-state-v3-review-repair:${crypto.randomUUID()}`
-          const backup = await database.execute(BACKUP_LEGACY_WORKSPACE_STATE_SQL, [
-            backupKey, 3, sourcePayload, repairedAt,
-          ])
-          if (rowsAffected(backup) < 1) {
-            throw new Error('Workspace state v3 review repair backup insert failed.')
-          }
-          const proof = await database.select<StudyStateBackupRow[]>(
-            VERIFY_LEGACY_WORKSPACE_STATE_BACKUP_SQL,
-            [backupKey],
-          )
-          if (proof.length !== 1 || proof[0].version !== 3 || proof[0].payload !== sourcePayload) {
-            throw new Error('Workspace state v3 review repair backup proof is missing or mismatched.')
-          }
-          const replaced = await database.execute(REPLACE_LEGACY_AFTER_BACKUP_SQL, [
-            backupKey, 3, sourcePayload, repaired.version, JSON.stringify(repaired), repaired.updatedAt,
-          ])
-          if (rowsAffected(replaced) < 1) {
-            throw new Error('Workspace state v3 review repair was not replaced after backup proof.')
-          }
-          return repaired
-        }
-      }
-      if (rows[0].version !== 1 && rows[0].version !== 2) {
+      if (rows[0].version === 4) return parseWorkspaceStateV4(stored)
+      if (rows[0].version !== 1 && rows[0].version !== 2 && rows[0].version !== 3) {
         throw new Error(`Unsupported stored Workspace state version: ${rows[0].version}.`)
       }
 
       const migratedAt = now()
-      const migrated = parseWorkspaceStateOrMigrate(stored, migratedAt)
       const sourceVersion = rows[0].version
       const sourcePayload = rows[0].payload
-      const backupKey = `workspace-state-v${sourceVersion}:${crypto.randomUUID()}`
+      let backupKey = `workspace-state-v${sourceVersion}:${crypto.randomUUID()}`
+      let migrated
+      try {
+        migrated = parseWorkspaceStateOrMigrate(stored, migratedAt)
+      } catch (originalError) {
+        const repaired = repairLegacyDeletedPendingReviewTasks(stored, migratedAt)
+        if (!repaired) throw originalError
+        migrated = migrateWorkspaceV4(repaired)
+        backupKey = `workspace-state-v3-review-repair:${crypto.randomUUID()}`
+      }
       const backup = await database.execute(BACKUP_LEGACY_WORKSPACE_STATE_SQL, [
         backupKey,
         sourceVersion,
@@ -279,38 +263,63 @@ export function createTauriSqliteWorkspaceStore(
       ) {
         throw new Error('Workspace state migration backup proof is missing or mismatched.')
       }
+      const candidatePayload = JSON.stringify(migrated)
+      const candidateKey = `workspace-state-v4-candidate:${crypto.randomUUID()}`
+      const staged = await database.execute(STAGE_WORKSPACE_MIGRATION_SQL, [
+        candidateKey, migrated.version, candidatePayload, migratedAt,
+      ])
+      if (rowsAffected(staged) < 1) throw new Error('Workspace migration candidate insert failed; current was not replaced.')
+      const candidateProof = await database.select<StudyStateBackupRow[]>(VERIFY_LEGACY_WORKSPACE_STATE_BACKUP_SQL, [candidateKey])
+      if (candidateProof.length !== 1 || candidateProof[0].version !== 4 || candidateProof[0].payload !== candidatePayload) {
+        throw new Error('Workspace migration candidate proof is missing or mismatched; current was not replaced.')
+      }
+      parseWorkspaceStateV4(parsePayload(candidateProof[0].payload))
       const replaced = await database.execute(REPLACE_LEGACY_AFTER_BACKUP_SQL, [
         backupKey,
         sourceVersion,
         sourcePayload,
         migrated.version,
-        JSON.stringify(migrated),
+        candidatePayload,
         migrated.updatedAt,
       ])
       if (rowsAffected(replaced) < 1) {
         throw new Error('Workspace state migration was not replaced after backup proof.')
       }
-      return migrated
+      try {
+        const written = await database.select<StudyStateRow[]>('SELECT version, payload FROM study_state WHERE id = 1')
+        if (written.length !== 1 || written[0].version !== 4 || written[0].payload !== candidatePayload) {
+          throw new Error('Workspace migration read-back mismatch.')
+        }
+        return parseWorkspaceStateV4(parsePayload(written[0].payload))
+      } catch {
+        throw new Error(`Workspace migration was saved but read-back confirmation failed; original backup retained at ${backupKey}.`)
+      }
     },
     async save(state, expectedUpdatedAt) {
       const database = await loadDatabase()
-      const validated = parseWorkspaceState(state)
+      const validated = parseWorkspaceStateV4(state)
       const rows = await database.select<StudyStateRow[]>(
         'SELECT version, payload FROM study_state WHERE id = 1',
       )
-      if (rows.length > 0 && rows[0].version !== 3) {
+      if (rows.length > 0 && rows[0].version !== 4) {
         throw new Error('Workspace storage must load and migrate legacy state before save.')
       }
       if (expectedUpdatedAt === undefined) {
-        await database.execute(
+        const saved = await database.execute(
           `INSERT INTO study_state (id, version, payload, updated_at)
-         VALUES (1, $1, $2, $3)
+         SELECT 1, $1, $2, $3
+         WHERE NOT EXISTS (SELECT 1 FROM study_state WHERE id = 1)
+            OR EXISTS (SELECT 1 FROM study_state WHERE id = 1 AND version = 4)
          ON CONFLICT(id) DO UPDATE SET
            version = excluded.version,
            payload = excluded.payload,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at
+         WHERE study_state.version = 4`,
           [validated.version, JSON.stringify(validated), validated.updatedAt],
         )
+        if (rowsAffected(saved) < 1) {
+          throw new Error('Study snapshot conflict: the stored state changed before save.')
+        }
         return
       }
       const saved = await database.execute(SAVE_WORKSPACE_STATE_WITH_CAS_SQL, [

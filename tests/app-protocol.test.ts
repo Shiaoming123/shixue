@@ -58,7 +58,7 @@ function validProtocol() {
     data: {
       defaultMode: 'local-first',
       ports: [{ id: 'workspace', format: WORKSPACE_EXPORT_FORMAT, version: WORKSPACE_EXPORT_VERSION }],
-      legacyInputs: [{ format: STUDY_EXPORT_FORMAT, versions: [1, STUDY_EXPORT_VERSION] }],
+      legacyInputs: [{ format: WORKSPACE_EXPORT_FORMAT, versions: [3] }, { format: STUDY_EXPORT_FORMAT, versions: [1, STUDY_EXPORT_VERSION] }],
       sync: { enabled: false, provider: 'none' },
       recurrenceSchedule: {
         timed: 'scheduledAt', dateOnly: 'scheduledOn', mutuallyExclusive: true, dateOnlyMidnightEncoding: false,

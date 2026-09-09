@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { FileCheck2, ListTodo, Search } from '@lucide/vue'
 import { searchWorkspace, type WorkspaceSearchQuery, type WorkspaceSearchResult } from '../../domain/search/workspace-search.ts'
 import { SYSTEM_LEARNING_LIST_ID } from '../../domain/workspace/migrate.ts'
-import type { TaskStatus, WorkspaceStateV3 } from '../../domain/workspace/types.ts'
+import type { TaskStatus, WorkspaceStateV4 } from '../../domain/workspace/types.ts'
 import Button from '../ui/Button.vue'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import Dialog from '../ui/Dialog.vue'
@@ -12,7 +12,7 @@ import Listbox, { type ListboxOption } from '../ui/Listbox.vue'
 
 const props = defineProps<{
   open: boolean
-  workspace: WorkspaceStateV3 | null
+  workspace: WorkspaceStateV4 | null
   timezone: string
 }>()
 

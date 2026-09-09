@@ -1,7 +1,7 @@
 import { calendarRange } from '../calendar/range.ts'
 import { parseZonedDateTime } from '../recurrence/timezone.ts'
 import { SYSTEM_LEARNING_LIST_ID } from '../workspace/migrate.ts'
-import type { CompletionRecord, ReviewTaskLink, Task, TaskEvent, TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { CompletionRecord, ReviewTaskLink, Task, TaskEvent, TaskOccurrence, WorkspaceStateV4 } from '../workspace/types.ts'
 
 export interface WeeklyLearningSummaryQuery {
   asOf: string
@@ -130,7 +130,7 @@ interface PlanOutcome {
 }
 
 export function selectWeeklyLearningSummary(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   query: WeeklyLearningSummaryQuery,
 ): WeeklyLearningSummary {
   const instant = new Date(query.asOf)
@@ -257,7 +257,7 @@ function toTopicSummary(topic: MutableTopicSummary, evidenceMinutes: number): We
 }
 
 function selectCurrentPlanFacts(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   asOf: Date,
   timezone: string,
   rangeStart: string,
@@ -266,7 +266,7 @@ function selectCurrentPlanFacts(
   const reviewTaskIds = new Set(state.reviewTaskLinks.map(({ reviewTaskId }) => reviewTaskId))
   const records = new Map(state.completionRecords.map((record) => [record.id, record]))
   const seriesById = new Map(state.recurrenceSeries.map((series) => [series.id, series]))
-  const seriesByTask = new Map<string, WorkspaceStateV3['recurrenceSeries']>()
+  const seriesByTask = new Map<string, WorkspaceStateV4['recurrenceSeries']>()
   for (const series of state.recurrenceSeries) {
     const taskSeries = seriesByTask.get(series.taskId) ?? []
     taskSeries.push(series)
@@ -457,7 +457,7 @@ function planMetric(value: number, facts: readonly WeeklyLearningPlanFact[]): We
 
 function claimLiveSessions(
   records: readonly CompletionRecord[],
-  sessions: ReadonlyMap<string, WorkspaceStateV3['studySessions'][number]>,
+  sessions: ReadonlyMap<string, WorkspaceStateV4['studySessions'][number]>,
 ): Map<string, string> {
   const owners = new Map<string, string>()
   for (const record of records) {

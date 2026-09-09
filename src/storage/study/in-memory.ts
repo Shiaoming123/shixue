@@ -1,6 +1,6 @@
 import { createSeedStudyState, parseStudyState, type StudyState, type StudyStore } from './types.ts'
 import { parseWorkspaceStateOrMigrate } from '../../domain/workspace/migrate.ts'
-import { parseWorkspaceState } from '../../domain/workspace/parse.ts'
+import { parseWorkspaceStateV4 } from '../../domain/workspace/parse.ts'
 import type { WorkspaceStore } from '../workspace/types.ts'
 
 /** @deprecated Use createInMemoryWorkspaceStore after the v3 writer cutover. */
@@ -35,7 +35,7 @@ export function createInMemoryWorkspaceStore(
       if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) {
         throw new Error('Workspace snapshot conflict: the stored state changed before save.')
       }
-      current = parseWorkspaceState(state)
+      current = parseWorkspaceStateV4(state)
     },
   }
 }

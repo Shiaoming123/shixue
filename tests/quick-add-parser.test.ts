@@ -1,5 +1,17 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { buildQuickAddCommand } from '../src/domain/quick-add/command.ts'
+
+test('selected calendar slot becomes a timed task unless the user supplies another schedule', () => {
+  const options = { input: 'Write report', candidates: [], destinationListId: 'list:one', timezone: 'Asia/Shanghai', defaultStartAt: '2026-09-09T09:15:00+08:00', defaultEstimateMinutes: 45 }
+  const command = buildQuickAddCommand(options)
+  assert.equal(command.startAt, options.defaultStartAt)
+  assert.equal(command.startOn, undefined)
+  assert.equal(command.estimateMinutes, 45)
+  assert.throws(() => buildQuickAddCommand({ ...options, defaultStartOn: '2026-09-09' }), /one schedule kind/)
+  const parsed = parseQuickAdd('明天 Write report', { now: '2026-09-09T00:00:00Z', timezone: 'Asia/Shanghai', lists: [], tags: [] })
+  assert.equal(buildQuickAddCommand({ ...options, input: parsed.originalTitle, candidates: parsed.candidates }).startOn, '2026-09-10')
+})
 import { parseQuickAdd } from '../src/domain/quick-add/parse.ts'
 import type { QuickAddContext } from '../src/domain/quick-add/types.ts'
 

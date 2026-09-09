@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import type { CalendarCapabilityCommand } from '../../domain/capabilities/calendar-commands.ts'
+import { computed, ref, watch } from 'vue'
+import type { CalendarInteractionCommand } from './use-calendar-drag.ts'
 import type { LaidOutCalendarItem } from '../../domain/calendar/layout.ts'
 import type { CalendarItem as CalendarItemModel } from '../../domain/calendar/project.ts'
 import type { CalendarTargetClock } from '../../domain/calendar/target.ts'
 import CalendarItem from './CalendarItem.vue'
-import { calendarPointerMovePreview, durationMinutes, snapCalendarMinutes, type CalendarDragPreview } from './use-calendar-drag.ts'
+import { calendarSlot, type CalendarSlot } from './calendar-slot'
+import { calendarPointerMovePreview, calendarItemInteractive, durationMinutes, snapCalendarMinutes, type CalendarDragPreview } from './use-calendar-drag.ts'
 import { calendarOverlapMessage } from './calendar-conflicts.ts'
 import { compareCalendarItems } from '../../domain/calendar/view.ts'
 
@@ -16,6 +17,7 @@ const props = defineProps<{
   days: string[]
   items: readonly CalendarItemModel[]
   timedItems: readonly LaidOutCalendarItem[]
+  conflictItems: readonly LaidOutCalendarItem[]
   titles: ReadonlyMap<string, string>
   selectedKey: string
   preview: CalendarDragPreview | null
@@ -23,12 +25,47 @@ const props = defineProps<{
   targetClock: (item: CalendarItemModel) => CalendarTargetClock
 }>()
 const emit = defineEmits<{
+  open: [item: CalendarItemModel]
   select: [key: string]
   'pointer-start': [event: PointerEvent, item: CalendarItemModel, action: 'move' | 'resize']
-  command: [command: CalendarCapabilityCommand, source: 'human-ui' | 'keyboard']
+  command: [command: CalendarInteractionCommand, source: 'human-ui' | 'keyboard']
+  'blank-slot': [slot: CalendarSlot]
+  'toggle-task': [value: { taskId: string; occurrenceId: string | null }]
 }>()
 
+const blankSelection = ref<CalendarSlot | null>(null)
+let blankPointer: { id: number; target: HTMLElement; date: string; start: number; y: number; x: number; touch: boolean } | null = null
+function beginBlank(event: PointerEvent, date: string) {
+  if (event.button !== 0 || blankPointer || (event.target as Element).closest('.calendar-item, button, a, input')) return
+  const target = event.currentTarget as HTMLElement
+  const start = event.clientY - target.getBoundingClientRect().top
+  blankPointer = { id: event.pointerId, target, date, start, y: event.clientY, x: event.clientX, touch: event.pointerType === 'touch' }
+  blankSelection.value = calendarSlot(date, start)
+  if (event.pointerType !== 'touch') { event.preventDefault(); target.focus({ preventScroll: true }); target.setPointerCapture(event.pointerId) }
+}
+function moveBlank(event: PointerEvent) {
+  const active = blankPointer
+  if (!active || event.pointerId !== active.id) return
+  if (active.touch) {
+    if (Math.hypot(event.clientX - active.x, event.clientY - active.y) >= 8) cancelBlank()
+    return
+  }
+  blankSelection.value = calendarSlot(active.date, active.start, event.clientY - active.target.getBoundingClientRect().top)
+}
+function cancelBlank() {
+  const active = blankPointer
+  blankPointer = null; blankSelection.value = null
+  if (active) try { active.target.releasePointerCapture(active.id) } catch { /* capture may already be lost */ }
+}
+function finishBlank(event: PointerEvent) {
+  if (!blankPointer || event.pointerId !== blankPointer.id) return
+  const selected = blankSelection.value
+  cancelBlank()
+  if (selected) emit('blank-slot', selected)
+}
+
 const columns = ref<HTMLElement | null>(null)
+const scroll = ref<HTMLElement | null>(null)
 const allDayColumns = ref<HTMLElement | null>(null)
 const halfHours = Array.from({ length: MINUTES_PER_DAY / HALF_HOUR }, (_, index) => index * HALF_HOUR)
 const dayFormatter = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' })
@@ -37,6 +74,12 @@ const currentMinute = computed(() => {
   const date = new Date(props.now)
   return date.getHours() * 60 + date.getMinutes()
 })
+
+function locate() {
+  if (scroll.value) scroll.value.scrollTop = Math.max(0, (props.days.includes(currentDate.value) ? currentMinute.value : 9 * 60) - 60)
+}
+watch(() => props.days.join(','), locate, { immediate: true, flush: 'post' })
+watch(scroll, (element) => { if (element) locate() }, { flush: 'post' })
 
 function itemsForDay(day: string) {
   return props.timedItems.filter((item) => dateForItem(item) === day)
@@ -50,7 +93,7 @@ function preciseDeadlinesForDay(day: string) {
 function dateOnlyFactsForDay(day: string) {
   return factsForDay(day).filter((item) => !item.start.includes('T'))
 }
-function titleFor(item: CalendarItemModel) { return props.titles.get(item.taskId) ?? '未命名任务' }
+function titleFor(item: CalendarItemModel) { return props.titles.get(item.eventId ?? item.taskId) ?? '未命名任务' }
 function itemStyle(item: LaidOutCalendarItem) {
   const start = item.displayMinute ?? 0
   const duration = durationMinutes(item)
@@ -66,9 +109,10 @@ function allDayPreview(day: string) { return props.preview?.displayDate === day 
 function dayLabel(day: string) { return dayFormatter.format(new Date(`${day}T00:00:00`)).replace('星期', '周') }
 function timeLabel(minutes: number) { return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}` }
 function forwardPointer(event: PointerEvent, item: CalendarItemModel, action: 'move' | 'resize') { emit('pointer-start', event, item, action) }
-function forwardCommand(command: CalendarCapabilityCommand, source: 'human-ui' | 'keyboard') { emit('command', command, source) }
+function forwardCommand(command: CalendarInteractionCommand, source: 'human-ui' | 'keyboard') { emit('command', command, source) }
 
 function propose(clientX: number, clientY: number, item: CalendarItemModel, action: 'move' | 'resize'): CalendarDragPreview | null {
+  if (!calendarItemInteractive(item, props.targetClock(item))) return null
   const columnBox = columns.value?.getBoundingClientRect()
   const allDayBox = allDayColumns.value?.getBoundingClientRect()
   if (!columnBox || !allDayBox || props.days.length === 0) return null
@@ -78,29 +122,31 @@ function propose(clientX: number, clientY: number, item: CalendarItemModel, acti
   const originalDuration = durationMinutes(item)
 
   if (action === 'move' && clientY >= allDayBox.top && clientY <= allDayBox.bottom) {
-    return { itemKey: item.key, proposedStart: proposedDate, displayDate: proposedDate, displayMinute: null, proposedDuration: originalDuration, valid: true, conflict: null }
+    const valid = item.eventId === undefined || item.kind === 'all-day'
+    return { itemKey: item.key, proposedStart: proposedDate, displayDate: proposedDate, displayMinute: null, proposedDuration: originalDuration, valid, conflict: valid ? null : '时间类型需在日程详情中更改。' }
   }
+  if (item.eventId !== undefined && item.kind === 'all-day') return { itemKey: item.key, proposedStart: item.start, displayDate: proposedDate, displayMinute: null, proposedDuration: originalDuration, valid: false, conflict: '全天日程请拖到全天区域；时间类型可在详情更改。' }
 
   const pointerMinute = Math.min(MINUTES_PER_DAY - 1, Math.max(0, clientY - columnBox.top))
   if (action === 'resize') {
     const startMinute = item.displayMinute ?? 0
     const proposedDuration = Math.min(1440, Math.max(15, snapCalendarMinutes(pointerMinute - startMinute)))
-    return { itemKey: item.key, proposedStart: item.start, displayDate: item.displayDate, displayMinute: item.displayMinute, proposedDuration, valid: true, conflict: calendarOverlapMessage(props.timedItems, item.key, dateForItem(item), startMinute, proposedDuration) }
+    return { itemKey: item.key, proposedStart: item.start, displayDate: item.displayDate, displayMinute: item.displayMinute, proposedDuration, valid: true, conflict: calendarOverlapMessage(props.conflictItems, item.key, dateForItem(item), startMinute, proposedDuration) }
   }
 
   const proposedMinute = Math.min(MINUTES_PER_DAY - originalDuration, Math.max(0, snapCalendarMinutes(pointerMinute)))
   const preview = calendarPointerMovePreview(item, proposedDate, proposedMinute, originalDuration, props.targetClock(item))
-  return { ...preview, conflict: calendarOverlapMessage(props.timedItems, item.key, preview.displayDate, preview.displayMinute!, originalDuration) }
+  return { ...preview, conflict: preview.conflict ?? calendarOverlapMessage(props.conflictItems, item.key, preview.displayDate, preview.displayMinute!, originalDuration) }
 }
 
 function dateForItem(item: CalendarItemModel) { return item.displayDate }
 function dateKey(date: Date) { return date.toLocaleDateString('sv-SE') }
 
-defineExpose({ propose })
+defineExpose({ propose, locate, cancelBlank })
 </script>
 
 <template>
-  <section class="time-grid" aria-label="日历时间网格" data-snap="15-minute">
+  <section class="time-grid" aria-label="日历时间网格" data-snap="15-minute" @pointermove="moveBlank" @pointerup="finishBlank" @pointercancel="cancelBlank" @lostpointercapture="cancelBlank" @keydown.esc="cancelBlank">
     <div class="time-grid__header" :style="{ '--day-count': days.length }">
       <span class="time-grid__corner" aria-hidden="true"></span>
       <time v-for="day in days" :key="day" :datetime="day" :aria-current="day === currentDate ? 'date' : undefined">{{ dayLabel(day) }}</time>
@@ -109,23 +155,24 @@ defineExpose({ propose })
       <span class="time-grid__all-day-label">全天</span>
       <div ref="allDayColumns" class="time-grid__all-day-columns">
         <div v-for="day in days" :key="day" class="time-grid__all-day-day">
-          <CalendarItem v-for="item in dateOnlyFactsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :interactive="item.kind !== 'deadline-marker'" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" />
+          <CalendarItem v-for="item in dateOnlyFactsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :interactive="calendarItemInteractive(item, targetClock(item))" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" @open="emit('open', $event)" @toggle-task="emit('toggle-task', $event)" />
           <div v-if="allDayPreview(day)" class="time-grid__preview time-grid__preview--all-day" :class="{ 'time-grid__preview--conflict': preview?.conflict }"><strong>预览</strong><span>{{ preview?.conflict ?? '全天' }}</span></div>
         </div>
       </div>
     </div>
-    <div class="time-grid__scroll">
+    <div ref="scroll" class="time-grid__scroll">
       <div class="time-grid__body">
         <div class="time-grid__spine" aria-hidden="true">
           <span v-for="minute in halfHours" :key="minute" :style="{ top: `${minute}px` }">{{ timeLabel(minute) }}</span>
         </div>
         <div ref="columns" class="time-grid__columns" :style="{ '--day-count': days.length }">
-          <section v-for="day in days" :key="day" class="time-grid__day" :aria-label="dayLabel(day)">
+          <section v-for="day in days" :key="day" class="time-grid__day" :aria-label="`${dayLabel(day)}，点击空白创建；回车从九点创建`" tabindex="0" @pointerdown="beginBlank($event, day)" @keydown.enter.self.prevent="emit('blank-slot', calendarSlot(day, 540))" @keydown.space.self.prevent="emit('blank-slot', calendarSlot(day, 540))">
             <i v-for="minute in halfHours" :key="minute" class="time-grid__half-hour" :style="{ top: `${minute}px` }" aria-hidden="true"></i>
             <div v-if="day === currentDate" class="current-time-line" :style="{ top: `${currentMinute}px` }"><span aria-hidden="true"></span><em class="sr-only">当前时间 {{ timeLabel(currentMinute) }}</em></div>
-            <CalendarItem v-for="item in itemsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :style="itemStyle(item)" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" />
-            <CalendarItem v-for="item in preciseDeadlinesForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :interactive="false" :style="deadlineStyle(item)" />
+            <CalendarItem v-for="item in itemsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :style="itemStyle(item)" :interactive="calendarItemInteractive(item, targetClock(item))" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" @open="emit('open', $event)" @toggle-task="emit('toggle-task', $event)" />
+            <CalendarItem v-for="item in preciseDeadlinesForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :interactive="false" :style="deadlineStyle(item)" @open="emit('open', $event)" @toggle-task="emit('toggle-task', $event)" />
             <div v-if="previewStyle(day)" class="time-grid__preview" :class="{ 'time-grid__preview--conflict': preview?.conflict }" :style="previewStyle(day) ?? undefined"><strong>预览</strong><span>{{ preview?.conflict ?? timeLabel(preview!.displayMinute!) }}</span></div>
+            <div v-if="blankSelection?.date === day" class="time-grid__preview" :style="{ top: `${blankSelection.minute}px`, height: `${blankSelection.duration}px` }"><strong>创建安排</strong><span>{{ timeLabel(blankSelection.minute) }} · {{ blankSelection.duration }} 分钟</span></div>
           </section>
         </div>
       </div>
@@ -163,6 +210,7 @@ defineExpose({ propose })
 .time-grid__preview--conflict { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface)); color: var(--danger); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 819px) {
+  .time-grid { flex: 0 0 420px; min-height: 420px; }
   .time-grid__header { grid-template-columns: 58px repeat(var(--day-count), minmax(160px, 1fr)); }
   .time-grid__all-day-columns, .time-grid__columns { grid-template-columns: repeat(var(--day-count), minmax(160px, 1fr)); }
   .time-grid__all-day { min-width: calc(58px + var(--day-count) * 160px); max-height: 132px; }

@@ -1,12 +1,15 @@
 import type { CapabilityCommand, TaskCapabilityService } from '../domain/capabilities/types.ts'
 import type { ReminderDelivery, Task } from '../domain/workspace/types.ts'
+import type { CalendarEvent } from '../domain/calendar/types.ts'
+import { reminderTarget } from '../domain/reminders/target.ts'
+import { resolveReminderDeliveryInstant } from '../domain/reminders/resolve.ts'
 import type { LegacyReminderRow } from '../domain/reminders/protocol.ts'
 
 export interface ReminderRuntimeOptions {
   service: TaskCapabilityService
   readLegacyRows(): Promise<LegacyReminderRow[]>
   enabled(): boolean
-  sendNotification(delivery: ReminderDelivery, task: Task): Promise<boolean>
+  sendNotification(delivery: ReminderDelivery, subject: Task | CalendarEvent): Promise<boolean>
   onError(error: unknown): void
   onDelivery?(delivery: ReminderDelivery): void
   clock?(): string
@@ -48,11 +51,13 @@ export function createReminderRuntime(options: ReminderRuntimeOptions) {
       const delivery = current.reminderDeliveries.find(({ id }) => id === candidate.id)!
       if (delivery.status !== 'armed' || delivery.claim?.token !== token || submitted.has(token)) continue
       const rule = current.reminderRules.find(({ id }) => id === delivery.reminderRuleId)!
-      const task = current.tasks.find(({ id }) => id === rule.taskId)!
+      const target = reminderTarget(rule)
+      const subject = target.kind === 'task' ? current.tasks.find(({ id }) => id === target.taskId) : current.calendarEvents.find(({ id }) => id === target.eventId)
       submitted.add(token)
       let outcome: 'accepted' | 'failed' | 'ambiguous' = 'ambiguous'
       try {
-        outcome = !stopped && options.enabled() && await options.sendNotification(delivery, task) ? 'accepted' : 'failed'
+        const active = resolveReminderDeliveryInstant(current, rule, delivery) === new Date(delivery.scheduledFor).toISOString()
+        outcome = !stopped && options.enabled() && active && subject && await options.sendNotification(delivery, subject) ? 'accepted' : 'failed'
       } catch (error) { options.onError(error) }
       await execute({ type: 'reminder.ack', deliveryId: delivery.id, expectedRevision: delivery.revision!, token, outcome })
       options.onDelivery?.((await snapshot()).reminderDeliveries.find(({ id }) => id === delivery.id)!)
@@ -77,10 +82,10 @@ export async function readNativeLegacyReminderRows(): Promise<LegacyReminderRow[
 }
 
 /** Permission query only. Thrown submission failures remain ambiguous to the runtime. */
-export async function submitNativeReminder(_delivery: ReminderDelivery, task: Task): Promise<boolean> {
+export async function submitNativeReminder(_delivery: ReminderDelivery, subject: Task | CalendarEvent): Promise<boolean> {
   const { isPermissionGranted, sendNotification } = await import('@tauri-apps/plugin-notification')
   if (!await isPermissionGranted()) return false
-  await sendNotification({ title: '拾学', body: task.title })
+  await sendNotification({ title: '拾学', body: subject.title })
   return true
 }
 

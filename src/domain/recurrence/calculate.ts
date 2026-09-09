@@ -94,12 +94,12 @@ function candidateMatches(
   return strictAfter ? instant > threshold : instant.getTime() >= threshold.getTime()
 }
 
-function addCalendarDays(date: string, days: number): string {
+export function addCalendarDays(date: string, days: number): string {
   const { year, month, day } = parseDateOnly(date)
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
 }
 
-function addCalendarMonths(date: string, months: number, dayOfMonth: number): string {
+export function addCalendarMonths(date: string, months: number, dayOfMonth: number): string {
   const { year, month } = parseDateOnly(date)
   const totalMonths = (year * 12 + (month - 1)) + months
   const targetYear = Math.floor(totalMonths / 12)
@@ -107,7 +107,7 @@ function addCalendarMonths(date: string, months: number, dayOfMonth: number): st
   return formatDate(targetYear, targetMonth, Math.min(dayOfMonth, daysInMonth(targetYear, targetMonth)))
 }
 
-function addCalendarYears(date: string, years: number, month: number, dayOfMonth: number): string {
+export function addCalendarYears(date: string, years: number, month: number, dayOfMonth: number): string {
   const { year } = parseDateOnly(date)
   const targetYear = year + years
   return formatDate(targetYear, month, Math.min(dayOfMonth, daysInMonth(targetYear, month)))
@@ -117,7 +117,7 @@ function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate()
 }
 
-function weekdayOf(date: string): number {
+export function weekdayOf(date: string): number {
   const { year, month, day } = parseDateOnly(date)
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay()
 }

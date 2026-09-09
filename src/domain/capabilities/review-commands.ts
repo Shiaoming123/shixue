@@ -1,6 +1,6 @@
 import { applyReviewResult } from '../../storage/study/types.ts'
 import { ensureReviewTask } from '../learning/review-task-link.ts'
-import type { TaskEvent, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { TaskEvent, WorkspaceStateV4 } from '../workspace/types.ts'
 import {
   DomainCommandError,
   type CapabilityCommandContext,
@@ -9,7 +9,7 @@ import {
 } from './types.ts'
 
 export function applyReviewCommand(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: ReviewCapabilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -18,7 +18,7 @@ export function applyReviewCommand(
 }
 
 function scheduleReview(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<ReviewCapabilityCommand, { type: 'review.schedule' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -35,7 +35,7 @@ function scheduleReview(
 }
 
 function completeReview(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<ReviewCapabilityCommand, { type: 'review.complete' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -109,7 +109,7 @@ function completeReview(
   }
 }
 
-function finishSession(session: WorkspaceStateV3['studySessions'][number], now: string): void {
+function finishSession(session: WorkspaceStateV4['studySessions'][number], now: string): void {
   if (session.state === 'running' && session.activeSince) {
     const milliseconds = Date.parse(now) - Date.parse(session.activeSince)
     if (!Number.isFinite(milliseconds) || milliseconds < 0) {

@@ -4,7 +4,7 @@ import {
   type CapabilityCommand,
 } from '../domain/capabilities/types.ts'
 import { SYSTEM_LEARNING_LIST_ID } from '../domain/workspace/migrate.ts'
-import type { Task, WorkspaceStateV3 } from '../domain/workspace/types.ts'
+import type { Task, WorkspaceStateV4 } from '../domain/workspace/types.ts'
 import { createLearningRecordsMarkdown } from '../domain/export/learning-records-markdown.ts'
 import { parseZonedDateTime } from '../domain/recurrence/timezone.ts'
 import { createWorkspaceExport, parseWorkspaceExport } from '../storage/workspace/data-port.ts'
@@ -516,13 +516,13 @@ export async function resetStudyState(now = new Date().toISOString()): Promise<S
 }
 
 export function projectWorkspaceState(
-  workspace: WorkspaceStateV3,
+  workspace: WorkspaceStateV4,
   timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
 ): StudyState {
   const reminders = new Map<string, string>()
   for (const rule of workspace.reminderRules) {
-    if (rule.enabled && rule.occurrenceId === null && rule.trigger.kind === 'absolute' && !reminders.has(rule.taskId)) {
-      reminders.set(rule.taskId, rule.trigger.at)
+    if (rule.target.kind === 'task' && rule.enabled && rule.target.occurrenceId === null && rule.trigger.kind === 'absolute' && !reminders.has(rule.target.taskId)) {
+      reminders.set(rule.target.taskId, rule.trigger.at)
     }
   }
   return {

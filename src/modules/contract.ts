@@ -7,6 +7,7 @@ export const moduleIds = [
   'sqlite',
   'indexedDb',
   'sync',
+  'calendarConnections',
   'tray',
   'updater',
   'themes',
@@ -76,6 +77,13 @@ export const moduleContracts: Record<ModuleId, ModuleContract> = {
     name: '可选本地优先同步',
     dependencies: ['storage'],
     nativeBuild: { kind: 'none' },
+  },
+  calendarConnections: {
+    id: 'calendarConnections',
+    name: '外部日历连接',
+    dependencies: ['storage'],
+    platforms: ['desktop'],
+    nativeBuild: { kind: 'cargo-feature', feature: 'calendar-connections', platforms: ['desktop'] },
   },
   tray: {
     id: 'tray',

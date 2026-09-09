@@ -1,14 +1,21 @@
 import { DomainCommandError, type CapabilityCommand, type CommandDescriptor, type PreviewConfirmation } from './types.ts'
 
 export const COMMAND_CATALOG: readonly CommandDescriptor[] = [
+  ...(['calendar_source.create', 'calendar_source.update', 'calendar_source.archive', 'event.create', 'event.exception.set', 'event.exception.reset'] as const).map((type) => ({ type, risk: 'low' as const, scope: 'single' as const, reversibility: 'reversible' as const, requiresPreview: false })),
+  { type: 'event.update', risk: 'high', scope: 'series', reversibility: 'reversible', requiresPreview: true },
+  { type: 'event.delete', risk: 'high', scope: 'series', reversibility: 'reversible', requiresPreview: true },
   { type: 'calendar.move', risk: 'high', scope: 'series', reversibility: 'reversible', requiresPreview: true },
   { type: 'calendar.resize', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
+  ...(['event.outcome.create', 'event.link', 'event.unlink'] as const).map((type) => ({ type, risk: 'low' as const, scope: 'single' as const, reversibility: 'compensating' as const, requiresPreview: false })),
+  { type: 'calendar_external.apply', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
+  { type: 'calendar_source.preferences', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
   { type: 'task.create', risk: 'low', scope: 'single', reversibility: 'compensating', requiresPreview: false },
   { type: 'task.update', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
   { type: 'task.delete', risk: 'high', scope: 'single', reversibility: 'compensating', requiresPreview: true },
   { type: 'task.complete', risk: 'medium', scope: 'single', reversibility: 'reversible', requiresPreview: false },
   { type: 'task.reopen', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
   { type: 'task.reschedule', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
+  { type: 'task.auto_schedule', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
   { type: 'task.batch_reschedule', risk: 'medium', scope: 'batch', reversibility: 'reversible', requiresPreview: true },
   { type: 'task.batch_cancel', risk: 'high', scope: 'batch', reversibility: 'reversible', requiresPreview: true },
   { type: 'task.batch_delete', risk: 'high', scope: 'batch', reversibility: 'compensating', requiresPreview: true },

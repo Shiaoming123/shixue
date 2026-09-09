@@ -3,6 +3,8 @@ use tauri::Manager;
 
 #[cfg(feature = "agent")]
 mod agent;
+#[cfg(all(desktop, feature = "calendar-connections"))]
+mod calendar_connections;
 mod db;
 #[cfg(all(desktop, feature = "notification"))]
 mod reminder_scheduler;
@@ -278,6 +280,11 @@ pub fn run() {
     #[cfg(feature = "clipboard")]
     {
         builder = builder.plugin(tauri_plugin_clipboard_manager::init());
+    }
+
+    #[cfg(all(desktop, feature = "calendar-connections"))]
+    {
+        builder = builder.plugin(calendar_connections::init());
     }
 
     #[cfg(feature = "notification")]

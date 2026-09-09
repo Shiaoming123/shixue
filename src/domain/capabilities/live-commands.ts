@@ -3,7 +3,7 @@ import type {
   StudySession,
   Task,
   TaskEvent,
-  WorkspaceStateV3,
+  WorkspaceStateV4,
 } from '../workspace/types.ts'
 import { applyReviewResult, createSeedStudyState } from '../../storage/study/types.ts'
 import { applyTaskCommand } from './task-commands.ts'
@@ -16,7 +16,7 @@ import {
 } from './types.ts'
 
 export function applyLiveCompatibilityCommand(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: LiveCompatibilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -42,7 +42,7 @@ export function applyLiveCompatibilityCommand(
 }
 
 function upsertList(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'list.upsert' }>,
 ): CommandApplication {
   const list = structuredClone(command.list)
@@ -58,7 +58,7 @@ function upsertList(
 }
 
 function upsertListGroup(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'list_group.upsert' }>,
 ): CommandApplication {
   const group = structuredClone(command.group)
@@ -71,7 +71,7 @@ function upsertListGroup(
 }
 
 function archiveListGroup(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'list_group.archive' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -102,7 +102,7 @@ function archiveListGroup(
 }
 
 function planTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'task.plan' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -137,7 +137,7 @@ function planTask(
 }
 
 function transitionTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'task.transition' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -174,7 +174,7 @@ function transitionTask(
 }
 
 function startTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'task.start' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -194,7 +194,7 @@ function startTask(
 }
 
 function switchTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'task.switch' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -241,7 +241,7 @@ function switchTask(
 }
 
 function pauseSession(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'session.pause' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -260,7 +260,7 @@ function pauseSession(
 }
 
 function resumeSession(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'session.resume' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -279,7 +279,7 @@ function resumeSession(
 }
 
 function updateScratchpad(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'session.scratchpad.update' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -292,7 +292,7 @@ function updateScratchpad(
 }
 
 function addChecklistItem(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'task.checklist.add' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -315,7 +315,7 @@ function addChecklistItem(
 }
 
 function setChecklistItem(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'task.checklist.set' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -338,7 +338,7 @@ function setChecklistItem(
 }
 
 function reorderTasks(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'task.reorder' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -359,7 +359,7 @@ function reorderTasks(
 }
 
 function toggleCompletion(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'task.toggle_completion' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -388,7 +388,7 @@ function toggleCompletion(
 }
 
 function reviewCompletion(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'completion.review' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -430,7 +430,7 @@ function reviewCompletion(
 }
 
 function createNextAction(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: Extract<LiveCompatibilityCommand, { type: 'completion.create_next_action' }>,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -477,7 +477,7 @@ function createNextAction(
   }
 }
 
-function resetWorkspace(state: WorkspaceStateV3, context: CapabilityCommandContext): CommandApplication {
+function resetWorkspace(state: WorkspaceStateV4, context: CapabilityCommandContext): CommandApplication {
   const reset = parseWorkspaceStateOrMigrate(createSeedStudyState(context.now), context.now)
   reset.tags.push({
     id: 'tag:demo:math',
@@ -499,7 +499,7 @@ function resetWorkspace(state: WorkspaceStateV3, context: CapabilityCommandConte
   }
 }
 
-function requireTask(state: WorkspaceStateV3, taskId: string, expectedRevision?: number): Task {
+function requireTask(state: WorkspaceStateV4, taskId: string, expectedRevision?: number): Task {
   const task = state.tasks.find(({ id, deletedAt }) => id === taskId && deletedAt === null)
   if (!task) throw new DomainCommandError('TASK_NOT_FOUND', `Study task not found: ${taskId}.`, { taskId })
   if (expectedRevision !== undefined && task.revision !== expectedRevision) {
@@ -512,24 +512,24 @@ function requireTask(state: WorkspaceStateV3, taskId: string, expectedRevision?:
   return task
 }
 
-function requireSession(state: WorkspaceStateV3, sessionId: string): StudySession {
+function requireSession(state: WorkspaceStateV4, sessionId: string): StudySession {
   const session = state.studySessions.find(({ id, deletedAt }) => id === sessionId && deletedAt === null)
   if (!session) throw new DomainCommandError('SESSION_NOT_FOUND', `Study session not found: ${sessionId}.`, { sessionId })
   return session
 }
 
-function activeSession(state: WorkspaceStateV3): StudySession | undefined {
+function activeSession(state: WorkspaceStateV4): StudySession | undefined {
   return state.studySessions.find(({ state: sessionState, deletedAt }) =>
     deletedAt === null && (sessionState === 'running' || sessionState === 'paused'))
 }
 
-function assertNoActiveSession(state: WorkspaceStateV3, exceptId?: string): void {
+function assertNoActiveSession(state: WorkspaceStateV4, exceptId?: string): void {
   const active = state.studySessions.find(({ id, state: sessionState, deletedAt }) =>
     id !== exceptId && deletedAt === null && (sessionState === 'running' || sessionState === 'paused'))
   if (active) throw new DomainCommandError('VALIDATION_ERROR', 'Another Study session is already active.')
 }
 
-function finishActiveTaskSession(state: WorkspaceStateV3, taskId: string, now: string): void {
+function finishActiveTaskSession(state: WorkspaceStateV4, taskId: string, now: string): void {
   const session = state.studySessions.find(({ taskId: id, state: sessionState, deletedAt }) =>
     id === taskId && deletedAt === null && (sessionState === 'running' || sessionState === 'paused'))
   if (session) finishSession(session, now)
@@ -565,7 +565,7 @@ function advanceTask(task: Task, now: string): void {
 }
 
 function appendEvent(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   task: Task,
   type: TaskEvent['type'],
   fromStatus: TaskEvent['fromStatus'],

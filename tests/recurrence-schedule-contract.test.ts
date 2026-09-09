@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { materializeOccurrenceWindow } from '../src/domain/recurrence/materialize.ts'
-import { parseWorkspaceState } from '../src/domain/workspace/parse.ts'
+import { parseWorkspaceStateV4 } from '../src/domain/workspace/parse.ts'
 import { parseWorkspaceStateOrMigrate } from '../src/domain/workspace/migrate.ts'
 import { projectTaskItems } from '../src/lib/study-task-query.ts'
 import { createSeedStudyState } from '../src/storage/study/types.ts'
@@ -12,7 +12,7 @@ test('legacy timestamp recurrence parses losslessly and normalizes date-only fie
   delete (raw.recurrenceSeries[0] as Record<string, unknown>).anchorOn
   delete (raw.occurrences[0] as Record<string, unknown>).scheduledOn
 
-  const parsed = parseWorkspaceState(raw)
+  const parsed = parseWorkspaceStateV4(raw)
 
   assert.equal(parsed.recurrenceSeries[0]?.anchorAt, '2026-09-05T09:00:00+08:00')
   assert.equal(parsed.recurrenceSeries[0]?.anchorOn, null)
@@ -29,7 +29,7 @@ test('date-only recurrence round-trips without synthesizing midnight', () => {
     override: { scheduledAt: null, scheduledOn: '2026-09-06', estimateMinutes: 30 },
   })
 
-  const parsed = parseWorkspaceState(raw)
+  const parsed = parseWorkspaceStateV4(raw)
   const roundTrip = parseWorkspaceExport(JSON.stringify(createWorkspaceExport(parsed, '2026-09-05T00:00:00Z'))).state
 
   assert.equal(roundTrip.recurrenceSeries[0]?.anchorOn, '2026-09-05')
@@ -42,22 +42,22 @@ test('date-only recurrence round-trips without synthesizing midnight', () => {
 test('parser rejects simultaneous timed and date-only schedules', () => {
   const raw = recurrenceWorkspace()
   Object.assign(raw.recurrenceSeries[0]!, { anchorOn: '2026-09-05' })
-  assert.throws(() => parseWorkspaceState(raw), /mutually exclusive/)
+  assert.throws(() => parseWorkspaceStateV4(raw), /mutually exclusive/)
 
   const occurrenceRaw = recurrenceWorkspace()
   Object.assign(occurrenceRaw.occurrences[0]!, { scheduledOn: '2026-09-05' })
-  assert.throws(() => parseWorkspaceState(occurrenceRaw), /mutually exclusive/)
+  assert.throws(() => parseWorkspaceStateV4(occurrenceRaw), /mutually exclusive/)
 
   const overrideRaw = recurrenceWorkspace()
   overrideRaw.occurrences[0]!.override = {
     scheduledAt: '2026-09-05T10:00:00+08:00', scheduledOn: '2026-09-05', estimateMinutes: null,
   }
-  assert.throws(() => parseWorkspaceState(overrideRaw), /mutually exclusive/)
+  assert.throws(() => parseWorkspaceStateV4(overrideRaw), /mutually exclusive/)
 })
 
 test('date-only materialization and projection remain date-only across timezones', () => {
   for (const timezone of ['Asia/Shanghai', 'America/Los_Angeles']) {
-    const state = parseWorkspaceState(recurrenceWorkspace())
+    const state = parseWorkspaceStateV4(recurrenceWorkspace())
     Object.assign(state.recurrenceSeries[0]!, {
       anchorAt: null,
       anchorOn: '2026-09-05',

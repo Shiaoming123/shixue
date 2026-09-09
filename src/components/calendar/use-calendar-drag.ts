@@ -1,8 +1,36 @@
-import { readonly, ref, type Ref } from 'vue'
+import { readonly, shallowReadonly, ref, type Ref } from 'vue'
 import type { CalendarCapabilityCommand } from '../../domain/capabilities/calendar-commands.ts'
+import type { EventCapabilityCommand } from '../../domain/capabilities/event-commands.ts'
+import { eventPlacementCommand, moveCalendarEventTime, resizeCalendarEventTime } from '../../domain/calendar/event-placement.ts'
+import { parseZonedDateTime } from '../../domain/recurrence/timezone.ts'
 import type { CalendarItem } from '../../domain/calendar/project.ts'
 import { calendarTimedTarget, type CalendarTargetClock } from '../../domain/calendar/target.ts'
 import type { Task } from '../../domain/workspace/types.ts'
+
+export type CalendarInteractionCommand = CalendarCapabilityCommand | EventCapabilityCommand
+
+export function calendarItemInteractive(item: CalendarItem, clock: CalendarTargetClock): boolean {
+  if (item.kind === 'deadline-marker') return false
+  if (item.eventId === undefined) return true
+  if (item.calendar.readOnly || item.calendar.event.deletedAt || item.calendar.event.status === 'cancelled') return false
+  const time = item.calendar.time
+  if (time.kind === 'all-day') return Date.parse(time.endOnExclusive) - Date.parse(time.startOn) === 86_400_000
+  if (time.kind === 'floating') return time.startLocal.slice(0, 10) === new Date(Date.parse(`${time.endLocal}Z`) - 1).toISOString().slice(0, 10)
+  const zone = eventDisplayTimezone(clock)
+  return parseZonedDateTime(time.startAt, zone).date === parseZonedDateTime(new Date(Date.parse(time.endAt) - 1).toISOString(), zone).date
+}
+
+function eventDisplayTimezone(clock: CalendarTargetClock): string {
+  if (clock.kind !== 'timezone') throw new Error('Event calendar interactions require an explicit display timezone.')
+  return clock.timezone
+}
+
+function eventCommand(item: CalendarItem, date: string, minute: number | null, duration: number | undefined, clock: CalendarTargetClock): EventCapabilityCommand {
+  if (item.eventId === undefined || !calendarItemInteractive(item, clock)) throw new Error('This event must be edited through its details.')
+  let time = moveCalendarEventTime(item.calendar.time, date, minute, eventDisplayTimezone(clock))
+  if (duration !== undefined && time.kind !== 'all-day' && duration !== durationMinutes(item)) time = resizeCalendarEventTime(time, duration)
+  return eventPlacementCommand(item.calendar.event, item.originalStart, time)
+}
 
 export interface CalendarDragPreview {
   itemKey: string
@@ -39,13 +67,13 @@ export interface CalendarDragController {
   session: Readonly<Ref<CalendarDragSession | null>>
   begin(event: CalendarPointerEvent, session: CalendarDragSession): boolean
   update(event: CalendarPointerEvent, preview: CalendarDragPreview): void
-  release(event: CalendarPointerEvent, command: CalendarCapabilityCommand | null, itemKey: string): Promise<void>
+  release(event: CalendarPointerEvent, command: CalendarInteractionCommand | null, itemKey: string): Promise<void>
   cancel(event: CalendarPointerEvent): void
   cancelActive(): void
 }
 
 export function createCalendarDragController(
-  execute: (command: CalendarCapabilityCommand) => Promise<void>,
+  execute: (command: CalendarInteractionCommand) => Promise<void>,
 ): CalendarDragController {
   const preview = ref<CalendarDragPreview | null>(null)
   const session = ref<CalendarDragSession | null>(null)
@@ -59,7 +87,7 @@ export function createCalendarDragController(
     pointerId = event.pointerId
     captureTarget = target
     origin = { x: event.clientX ?? 0, y: event.clientY ?? 0 }
-    session.value = { ...nextSession, item: { ...nextSession.item } }
+    session.value = { ...nextSession, item: JSON.parse(JSON.stringify(nextSession.item)) as CalendarItem }
     target?.setPointerCapture(event.pointerId)
     return true
   }
@@ -70,7 +98,7 @@ export function createCalendarDragController(
     preview.value = nextPreview
   }
 
-  async function release(event: CalendarPointerEvent, command: CalendarCapabilityCommand | null, itemKey: string) {
+  async function release(event: CalendarPointerEvent, command: CalendarInteractionCommand | null, itemKey: string) {
     if (event.pointerId !== pointerId) return
     const currentPreview = preview.value
     const currentSession = session.value
@@ -100,7 +128,7 @@ export function createCalendarDragController(
 
   return {
     preview: readonly(preview),
-    session: readonly(session),
+    session: shallowReadonly(session),
     begin,
     update,
     release,
@@ -128,6 +156,7 @@ export function calendarMoveCommand(
   target: { startAt: string } | { startOn: string },
   estimateMinutes?: number,
 ): CalendarCapabilityCommand {
+  if (!item.taskId) throw new Error('Task calendar command requires a task item.')
   return {
     type: 'calendar.move', taskId: item.taskId,
     ...(item.occurrenceId ? { occurrenceId: item.occurrenceId } : {}),
@@ -144,6 +173,15 @@ export function calendarPointerMovePreview(
   proposedDuration: number,
   clock: CalendarTargetClock,
 ): CalendarDragPreview {
+  if (item.eventId !== undefined) {
+    try {
+      const time = moveCalendarEventTime(item.calendar.time, displayDate, displayMinute, eventDisplayTimezone(clock))
+      const proposedStart = time.kind === 'fixed' ? time.startAt : time.kind === 'floating' ? time.startLocal : time.startOn
+      return { itemKey: item.key, proposedStart, displayDate, displayMinute, proposedDuration, valid: true, conflict: null }
+    } catch (error) {
+      return { itemKey: item.key, proposedStart: item.start, displayDate, displayMinute, proposedDuration, valid: false, conflict: error instanceof Error ? error.message : '无法移动此日程。' }
+    }
+  }
   const target = calendarTimedTarget(displayDate, displayMinute, clock)
   return {
     itemKey: item.key,
@@ -156,13 +194,16 @@ export function calendarPointerMovePreview(
   }
 }
 
+export function calendarMenuMoveCommand(item: Pick<CalendarItem, 'taskId' | 'occurrenceId'> & { eventId?: never }, displayDate: string, displayMinute: number | null, estimateMinutes: number, clock: CalendarTargetClock): CalendarCapabilityCommand
+export function calendarMenuMoveCommand(item: CalendarItem, displayDate: string, displayMinute: number | null, estimateMinutes: number, clock: CalendarTargetClock): CalendarInteractionCommand
 export function calendarMenuMoveCommand(
-  item: Pick<CalendarItem, 'taskId' | 'occurrenceId'>,
+  item: CalendarItem | (Pick<CalendarItem, 'taskId' | 'occurrenceId'> & { eventId?: never }),
   displayDate: string,
   displayMinute: number | null,
   estimateMinutes: number,
   clock: CalendarTargetClock,
-): CalendarCapabilityCommand {
+): CalendarInteractionCommand {
+  if (item.eventId !== undefined) return eventCommand(item, displayDate, displayMinute, estimateMinutes, clock)
   if (displayMinute === null) return calendarMoveCommand(item, { startOn: displayDate })
   const target = calendarTimedTarget(displayDate, displayMinute, clock)
   return calendarMoveCommand(item, { startAt: target.startAt }, estimateMinutes)
@@ -172,6 +213,7 @@ export function calendarResizeCommand(
   item: Pick<CalendarItem, 'taskId' | 'occurrenceId'>,
   estimateMinutes: number,
 ): CalendarCapabilityCommand {
+  if (!item.taskId) throw new Error('Task calendar command requires a task item.')
   return {
     type: 'calendar.resize', taskId: item.taskId,
     ...(item.occurrenceId ? { occurrenceId: item.occurrenceId } : {}),
@@ -185,7 +227,12 @@ export function calendarCommandForPreview(
   action: 'move' | 'resize',
   preview: CalendarDragPreview,
   fromTray = false,
-): CalendarCapabilityCommand {
+  clock?: CalendarTargetClock,
+): CalendarInteractionCommand {
+  if (item.eventId !== undefined) {
+    if (!clock) throw new Error('Event preview requires its display timezone.')
+    return eventCommand(item, preview.displayDate, preview.displayMinute, action === 'resize' ? preview.proposedDuration : undefined, clock)
+  }
   if (action === 'resize') return calendarResizeCommand(item, preview.proposedDuration)
   const target = preview.proposedStart.includes('T') ? { startAt: preview.proposedStart } : { startOn: preview.proposedStart }
   return calendarMoveCommand(item, target, 'startAt' in target && (fromTray || item.kind === 'all-day') ? preview.proposedDuration : undefined)
@@ -196,19 +243,21 @@ export function calendarKeyboardCommand(
   key: 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown',
   resize: boolean,
   clock: CalendarTargetClock,
-): CalendarCapabilityCommand | null {
+): CalendarInteractionCommand | null {
   if (item.kind === 'deadline-marker') return null
+  if (item.eventId !== undefined && !calendarItemInteractive(item, clock)) return null
   if (resize) {
     if (item.kind !== 'timed' || (key !== 'ArrowUp' && key !== 'ArrowDown')) return null
     const current = durationMinutes(item)
     const estimateMinutes = Math.min(1440, Math.max(5, current + (key === 'ArrowDown' ? 5 : -5)))
     if (estimateMinutes === current) return null
-    return calendarResizeCommand(item, estimateMinutes)
+    return item.eventId !== undefined ? eventCommand(item, item.displayDate, item.displayMinute, estimateMinutes, clock) : calendarResizeCommand(item, estimateMinutes)
   }
 
   if (item.kind === 'all-day') {
     if (key !== 'ArrowLeft' && key !== 'ArrowRight') return null
-    return calendarMoveCommand(item, { startOn: addCalendarDays(item.start, key === 'ArrowLeft' ? -1 : 1) })
+    const date = addCalendarDays(item.start, key === 'ArrowLeft' ? -1 : 1)
+    return item.eventId !== undefined ? eventCommand(item, date, null, undefined, clock) : calendarMoveCommand(item, { startOn: date })
   }
 
   let displayDate = item.displayDate
@@ -220,11 +269,18 @@ export function calendarKeyboardCommand(
     else if (shifted >= 1440) { displayDate = addCalendarDays(displayDate, 1); displayMinute = shifted - 1440 }
     else displayMinute = shifted
   }
+  if (item.eventId !== undefined) return eventCommand(item, displayDate, displayMinute, undefined, clock)
   const target = calendarTimedTarget(displayDate, displayMinute, clock)
   return calendarMoveCommand(item, { startAt: target.startAt })
 }
 
 export function durationMinutes(item: CalendarItem): number {
+  if (item.eventId !== undefined) {
+    const time = item.calendar.time
+    if (time.kind === 'fixed') return (Date.parse(time.endAt) - Date.parse(time.startAt)) / 60_000
+    if (time.kind === 'floating') return (Date.parse(`${time.endLocal}Z`) - Date.parse(`${time.startLocal}Z`)) / 60_000
+    return (Date.parse(time.endOnExclusive) - Date.parse(time.startOn)) / 60_000
+  }
   if (item.end === null) return 30
   return Math.max(5, Math.round((Date.parse(item.end) - Date.parse(item.start)) / 60_000))
 }
@@ -242,6 +298,11 @@ function pointerCaptureTarget(value: unknown): PointerCaptureTarget | null {
     : null
 }
 
-function commandTargetsItem(command: CalendarCapabilityCommand, item: CalendarItem): boolean {
-  return command.taskId === item.taskId && (command.occurrenceId ?? null) === item.occurrenceId
+function commandTargetsItem(command: CalendarInteractionCommand, item: CalendarItem): boolean {
+  if (item.eventId !== undefined) {
+    if (!('eventId' in command) || command.eventId !== item.eventId) return false
+    if (command.type === 'event.exception.set') return command.originalStart === item.originalStart && command.expectedRevision === item.calendar.event.revision
+    return command.type === 'event.update' && !item.calendar.event.recurrence && command.expectedRevision === item.calendar.event.revision
+  }
+  return 'taskId' in command && command.taskId === item.taskId && (command.occurrenceId ?? null) === item.occurrenceId
 }

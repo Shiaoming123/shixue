@@ -1,15 +1,15 @@
-import type { WorkspaceStateV3, RecurrenceSeries, TaskOccurrence } from '../workspace/types.ts'
+import type { WorkspaceStateV4, RecurrenceSeries, TaskOccurrence } from '../workspace/types.ts'
 import { MAX_PENDING_OCCURRENCES, OCCURRENCE_HORIZON_DAYS, nextAfterCompletion } from './calculate.ts'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './timezone.ts'
 
 export interface MaterializeResult {
-  state: WorkspaceStateV3
+  state: WorkspaceStateV4
   created: TaskOccurrence[]
   pendingCount: number
 }
 
 export function materializeOccurrenceWindow(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   seriesId: string,
   now: string,
 ): MaterializeResult {
@@ -67,7 +67,7 @@ export function materializeOccurrenceWindow(
 
   if (created.length === 0) return { state, created, pendingCount }
 
-  const nextState: WorkspaceStateV3 = {
+  const nextState: WorkspaceStateV4 = {
     ...state,
     revision: state.revision + 1,
     occurrences: [...state.occurrences, ...created].sort((left, right) => left.seriesId.localeCompare(right.seriesId) || left.ordinal - right.ordinal || left.id.localeCompare(right.id)),
@@ -78,7 +78,7 @@ export function materializeOccurrenceWindow(
 }
 
 function materializeAfterCompletion(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   series: RecurrenceSeries,
   existing: TaskOccurrence[],
   now: string,
@@ -112,7 +112,7 @@ function materializeAfterCompletion(
     id: occurrenceId(series.id, ordinal), seriesId: series.id, ordinal, ...schedule,
     status: 'pending', override: null, completedAt: null, revision: series.revision,
   }
-  const nextState: WorkspaceStateV3 = {
+  const nextState: WorkspaceStateV4 = {
     ...state, revision: state.revision + 1, occurrences: [...state.occurrences, occurrence], updatedAt: now,
   }
   return { state: nextState, created: [occurrence], pendingCount: pendingCount + 1 }

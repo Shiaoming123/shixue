@@ -1,8 +1,15 @@
+import { applyExternalCalendarBatch, applyCalendarSourcePreferences, applyCalendarPreferencesUndo, type ExternalCalendarBatch } from './calendar-external-commands.ts'
+import { applyEventOutcomeCommand, applyEventOutcomeUndo } from './event-outcome-commands.ts'
+import { applyAutoSchedule, validateAutoScheduleCommand, type AutoScheduleQuery } from './auto-schedule-command.ts'
+import type { BusyResult } from '../../calendar-connections/types.ts'
+import { isCalendarEventOccurrenceStart } from '../calendar/event-occurrences.ts'
+import { reminderTarget } from '../reminders/target.ts'
+import { applyEventCommand, applyEventUndo, type EventCapabilityCommand } from './event-commands.ts'
 import { deliveryKey } from '../reminders/resolve.ts'
 import { applyReminderCommand, type ReminderCapabilityCommand } from './reminder-commands.ts'
 import { reconcileReminderDeliveries } from '../reminders/resolve.ts'
-import { parseWorkspaceState } from '../workspace/parse.ts'
-import type { CommandReceipt, JsonValue, Task, TaskEvent, WorkspaceStateV3 } from '../workspace/types.ts'
+import { parseWorkspaceStateV4 } from '../workspace/parse.ts'
+import type { CommandReceipt, JsonValue, Task, TaskEvent, WorkspaceStateV4 } from '../workspace/types.ts'
 import type { WorkspaceStore } from '../../storage/workspace/types.ts'
 import { getCommandDescriptor, getPreviewConfirmation } from './catalog.ts'
 import { applyCalendarCommand, type CalendarCapabilityCommand } from './calendar-commands.ts'
@@ -47,8 +54,24 @@ export function createTaskCapabilityService(
   store: WorkspaceStore,
   clock: CapabilityClock,
   ids: CapabilityIdGenerator,
+  options: {
+    loadExternalBatch?(batchId: string, state: Readonly<WorkspaceStateV4>): Promise<ExternalCalendarBatch>
+    loadSchedulingBusy?(query: AutoScheduleQuery): Promise<BusyResult[]>
+  } = {},
 ): TaskCapabilityService {
   let previewHandles: PreviewHandle[] = []
+  const applyPrepared = async (state: WorkspaceStateV4, envelope: CommandEnvelope, context: CapabilityCommandContext) => {
+    if (envelope.command.type === 'task.auto_schedule') {
+      validateAutoScheduleCommand(envelope.command)
+      return applyAutoSchedule(state, envelope.command, context, await options.loadSchedulingBusy?.(envelope.command.query) ?? [])
+    }
+    if (envelope.command.type !== 'calendar_external.apply') return applyCapabilityCommand(state, envelope.command, context)
+    if (!options.loadExternalBatch || Object.keys(envelope.command).some((key) => !['type', 'batchId'].includes(key)) || envelope.idempotencyKey !== envelope.command.batchId) throw new DomainCommandError('VALIDATION_ERROR', 'External batch requires a trusted device resolver and batch idempotency key.')
+    const batch = await options.loadExternalBatch(envelope.command.batchId, structuredClone(state))
+    if (batch.batchId !== envelope.command.batchId) throw new DomainCommandError('VALIDATION_ERROR', 'Device batch identity mismatch.')
+    if (batch.operationId !== undefined && batch.expectedWorkspaceHash !== await fingerprintWorkspace(state)) throw new DomainCommandError('WORKSPACE_SAVE_CONFLICT', 'Write completion baseline changed; fetch current remote facts again.')
+    return applyExternalCalendarBatch(state, batch, context)
+  }
   return {
     async query<Q extends CapabilityQuery>(query: Q): Promise<QueryResult<Q>> {
       const state = await store.load()
@@ -100,12 +123,12 @@ export function createTaskCapabilityService(
         assertEnvelope(current, envelope)
         const draft = structuredClone(current)
         const previewIds = createPreviewIdGenerator(current)
-        const application = applyCapabilityCommand(
+        const application = await applyPrepared(
           draft,
-          envelope.command,
+          envelope,
           { now: clock(), id: previewIds },
         )
-        parseWorkspaceState(draft)
+        parseWorkspaceStateV4(draft)
         const impact = publicPreviewImpact(envelope.command, application)
         if (requiresExplicitExecutionConfirmation(envelope.command)) {
           const now = clock()
@@ -166,8 +189,8 @@ export function createTaskCapabilityService(
       assertExplicitConfirmation(previewHandles, envelope, requestFingerprint, now)
 
       const draft = structuredClone(current)
-      const application = applyCapabilityCommand(draft, envelope.command, { now, id: ids })
-      reconcileReminderDeliveries(draft, envelope.command.type.startsWith('reminder.'))
+      const application = await applyPrepared(draft, envelope, { now, id: ids })
+      reconcileReminderDeliveries(draft, envelope.command.type.startsWith('reminder.'), now)
       draft.revision = current.revision + 1
       draft.updatedAt = nextUpdatedAt(current.updatedAt, now)
       application.affected = application.affected.map((entity) =>
@@ -207,9 +230,9 @@ export function createTaskCapabilityService(
       )
       draft.commandReceipts.push(receipt)
 
-      let validated: WorkspaceStateV3
+      let validated: WorkspaceStateV4
       try {
-        validated = parseWorkspaceState(draft)
+        validated = parseWorkspaceStateV4(draft)
       } catch (error) {
         if (error instanceof DomainCommandError) throw error
         throw new DomainCommandError('VALIDATION_ERROR', errorMessage(error))
@@ -231,10 +254,13 @@ export function createTaskCapabilityService(
 }
 
 function applyCapabilityCommand(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: CapabilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
+  if (command.type === 'calendar_source.preferences') return applyCalendarSourcePreferences(state, command, context)
+  if (command.type === 'event.outcome.create' || command.type === 'event.link' || command.type === 'event.unlink') return applyEventOutcomeCommand(state, command, context)
+  if (isEventCommand(command)) return applyEventCommand(state, command, context)
   const routedReview = reviewCommandForGenericTarget(state, command)
   if (routedReview) return applyReviewCommand(state, routedReview, context)
   if (command.type.startsWith('reminder.')) return applyReminderCommand(state, command as ReminderCapabilityCommand, context)
@@ -256,7 +282,7 @@ function applyCapabilityCommand(
 }
 
 function reviewCommandForGenericTarget(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: CapabilityCommand,
 ): ReviewCapabilityCommand | null {
   if (command.type === 'completion.review') {
@@ -294,7 +320,7 @@ function reviewCommandForGenericTarget(
 }
 
 function attachReviewTasksForNewEvidence(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   application: CommandApplication,
   context: CapabilityCommandContext,
 ): void {
@@ -324,10 +350,10 @@ function attachReviewTasksForNewEvidence(
   }
 }
 
-function applyWorkspaceImport(state: WorkspaceStateV3, command: WorkspaceImportCommand): CommandApplication {
-  let imported: WorkspaceStateV3
+function applyWorkspaceImport(state: WorkspaceStateV4, command: WorkspaceImportCommand): CommandApplication {
+  let imported: WorkspaceStateV4
   try {
-    imported = parseWorkspaceState(command.state)
+    imported = parseWorkspaceStateV4(command.state)
   } catch (error) {
     throw new DomainCommandError('IMPORT_INVALID', errorMessage(error))
   }
@@ -335,11 +361,18 @@ function applyWorkspaceImport(state: WorkspaceStateV3, command: WorkspaceImportC
     if (local.status === 'pending' && !local.acknowledgedAt && !local.claim) continue
     const localRule = state.reminderRules.find(({ id }) => id === local.reminderRuleId)!
     const importedRule = imported.reminderRules.find(({ id }) => id === local.reminderRuleId)
-    if (!importedRule || importedRule.taskId !== localRule.taskId || importedRule.occurrenceId !== localRule.occurrenceId || (local.occurrenceId && !imported.occurrences.some(({ id }) => id === local.occurrenceId))) {
+    if (!importedRule || !sameJson(reminderTarget(importedRule), reminderTarget(localRule)) || (local.occurrenceId && reminderTarget(localRule).kind === 'task' && !imported.occurrences.some(({ id }) => id === local.occurrenceId))) {
       throw new DomainCommandError('IMPORT_INVALID', 'Import would discard local reminder submission history; this backup cannot safely replace the workspace.')
     }
-    const key = deliveryKey(local.reminderRuleId, local.occurrenceId, local.scheduledFor)
-    imported.reminderDeliveries = imported.reminderDeliveries.filter((item) => item.id !== local.id && deliveryKey(item.reminderRuleId, item.occurrenceId, item.scheduledFor) !== key)
+    const target = reminderTarget(localRule)
+    if (target.kind === 'event') {
+      const event = imported.calendarEvents.find(({ id }) => id === target.eventId)
+      if (!event || (local.originalStart != null ? !event.recurrence || !isCalendarEventOccurrenceStart(event, local.originalStart) : event.recurrence !== null)) {
+        throw new DomainCommandError('IMPORT_INVALID', 'Import would discard an event reminder occurrence from local submission history.')
+      }
+    }
+    const key = deliveryKey(local.reminderRuleId, local.occurrenceId, local.scheduledFor, local.originalStart)
+    imported.reminderDeliveries = imported.reminderDeliveries.filter((item) => item.id !== local.id && deliveryKey(item.reminderRuleId, item.occurrenceId, item.scheduledFor, item.originalStart) !== key)
     imported.reminderDeliveries.push(structuredClone(local))
   }
   imported.commandReceipts = []
@@ -358,7 +391,7 @@ function applyWorkspaceImport(state: WorkspaceStateV3, command: WorkspaceImportC
 }
 
 function applyUndo(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: UndoApplyCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -387,7 +420,32 @@ function applyUndo(
 
   const events: TaskEvent[] = []
   const restored: EntityRef[] = []
-  if (token.compensation.type === 'tag.remove_created') {
+  if (token.compensation.type === 'calendar_source.preferences.restore') {
+    restored.push(applyCalendarPreferencesUndo(state, token.compensation, context))
+  } else if (token.compensation.type === 'event.outcome.remove_created' || token.compensation.type === 'event.link.remove_created' || token.compensation.type === 'event.link.restore') {
+    const application = applyEventOutcomeUndo(state, token.compensation, context)
+    restored.push(...application.affected)
+    events.push(...application.events)
+  } else if (token.compensation.type === 'event.restore' || token.compensation.type === 'event.remove_created' || token.compensation.type === 'calendar_source.restore' || token.compensation.type === 'calendar_source.remove_created') {
+    restored.push(applyEventUndo(state, token.compensation, context))
+  } else if (token.compensation.type === 'reminder.restore') {
+    const { ruleId, rule } = token.compensation
+    const current = state.reminderRules.find(({ id }) => id === ruleId)
+    if (!current || (rule && !sameJson(reminderTarget(rule), reminderTarget(current)))) {
+      throw new DomainCommandError('VALIDATION_ERROR', 'Reminder target changed or no longer exists.')
+    }
+    const target = reminderTarget(current)
+    if (target.kind === 'task') {
+      if (!state.tasks.some(({ id, deletedAt }) => id === target.taskId && deletedAt === null)) throw new DomainCommandError('TASK_NOT_FOUND', 'Reminder task does not exist.')
+    } else {
+      const event = state.calendarEvents.find(({ id, deletedAt }) => id === target.eventId && deletedAt === null)
+      if (!event || (target.originalStart !== null && !isCalendarEventOccurrenceStart(event, target.originalStart))) throw new DomainCommandError('VALIDATION_ERROR', 'Reminder event occurrence does not exist.')
+    }
+    state.reminderRules[state.reminderRules.indexOf(current)] = rule
+      ? { ...structuredClone(rule), revision: current.revision + 1 }
+      : { ...current, enabled: false, revision: current.revision + 1 }
+    restored.push({ type: 'workspace', id: 'workspace' })
+  } else if (token.compensation.type === 'tag.remove_created') {
     const { tagId } = token.compensation
     const index = state.tags.findIndex(({ id }) => id === tagId)
     if (index < 0) throw new DomainCommandError('TAG_NOT_FOUND', `Tag not found for undo: ${tagId}.`, { tagId })
@@ -467,7 +525,8 @@ function applyUndo(
       const restoredIds = new Set(token.compensation.reminderRules.map(({ id }) => id))
       const referencedIds = new Set(state.reminderDeliveries.map(({ reminderRuleId }) => reminderRuleId))
       state.reminderRules = state.reminderRules.flatMap((rule) => {
-        if (!taskIds.has(rule.taskId)) return [rule]
+        const target = reminderTarget(rule)
+        if (target.kind !== 'task' || !taskIds.has(target.taskId)) return [rule]
         if (!restoredIds.has(rule.id) && referencedIds.has(rule.id)) return [{ ...rule, enabled: false, revision: rule.revision + 1 }]
         return []
       })
@@ -548,12 +607,20 @@ function assertEnvelope(current: { revision: number }, envelope: CommandEnvelope
 }
 
 function previewAffected(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: CommandEnvelope['command'],
 ): EntityRef[] {
   if (command.type === 'workspace.import' || command.type === 'workspace.reset') {
     return [{ type: 'workspace', id: 'workspace', revision: state.revision }]
   }
+  if (command.type === 'undo.apply' && command.token.compensation.type === 'event.restore') return [{ type: 'calendar_event', id: command.token.compensation.event.id }]
+  if (command.type === 'undo.apply' && command.token.compensation.type === 'event.remove_created') return [{ type: 'calendar_event', id: command.token.compensation.eventId }]
+  if (command.type === 'undo.apply' && command.token.compensation.type === 'calendar_source.restore') return [{ type: 'calendar_source', id: command.token.compensation.source.id }]
+  if (command.type === 'undo.apply' && command.token.compensation.type === 'calendar_source.remove_created') return [{ type: 'calendar_source', id: command.token.compensation.sourceId }]
+  if (command.type === 'event.outcome.create' || command.type === 'event.link' || command.type === 'event.unlink') return [{ type: 'calendar_event', id: command.eventId }]
+  if (isEventCommand(command)) return command.type.startsWith('calendar_source.')
+    ? [{ type: 'calendar_source', id: 'sourceId' in command ? command.sourceId ?? 'pending' : 'pending' }]
+    : [{ type: 'calendar_event', id: 'eventId' in command ? command.eventId ?? 'pending' : 'pending' }]
   if (command.type === 'undo.apply') return command.token.compensation.type === 'tag.remove_created'
     ? [{ type: 'tag', id: command.token.compensation.tagId }]
     : command.token.compensation.type === 'tag.restore'
@@ -562,11 +629,11 @@ function previewAffected(
     ? command.token.compensation.taskIds.map((id) => ({ type: 'task', id }))
     : command.token.compensation.type === 'task.restore'
       ? command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task', id, revision }))
-      : [
+      : command.token.compensation.type === 'recurrence.restore' ? [
           ...command.token.compensation.tasks.map(({ id, revision }) => ({ type: 'task' as const, id, revision })),
           ...command.token.compensation.recurrenceSeries.map(({ id, revision }) => ({ type: 'recurrence_series' as const, id, revision })),
           ...command.token.compensation.occurrenceSnapshots.map(({ id, revision }) => ({ type: 'occurrence' as const, id, revision })),
-        ]
+        ] : []
   if (command.type === 'recurrence.create') return [{ type: 'task', id: command.taskId }]
   if (
     command.type === 'recurrence.update' ||
@@ -626,7 +693,7 @@ function isReviewCommand(command: CapabilityCommand): command is ReviewCapabilit
 }
 
 function removeGeneratedReviewTargets(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   taskIds: readonly string[] | undefined,
   linkIds: readonly string[] | undefined,
   now: string,
@@ -640,6 +707,10 @@ function removeGeneratedReviewTargets(
     task.revision += 1
   }
   state.reviewTaskLinks = state.reviewTaskLinks.filter(({ id }) => !links.has(id))
+}
+
+function isEventCommand(command: CapabilityCommand): command is EventCapabilityCommand {
+  return ['calendar_source.create', 'calendar_source.update', 'calendar_source.archive', 'event.create', 'event.update', 'event.delete', 'event.exception.set', 'event.exception.reset'].includes(command.type)
 }
 
 function isCalendarCommand(command: CapabilityCommand): command is CalendarCapabilityCommand {
@@ -670,12 +741,14 @@ function assertExplicitConfirmation(
 }
 
 function previewConfirmationFor(command: CapabilityCommand, descriptor: ReturnType<typeof getCommandDescriptor>): PreviewConfirmation {
+  if (command.type === 'event.update' || command.type === 'event.delete') return command.scope === 'series' ? 'explicit' : 'none'
   if (command.type === 'recurrence.update' && command.scope === 'occurrence') return 'none'
   if (command.type === 'calendar.move' && (command.occurrenceId === undefined || command.scope === undefined || command.scope === 'occurrence')) return 'none'
   return getPreviewConfirmation(descriptor)
 }
 
 function requiresExplicitExecutionConfirmation(command: CapabilityCommand): boolean {
+  if (command.type === 'event.update' || command.type === 'event.delete') return command.scope === 'series'
   return (command.type === 'recurrence.update' || command.type === 'calendar.move') &&
     (command.scope === 'future' || command.scope === 'series')
 }
@@ -711,6 +784,10 @@ function publicPreviewImpact(
   command: CommandEnvelope['command'],
   application: CommandApplication,
 ): Pick<CommandApplication, 'affected' | 'changes'> {
+  if ((command.type === 'event.create' && command.eventId === undefined) || (command.type === 'calendar_source.create' && command.sourceId === undefined)) {
+    const entity: EntityRef = { type: command.type === 'event.create' ? 'calendar_event' : 'calendar_source', id: 'new' }
+    return { affected: [entity], changes: [{ entity, operation: 'create', fields: [entity.type] }] }
+  }
   if (command.type === 'tag.create' && command.tagId === undefined) {
     const entity: EntityRef = { type: 'tag', id: 'new' }
     return {
@@ -728,7 +805,7 @@ function publicPreviewImpact(
   }
 }
 
-function createPreviewIdGenerator(state: WorkspaceStateV3): CapabilityIdGenerator {
+function createPreviewIdGenerator(state: WorkspaceStateV4): CapabilityIdGenerator {
   const used = new Set<string>()
   for (const collection of Object.values(state)) {
     if (!Array.isArray(collection)) continue
@@ -747,7 +824,7 @@ function createPreviewIdGenerator(state: WorkspaceStateV3): CapabilityIdGenerato
 }
 
 function appendUndoEvent(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   task: Task,
   type: TaskEvent['type'],
   fromStatus: TaskEvent['fromStatus'],
@@ -833,13 +910,18 @@ function sameJson(left: JsonValue | undefined, right: unknown): boolean {
   return canonicalJson(left) === canonicalJson(right)
 }
 
+export async function fingerprintWorkspace(state: Readonly<WorkspaceStateV4>): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalJson(state)))
+  return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+}
+
 async function fingerprintRequest(envelope: CommandEnvelope): Promise<string> {
   let request: string
   try {
     request = canonicalJson({
       protocolVersion: envelope.protocolVersion,
       source: envelope.source,
-      expectedWorkspaceRevision: envelope.expectedWorkspaceRevision,
+      ...(envelope.command.type === 'calendar_external.apply' ? {} : { expectedWorkspaceRevision: envelope.expectedWorkspaceRevision }),
       command: envelope.command,
     })
   } catch (error) {
@@ -851,7 +933,7 @@ async function fingerprintRequest(envelope: CommandEnvelope): Promise<string> {
   return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
 }
 
-function canonicalJson(value: unknown, ancestors = new Set<object>()): string {
+export function canonicalJson(value: unknown, ancestors = new Set<object>()): string {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value)
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw jsonSafetyError()

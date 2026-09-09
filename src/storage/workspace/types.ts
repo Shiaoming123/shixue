@@ -1,6 +1,6 @@
-import type { WorkspaceStateV3 } from '../../domain/workspace/types.ts'
+import type { WorkspaceStateV4 } from '../../domain/workspace/types.ts'
 
 export interface WorkspaceStore {
-  load(): Promise<WorkspaceStateV3>
-  save(state: WorkspaceStateV3, expectedUpdatedAt?: string): Promise<void>
+  load(): Promise<WorkspaceStateV4>
+  save(state: WorkspaceStateV4, expectedUpdatedAt?: string): Promise<void>
 }

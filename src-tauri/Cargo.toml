@@ -45,6 +45,10 @@ keyring = { version = "4", optional = true }
 reqwest = { version = "0.13", features = ["stream", "json", "query"], optional = true }
 # futures-util：流式代理里消费 bytes_stream
 futures-util = { version = "0.3", optional = true }
+base64 = { version = "0.22", optional = true }
+sha2 = { version = "0.10", optional = true }
+serde_json_canonicalizer = { version = "=0.3.2", optional = true }
+getrandom = { version = "0.4", optional = true }
 
 # 功能模块开关（与前端 modules.config.ts 对应）
 # 核心能力（sqlite/store）始终启用，无需 feature
@@ -55,6 +59,8 @@ clipboard = ["dep:tauri-plugin-clipboard-manager"]
 notification = ["dep:tauri-plugin-notification", "dep:chrono", "dep:sqlx", "dep:tokio"]
 autostart = ["dep:tauri-plugin-autostart"]
 sync = ["dep:keyring", "dep:reqwest"]
+calendar-connections = ["dep:keyring", "dep:reqwest", "dep:base64", "dep:sha2", "dep:getrandom", "dep:tokio", "tokio/sync", "dep:chrono", "dep:sqlx"]
+calendar-writes = ["calendar-connections", "dep:serde_json_canonicalizer"]
 # Agent 能力：agent = 密钥代理（keyring + reqwest）；agent-sidecar = 上述 + Pi RPC sidecar（P3）
 agent = ["dep:keyring", "dep:reqwest", "dep:futures-util"]
 agent-sidecar = ["agent"]

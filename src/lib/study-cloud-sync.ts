@@ -3,7 +3,8 @@ import type { SyncMutation } from '../sync/types.ts'
 import { CAPABILITY_PROTOCOL_VERSION } from '../domain/capabilities/types.ts'
 import { createTaskCapabilityService } from '../domain/capabilities/service.ts'
 import { parseWorkspaceStateOrMigrate } from '../domain/workspace/migrate.ts'
-import type { WorkspaceStateV3 } from '../domain/workspace/types.ts'
+import { parseWorkspaceState } from '../domain/workspace/parse.ts'
+import type { WorkspaceStateV4 } from '../domain/workspace/types.ts'
 import { createWorkspaceExport, parseWorkspaceExport } from '../storage/workspace/data-port.ts'
 import type { WorkspaceStore } from '../storage/workspace/types.ts'
 
@@ -80,7 +81,7 @@ export interface StudyCloudSyncControllerOptions {
 
 interface ParsedStudyCloudSnapshot {
   mutation: SyncMutation
-  state: WorkspaceStateV3
+  state: WorkspaceStateV4
   updatedAt: string
   digest: string
 }
@@ -97,7 +98,7 @@ export function compareStudyCloudSnapshots(
 }
 
 export async function createStudyCloudSnapshot(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   deviceId: string,
 ): Promise<SyncMutation> {
   if (!deviceId.trim()) throw new Error('Study cloud snapshot requires a deviceId.')
@@ -152,7 +153,7 @@ export function createStudyCloudSyncController(
         return finish({ state: 'skipped', reason: 'signed-out', localPreserved: true })
       }
 
-      let localState: WorkspaceStateV3
+      let localState: WorkspaceStateV4
       let local: ParsedStudyCloudSnapshot
       try {
         localState = await options.store.load()
@@ -272,7 +273,11 @@ async function parseCloudSnapshot(value: SyncMutation): Promise<ParsedStudyCloud
   }
   const state = exported?.state ?? parseWorkspaceStateOrMigrate(legacyState, value.occurredAt)
   assertIsoTimestamp(state.updatedAt)
-  const digestSource = exported === null ? legacyState : state
+  // Verify the sender's schema before migration adds V4 calendar collections.
+  const rawExport = value.payload.workspace
+  const digestSource = exported === null ? legacyState
+    : isRecord(rawExport) && rawExport.version === 3 ? parseWorkspaceState(rawExport.state)
+      : state
   const digest = await sha256(canonicalJson(digestSource))
   const revisionUpdatedAt = exported === null && isRecord(legacyState) && typeof legacyState.updatedAt === 'string'
     ? legacyState.updatedAt
@@ -290,7 +295,7 @@ async function parseCloudSnapshot(value: SyncMutation): Promise<ParsedStudyCloud
   return { mutation: value, state, updatedAt: state.updatedAt, digest }
 }
 
-function workspaceContent(state: WorkspaceStateV3): string {
+function workspaceContent(state: WorkspaceStateV4): string {
   const { revision, updatedAt, commandReceipts, ...content } = state
   return canonicalJson(content)
 }

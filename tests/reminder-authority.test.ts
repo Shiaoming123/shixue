@@ -6,7 +6,7 @@ import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { createReminderRuntime, withReminderRuntimeLock } from '../src/lib/reminder-runtime.ts'
 import { reconcileReminderDeliveries } from '../src/domain/reminders/resolve.ts'
 import { applyDeliveryCommand } from '../src/domain/reminders/delivery-commands.ts'
-import { parseWorkspaceState } from '../src/domain/workspace/parse.ts'
+import { parseWorkspaceStateV4 } from '../src/domain/workspace/parse.ts'
 
 async function fixture() {
   const store = createInMemoryWorkspaceStore()
@@ -51,7 +51,7 @@ test('task-level absolute reminders are one instant, including legacy recurring 
   reconcileReminderDeliveries(state)
   assert.equal(state.reminderDeliveries.length, 1)
   assert.equal(state.reminderDeliveries[0]!.status, 'delivered')
-  assert.doesNotThrow(() => parseWorkspaceState(state))
+  assert.doesNotThrow(() => parseWorkspaceStateV4(state))
 })
 
 test('exclusive runtime ownership covers an awaited send and still reads local legacy rows', async () => {

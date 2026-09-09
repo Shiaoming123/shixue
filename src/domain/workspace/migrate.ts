@@ -2,33 +2,52 @@ import {
   parseStudyStateOrMigrate,
   type StudyState,
 } from '../../storage/study/types.ts'
-import { parseWorkspaceState } from './parse.ts'
+import { parseWorkspaceState, parseWorkspaceStateV4 } from './parse.ts'
 import {
   WORKSPACE_STATE_VERSION,
   type ReviewTaskLink,
   type Task,
   type TaskEvent,
   type WorkspaceStateV3,
+  type WorkspaceStateV4,
 } from './types.ts'
 
 export const SYSTEM_LEARNING_LIST_ID = 'list:system:learning'
 
+export function migrateWorkspaceV4(value: unknown): WorkspaceStateV4 {
+  if (isRecord(value) && value.version === 4) return parseWorkspaceStateV4(value)
+  const state = parseWorkspaceState(value)
+  const usedIds = new Set(Object.values(state).filter(Array.isArray).flatMap((items) => items.map((item: { id: string }) => item.id)))
+  let sourceId = 'calendar:local'
+  for (let suffix = 1; usedIds.has(sourceId); suffix++) sourceId = `calendar:local:${suffix}`
+  return parseWorkspaceStateV4({
+    ...state, version: 4,
+    calendarSources: [{
+      id: sourceId, revision: 1, provider: 'local', title: '个人日历', color: '#668575',
+      group: null, permission: 'write', selected: true, hidden: false, timezone: 'UTC',
+      createdAt: state.updatedAt, updatedAt: state.updatedAt, archivedAt: null,
+    }],
+    calendarEvents: [], calendarEventLinks: [], eventOutcomes: [],
+  })
+}
+
 export function parseWorkspaceStateOrMigrate(
   value: unknown,
   migratedAt = new Date().toISOString(),
-): WorkspaceStateV3 {
+): WorkspaceStateV4 {
   if (isRecord(value) && value.version === WORKSPACE_STATE_VERSION) {
-    return parseWorkspaceState(value)
+    return parseWorkspaceStateV4(value)
   }
+  if (isRecord(value) && value.version === 3) return migrateWorkspaceV4(value)
   const study = parseStudyStateOrMigrate(value, migratedAt)
-  return parseWorkspaceState(migrateStudyV2(study, migratedAt))
+  return migrateWorkspaceV4(migrateStudyV2(study, migratedAt))
 }
 
 export function repairLegacyDeletedPendingReviewTasks(
   value: unknown,
   repairedAt = new Date().toISOString(),
 ): WorkspaceStateV3 | null {
-  if (!isRecord(value) || value.version !== WORKSPACE_STATE_VERSION) return null
+  if (!isRecord(value) || value.version !== 3) return null
   if (!Array.isArray(value.tasks) || !Array.isArray(value.completionRecords) || !Array.isArray(value.reviewTaskLinks)) return null
   if (!Number.isInteger(value.revision)) return null
 
@@ -174,7 +193,7 @@ function migrateStudyV2(study: StudyState, migratedAt: string): WorkspaceStateV3
   })))
 
   return {
-    version: WORKSPACE_STATE_VERSION,
+    version: 3,
     revision: 1,
     listGroups: structuredClone(study.listGroups ?? []),
     lists: [{

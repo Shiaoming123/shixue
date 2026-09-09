@@ -3,7 +3,7 @@ import test from 'node:test'
 import { applyReviewCommand } from '../src/domain/capabilities/review-commands.ts'
 import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
 import type { CapabilityCommand } from '../src/domain/capabilities/types.ts'
-import { parseWorkspaceState } from '../src/domain/workspace/parse.ts'
+import { parseWorkspaceStateV4 } from '../src/domain/workspace/parse.ts'
 import { resolveLegacyReviewLink } from '../src/domain/learning/review-task-link.ts'
 import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
 import { createSeedStudyState } from '../src/storage/study/types.ts'
@@ -147,10 +147,10 @@ test('workspace validation rejects duplicate or stale pending review targets', a
   const state = await store.load()
   const link = state.reviewTaskLinks[0]!
   state.reviewTaskLinks.push({ ...structuredClone(link), id: 'review-link:duplicate' })
-  assert.throws(() => parseWorkspaceState(state), /duplicate links/)
+  assert.throws(() => parseWorkspaceStateV4(state), /duplicate links/)
   const stale = await store.load()
   stale.reviewTaskLinks[0]!.dueOn = '2026-12-31'
-  assert.throws(() => parseWorkspaceState(stale), /does not match its active review/)
+  assert.throws(() => parseWorkspaceStateV4(stale), /does not match its active review/)
 })
 
 test('fuzzy preserves the stage for tomorrow while relearn closes the review chain', async () => {
@@ -220,7 +220,7 @@ test('recurrence completion resolves the exact linked occurrence without creatin
   const mismatchedOccurrence = completedMismatch.occurrences.find(({ id }) => id === 'occurrence:review-exact')!
   mismatchedOccurrence.status = 'pending'
   mismatchedOccurrence.completedAt = null
-  assert.throws(() => parseWorkspaceState(completedMismatch), /completed review task link.*completed occurrence/i)
+  assert.throws(() => parseWorkspaceStateV4(completedMismatch), /completed review task link.*completed occurrence/i)
 
   await store.save({ ...next, commandReceipts: [] }, next.updatedAt)
   for (const [key, command] of [
@@ -262,7 +262,7 @@ test('review occurrence links reject status drift and cannot be skipped', async 
   const invalid = structuredClone(seed)
   const invalidOccurrence = invalid.occurrences.find(({ id }) => id === 'occurrence:review-skip')!
   invalidOccurrence.status = 'skipped'
-  assert.throws(() => parseWorkspaceState(invalid), /pending review task link.*pending occurrence/i)
+  assert.throws(() => parseWorkspaceStateV4(invalid), /pending review task link.*pending occurrence/i)
 
   const store = createInMemoryWorkspaceStore(seed)
   const service = createTaskCapabilityService(store, () => NOW, (kind) => `${kind}:review-skip`)
@@ -343,7 +343,7 @@ test('legacy review refuses completed history that predates persisted outcomes',
   await execute({ type: 'review.complete', linkId: link.id, result: 'clear', reviewedOn: '2026-09-06' })
   const state = await store.load()
   delete (state.reviewTaskLinks.find(({ id }) => id === link.id)! as Partial<typeof link>).completion
-  const parsed = parseWorkspaceState(state)
+  const parsed = parseWorkspaceStateV4(state)
   assert.equal(parsed.reviewTaskLinks.find(({ id }) => id === link.id)?.completion, null)
   assert.throws(
     () => resolveLegacyReviewLink(parsed, link.completionRecordId, 'clear', '2026-09-06'),
@@ -419,5 +419,5 @@ test('workspace validation requires exactly one current pending link when a revi
   const state = await store.load()
   const recordId = state.reviewTaskLinks[0]!.completionRecordId
   for (const link of state.reviewTaskLinks) if (link.completionRecordId === recordId) link.completedAt = NOW
-  assert.throws(() => parseWorkspaceState(state), /requires one matching pending review link/)
+  assert.throws(() => parseWorkspaceStateV4(state), /requires one matching pending review link/)
 })

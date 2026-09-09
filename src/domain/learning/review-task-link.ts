@@ -1,4 +1,4 @@
-import type { CompletionRecord, ReviewTaskLink, Task, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { CompletionRecord, ReviewTaskLink, Task, WorkspaceStateV4 } from '../workspace/types.ts'
 import type { ReviewResult } from '../../storage/study/types.ts'
 import { DomainCommandError, type CapabilityCommandContext } from '../capabilities/types.ts'
 
@@ -9,7 +9,7 @@ export interface EnsuredReviewTask {
 }
 
 export function ensureReviewTask(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   completionRecordId: string,
   dueOn: string,
   context: CapabilityCommandContext,
@@ -80,7 +80,7 @@ export function ensureReviewTask(
   return { task, link, created: true }
 }
 
-export function pendingReviewLinkForRecord(state: WorkspaceStateV3, recordId: string): ReviewTaskLink | null {
+export function pendingReviewLinkForRecord(state: WorkspaceStateV4, recordId: string): ReviewTaskLink | null {
   const record = state.completionRecords.find(({ id, deletedAt }) => id === recordId && deletedAt === null)
   if (!record || !record.nextReviewOn) return null
   return state.reviewTaskLinks.find((link) =>
@@ -89,7 +89,7 @@ export function pendingReviewLinkForRecord(state: WorkspaceStateV3, recordId: st
 }
 
 export function resolveLegacyReviewLink(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   recordId: string,
   result: ReviewResult,
   reviewedOn: string,
@@ -118,7 +118,7 @@ export function resolveLegacyReviewLink(
 }
 
 export function pendingReviewLinkForTarget(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   taskId: string,
   occurrenceId: string | null = null,
 ): ReviewTaskLink | null {
@@ -126,7 +126,7 @@ export function pendingReviewLinkForTarget(
     link.reviewTaskId === taskId && link.occurrenceId === occurrenceId) ?? null
 }
 
-function requireSourceTask(state: WorkspaceStateV3, record: CompletionRecord): Task {
+function requireSourceTask(state: WorkspaceStateV4, record: CompletionRecord): Task {
   const task = state.tasks.find(({ id, deletedAt }) => id === record.taskId && deletedAt === null)
   if (!task) throw new DomainCommandError('TASK_NOT_FOUND', `Source task not found: ${record.taskId}.`, { taskId: record.taskId })
   return task

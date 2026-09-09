@@ -3,11 +3,12 @@ import { computed } from 'vue'
 import type { ReminderDelivery } from '../../domain/workspace/types'
 import Button from '../ui/Button.vue'
 
-export type ReminderCardAction = { deliveryId: string; action: 'complete' | 'snooze' | 'open' | 'retry'; minutes?: 10; expectedRevision?: number }
+export type ReminderCardAction = { deliveryId: string; action: 'complete' | 'snooze' | 'open' | 'retry' | 'dismiss'; minutes?: 10; expectedRevision?: number }
 const props = withDefaults(defineProps<{
   delivery: ReminderDelivery
   taskTitle: string
   learning?: boolean
+  event?: boolean
   notificationAvailable?: boolean
   busy?: boolean
   error?: string
@@ -22,16 +23,17 @@ function act(action: ReminderCardAction['action']) {
 </script>
 
 <template>
-  <article class="reminder-card" aria-label="任务提醒">
-    <p class="kind">{{ notificationAvailable ? '任务提醒' : '仅应用内提醒' }}</p>
+  <article class="reminder-card" :aria-label="event ? '日程提醒' : '任务提醒'">
+    <p class="kind">{{ notificationAvailable ? event ? '日程提醒' : '任务提醒' : '仅应用内提醒' }}</p>
     <h3>{{ taskTitle }}</h3>
     <p v-if="delivery.status === 'failed'" class="message" role="status">提醒发送失败，可重试。</p>
     <p v-if="delivery.status === 'ambiguous'" class="message" role="status">无法确认提醒是否已送达，重试可能重复通知。</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <div class="actions">
-      <Button size="sm" :disabled="busy || !canAct" @click="act('complete')">{{ learning ? '记录完成' : '完成' }}</Button>
+      <Button v-if="!event" size="sm" :disabled="busy || !canAct" @click="act('complete')">{{ learning ? '记录完成' : '完成' }}</Button>
+      <Button v-else size="sm" :disabled="busy || !canAct" @click="act('dismiss')">忽略</Button>
       <Button size="sm" :disabled="busy || !canAct" @click="act('snooze')">稍后 10 分钟</Button>
-      <Button size="sm" :disabled="busy" @click="act('open')">打开任务</Button>
+      <Button size="sm" :disabled="busy" @click="act('open')">{{ event ? '打开日程' : '打开任务' }}</Button>
       <Button v-if="canRetry" size="sm" :disabled="busy" @click="act('retry')">{{ delivery.status === 'ambiguous' ? '仍然重试' : '重试提醒' }}</Button>
     </div>
   </article>

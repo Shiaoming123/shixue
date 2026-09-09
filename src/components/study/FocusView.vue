@@ -2,6 +2,7 @@
 import { ArrowLeft, Check, Pause, Play, Square } from '@lucide/vue'
 
 defineProps<{
+  backLabel?: string
   topicTitle: string
   taskTitle: string
   criteria: string[]
@@ -25,7 +26,7 @@ function updateScratchpad(event: Event) {
 
 <template>
   <section class="focus-view">
-    <button class="back" @click="emit('back')"><ArrowLeft :size="18" />今天</button>
+    <button class="back" @click="emit('back')"><ArrowLeft :size="18" />{{ backLabel ?? '今天' }}</button>
 
     <div class="focus-heading">
       <p>{{ running ? '正在学习' : '已暂停' }}</p>

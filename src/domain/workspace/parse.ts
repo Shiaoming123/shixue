@@ -1,4 +1,6 @@
 import { deliveryKey } from '../reminders/resolve.ts'
+import { isCalendarEventOccurrenceStart, validateCalendarEventRecurrence } from '../calendar/event-occurrences.ts'
+import type { CalendarEvent, CalendarEventLink, CalendarEventTime, CalendarSource, EventOutcome } from '../calendar/types.ts'
 import type {
   CompletionRecord,
   CommandReceipt,
@@ -11,6 +13,8 @@ import type {
   RecurrenceSeries,
   ReminderDelivery,
   ReminderRule,
+  LegacyReminderRule,
+  ReminderTarget,
   ReviewTaskLink,
   StudySession,
   Tag,
@@ -21,8 +25,8 @@ import type {
   TaskSchedule,
   TaskEvent,
   WorkspaceStateV3,
+  WorkspaceStateV4,
 } from './types.ts'
-import { WORKSPACE_STATE_VERSION } from './types.ts'
 import { assertIanaTimezone } from '../recurrence/timezone.ts'
 
 const MAX_ITEMS = 100_000
@@ -35,14 +39,14 @@ const EVENT_TYPES = ['captured', 'migrated', 'planned', 'started', 'paused', 're
 
 export function parseWorkspaceState(value: unknown): WorkspaceStateV3 {
   const state = requireRecord(value, 'Workspace state')
-  if (state.version !== WORKSPACE_STATE_VERSION) {
+  if (state.version !== 3) {
     throw new Error('Workspace state must use version 3.')
   }
   if (state.previewReceipts !== undefined) {
     parseArray(state.previewReceipts, 'Workspace state legacy previewReceipts', parseLegacyPreviewReceipt)
   }
   const parsed: WorkspaceStateV3 = {
-    version: WORKSPACE_STATE_VERSION,
+    version: 3,
     revision: requirePositiveInteger(state.revision, 'Workspace state revision'),
     listGroups: parseArray(state.listGroups, 'Workspace state listGroups', parseListGroup),
     lists: parseArray(state.lists, 'Workspace state lists', parseTaskList),
@@ -66,6 +70,186 @@ export function parseWorkspaceState(value: unknown): WorkspaceStateV3 {
   assertActiveTagTitles(parsed.tags)
   assertReferences(parsed)
   return parsed
+}
+
+export function parseWorkspaceStateV4(value: unknown): WorkspaceStateV4 {
+  const state = requireRecord(value, 'Workspace state')
+  if (state.version !== 4) throw new Error('Workspace state must use version 4.')
+  const reminderRules = parseArray(state.reminderRules, 'Reminder rules', parseCurrentReminderRule)
+  const ruleById = new Map(reminderRules.map((rule) => [rule.id, rule]))
+  const reminderDeliveries = parseArray(state.reminderDeliveries, 'Reminder deliveries', (raw, index) => {
+    const delivery = parseReminderDelivery(raw, index)
+    const rule = ruleById.get(delivery.reminderRuleId)
+    if (!rule) throw new Error(`Reminder delivery ${delivery.id} has unknown reminderRuleId.`)
+    const value = requireRecord(raw, 'Reminder delivery')
+    if (rule.target.kind === 'event') {
+      if (delivery.occurrenceId !== null || delivery.action === 'complete') throw new Error('Event reminder cannot reference or complete a task occurrence.')
+      const inputStart = value.originalStart === undefined ? null : parseNullableText(value.originalStart, 'Event reminder originalStart')
+      const originalStart = inputStart === null ? null : requireEventOriginalStart(inputStart)
+      if (rule.target.originalStart !== null && rule.target.originalStart !== originalStart) throw new Error('Event delivery does not match reminder target.')
+      return { ...delivery, originalStart }
+    }
+    if (value.originalStart !== undefined && value.originalStart !== null) throw new Error('Task reminder cannot reference an event occurrence.')
+    return delivery
+  })
+  const base = parseWorkspaceState({ ...state, version: 3,
+    reminderRules: reminderRules.flatMap(({ target, ...rule }) => target.kind === 'task' ? [{ ...rule, taskId: target.taskId, occurrenceId: target.occurrenceId }] : []),
+    reminderDeliveries: reminderDeliveries.filter((delivery) => ruleById.get(delivery.reminderRuleId)?.target.kind === 'task'),
+  })
+  const parsed: WorkspaceStateV4 = {
+    ...base, version: 4, reminderRules, reminderDeliveries,
+    calendarSources: parseArray(state.calendarSources, 'Calendar sources', parseCalendarSource),
+    calendarEvents: parseArray(state.calendarEvents, 'Calendar events', parseCalendarEvent),
+    calendarEventLinks: parseArray(state.calendarEventLinks, 'Calendar event links', parseCalendarEventLink),
+    eventOutcomes: parseArray(state.eventOutcomes, 'Event outcomes', parseEventOutcome),
+  }
+  const collections = Object.values(parsed).filter(Array.isArray) as { id: string }[][]
+  if (collections.some((items) => items.length > MAX_ITEMS)) throw new Error('Workspace state contains too many records.')
+  assertUniqueAcrossEntities(collections)
+  const sources = ids(parsed.calendarSources)
+  const events = new Map(parsed.calendarEvents.map((event) => [event.id, event]))
+  const tasks = ids(parsed.tasks)
+  for (const rule of reminderRules) if (rule.target.kind === 'event') {
+    if (!events.has(rule.target.eventId)) throw new Error(`Reminder rule ${rule.id} has unknown eventId.`)
+    if (rule.trigger.kind === 'before_due') throw new Error('Event reminder cannot use task deadline trigger.')
+  }
+  const deliveryKeys = reminderDeliveries.map((delivery) => deliveryKey(delivery.reminderRuleId, delivery.occurrenceId, delivery.scheduledFor, delivery.originalStart))
+  if (new Set(deliveryKeys).size !== deliveryKeys.length) throw new Error('Workspace state contains a duplicate reminder delivery.')
+  for (const event of parsed.calendarEvents) {
+    if (!sources.has(event.sourceId)) throw new Error('Calendar event has unknown sourceId.')
+    validateCalendarEventRecurrence(event)
+  }
+  const linked = new Set<string>()
+  for (const link of parsed.calendarEventLinks) {
+    if (!events.has(link.eventId) || !tasks.has(link.taskId)) throw new Error('Calendar link has unknown event or task.')
+    const key = JSON.stringify([link.eventId, link.taskId])
+    if (linked.has(key)) throw new Error('Duplicate calendar event link.')
+    linked.add(key)
+  }
+  const outcomes = new Set<string>()
+  for (const outcome of parsed.eventOutcomes) {
+    if (!events.has(outcome.eventId) || (outcome.taskId !== null && !tasks.has(outcome.taskId))) throw new Error('Event outcome has unknown event or task.')
+    if (outcome.occurrenceId !== null && !isCalendarEventOccurrenceStart(events.get(outcome.eventId)!, outcome.occurrenceId)) throw new Error('Event outcome has unknown original occurrence start.')
+    if ((outcome.action === 'followup') !== (outcome.taskId !== null)) throw new Error('Only a followup outcome requires a task.')
+    const key = JSON.stringify([outcome.eventId, outcome.occurrenceId, outcome.action])
+    if (outcomes.has(key)) throw new Error('Duplicate event outcome action.')
+    outcomes.add(key)
+  }
+  return parsed
+}
+
+export function parseCalendarEventTime(raw: unknown): CalendarEventTime {
+  const value = requireRecord(raw, 'Calendar event time')
+  if (value.kind === 'all-day') {
+    const startOn = requireDateOnly(value.startOn, 'Event startOn')
+    const endOnExclusive = requireDateOnly(value.endOnExclusive, 'Event endOnExclusive')
+    if (endOnExclusive <= startOn) throw new Error('All-day event end must be after start.')
+    return { kind: 'all-day', startOn, endOnExclusive }
+  }
+  if (value.kind === 'fixed') {
+    const startAt = requireIsoDateTime(value.startAt, 'Event startAt')
+    const endAt = requireIsoDateTime(value.endAt, 'Event endAt')
+    const timezone = requireText(value.timezone, 'Event timezone')
+    assertIanaTimezone(timezone)
+    if (Date.parse(endAt) <= Date.parse(startAt)) throw new Error('Fixed event end must be after start.')
+    return { kind: 'fixed', startAt, endAt, timezone }
+  }
+  if (value.kind === 'floating') {
+    const startLocal = requireLocalDateTime(value.startLocal)
+    const endLocal = requireLocalDateTime(value.endLocal)
+    if (endLocal <= startLocal) throw new Error('Floating event end must be after start.')
+    return { kind: 'floating', startLocal, endLocal }
+  }
+  throw new Error('Calendar event time kind is invalid.')
+}
+
+function parseCalendarSource(raw: unknown): CalendarSource {
+  const value = requireRecord(raw, 'Calendar source')
+  const color = requireText(value.color, 'Calendar color')
+  if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error('Calendar color must use six hex digits.')
+  const timezone = requireText(value.timezone, 'Calendar timezone')
+  assertIanaTimezone(timezone)
+  return {
+    id: requireText(value.id, 'Calendar source id'), revision: requirePositiveInteger(value.revision, 'Calendar source revision'),
+    provider: parseEnum(value.provider, ['local', 'google', 'feishu', 'ics'], 'Calendar provider'),
+    title: requireText(value.title, 'Calendar title'), color, group: parseNullableText(value.group, 'Calendar group'),
+    permission: parseEnum(value.permission, ['read', 'write'], 'Calendar permission'),
+    selected: requireBoolean(value.selected, 'Calendar selected'), hidden: requireBoolean(value.hidden, 'Calendar hidden'), timezone,
+    createdAt: requireIsoDateTime(value.createdAt, 'Calendar createdAt'), updatedAt: requireIsoDateTime(value.updatedAt, 'Calendar updatedAt'),
+    archivedAt: parseNullableIsoDateTime(value.archivedAt, 'Calendar archivedAt'),
+  }
+}
+
+export function parseCalendarEvent(raw: unknown): CalendarEvent {
+  const value = requireRecord(raw, 'Calendar event')
+  const time = parseCalendarEventTime(value.time)
+  const recurrence = value.recurrence === null ? null : requireRecord(value.recurrence, 'Event recurrence')
+  const exceptions = recurrence ? parseArray(recurrence.exceptions, 'Event exceptions', (raw) => {
+    const exception = requireRecord(raw, 'Event exception')
+    const originalStart = time.kind === 'all-day' ? requireDateOnly(exception.originalStart, 'Original start')
+      : time.kind === 'floating' ? requireLocalDateTime(exception.originalStart)
+        : new Date(requireIsoDateTime(exception.originalStart, 'Original start')).toISOString()
+    const override = exception.time === null ? null : parseCalendarEventTime(exception.time)
+    if (override !== null && override.kind !== time.kind) throw new Error('Event exception must preserve its time kind.')
+    return { originalStart, time: override }
+  }) : []
+  if (new Set(exceptions.map(({ originalStart }) => originalStart)).size !== exceptions.length) throw new Error('Duplicate event exception.')
+  const sourceUrl = value.sourceUrl === undefined ? undefined : parseNullableText(value.sourceUrl, 'Event sourceUrl')
+  if (sourceUrl !== undefined && sourceUrl !== null) {
+    const url = new URL(sourceUrl)
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Event sourceUrl must be an HTTP(S) URL without credentials.')
+  }
+  const meetingUrl = parseNullableText(value.meetingUrl, 'Event meetingUrl')
+  if (meetingUrl !== null) {
+    const url = new URL(meetingUrl)
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Event meetingUrl must be an HTTP(S) URL without credentials.')
+  }
+  const attendees = parseArray(value.attendees, 'Event attendees', (raw) => {
+    const attendee = requireRecord(raw, 'Event attendee')
+    return { ...parseCalendarPerson(attendee), role: parseEnum(attendee.role, ['required', 'optional'], 'Attendee role'), response: parseEnum(attendee.response, ['unknown', 'accepted', 'declined', 'tentative'], 'Attendee response') }
+  })
+  if (new Set(attendees.map(({ email }) => email.toLowerCase())).size !== attendees.length) throw new Error('Duplicate event attendee.')
+  return {
+    id: requireText(value.id, 'Event id'), revision: requirePositiveInteger(value.revision, 'Event revision'), sourceId: requireText(value.sourceId, 'Event sourceId'),
+    title: requireText(value.title, 'Event title'), notes: requireText(value.notes, 'Event notes', true), location: requireText(value.location, 'Event location', true), meetingUrl,
+    ...(sourceUrl === undefined ? {} : { sourceUrl }),
+    organizer: value.organizer === null ? null : parseCalendarPerson(value.organizer), attendees,
+    availability: parseEnum(value.availability, ['busy', 'free'], 'Event availability'),
+    status: parseEnum(value.status, ['confirmed', 'tentative', 'cancelled'], 'Event status'), time,
+    recurrence: recurrence ? { cadence: parseCadence(recurrence.cadence), end: parseSeriesEnd(recurrence.end), exceptions } : null,
+    createdAt: requireIsoDateTime(value.createdAt, 'Event createdAt'), updatedAt: requireIsoDateTime(value.updatedAt, 'Event updatedAt'), deletedAt: parseNullableIsoDateTime(value.deletedAt, 'Event deletedAt'),
+  }
+}
+
+function parseCalendarPerson(raw: unknown) {
+  const value = requireRecord(raw, 'Event person')
+  const email = requireText(value.email, 'Event email')
+  if (!/^[^\s@]+@[^\s@]+$/.test(email)) throw new Error('Event email is invalid.')
+  return { name: requireText(value.name, 'Event name', true), email }
+}
+
+function parseCalendarEventLink(raw: unknown): CalendarEventLink {
+  const value = requireRecord(raw, 'Calendar event link')
+  return { id: requireText(value.id, 'Link id'), eventId: requireText(value.eventId, 'Link eventId'), taskId: requireText(value.taskId, 'Link taskId') }
+}
+
+function parseEventOutcome(raw: unknown): EventOutcome {
+  const value = requireRecord(raw, 'Event outcome')
+  return {
+    id: requireText(value.id, 'Outcome id'), eventId: requireText(value.eventId, 'Outcome eventId'), occurrenceId: parseNullableText(value.occurrenceId, 'Outcome occurrenceId'),
+    action: parseEnum(value.action, ['followup', 'note', 'dismiss'], 'Outcome action'), taskId: parseNullableText(value.taskId, 'Outcome taskId'), note: requireText(value.note, 'Outcome note', true), createdAt: requireIsoDateTime(value.createdAt, 'Outcome createdAt'),
+  }
+}
+
+function requireLocalDateTime(raw: unknown): string {
+  const value = requireText(raw, 'Event local time')
+  if (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d$/.test(value) || !isDateOnly(value.slice(0, 10))) throw new Error('Event local time must use YYYY-MM-DDTHH:mm without offset.')
+  return value
+}
+
+function requireBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`${label} must be a boolean.`)
+  return value
 }
 
 function parseListGroup(raw: unknown, index: number): ListGroup {
@@ -283,7 +467,7 @@ function parseOccurrenceOverride(raw: unknown): OccurrenceOverride | null {
   }
 }
 
-function parseReminderRule(raw: unknown, index: number): ReminderRule {
+function parseReminderRule(raw: unknown, index: number): LegacyReminderRule {
   const value = requireRecord(raw, `Reminder rule ${index}`)
   if (typeof value.enabled !== 'boolean') throw new Error('Reminder rule enabled must be boolean.')
   return {
@@ -295,6 +479,35 @@ function parseReminderRule(raw: unknown, index: number): ReminderRule {
     enabled: value.enabled,
     revision: requirePositiveInteger(value.revision, 'Reminder rule revision'),
   }
+}
+
+function parseCurrentReminderRule(raw: unknown, index: number): ReminderRule {
+  const value = requireRecord(raw, `Reminder rule ${index}`)
+  if (value.target === undefined) {
+    const { taskId, occurrenceId, ...legacy } = parseReminderRule(raw, index)
+    return { ...legacy, target: { kind: 'task', taskId, occurrenceId } }
+  }
+  const input = requireRecord(value.target, 'Reminder target')
+  let target: ReminderTarget
+  if (input.kind === 'task') target = { kind: 'task', taskId: requireText(input.taskId, 'Reminder taskId'), occurrenceId: parseNullableText(input.occurrenceId, 'Reminder occurrenceId') }
+  else if (input.kind === 'event') {
+    const inputStart = parseNullableText(input.originalStart, 'Reminder originalStart')
+    const originalStart = inputStart === null ? null : requireEventOriginalStart(inputStart)
+    target = { kind: 'event', eventId: requireText(input.eventId, 'Reminder eventId'), originalStart }
+  } else throw new Error('Reminder target kind is invalid.')
+  if ((value.taskId !== undefined || value.occurrenceId !== undefined) && (target.kind !== 'task' || value.taskId !== target.taskId || value.occurrenceId !== target.occurrenceId)) throw new Error('Reminder target conflicts with legacy task ownership.')
+  if (typeof value.enabled !== 'boolean') throw new Error('Reminder rule enabled must be boolean.')
+  return {
+    id: requireText(value.id, 'Reminder rule id'), target,
+    ...(value.owner === undefined ? {} : { owner: parseEnum(value.owner, ['legacy', 'user'] as const, 'Reminder rule owner') }),
+    trigger: parseReminderTrigger(value.trigger), enabled: value.enabled, revision: requirePositiveInteger(value.revision, 'Reminder rule revision'),
+  }
+}
+
+function requireEventOriginalStart(value: string): string {
+  if (DATE_ONLY.test(value)) return requireDateOnly(value, 'Reminder originalStart')
+  if (value.length === 16) return requireLocalDateTime(value)
+  return new Date(requireIsoDateTime(value, 'Reminder originalStart')).toISOString()
 }
 
 function parseReminderTrigger(raw: unknown): ReminderRule['trigger'] {

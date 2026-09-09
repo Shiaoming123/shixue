@@ -18,6 +18,7 @@ import { useQuickAddCandidateState } from './use-quick-add-candidate-state'
 const props = withDefaults(defineProps<{
   destinationListId: string
   defaultStartOn?: string
+  defaultStartAt?: string
   defaultEstimateMinutes?: number | null
   quickAddRemoveRecognizedText?: boolean
   catalogRevision?: number
@@ -114,6 +115,7 @@ function buildCommand(ids: { taskId?: string; eventId?: string; seriesId?: strin
     candidates: acceptedCandidates.value,
     destinationListId: props.destinationListId,
     defaultStartOn: props.defaultStartOn,
+    defaultStartAt: props.defaultStartAt,
     fallbackRecurrenceAnchorOn: localToday(),
     timezone,
     defaultEstimateMinutes: props.defaultEstimateMinutes,

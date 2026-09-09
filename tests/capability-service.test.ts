@@ -306,14 +306,21 @@ test('rejects stale workspace and entity revisions without changing the workspac
 
 test('catalog exposes fixed risk, scope, reversibility, and preview metadata for every core command', () => {
   assert.deepEqual(COMMAND_CATALOG, [
+    ...(['calendar_source.create', 'calendar_source.update', 'calendar_source.archive', 'event.create', 'event.exception.set', 'event.exception.reset'] as const).map((type) => ({ type, risk: 'low' as const, scope: 'single' as const, reversibility: 'reversible' as const, requiresPreview: false })),
+    { type: 'event.update', risk: 'high', scope: 'series', reversibility: 'reversible', requiresPreview: true },
+    { type: 'event.delete', risk: 'high', scope: 'series', reversibility: 'reversible', requiresPreview: true },
     { type: 'calendar.move', risk: 'high', scope: 'series', reversibility: 'reversible', requiresPreview: true },
     { type: 'calendar.resize', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
+    ...(['event.outcome.create', 'event.link', 'event.unlink'] as const).map((type) => ({ type, risk: 'low' as const, scope: 'single' as const, reversibility: 'compensating' as const, requiresPreview: false })),
+    { type: 'calendar_external.apply', risk: 'low', scope: 'single', reversibility: 'irreversible', requiresPreview: false },
+    { type: 'calendar_source.preferences', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'task.create', risk: 'low', scope: 'single', reversibility: 'compensating', requiresPreview: false },
     { type: 'task.update', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'task.delete', risk: 'high', scope: 'single', reversibility: 'compensating', requiresPreview: true },
     { type: 'task.complete', risk: 'medium', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'task.reopen', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'task.reschedule', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
+    { type: 'task.auto_schedule', risk: 'low', scope: 'single', reversibility: 'reversible', requiresPreview: false },
     { type: 'task.batch_reschedule', risk: 'medium', scope: 'batch', reversibility: 'reversible', requiresPreview: true },
     { type: 'task.batch_cancel', risk: 'high', scope: 'batch', reversibility: 'reversible', requiresPreview: true },
     { type: 'task.batch_delete', risk: 'high', scope: 'batch', reversibility: 'compensating', requiresPreview: true },
@@ -669,12 +676,19 @@ test('undo restores a task reminder after adding, changing, or clearing it witho
       await executeNext(service, 'undo-reminder', { type: 'undo.apply', token: update.undoToken! })
       const after = await service.query({ type: 'workspace.snapshot' })
       const reminderValues = (state: typeof before) => state.reminderRules
-        .filter(({ taskId }) => taskId === 'reminder-target')
+        .filter(({ target, enabled }) => target.kind === 'task' && target.taskId === 'reminder-target' && enabled)
         .map(({ revision: _revision, ...rule }) => rule)
+        .sort((a, b) => a.id.localeCompare(b.id))
       assert.deepEqual(reminderValues(after), reminderValues(before))
+      const targetRules = after.reminderRules.filter(({ target }) => target.kind === 'task' && target.taskId === 'reminder-target')
+      for (const rule of targetRules) {
+        const prior = before.reminderRules.find(({ id }) => id === rule.id)
+        assert.equal(rule.revision, prior ? prior.revision + 2 : 2, 'Undo must advance the reminder revision instead of reviving a stale revision')
+        if (!prior) assert.equal(rule.enabled, false, 'Undoing a new reminder retains only disabled audit history')
+      }
       assert.deepEqual(
-        after.reminderRules.filter(({ taskId }) => taskId !== 'reminder-target'),
-        before.reminderRules.filter(({ taskId }) => taskId !== 'reminder-target'),
+        after.reminderRules.filter(({ target }) => target.kind !== 'task' || target.taskId !== 'reminder-target').sort((a, b) => a.id.localeCompare(b.id)),
+        before.reminderRules.filter(({ target }) => target.kind !== 'task' || target.taskId !== 'reminder-target').sort((a, b) => a.id.localeCompare(b.id)),
       )
     })
   }

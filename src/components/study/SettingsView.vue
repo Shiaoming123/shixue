@@ -7,7 +7,7 @@ import {
 import { themes } from '../../assets/themes'
 import type { PlanningPreferences } from '../../lib/planning-preferences'
 import type { SidebarDisplayMode } from '../../lib/sidebar-preferences'
-import type { WorkspaceStateV3 } from '../../domain/workspace/types'
+import type { WorkspaceStateV4 } from '../../domain/workspace/types'
 import { prepareWorkspaceImport, summarizeWorkspace } from '../../lib/workspace-data-summary'
 import Button from '../ui/Button.vue'
 import Dialog from '../ui/Dialog.vue'
@@ -32,7 +32,7 @@ const props = defineProps<{
   cloudStatus: CloudAccountStatus
   cloudEmail?: string
   cloudMessage?: string
-  workspace: WorkspaceStateV3 | null
+  workspace: WorkspaceStateV4 | null
   reminderBusy?: boolean
   reminderMessage?: string
   reminderCount?: number

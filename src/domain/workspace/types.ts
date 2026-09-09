@@ -1,4 +1,5 @@
 import type { ReminderClaim, ReminderMigration } from '../reminders/protocol.ts'
+import type { CalendarEvent, CalendarEventLink, CalendarSource, EventOutcome } from '../calendar/types.ts'
 import type {
   CompletionRecord,
   StudySession,
@@ -6,7 +7,7 @@ import type {
   TaskEvent,
 } from '../../storage/study/types.ts'
 
-export const WORKSPACE_STATE_VERSION = 3 as const
+export const WORKSPACE_STATE_VERSION = 4 as const
 
 export type TaskMode = 'general' | 'learning'
 export type TaskStatus =
@@ -140,7 +141,7 @@ export type ReminderTrigger =
   | { kind: 'before_due'; minutes: number }
   | { kind: 'absolute'; at: string }
 
-export interface ReminderRule {
+export interface LegacyReminderRule {
   owner?: 'legacy' | 'user'
   id: string
   taskId: string
@@ -150,7 +151,16 @@ export interface ReminderRule {
   revision: number
 }
 
+export type ReminderTarget =
+  | { kind: 'task'; taskId: string; occurrenceId: string | null }
+  | { kind: 'event'; eventId: string; originalStart: string | null }
+
+export interface ReminderRule extends Omit<LegacyReminderRule, 'taskId' | 'occurrenceId'> {
+  target: ReminderTarget
+}
+
 export interface ReminderDelivery {
+  originalStart?: string | null
   revision?: number
   claim?: ReminderClaim
   acknowledgedAt?: string
@@ -192,7 +202,7 @@ export interface CommandReceipt {
 }
 
 export interface WorkspaceStateV3 {
-  version: typeof WORKSPACE_STATE_VERSION
+  version: 3
   revision: number
   listGroups: ListGroup[]
   lists: TaskList[]
@@ -201,7 +211,7 @@ export interface WorkspaceStateV3 {
   tasks: Task[]
   recurrenceSeries: RecurrenceSeries[]
   occurrences: TaskOccurrence[]
-  reminderRules: ReminderRule[]
+  reminderRules: LegacyReminderRule[]
   reminderDeliveries: ReminderDelivery[]
   reminderMigration?: ReminderMigration
   studySessions: StudySession[]
@@ -210,6 +220,15 @@ export interface WorkspaceStateV3 {
   reviewTaskLinks: ReviewTaskLink[]
   commandReceipts: CommandReceipt[]
   updatedAt: string
+}
+
+export interface WorkspaceStateV4 extends Omit<WorkspaceStateV3, 'version' | 'reminderRules'> {
+  version: 4
+  reminderRules: ReminderRule[]
+  calendarSources: CalendarSource[]
+  calendarEvents: CalendarEvent[]
+  calendarEventLinks: CalendarEventLink[]
+  eventOutcomes: EventOutcome[]
 }
 
 export type {

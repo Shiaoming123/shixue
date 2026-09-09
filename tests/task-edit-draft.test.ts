@@ -4,12 +4,13 @@ import test from 'node:test'
 import { parse, compileScript } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import * as Vue from 'vue'
+import { reminderTarget } from '../src/domain/reminders/target.ts'
 import { resolveTaskEditWrite, runTaskEditCommit } from '../src/lib/task-edit-commit.ts'
 
 const { descriptor } = parse(readFileSync(new URL('../src/components/study/TaskEditSheet.vue', import.meta.url), 'utf8'))
 const code = ts.transpileModule(compileScript(descriptor, { id: 'edit-draft-test' }).content, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText
 const exported: any = {}
-new Function('require', 'exports', code)((id: string) => id === 'vue' ? Vue : id.endsWith('use-overlay') ? { useModalOverlay: () => ({ layerId: 'test' }) } : {}, exported)
+new Function('require', 'exports', code)((id: string) => id === 'vue' ? Vue : id.endsWith('reminders/target') ? { reminderTarget } : id.endsWith('use-overlay') ? { useModalOverlay: () => ({ layerId: 'test' }) } : {}, exported)
 const renderer = Vue.createRenderer({ createElement: () => ({}), createText: () => ({}), createComment: () => ({}), insert() {}, remove() {}, setText() {}, setElementText() {}, parentNode: () => null, nextSibling: () => null, patchProp() {} })
 const task = (id = 'one', title = 'Stored title') => ({ id, title, notes: 'Stored notes', topicId: null, tagIds: ['tag:reading'], plannedOn: '2026-09-05', dueOn: null, reminderAt: null, status: 'planned', priority: 'none', estimateMinutes: 15, acceptanceCriteria: [] })
 function mount() {
@@ -20,7 +21,7 @@ function mount() {
       { id: 'tag:output', title: '输出', position: 1, archivedAt: null },
       { id: 'tag:archived', title: '旧标签', position: 2, archivedAt: '2026-09-01T00:00:00.000Z' },
     ],
-    reminderRules: [{ id: 'rule:b', taskId: 'one', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true, revision: 2 }],
+    reminderRules: [{ id: 'rule:b', target: { kind: 'task', taskId: 'one', occurrenceId: null }, trigger: { kind: 'at_start' }, enabled: true, revision: 2 }],
   })
   const events: any[][] = []
   let state: any
@@ -36,7 +37,7 @@ test('runtime snapshot and reminder-rule refresh cannot overwrite an unsaved tas
   state.plannedOn.value = '2026-09-10'
   state.priority.value = 'high'
   props.task = task()
-  props.reminderRules = [{ id: 'new-rule' }]
+  props.reminderRules = [{ ...props.reminderRules[0], id: 'new-rule' }]
   await Vue.nextTick()
   assert.equal(state.title.value, 'Unsaved title')
   assert.equal(state.notes.value, 'Unsaved notes')
@@ -69,8 +70,8 @@ test('switching task identity and closing then reopening each initialize fresh p
 
 test('reminder and recurrence edits stay local until the outer save and cancel paths submit nothing', async () => {
   const { props, state, events, unmount } = mount()
-  const replacement = { type: 'reminder.set', ruleId: 'rule:b', taskId: 'one', occurrenceId: null, trigger: { kind: 'before_start', minutes: 10 }, enabled: true, expectedRevision: 2 }
-  const addition = { type: 'reminder.set', ruleId: 'rule:a', taskId: 'one', occurrenceId: null, trigger: { kind: 'absolute', at: '2026-09-06T01:00:00.000Z' }, enabled: true }
+  const replacement = { type: 'reminder.set', ruleId: 'rule:b', target: { kind: 'task', taskId: 'one', occurrenceId: null }, trigger: { kind: 'before_start', minutes: 10 }, enabled: true, expectedRevision: 2 }
+  const addition = { type: 'reminder.set', ruleId: 'rule:a', target: { kind: 'task', taskId: 'one', occurrenceId: null }, trigger: { kind: 'absolute', at: '2026-09-06T01:00:00.000Z' }, enabled: true }
   const recurrence = { cadence: { kind: 'daily', interval: 2 }, basis: 'fixed_schedule', end: { kind: 'never' } }
   state.stageReminderSet(addition)
   state.stageReminderSet({ ...addition, trigger: { kind: 'absolute', at: '2026-09-07T01:00:00.000Z' } })
@@ -92,7 +93,7 @@ test('reminder and recurrence edits stay local until the outer save and cancel p
       title: 'Stored title', notes: 'Stored notes', topicId: null, plannedOn: '2026-09-05', dueOn: null,
       reminderAt: null, priority: 'none', estimateMinutes: 15, tagIds: ['tag:reading'],
     },
-    baseReminderRules: [{ id: 'rule:b', taskId: 'one', occurrenceId: null, trigger: { kind: 'at_start' }, enabled: true, revision: 2 }],
+    baseReminderRules: [{ id: 'rule:b', target: { kind: 'task', taskId: 'one', occurrenceId: null }, trigger: { kind: 'at_start' }, enabled: true, revision: 2 }],
     baseRecurrenceRule: null,
     reminderCommands: [
       { ...addition, trigger: { kind: 'absolute', at: '2026-09-07T01:00:00.000Z' } },
@@ -139,7 +140,7 @@ test('removing an existing rule is drafted once and background refresh does not 
   state.save()
   assert.deepEqual(events[0][2].baseReminderRules, [rule], 'the save carries the reminder snapshot captured when editing opened')
   assert.deepEqual(events[0][2].reminderCommands, [{
-    type: 'reminder.set', ruleId: rule.id, taskId: rule.taskId, occurrenceId: rule.occurrenceId,
+    type: 'reminder.set', ruleId: rule.id, target: rule.target,
     trigger: rule.trigger, enabled: false, expectedRevision: rule.revision,
   }])
   props.reminderError = 'CAS failure'

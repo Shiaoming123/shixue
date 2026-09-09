@@ -8,6 +8,7 @@ import Sheet from '../ui/Sheet.vue'
 import RecurrenceEditor, { type RecurrenceRule } from './RecurrenceEditor.vue'
 import ReminderEditor, { type ReminderPermission, type ReminderSetValue } from './ReminderEditor.vue'
 import type { ReminderRule as TaskReminderRule, Tag } from '../../domain/workspace/types'
+import { reminderTarget } from '../../domain/reminders/target'
 
 export interface TaskEditValue {
   title: string
@@ -79,7 +80,7 @@ const draftReminderRules = computed<TaskReminderRule[]>(() => {
   for (const command of reminderCommands.value) {
     const index = rules.findIndex(({ id }) => id === command.ruleId)
     const rule: TaskReminderRule = {
-      id: command.ruleId, taskId: command.taskId, occurrenceId: command.occurrenceId,
+      id: command.ruleId, target: reminderTarget(command),
       trigger: command.trigger, enabled: command.enabled, revision: index >= 0 ? rules[index]!.revision : 0,
     }
     if (index >= 0) rules.splice(index, 1, rule)
@@ -129,7 +130,7 @@ watch([() => props.open, () => props.task?.id, () => Boolean(props.task)], ([ope
   reminderCommands.value = []
   baseTask.value = draftValue()
   baseReminderRules.value = (props.reminderRules ?? [])
-    .filter((rule) => rule.taskId === task.id && rule.occurrenceId === null)
+    .filter((rule) => rule.target.kind === 'task' && rule.target.taskId === task.id && rule.target.occurrenceId === null)
     .map(cloneReminderRule)
   baseRecurrenceRule.value = props.recurrenceRule ? cloneRecurrenceRule(props.recurrenceRule) : null
 }, { immediate: true })
@@ -139,7 +140,7 @@ watch(() => JSON.stringify(props.recurrenceRule ?? null), () => {
 })
 
 function sameReminder(command: ReminderSetValue, rule: TaskReminderRule) {
-  return command.taskId === rule.taskId && command.occurrenceId === rule.occurrenceId &&
+  return JSON.stringify(reminderTarget(command)) === JSON.stringify(rule.target) &&
     command.enabled === rule.enabled && JSON.stringify(command.trigger) === JSON.stringify(rule.trigger)
 }
 
@@ -156,7 +157,7 @@ function stageReminderSet(command: ReminderSetValue) {
 
 function stageReminderRemove(rule: TaskReminderRule) {
   stageReminderSet({
-    type: 'reminder.set', ruleId: rule.id, taskId: rule.taskId, occurrenceId: rule.occurrenceId,
+    type: 'reminder.set', ruleId: rule.id, target: { ...rule.target },
     trigger: rule.trigger, enabled: false, expectedRevision: rule.revision,
   })
 }
@@ -169,11 +170,11 @@ function stageRecurrence(rule: RecurrenceRule) {
 function requestClose() { emit('close') }
 
 function cloneReminderRule(rule: TaskReminderRule): TaskReminderRule {
-  return { ...rule, trigger: { ...rule.trigger } }
+  return { ...rule, target: { ...rule.target }, trigger: { ...rule.trigger } }
 }
 
 function cloneReminderCommand(command: ReminderSetValue): ReminderSetValue {
-  return { ...command, trigger: { ...command.trigger } }
+  return { ...command, target: reminderTarget(command), trigger: { ...command.trigger } }
 }
 
 function cloneTaskEditValue(value: TaskEditValue): TaskEditValue {

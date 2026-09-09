@@ -1,6 +1,6 @@
 import type { CalendarItem } from './project.ts'
 
-export interface LaidOutCalendarItem extends CalendarItem {
+export type LaidOutCalendarItem = CalendarItem & {
   column: number
   columnCount: number
 }

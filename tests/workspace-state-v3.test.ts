@@ -465,3 +465,7 @@ test('rejects a delivery occurrence that differs from its occurrence-scoped remi
 
   assert.throws(() => parseWorkspaceState(state), /does not match reminder rule occurrence/)
 })
+
+test('historical V3 parser rejects V4 instead of stripping calendar facts', () => {
+  assert.throws(() => parseWorkspaceState({ ...validWorkspaceState(), version: 4, calendarEvents: [] }), /version 3/)
+})

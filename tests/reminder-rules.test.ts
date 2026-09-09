@@ -4,7 +4,7 @@ import { deliveryKey, resolveReminderInstant } from '../src/domain/reminders/res
 import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
 import type { CapabilityCommand } from '../src/domain/capabilities/types.ts'
 import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
-import { parseWorkspaceState } from '../src/domain/workspace/parse.ts'
+import { parseWorkspaceStateV4 } from '../src/domain/workspace/parse.ts'
 
 test('independent rules preserve task schedule and delivery audit through snooze and disable', async () => {
   const service = createTaskCapabilityService(createInMemoryWorkspaceStore(), () => '2026-09-05T08:00:00.000Z', (kind) => `${kind}:${crypto.randomUUID()}`)
@@ -37,10 +37,10 @@ test('independent rules preserve task schedule and delivery audit through snooze
   const protocol = structuredClone(state)
   protocol.reminderMigration = { version: 1, completedAt: '2026-09-05T08:00:00.000Z', mapped: [], quarantined: [{ row: { taskId: 'unknown', reminderAt: 'bad date', deliveredAt: 'old raw value' }, reason: 'unmappable' }] }
   protocol.reminderDeliveries[0]!.status = 'armed'
-  assert.throws(() => parseWorkspaceState(protocol), /persisted claim/)
+  assert.throws(() => parseWorkspaceStateV4(protocol), /persisted claim/)
   protocol.reminderDeliveries[0]!.revision = 1
   protocol.reminderDeliveries[0]!.claim = { token: 'claim:one', armedAt: '2026-09-05T08:00:00.000Z' }
-  const roundTrip = parseWorkspaceState(protocol)
+  const roundTrip = parseWorkspaceStateV4(protocol)
   assert.deepEqual(roundTrip.reminderMigration, protocol.reminderMigration)
   assert.deepEqual(roundTrip.reminderDeliveries[0]!.claim, protocol.reminderDeliveries[0]!.claim)
 })
@@ -94,7 +94,7 @@ test('legacy migration marks known submissions and quarantines unknown rows with
   state.reminderRules.push({ id: 'legacy', taskId: task.id, occurrenceId: null, trigger: { kind: 'absolute', at: '2026-09-05T10:00:00+08:00' }, enabled: true, revision: 1 })
   const rows = [{ taskId: task.id, reminderAt: '2026-09-05T02:00:00Z', deliveredAt: '2026-09-05T02:00:01Z' }, { taskId: 'missing', reminderAt: 'unknown', deliveredAt: 'raw' }]
   applyDeliveryCommand(state, { type: 'reminder.migrate', rows }, '2026-09-05T12:00:00Z')
-  const parsed = parseWorkspaceState(state)
+  const parsed = parseWorkspaceStateV4(state)
   assert.equal(parsed.reminderMigration!.quarantined.length, 1)
   assert.deepEqual(parsed.reminderMigration!.quarantined[0]!.row, rows[1])
   assert.equal(parsed.reminderDeliveries[0]!.status, 'delivered')

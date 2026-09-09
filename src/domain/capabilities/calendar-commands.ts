@@ -1,4 +1,4 @@
-import type { TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { TaskOccurrence, WorkspaceStateV4 } from '../workspace/types.ts'
 import { applyRecurrenceCommand, seriesMovePatchForOccurrence } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
 import { assertPlanningDuration } from './duration-validation.ts'
@@ -33,7 +33,7 @@ export interface CalendarResizeCommand {
 export type CalendarCapabilityCommand = CalendarMoveCommand | CalendarResizeCommand
 
 export function applyCalendarCommand(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   command: CalendarCapabilityCommand,
   context: CapabilityCommandContext,
 ): CommandApplication {
@@ -131,7 +131,7 @@ function assertMoveTarget(startAt: string | null, startOn: string | null): void 
   }
 }
 
-function requireOccurrenceTask(state: WorkspaceStateV3, taskId: string, occurrenceId: string): TaskOccurrence {
+function requireOccurrenceTask(state: WorkspaceStateV4, taskId: string, occurrenceId: string): TaskOccurrence {
   const occurrence = state.occurrences.find(({ id }) => id === occurrenceId)
   const series = occurrence && state.recurrenceSeries.find(({ id }) => id === occurrence.seriesId)
   if (series?.taskId !== taskId) {

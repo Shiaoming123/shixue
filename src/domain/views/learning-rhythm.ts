@@ -4,7 +4,7 @@ import type {
   RecurrenceCadence,
   RecurrenceSeries,
   TaskOccurrence,
-  WorkspaceStateV3,
+  WorkspaceStateV4,
 } from '../workspace/types.ts'
 
 export interface LearningRhythmQuery {
@@ -52,7 +52,7 @@ interface DatedOccurrence {
 }
 
 export function selectLearningRhythms(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   query: LearningRhythmQuery,
 ): LearningRhythmSelection {
   const asOf = new Date(query.asOf)

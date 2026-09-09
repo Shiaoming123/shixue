@@ -3,16 +3,20 @@ import { computed, ref } from 'vue'
 import { Clock3, MoreHorizontal } from '@lucide/vue'
 import type { CalendarCapabilityCommand } from '../../domain/capabilities/calendar-commands.ts'
 import type { Task } from '../../domain/workspace/types.ts'
+import type { CalendarRange } from '../../domain/calendar/range.ts'
+import { groupCalendarPlanningTasks } from '../../domain/calendar/plan.ts'
 import Button from '../ui/Button.vue'
 import DatePicker from '../ui/DatePicker.vue'
 import Popover from '../ui/Popover.vue'
 import TimePicker from '../ui/TimePicker.vue'
 import { calendarMenuMoveCommand, filterUnscheduledTasks } from './use-calendar-drag.ts'
 
-const props = defineProps<{ tasks: readonly Task[]; anchor: string; defaultDuration: number; targetOffset: string }>()
+const props = defineProps<{ tasks: readonly Task[]; anchor: string; defaultDuration: number; targetOffset: string; timezone?: string; now: string; range: CalendarRange }>()
 const emit = defineEmits<{
   'pointer-start': [event: PointerEvent, task: Task]
   command: [command: CalendarCapabilityCommand, source: 'human-ui' | 'keyboard']
+  open: [taskId: string]
+  'suggest-task': [taskId: string]
 }>()
 const openTaskId = ref('')
 const planDate = ref(props.anchor)
@@ -20,7 +24,38 @@ const planTime = ref('09:00')
 const timeValid = ref(true)
 const duration = ref(props.defaultDuration)
 const unscheduled = computed(() => filterUnscheduledTasks(props.tasks))
+const groups = computed(() => groupCalendarPlanningTasks(props.tasks, unscheduled.value, props.range, props.now))
+const count = computed(() => groups.value.reduce((total, group) => total + group.tasks.length, 0))
+const collapsed = ref<Set<string>>(new Set())
+let pointerStart: { id: number; x: number; y: number } | null = null
+let moved = false
 const durationOptions = [15, 30, 45, 60, 90]
+
+function toggleGroup(id: string) {
+  if (collapsed.value.has(id)) collapsed.value.delete(id)
+  else collapsed.value.add(id)
+}
+function beginPointer(event: PointerEvent, task: Task) {
+  if (event.button !== 0 || pointerStart !== null) return
+  pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY }
+  moved = false
+  emit('pointer-start', event, task)
+}
+function trackPointer(event: PointerEvent) {
+  if (pointerStart?.id === event.pointerId && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) >= 4) moved = true
+}
+function endPointer(event: PointerEvent) {
+  trackPointer(event)
+  if (pointerStart?.id === event.pointerId) pointerStart = null
+}
+function cancelPointer(event: PointerEvent) {
+  if (pointerStart?.id !== event.pointerId) return
+  moved = true
+  pointerStart = null
+}
+function openTask(event: MouseEvent, taskId: string) {
+  if (event.detail === 0 || !moved) emit('open', taskId)
+}
 
 function openPlanner(taskId: string) {
   planDate.value = props.anchor
@@ -39,7 +74,7 @@ function plan(task: Task, close: (reason: 'select') => void) {
     planDate.value,
     minute,
     duration.value,
-    { kind: 'offset', offset: props.targetOffset },
+    props.timezone ? { kind: 'timezone', timezone: props.timezone } : { kind: 'offset', offset: props.targetOffset },
   ), 'human-ui')
   close('select')
 }
@@ -47,11 +82,14 @@ function plan(task: Task, close: (reason: 'select') => void) {
 
 <template>
   <section class="unscheduled-tray" aria-labelledby="unscheduled-title">
-    <header><div><Clock3 :size="16" aria-hidden="true" /><h2 id="unscheduled-title">未安排</h2></div><span>{{ unscheduled.length }}</span></header>
-    <p v-if="unscheduled.length === 0" class="unscheduled-tray__empty">任务都已有时间位置</p>
-    <div v-else class="unscheduled-tray__items">
-      <div v-for="task in unscheduled" :key="task.id" class="unscheduled-tray__item">
-        <button type="button" class="unscheduled-tray__drag" :aria-label="`拖动安排 ${task.title}`" @pointerdown="emit('pointer-start', $event, task)">{{ task.title }}</button>
+    <header><div><Clock3 :size="16" aria-hidden="true" /><h2 id="unscheduled-title">未安排</h2></div><span>{{ count }}</span></header>
+    <p v-if="count === 0" class="unscheduled-tray__empty">任务都已有时间位置</p>
+    <div v-else class="unscheduled-tray__groups">
+      <section v-for="group in groups" :key="group.id" class="unscheduled-tray__group">
+        <Button variant="ghost" size="sm" :aria-expanded="!collapsed.has(group.id)" :aria-controls="`calendar-plan-${group.id}`" @click="toggleGroup(group.id)">{{ group.title }} · {{ group.tasks.length }}</Button>
+        <div v-show="!collapsed.has(group.id)" :id="`calendar-plan-${group.id}`" class="unscheduled-tray__items">
+      <div v-for="task in group.tasks" :key="task.id" class="unscheduled-tray__item">
+        <button type="button" class="unscheduled-tray__drag" :aria-label="`拖动安排 ${task.title}`" :title="`打开 ${task.title}；拖动安排`" @pointerdown="beginPointer($event, task)" @pointermove="trackPointer" @pointerup="endPointer" @pointercancel="cancelPointer" @lostpointercapture="cancelPointer" @click="openTask($event, task.id)">{{ task.title }}</button>
         <Popover :open="openTaskId === task.id" align="end" mobile-sheet :mobile-sheet-label="`安排 ${task.title}`" @update:open="$event ? openPlanner(task.id) : openTaskId = ''">
           <template #trigger="{ triggerProps }">
             <button type="button" class="unscheduled-tray__menu" v-bind="triggerProps" :aria-label="`安排 ${task.title}`" title="安排任务" @click="openPlanner(task.id)"><MoreHorizontal :size="16" /></button>
@@ -59,6 +97,7 @@ function plan(task: Task, close: (reason: 'select') => void) {
           <template #default="{ close }">
             <section class="unscheduled-tray__panel" :aria-label="`安排 ${task.title}`">
               <strong>{{ task.title }}</strong>
+              <Button variant="ghost" @click="emit('suggest-task', task.id); close('select')">建议安排</Button>
               <DatePicker v-model="planDate" label="安排日期" />
               <TimePicker v-model="planTime" v-model:valid="timeValid" label="开始时间" />
               <fieldset><legend>预计时长</legend><div><button v-for="value in durationOptions" :key="value" type="button" :aria-pressed="duration === value" @click="duration = value">{{ value }} 分</button></div></fieldset>
@@ -67,6 +106,8 @@ function plan(task: Task, close: (reason: 'select') => void) {
           </template>
         </Popover>
       </div>
+        </div>
+      </section>
     </div>
   </section>
 </template>
@@ -78,6 +119,9 @@ function plan(task: Task, close: (reason: 'select') => void) {
 .unscheduled-tray h2 { margin: 0; color: var(--text); font-size: var(--text-sm); font-weight: var(--font-semibold); }
 .unscheduled-tray header > span { min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: var(--radius-full); background: var(--control-fill); color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 .unscheduled-tray__items { min-width: 0; display: flex; gap: var(--space-1); overflow-x: auto; }
+.unscheduled-tray__groups { min-width: 0; display: flex; align-items: start; gap: var(--space-3); overflow-x: auto; }
+.unscheduled-tray__group { min-width: 156px; }
+.unscheduled-tray__group > .btn { margin-bottom: var(--space-1); }
 .unscheduled-tray__item { position: relative; min-width: 156px; max-width: 240px; display: flex; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--surface); }
 .unscheduled-tray__drag { min-width: 0; min-height: 34px; flex: 1; overflow: hidden; padding: 0 30px 0 10px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--text-xs); text-align: left; text-overflow: ellipsis; white-space: nowrap; touch-action: none; }
 .unscheduled-tray__menu { position: absolute; top: 2px; right: 2px; width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); }

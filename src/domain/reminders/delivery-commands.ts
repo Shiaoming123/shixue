@@ -1,7 +1,8 @@
-import type { JsonValue, ReminderDelivery, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { JsonValue, ReminderDelivery, WorkspaceStateV4 } from '../workspace/types.ts'
 import { DomainCommandError } from '../capabilities/types.ts'
 import type { LegacyReminderRow, ReminderAckRequest, ReminderClaimRequest } from './protocol.ts'
-import { deliveryKey, resolveReminderInstant } from './resolve.ts'
+import { deliveryKey, resolveReminderDeliveryInstant } from './resolve.ts'
+import { reminderTarget } from './target.ts'
 
 export type DeliveryCommand =
   | ({ type: 'reminder.claim' } & ReminderClaimRequest)
@@ -10,7 +11,7 @@ export type DeliveryCommand =
   | { type: 'reminder.retry'; deliveryId: string; expectedRevision: number }
   | { type: 'reminder.migrate'; rows: LegacyReminderRow[] }
 
-export function applyDeliveryCommand(state: WorkspaceStateV3, command: DeliveryCommand, now: string): JsonValue {
+export function applyDeliveryCommand(state: WorkspaceStateV4, command: DeliveryCommand, now: string): JsonValue {
   if (command.type === 'reminder.migrate') {
     if (state.reminderMigration) {
       const prior = [...state.reminderMigration.mapped, ...state.reminderMigration.quarantined].map(({ row }) => row)
@@ -19,10 +20,13 @@ export function applyDeliveryCommand(state: WorkspaceStateV3, command: DeliveryC
       return { migrated: true, quarantined: state.reminderMigration.quarantined.length }
 
     }
-    const migration: NonNullable<WorkspaceStateV3['reminderMigration']> = { version: 1, completedAt: now, mapped: [], quarantined: [] }
+    const migration: NonNullable<WorkspaceStateV4['reminderMigration']> = { version: 1, completedAt: now, mapped: [], quarantined: [] }
     for (const row of command.rows) {
       const instant = Date.parse(row.reminderAt)
-      const matches = Number.isFinite(instant) ? state.reminderRules.filter((rule) => rule.taskId === row.taskId && rule.occurrenceId === null && rule.trigger.kind === 'absolute' && Date.parse(rule.trigger.at) === instant) : []
+      const matches = Number.isFinite(instant) ? state.reminderRules.filter((rule) => {
+        const target = reminderTarget(rule)
+        return target.kind === 'task' && target.taskId === row.taskId && target.occurrenceId === null && rule.trigger.kind === 'absolute' && Date.parse(rule.trigger.at) === instant
+      }) : []
       if (!matches.length || !Number.isFinite(Date.parse(row.deliveredAt))) {
         migration.quarantined.push({ row: structuredClone(row), reason: 'No provable absolute delivery mapping.' })
         continue
@@ -63,9 +67,7 @@ export function applyDeliveryCommand(state: WorkspaceStateV3, command: DeliveryC
     if (!['pending', 'snoozed'].includes(delivery.status)) invalid('Delivery is not available for claiming.')
     if (typeof command.token !== 'string' || !command.token.trim()) invalid('Claim token is required.')
     const rule = state.reminderRules.find(({ id }) => id === delivery.reminderRuleId)!
-    const task = state.tasks.find(({ id }) => id === rule.taskId)!
-    const occurrence = delivery.occurrenceId ? state.occurrences.find(({ id }) => id === delivery.occurrenceId) ?? null : null
-    const resolved = resolveReminderInstant(rule, task, occurrence)
+    const resolved = resolveReminderDeliveryInstant(state, rule, delivery)
     if (!resolved || resolved !== new Date(delivery.scheduledFor).toISOString()) invalid('Delivery no longer matches an active rule.')
     if (Date.parse(delivery.snoozedUntil ?? delivery.scheduledFor) > Date.parse(now)) invalid('Delivery is not due.')
     delivery.status = 'armed'
@@ -86,7 +88,7 @@ export function applyDeliveryCommand(state: WorkspaceStateV3, command: DeliveryC
   return JSON.parse(JSON.stringify(delivery)) as JsonValue
 }
 
-function requireDelivery(state: WorkspaceStateV3, request: { deliveryId: string; expectedRevision: number }): ReminderDelivery {
+function requireDelivery(state: WorkspaceStateV4, request: { deliveryId: string; expectedRevision: number }): ReminderDelivery {
   const delivery = state.reminderDeliveries.find(({ id }) => id === request.deliveryId)
   if (!delivery) invalid('Delivery does not exist.')
   if ((delivery.revision ?? 1) !== request.expectedRevision) throw new DomainCommandError('ENTITY_REVISION_CONFLICT', 'Delivery revision changed.')

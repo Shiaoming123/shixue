@@ -183,8 +183,9 @@ function validateDataBoundary(data, implementationFacts, errors) {
     errors.push(`data.ports[${workspacePort.id}] must match the exported Workspace data-port format and version.`)
   }
   const legacyInput = implementationFacts.legacyStudyInput
-  if (!Array.isArray(data.legacyInputs) || data.legacyInputs.length !== 1 || !isRecord(data.legacyInputs[0]) || data.legacyInputs[0].format !== legacyInput.format || !sameNumbers(data.legacyInputs[0].versions, legacyInput.versions)) {
-    errors.push('data.legacyInputs must match the exported Study format and supported v1/v2 migration inputs.')
+  const legacyInputs = [{ format: WORKSPACE_EXPORT_FORMAT, versions: [3] }, legacyInput]
+  if (!Array.isArray(data.legacyInputs) || data.legacyInputs.length !== legacyInputs.length || legacyInputs.some((expected) => !data.legacyInputs.some((input) => isRecord(input) && input.format === expected.format && sameNumbers(input.versions, expected.versions)))) {
+    errors.push('data.legacyInputs must include Workspace v3 and Study v1/v2 migration inputs.')
   }
   if (!isRecord(data.sync) || data.sync.enabled !== false || data.sync.provider !== 'none') {
     errors.push('data.sync must keep provider none and enabled false by default.')

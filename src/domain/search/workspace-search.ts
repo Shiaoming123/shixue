@@ -1,6 +1,6 @@
 import { createTimeZoneFormatter } from '../recurrence/timezone.ts'
 import { SYSTEM_LEARNING_LIST_ID } from '../workspace/migrate.ts'
-import type { CompletionRecord, Task, TaskStatus, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { CompletionRecord, Task, TaskStatus, WorkspaceStateV4 } from '../workspace/types.ts'
 
 export type WorkspaceSearchKind = 'task' | 'completion_record'
 export type WorkspaceSearchStatus = TaskStatus | 'recorded'
@@ -64,7 +64,7 @@ export interface WorkspaceSearchResult {
  * one dimension use OR, while topic, tag, status, date, and text compose with AND.
  */
 export function searchWorkspace(
-  state: WorkspaceStateV3,
+  state: WorkspaceStateV4,
   query: WorkspaceSearchQuery,
 ): WorkspaceSearchResult {
   const text = normalize(query.text ?? '')
@@ -200,7 +200,7 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-function normalize(value: string): string {
+export function normalize(value: string): string {
   return value.normalize('NFKC').trim().toLowerCase()
 }
 

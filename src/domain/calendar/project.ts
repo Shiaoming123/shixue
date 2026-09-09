@@ -1,16 +1,26 @@
 import { createTimeZoneFormatter, zonedDateTimeToInstant } from '../recurrence/timezone.ts'
-import type { Task, TaskOccurrence, WorkspaceStateV3 } from '../workspace/types.ts'
+import type { Task, TaskOccurrence, WorkspaceStateV4 } from '../workspace/types.ts'
 import type { CalendarRange } from './range.ts'
+import type { CalendarEvent, CalendarEventTime } from './types.ts'
 
-export interface CalendarItem {
+export type CalendarItem = CalendarItemDisplay & (
+  | { taskId: string; eventId?: never; originalStart?: never }
+  | { taskId?: never; eventId: string; originalStart: string; calendar: { title: string; color: string; readOnly: boolean; event: CalendarEvent; time: CalendarEventTime } }
+)
+
+interface CalendarItemDisplay {
   key: string
-  taskId: string
   occurrenceId: string | null
   kind: 'timed' | 'all-day' | 'deadline-marker'
   start: string
   end: string | null
   displayDate: string
   displayMinute: number | null
+  presentation?: {
+    priority: Task['priority']
+    status: Task['status'] | TaskOccurrence['status']
+    tags: readonly string[]
+  }
 }
 
 interface ZonedProjectionContext {
@@ -19,11 +29,12 @@ interface ZonedProjectionContext {
   rangeEndExclusiveMs: number | null
 }
 
-export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRange): CalendarItem[] {
+export function projectCalendarItems(state: WorkspaceStateV4, range: CalendarRange, displayTimezone?: string): CalendarItem[] {
   if (range.start >= range.end) throw new Error('Calendar range must start before it ends.')
 
   const seriesById = new Map(state.recurrenceSeries.map((series) => [series.id, series]))
   const contextByTimezone = new Map<string, ZonedProjectionContext>()
+  const displayContext = displayTimezone ? createZonedProjectionContext(range, displayTimezone) : undefined
   const occurrencesByTask = new Map<string, TaskOccurrence[]>()
   for (const occurrence of state.occurrences) {
     const taskId = seriesById.get(occurrence.seriesId)?.taskId
@@ -37,7 +48,7 @@ export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRan
   for (const task of state.tasks) {
     if (task.deletedAt !== null || task.status === 'cancelled') continue
     const series = task.recurrenceSeriesId === null ? undefined : seriesById.get(task.recurrenceSeriesId)
-    let seriesContext = series ? contextByTimezone.get(series.timezone) : undefined
+    let seriesContext = displayContext ?? (series ? contextByTimezone.get(series.timezone) : undefined)
     if (series && !seriesContext) {
       seriesContext = createZonedProjectionContext(range, series.timezone)
       contextByTimezone.set(series.timezone, seriesContext)
@@ -46,7 +57,8 @@ export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRan
       ? (value: string) => seriesContext.displayForInstant(new Date(value))
       : wallClockForTimestamp
 
-    const deadline = deadlineItem(task, range, wallClockForTimestamp)
+    const taskDisplay = displayContext ? (value: string) => displayContext.displayForInstant(new Date(value)) : wallClockForTimestamp
+    const deadline = deadlineItem(task, range, taskDisplay)
     if (deadline) items.push(deadline)
 
     const occurrences = occurrencesByTask.get(task.id)
@@ -56,7 +68,7 @@ export function projectCalendarItems(state: WorkspaceStateV3, range: CalendarRan
         if (item) items.push(item)
       }
     } else if (task.recurrenceSeriesId === null) {
-      const item = scheduledItem(`task:${task.id}`, null, task.schedule.startAt, task.schedule.startOn, task.schedule.estimateMinutes, range, wallClockForTimestamp, task.id)
+      const item = scheduledItem(`task:${task.id}`, null, task.schedule.startAt, task.schedule.startOn, task.schedule.estimateMinutes, range, taskDisplay, task.id)
       if (item) items.push(item)
     }
   }

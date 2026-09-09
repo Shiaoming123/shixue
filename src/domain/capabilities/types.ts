@@ -1,3 +1,7 @@
+import type { CalendarExternalCommand, CalendarPreferencesCompensation } from './calendar-external-commands.ts'
+import type { TaskAutoScheduleCommand } from './auto-schedule-command.ts'
+import type { EventOutcomeCommand, EventOutcomeCompensation } from './event-outcome-commands.ts'
+import type { EventCapabilityCommand, EventCompensation } from './event-commands.ts'
 import type { ReminderCapabilityCommand } from './reminder-commands.ts'
 import type { CalendarCapabilityCommand } from './calendar-commands.ts'
 import type { WorkspaceSearchQuery, WorkspaceSearchResult } from '../search/workspace-search.ts'
@@ -17,7 +21,7 @@ import type {
   TaskPriority,
   TaskStatus,
   Tag,
-  WorkspaceStateV3,
+  WorkspaceStateV4,
 } from '../workspace/types.ts'
 
 export const CAPABILITY_PROTOCOL_VERSION = 1 as const
@@ -31,6 +35,8 @@ export type CommandScope = 'single' | 'batch' | 'series' | 'workspace' | 'extern
 export type Reversibility = 'reversible' | 'compensating' | 'irreversible'
 export type PreviewConfirmation = 'none' | 'review' | 'explicit'
 export type EntityType =
+  | 'calendar_source'
+  | 'calendar_event'
   | 'workspace'
   | 'list_group'
   | 'list'
@@ -446,6 +452,10 @@ export interface WorkspaceResetCommand {
 }
 
 export type UndoCompensation =
+  | CalendarPreferencesCompensation
+  | EventOutcomeCompensation
+  | EventCompensation
+  | { type: 'reminder.restore'; ruleId: string; rule: ReminderRule | null }
   | { type: 'tag.remove_created'; tagId: string }
   | { type: 'tag.restore'; tag: Tag }
   | {
@@ -525,6 +535,10 @@ export type LiveCompatibilityCommand =
   | WorkspaceResetCommand
 
 export type CapabilityCommand =
+  | CalendarExternalCommand
+  | TaskAutoScheduleCommand
+  | EventOutcomeCommand
+  | EventCapabilityCommand
   | CalendarCapabilityCommand
   | ReminderCapabilityCommand
   | TagCapabilityCommand
@@ -584,12 +598,12 @@ export type CapabilityQuery =
   | { type: 'audit.list'; commandType?: CapabilityCommand['type']; limit?: number }
 
 export interface AuditListResult {
-  receipts: WorkspaceStateV3['commandReceipts']
+  receipts: WorkspaceStateV4['commandReceipts']
   events: TaskEvent[]
 }
 
 export type QueryResult<Q extends CapabilityQuery> =
-  Q extends { type: 'workspace.snapshot' } ? WorkspaceStateV3
+  Q extends { type: 'workspace.snapshot' } ? WorkspaceStateV4
     : Q extends { type: 'workspace.search' } ? WorkspaceSearchResult
       : Q extends { type: 'task.get' } ? Task | null
         : Q extends { type: 'task.list' | 'task.search' } ? Task[]
@@ -599,6 +613,10 @@ export type QueryResult<Q extends CapabilityQuery> =
 
 export type CapabilityClock = () => string
 export type CapabilityIdGenerator = (kind:
+  | 'calendar_source'
+  | 'calendar_event'
+  | 'event_link'
+  | 'event_outcome'
   | 'task'
   | 'event'
   | 'receipt'

@@ -4,9 +4,10 @@ import test from 'node:test'
 import { createTaskCapabilityService } from '../src/domain/capabilities/service.ts'
 import * as cloud from '../src/lib/study-cloud-sync.ts'
 import { parseWorkspaceStateOrMigrate } from '../src/domain/workspace/migrate.ts'
-import { parseWorkspaceState } from '../src/domain/workspace/parse.ts'
-import type { WorkspaceStateV3 } from '../src/domain/workspace/types.ts'
+import { parseWorkspaceStateV4 } from '../src/domain/workspace/parse.ts'
+import type { WorkspaceStateV4 } from '../src/domain/workspace/types.ts'
 import { createInMemoryWorkspaceStore } from '../src/storage/study/in-memory.ts'
+import { createTaskOnlyWorkspaceExportV3 } from '../src/storage/workspace/data-port.ts'
 import {
   createSeedStudyState,
   parseStudyState,
@@ -27,9 +28,9 @@ function legacyStateAt(updatedAt: string, notes: string): StudyState {
   return parseStudyState(state)
 }
 
-function stateAt(updatedAt: string, notes: string): WorkspaceStateV3 {
+function stateAt(updatedAt: string, notes: string): WorkspaceStateV4 {
   const state = parseWorkspaceStateOrMigrate(legacyStateAt(updatedAt, notes), updatedAt)
-  return parseWorkspaceState(state)
+  return parseWorkspaceStateV4(state)
 }
 
 function legacySnapshot(state: StudyState, deviceId: string) {
@@ -167,7 +168,7 @@ test('newer local snapshot is uploaded with the observed remote revision', async
   assert.equal(result.action, 'uploaded')
   assert.equal(pushed.length, 1)
   assert.equal(pushed[0].expectedRevision, remote.revision)
-  assert.equal(pushed[0].snapshot.payload.workspace.version, 3)
+  assert.equal(pushed[0].snapshot.payload.workspace.version, 4)
   assert.equal(pushed[0].snapshot.payload.workspace.state.updatedAt, local.updatedAt)
 })
 
@@ -263,8 +264,40 @@ test('newer legacy v2 remote snapshot migrates before workspace import', async (
 
   assert.equal((await controller.syncOnce()).state, 'success')
   const saved = await store.load()
-  assert.equal(saved.version, 3)
+  assert.equal(saved.version, 4)
   assert.equal(saved.tasks[0].notes, 'legacy remote newer')
+})
+
+test('V3 workspace cloud digest is checked before migration and tampering preserves local data', async () => {
+  const workspace = createTaskOnlyWorkspaceExportV3(stateAt('2026-09-04T10:00:02.000Z', 'V3 remote'), '2026-09-04T10:00:02.000Z')
+  const digest = createHash('sha256').update(canonicalJson(workspace.state)).digest('hex')
+  const revision = `${workspace.state.updatedAt}|${digest}`
+  for (const tampered of [false, true]) {
+    const store = createInMemoryWorkspaceStore(stateAt('2026-09-04T10:00:01.000Z', 'local'))
+    const before = await store.load()
+    const received = structuredClone(workspace)
+    if (tampered) received.state.tasks[0].notes = 'changed without updating digest'
+    const controller = cloud.createStudyCloudSyncController({
+      enabled: true, config, deviceId: 'device-a', store,
+      adapter: {
+        async sessionStatus() { return { state: 'signed-in' } },
+        async pull() { return { operationId: `study_state:${revision}`, collection: 'study_state',
+          recordId: 'current', kind: 'upsert', payload: { workspace: received, digest },
+          revision, deviceId: 'device-b', occurredAt: workspace.state.updatedAt } },
+        async push() { assert.fail('a newer remote must never be overwritten') },
+      },
+    })
+    const result = await controller.syncOnce()
+    if (tampered) {
+      assert.equal(result.state, 'failed')
+      assert.deepEqual(await store.load(), before)
+    } else {
+      assert.equal(result.state, 'success')
+      const saved = await store.load()
+      assert.equal(saved.version, 4)
+      assert.equal(saved.tasks[0].notes, 'V3 remote')
+    }
+  }
 })
 
 test('remote CAS rejection is an explicit conflict and never reports success', async () => {
