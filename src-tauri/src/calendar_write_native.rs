@@ -397,9 +397,9 @@ fn validate_future_record(record: &Ledger) -> Result<(), String> {
             record.future.as_ref().ok_or("WRITE_INVALID")?,
         )?;
         if let Some(local) = &record.local {
-            if local.receipt_id.is_some()
-                || local.batch["operationId"] != record.preview["operationId"]
+            if local.batch["operationId"] != record.preview["operationId"]
                 || local.batch["plan"] != write_local::future_plan(record)?
+                || !write_local::projection::future_batch(&local.batch, &local.base)
             {
                 return Err("WRITE_AUTHORITY_MISMATCH".into());
             }
@@ -1996,6 +1996,130 @@ mod tests {
             &[BUSY_SCOPE.into()]
         ));
         assert!(!http_scope_allowed("GET", "https://evil.test", &scopes));
+    }
+    #[test]
+    fn future_ack_binds_actual_ts_projection_and_recovers_keyring_loss() {
+        tauri::async_runtime::block_on(async {
+            let case = write_local::projection::future_fixture();
+            let (pool, vault, mut record) = fixture(create()).await;
+            let mut batch = case["batch"].clone();
+            let mut current = case["current"].clone();
+            let parent = batch["items"][0].clone();
+            let child = batch["items"][1].clone();
+            let mut original = parent.clone();
+            original["recurrence"] = json!(["RRULE:FREQ=DAILY;COUNT=5"]);
+            original
+                .as_object_mut()
+                .unwrap()
+                .remove("extendedProperties");
+            let mut parent_body = parent.clone();
+            parent_body.as_object_mut().unwrap().remove("etag");
+            let mut child_body = child.clone();
+            child_body.as_object_mut().unwrap().remove("etag");
+            record.preview = json!({"operationId":"op","connectionId":batch["connectionId"],"calendarId":batch["calendarId"],"eventId":"parent","sendUpdates":"all","lockKeys":["instance","mop","parent"],"intent":{"kind":"recurring.future","parent":{"eventId":"parent","etag":parent["etag"]},"originalStart":batch["plan"]["originalStart"],"fields":{"title":"After"},"plan":{"version":1,"workspaceHash":batch["expectedWorkspaceHash"],"originalParent":original,"pivot":{"eventId":"instance","etag":"pivot"},"originalStart":batch["plan"]["originalStart"],"exceptions":[],"markerHash":batch["plan"]["markerHash"],"parent":{"eventId":"parent","etag":parent["etag"],"body":parent_body},"successor":{"eventId":"mop","etag":null,"body":child_body},"compensation":{"eventId":"parent","etag":null,"body":original}}}});
+            record.preview["hash"] = json!(workspace_hash::fingerprint(&record.preview).unwrap());
+            // Only replace the fixture's placeholder preview hash with the native frozen preview hash.
+            batch["plan"]["hash"] = record.preview["hash"].clone();
+            let receipt_index = current["commandReceipts"].as_array().unwrap().len() - 1;
+            current["commandReceipts"][receipt_index]["result"]["data"]["writeProjection"]
+                ["plan"] = batch["plan"].clone();
+            current["commandReceipts"][receipt_index]["expiresAt"] = json!("2999-01-01T00:00:00Z");
+            record.future = Some(
+                json!({"parent":{"state":"proved","outcomeUnknown":false,"etag":parent["etag"],"proof":parent},"successor":{"state":"proved","outcomeUnknown":false,"etag":child["etag"],"proof":child},"compensation":{"state":"pending"}}),
+            );
+            record.state = "applied".into();
+            record.result = Some(
+                json!({"future":{"markerHash":batch["plan"]["markerHash"],"parent":parent,"successor":child}}),
+            );
+            record.local = Some(write_local::LocalBinding {
+                base: case["base"].clone(),
+                batch: batch.clone(),
+                receipt_id: None,
+            });
+            record.version += 1;
+            persist(&pool, &vault, "owner", "op", &record, None)
+                .await
+                .unwrap();
+            sqlx::query("CREATE TABLE study_state(id INTEGER,version INTEGER,payload TEXT)")
+                .execute(&pool)
+                .await
+                .unwrap();
+            sqlx::query("INSERT INTO study_state VALUES(1,4,?)")
+                .bind(current.to_string())
+                .execute(&pool)
+                .await
+                .unwrap();
+            let batch_id = batch["batchId"].as_str().unwrap();
+            let receipt = current["commandReceipts"][receipt_index]["id"]
+                .as_str()
+                .unwrap();
+            for invalid in write_local::projection::future_invalid_currents(&case["base"], &current)
+            {
+                sqlx::query("UPDATE study_state SET payload=?")
+                    .bind(invalid.to_string())
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                assert!(
+                    write_local::ack(&pool, &vault, "owner", "op", "grant", batch_id, receipt)
+                        .await
+                        .is_err()
+                );
+            }
+            sqlx::query("UPDATE study_state SET payload=?")
+                .bind(current.to_string())
+                .execute(&pool)
+                .await
+                .unwrap();
+            vault.fail.store(true, Ordering::SeqCst);
+            assert!(
+                write_local::ack(&pool, &vault, "owner", "op", "grant", batch_id, receipt)
+                    .await
+                    .is_err()
+            );
+            vault.fail.store(false, Ordering::SeqCst);
+            assert!(ledger(&pool, &vault, "owner", "op", "grant")
+                .await
+                .unwrap()
+                .local
+                .unwrap()
+                .receipt_id
+                .is_none());
+            assert_eq!(
+                write_local::ack(&pool, &vault, "owner", "op", "grant", batch_id, receipt)
+                    .await
+                    .unwrap()["applied"],
+                true
+            );
+            let version = ledger(&pool, &vault, "owner", "op", "grant")
+                .await
+                .unwrap()
+                .version;
+            assert_eq!(
+                write_local::ack(&pool, &vault, "owner", "op", "grant", batch_id, receipt)
+                    .await
+                    .unwrap()["applied"],
+                true
+            );
+            let durable = ledger(&pool, &vault, "owner", "op", "grant").await.unwrap();
+            assert_eq!(durable.version, version);
+            assert_eq!(durable.local.unwrap().receipt_id.as_deref(), Some(receipt));
+            let unchanged: String = sqlx::query_scalar("SELECT payload FROM study_state")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(unchanged, current.to_string());
+            sqlx::query("UPDATE study_state SET payload=?")
+                .bind(case["base"].to_string())
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                write_local::ack(&pool, &vault, "owner", "op", "grant", batch_id, receipt)
+                    .await
+                    .is_err()
+            );
+        });
     }
     #[test]
     fn local_ack_checks_real_sqlite_projection_not_a_forged_success_receipt() {

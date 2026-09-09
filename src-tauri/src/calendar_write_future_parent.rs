@@ -1431,7 +1431,7 @@ mod tests {
                     "kind": fixture["cases"][0]["batch"]["plan"]["kind"],
                     "hash": preview["hash"],
                     "parentEventId": preview["intent"]["parent"]["eventId"],
-                    "pivotEventId": preview["intent"]["pivot"]["eventId"],
+                    "pivotEventId": preview["intent"]["plan"]["pivot"]["eventId"],
                     "successorEventId": preview["intent"]["plan"]["successor"]["eventId"],
                     "originalStart": preview["intent"]["originalStart"],
                     "markerHash": preview["intent"]["plan"]["markerHash"],
@@ -1520,7 +1520,7 @@ mod tests {
                 )
                 .await
                 .unwrap_err(),
-                "WRITE_UNSUPPORTED"
+                "WRITE_LOCAL_BASELINE_STALE"
             );
         });
     }

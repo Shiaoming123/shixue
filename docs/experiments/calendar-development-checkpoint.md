@@ -30,3 +30,9 @@
 已完成：原生 future stage/read 从已锚定的双 proved root 构造一个完整 LocalBinding，重新读取权限与两份远端证明，绑定 TS plan 结构及当前 Workspace 基线；重复读取重验并复用，partial/tamper/stale/permission 拒绝。SQLite/keyring-double RED/GREEN 与完整 rust:verify 93 项通过；研究文件保留。
 
 待办：4B2b2 的双事件原子投影 verifier、精确 capability receipt 及 lost-ack/expiry/restore 验收。future ack 仍关闭；本检查点不声称完整 Task 4B2b 完成。真实 Google、系统 keyring、UI 与 Stage 7 均未进入。
+
+## 2026-09-09 Task 4B2b2 续行进度
+
+已完成：future 原生双事件投影 verifier、精确唯一 capability receipt 验证及 ack；修复 intent.plan.pivot 身份映射。keyring-double/SQLite 证明 partial/tamper/stale/restore/expiry 拒绝、提交失败可恢复、重复确认不重写 Workspace。future 定向 26/26、完整 rust:verify 95/95、TS fixture 重生成比对 7/7 与 docs/diff 检查通过。
+
+4B2b1 的“ack 仍关闭”是历史状态，现由本次严格 verifier/ack 取代。运行开关仍关闭，真实账号/系统 keyring 未验收；无 UI、Stage 7 或真实 Google 变更。研究文件保持未跟踪并保留。

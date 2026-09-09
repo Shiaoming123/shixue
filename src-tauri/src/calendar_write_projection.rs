@@ -161,6 +161,70 @@ fn checked(base: &Value, current: &Value, batch: &Value) -> Option<bool> {
     Some(current["calendarEvents"] == Value::Array(events))
 }
 
+pub(in super::super) fn future_batch(batch: &Value, base: &Value) -> bool {
+    (|| -> Option<()> {
+        let plan = &batch["plan"];
+        let hash = |v: &Value| {
+            v.as_str().is_some_and(|s| {
+                s.len() == 71
+                    && s.starts_with("sha256:")
+                    && s[7..]
+                        .bytes()
+                        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            })
+        };
+        let operation = batch["operationId"].as_str()?.trim();
+        let parent = plan["parentEventId"].as_str()?;
+        let pivot = plan["pivotEventId"].as_str()?;
+        let child = plan["successorEventId"].as_str()?;
+        if operation.is_empty()
+            || parent.is_empty()
+            || pivot.is_empty()
+            || parent == pivot
+            || parent == child
+            || pivot == child
+            || child != format!("m{}", operation.replace('-', ""))
+            || batch["access"] != "details"
+            || plan["kind"] != "recurring.future"
+            || !hash(&plan["hash"])
+            || !hash(&plan["markerHash"])
+            || batch["expectedWorkspaceHash"] != super::workspace_hash::fingerprint(base).ok()?
+            || plan.as_object()?.len() != 8
+            || plan["steps"].as_object()?.len() != 2
+            || batch["items"].as_array()?.len() != 2
+        {
+            return None;
+        }
+        for (i, name, id) in [(0, "parent", parent), (1, "successor", child)] {
+            let step = &plan["steps"][name];
+            let proof = &step["proof"];
+            if step.as_object()?.len() != 2
+                || step["state"] != "proved"
+                || batch["items"][i] != *proof
+                || proof["id"] != id
+                || proof["etag"].as_str()?.trim().is_empty()
+                || proof["etag"].as_str()?.contains(['\r', '\n'])
+                || proof.get("recurringEventId").is_some()
+                || proof["status"] == "cancelled"
+                || proof["extendedProperties"]["private"]["meowOperationId"] != batch["operationId"]
+                || proof["extendedProperties"]["private"]["meowOperationHash"] != plan["markerHash"]
+            {
+                return None;
+            }
+        }
+        let start = &plan["steps"]["successor"]["proof"]["start"];
+        let original = start["date"]
+            .as_str()
+            .map(str::to_owned)
+            .or_else(|| iso(start["dateTime"].as_str()?))?;
+        if plan["originalStart"] != original {
+            return None;
+        }
+        Some(())
+    })()
+    .is_some()
+}
+
 fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<bool> {
     if base["version"] != 4
         || current["version"] != 4
@@ -171,9 +235,12 @@ fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<boo
     }
     let plan = &batch["plan"];
     let kind = plan["kind"].as_str()?;
-    if !["recurring.single", "recurring.series"].contains(&kind)
+    if !["recurring.single", "recurring.series", "recurring.future"].contains(&kind)
         || !plan["hash"].as_str()?.starts_with("sha256:")
     {
+        return None;
+    }
+    if kind == "recurring.future" && !future_batch(batch, base) {
         return None;
     }
     let parent = plan["parentEventId"].as_str()?;
@@ -193,6 +260,39 @@ fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<boo
             != json!({"plan":plan,"expectedWorkspaceHash":batch["expectedWorkspaceHash"],"observedAt":batch["observedAt"]})
     {
         return None;
+    }
+    if kind == "recurring.future" {
+        let receipts = current["commandReceipts"].as_array()?;
+        if receipt["id"].as_str()?.trim().is_empty()
+            || receipt["workspaceRevision"] != current["revision"]
+            || receipt["result"]["workspaceRevision"] != current["revision"]
+            || base["reminderDeliveries"] != current["reminderDeliveries"]
+            || !super::unexpired(receipt)
+            || receipts
+                .iter()
+                .filter(|r| r["idempotencyKey"] == batch["batchId"] || r["id"] == receipt["id"])
+                .count()
+                != 1
+            || [
+                "operationId",
+                "batchId",
+                "provider",
+                "connectionId",
+                "calendarId",
+                "sourceId",
+                "mode",
+            ]
+            .iter()
+            .any(|key| receipt["result"]["data"][*key] != batch[*key])
+            || receipts
+                .iter()
+                .filter(|r| *r != receipt)
+                .cloned()
+                .collect::<Vec<_>>()
+                != *base["commandReceipts"].as_array()?
+        {
+            return None;
+        }
     }
     let base_map = base.as_object()?;
     let current_map = current.as_object()?;
@@ -262,95 +362,105 @@ fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<boo
         return None;
     }
     let mut events = base["calendarEvents"].as_array()?.clone();
-    let parent_id = stable_id(connection, calendar, Some(parent));
     if access == "details" {
         let items = batch["items"].as_array()?;
-        let parent_raw = items.iter().find(|item| item["id"] == parent)?;
-        if parent_raw["recurrence"]
-            .as_array()
-            .is_none_or(|rules| rules.len() != 1)
-        {
-            return None;
-        }
-        let mut plain = parent_raw.clone();
-        plain.as_object_mut()?.remove("recurrence");
-        let mut projected = normalize(
-            &plain,
-            &parent_id,
-            &source_id,
-            batch["timezone"].as_str()?,
-            batch["observedAt"].as_str()?,
-        )?;
-        projected["recurrence"] = recurrence(
-            parent_raw["recurrence"].as_array()?.first()?.as_str()?,
-            &projected["time"],
-        )?;
-        let index = events.iter().position(|event| event["id"] == parent_id);
-        if let Some(i) = index {
-            projected["createdAt"] = events[i]["createdAt"].clone();
-            projected["revision"] = json!(events[i]["revision"].as_u64()?.checked_add(1)?);
-            projected["recurrence"]["exceptions"] = events[i]["recurrence"]["exceptions"].clone();
-        }
-        if kind == "recurring.single" {
-            if items.len() != 2 {
-                return None;
-            }
-            let instance = items
-                .iter()
-                .find(|item| item["id"] == plan["instanceEventId"])?;
-            if instance["recurringEventId"] != parent
-                || instance["originalStartTime"]["date"]
-                    .as_str()
-                    .or_else(|| instance["originalStartTime"]["dateTime"].as_str())
-                    != plan["originalStart"].as_str()
+        let ids = if kind == "recurring.future" {
+            vec![parent, plan["successorEventId"].as_str()?]
+        } else {
+            vec![parent]
+        };
+        for remote in ids {
+            let parent_id = stable_id(connection, calendar, Some(remote));
+            let parent_raw = items.iter().find(|item| item["id"] == remote)?;
+            if parent_raw["recurrence"]
+                .as_array()
+                .is_none_or(|rules| rules.len() != 1)
             {
                 return None;
             }
-            if !occurs(
-                &projected["recurrence"],
+            let mut plain = parent_raw.clone();
+            plain.as_object_mut()?.remove("recurrence");
+            let mut projected = normalize(
+                &plain,
+                &parent_id,
+                &source_id,
+                batch["timezone"].as_str()?,
+                batch["observedAt"].as_str()?,
+            )?;
+            projected["recurrence"] = recurrence(
+                parent_raw["recurrence"].as_array()?.first()?.as_str()?,
                 &projected["time"],
-                plan["originalStart"].as_str()?,
-            ) {
+            )?;
+            let index = events.iter().position(|event| event["id"] == parent_id);
+            if let Some(i) = index {
+                projected["createdAt"] = events[i]["createdAt"].clone();
+                projected["revision"] = json!(events[i]["revision"].as_u64()?.checked_add(1)?);
+                if kind != "recurring.future" {
+                    projected["recurrence"]["exceptions"] =
+                        events[i]["recurrence"]["exceptions"].clone();
+                }
+            }
+            if kind == "recurring.single" {
+                if items.len() != 2 {
+                    return None;
+                }
+                let instance = items
+                    .iter()
+                    .find(|item| item["id"] == plan["instanceEventId"])?;
+                if instance["recurringEventId"] != parent
+                    || instance["originalStartTime"]["date"]
+                        .as_str()
+                        .or_else(|| instance["originalStartTime"]["dateTime"].as_str())
+                        != plan["originalStart"].as_str()
+                {
+                    return None;
+                }
+                if !occurs(
+                    &projected["recurrence"],
+                    &projected["time"],
+                    plan["originalStart"].as_str()?,
+                ) {
+                    return None;
+                }
+                let exception = if instance["status"] == "cancelled" {
+                    Value::Null
+                } else {
+                    let mut plain_instance = instance.clone();
+                    plain_instance.as_object_mut()?.remove("recurringEventId");
+                    let normalized = normalize(
+                        &plain_instance,
+                        "ignored",
+                        &source_id,
+                        batch["timezone"].as_str()?,
+                        batch["observedAt"].as_str()?,
+                    )?;
+                    for key in [
+                        "title",
+                        "notes",
+                        "location",
+                        "status",
+                        "availability",
+                        "organizer",
+                        "attendees",
+                    ] {
+                        if normalized[key] != projected[key] {
+                            return None;
+                        }
+                    }
+                    normalized["time"].clone()
+                };
+                let mut exceptions = projected["recurrence"]["exceptions"].as_array()?.clone();
+                exceptions.retain(|e| e["originalStart"] != plan["originalStart"]);
+                exceptions.push(json!({"originalStart":plan["originalStart"],"time":exception}));
+                projected["recurrence"]["exceptions"] = json!(exceptions);
+            } else if kind != "recurring.future" && items.len() != 1 {
                 return None;
             }
-            let exception = if instance["status"] == "cancelled" {
-                Value::Null
+            if let Some(i) = index {
+                events[i] = projected;
             } else {
-                let mut plain_instance = instance.clone();
-                plain_instance.as_object_mut()?.remove("recurringEventId");
-                let normalized = normalize(
-                    &plain_instance,
-                    "ignored",
-                    &source_id,
-                    batch["timezone"].as_str()?,
-                    batch["observedAt"].as_str()?,
-                )?;
-                for key in [
-                    "title",
-                    "notes",
-                    "location",
-                    "status",
-                    "availability",
-                    "organizer",
-                    "attendees",
-                ] {
-                    if normalized[key] != projected[key] {
-                        return None;
-                    }
-                }
-                normalized["time"].clone()
-            };
-            let mut exceptions = projected["recurrence"]["exceptions"].as_array()?.clone();
-            exceptions.retain(|e| e["originalStart"] != plan["originalStart"]);
-            exceptions.push(json!({"originalStart":plan["originalStart"],"time":exception}));
-            projected["recurrence"]["exceptions"] = json!(exceptions);
-        } else if items.len() != 1 {
-            return None;
-        }
-        if let Some(i) = index {
-            events[i] = projected;
-        } else {
-            events.push(projected);
+                events.push(projected);
+            }
         }
     } else if !batch["items"].as_array()?.is_empty() {
         return None;
@@ -962,6 +1072,78 @@ fn deliveries_valid(base: &Value, current: &Value) -> bool {
 }
 
 #[cfg(test)]
+pub(in super::super) fn future_fixture() -> Value {
+    serde_json::from_str::<Value>(include_str!(
+        "../../tests/fixtures/calendar-future-projection.json"
+    ))
+    .unwrap()["cases"][0]
+        .clone()
+}
+#[cfg(test)]
+pub(in super::super) fn future_invalid_currents(base: &Value, current: &Value) -> Vec<Value> {
+    let mut invalid = vec![base.clone()];
+    for index in [0, 2] {
+        let mut partial = current.clone();
+        if index == 0 {
+            partial["calendarEvents"][index] = base["calendarEvents"][index].clone();
+        } else {
+            partial["calendarEvents"]
+                .as_array_mut()
+                .unwrap()
+                .remove(index);
+        }
+        invalid.push(partial);
+        for key in ["title", "recurrence", "sourceId", "id"] {
+            let mut changed = current.clone();
+            changed["calendarEvents"][index][key] = json!("forged");
+            invalid.push(changed);
+        }
+    }
+    for key in [
+        "tasks",
+        "calendarEventLinks",
+        "eventOutcomes",
+        "calendarSources",
+    ] {
+        let mut changed = current.clone();
+        changed[key] = json!([{"forged":true}]);
+        invalid.push(changed);
+    }
+    let n = current["commandReceipts"].as_array().unwrap().len() - 1;
+    for key in [
+        "id",
+        "idempotencyKey",
+        "commandType",
+        "expiresAt",
+        "workspaceRevision",
+    ] {
+        let mut changed = current.clone();
+        changed["commandReceipts"][n][key] = json!("invalid");
+        invalid.push(changed);
+    }
+    for key in ["operationId", "batchId", "sourceId", "applied"] {
+        let mut changed = current.clone();
+        changed["commandReceipts"][n]["result"]["data"][key] = json!("forged");
+        invalid.push(changed);
+    }
+    for key in ["plan", "expectedWorkspaceHash", "observedAt"] {
+        let mut changed = current.clone();
+        changed["commandReceipts"][n]["result"]["data"]["writeProjection"][key] = json!("forged");
+        invalid.push(changed);
+    }
+    let mut expired = current.clone();
+    expired["commandReceipts"][n]["expiresAt"] = json!("2000-01-01T00:00:00Z");
+    invalid.push(expired);
+    let mut duplicate = current.clone();
+    duplicate["commandReceipts"]
+        .as_array_mut()
+        .unwrap()
+        .push(current["commandReceipts"][n].clone());
+    invalid.push(duplicate);
+    invalid
+}
+
+#[cfg(test)]
 pub(super) fn fixtures() -> Vec<Value> {
     serde_json::from_str::<Value>(include_str!(
         "../../tests/fixtures/calendar-write-projection.json"
@@ -975,6 +1157,62 @@ pub(super) fn fixtures() -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn actual_ts_future_projection_requires_atomic_facts() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/calendar-future-projection.json"
+        ))
+        .unwrap();
+        let case = &fixture["cases"][0];
+        let mut current = case["current"].clone();
+        current["commandReceipts"]
+            .as_array_mut()
+            .unwrap()
+            .last_mut()
+            .unwrap()["expiresAt"] = json!("2999-01-01T00:00:00Z");
+        assert!(future_batch(&case["batch"], &case["base"]), "future batch");
+        assert!(verify(&case["base"], &current, &case["batch"]));
+        for (index, invalid) in future_invalid_currents(&case["base"], &current)
+            .iter()
+            .enumerate()
+        {
+            assert!(
+                !verify(&case["base"], invalid, &case["batch"]),
+                "current {index}"
+            );
+        }
+        for key in [
+            "hash",
+            "parentEventId",
+            "pivotEventId",
+            "successorEventId",
+            "originalStart",
+            "markerHash",
+            "steps",
+        ] {
+            let mut batch = case["batch"].clone();
+            batch["plan"][key] = json!("forged");
+            assert!(!verify(&case["base"], &current, &batch), "plan {key}");
+        }
+        for i in [0, 1] {
+            for key in ["id", "recurrence", "summary", "etag", "extendedProperties"] {
+                let mut batch = case["batch"].clone();
+                batch["items"][i][key] = json!("forged");
+                assert!(!verify(&case["base"], &current, &batch), "item {i} {key}");
+            }
+        }
+        let mut denied = case["batch"].clone();
+        denied["access"] = json!("freebusy");
+        assert!(!verify(&case["base"], &current, &denied));
+        let mut stale = case["base"].clone();
+        stale["revision"] = json!(999);
+        assert!(!verify(&stale, &current, &case["batch"]));
+        for index in [0, 1] {
+            let mut batch = case["batch"].clone();
+            batch["items"].as_array_mut().unwrap().remove(index);
+            assert!(!verify(&case["base"], &current, &batch));
+        }
+    }
     #[test]
     fn ts_generated_recurrence_projection_matches_and_rejects_tampering() {
         let cases: Vec<Value> = serde_json::from_str::<Value>(include_str!(

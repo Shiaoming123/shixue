@@ -51,6 +51,7 @@ fn receipt_id(current: &Value, local: &LocalBinding) -> Option<String> {
 // The ledger is keyring-anchored; bind a recurrence projection to its immutable preview before ack.
 fn plan_matches(batch: &Value, _base: &Value) -> bool {
     match batch["plan"]["kind"].as_str() {
+        Some("recurring.future") => projection::future_batch(batch, _base),
         Some("recurring.single") => {
             batch["plan"]["hash"]
                 .as_str()
@@ -79,6 +80,11 @@ fn plan_matches(batch: &Value, _base: &Value) -> bool {
 }
 fn plan_matches_preview(batch: &Value, preview: &Value) -> bool {
     let expected = match preview["intent"]["kind"].as_str() {
+        Some("recurring.future") => json!({
+            "hash":preview["hash"], "kind":"recurring.future", "parentEventId":preview["intent"]["parent"]["eventId"],
+            "pivotEventId":preview["intent"]["plan"]["pivot"]["eventId"],"successorEventId":preview["intent"]["plan"]["successor"]["eventId"],
+            "originalStart":preview["intent"]["originalStart"],"markerHash":preview["intent"]["plan"]["markerHash"],"steps":batch["plan"]["steps"]
+        }),
         Some("recurring.single") => json!({
             "hash": preview["hash"],
             "kind": "recurring.single",
@@ -134,7 +140,7 @@ pub(super) fn future_plan(record: &Ledger) -> Result<Value, String> {
         return Err("WRITE_LOCAL_REMOTE_UNVERIFIED".into());
     }
     Ok(
-        json!({"hash":preview["hash"],"kind":"recurring.future","parentEventId":intent["parent"]["eventId"],"pivotEventId":intent["pivot"]["eventId"],"successorEventId":intent["plan"]["successor"]["eventId"],"originalStart":intent["originalStart"],"markerHash":intent["plan"]["markerHash"],"steps":{"parent":{"state":"proved","proof":future["parent"]["proof"]},"successor":{"state":"proved","proof":future["successor"]["proof"]}}}),
+        json!({"hash":preview["hash"],"kind":"recurring.future","parentEventId":intent["parent"]["eventId"],"pivotEventId":intent["plan"]["pivot"]["eventId"],"successorEventId":intent["plan"]["successor"]["eventId"],"originalStart":intent["originalStart"],"markerHash":intent["plan"]["markerHash"],"steps":{"parent":{"state":"proved","proof":future["parent"]["proof"]},"successor":{"state":"proved","proof":future["successor"]["proof"]}}}),
     )
 }
 pub(super) async fn stage<V: Vault, H: Http>(
@@ -249,8 +255,7 @@ pub(super) async fn stage<V: Vault, H: Http>(
                 local.batch["plan"] == *plan
                     && local.batch["operationId"] == id
                     && local.batch["items"] == json!(future_items)
-                    && local.receipt_id.is_none()
-                    && local.batch["expectedWorkspaceHash"] == workspace_hash::fingerprint(&base)?
+                    && reusable(&base, local)?
             } else {
                 plan_matches_preview(&local.batch, &record.preview) && reusable(&base, local)?
             }
@@ -413,8 +418,9 @@ pub(super) async fn ack<V: Vault>(
     receipt: &str,
 ) -> Result<Value, String> {
     let mut record = ledger(pool, vault, owner, id, epoch).await?;
-    if record.future.is_some() {
-        return Err("WRITE_UNSUPPORTED".into());
+    let future = record.future.is_some();
+    if future {
+        future_plan(&record)?;
     }
     if record.state != "applied" || record.outcome_unknown {
         return Err("WRITE_LOCAL_NOT_APPLIED".into());
@@ -425,6 +431,12 @@ pub(super) async fn ack<V: Vault>(
         || receipt_id(&workspace(pool).await?, local).as_deref() != Some(receipt)
     {
         return Err("WRITE_LOCAL_BASELINE_STALE".into());
+    }
+    if future && local.receipt_id.as_ref().is_some_and(|old| old != receipt) {
+        return Err("WRITE_LOCAL_BASELINE_STALE".into());
+    }
+    if future && local.receipt_id.as_deref() == Some(receipt) {
+        return Ok(json!({"applied":true,"operationId":id,"batchId":batch_id}));
     }
     local.receipt_id = Some(receipt.into());
     record.version += 1;

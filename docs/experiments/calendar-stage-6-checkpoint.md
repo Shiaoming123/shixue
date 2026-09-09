@@ -42,3 +42,14 @@
 - 验证：doctor、`npm run rust:verify`（fmt、clippy、93 个 Rust 测试、all-features/no-default-features check）通过；文档与 diff 检查通过。未改 TS 或 fixture，未运行 Node/typecheck；无 UI、Stage 7、真实 Google、系统 keyring 或运行开关变更。
 
 4B2b1 覆盖补充：SQLite 集成测试在 TS fixture 固定字段结构之外，逐值核对完整 plan（preview hash、parent/pivot/successor ID、originalStart、markerHash、两份 exact proved steps）及 operationId、sourceId、stage 前实际 Workspace 摘要。定向测试 1/1 与完整 rust:verify 93/93 通过；仅测试与报告更新，future ack 继续关闭。
+
+## 2026-09-09 Task 4B2b2：future 原子投影 verifier 与 ack
+
+已完成原生双事件 verifier/ack，取代 4B2b1 的临时 ack 禁令；真实运行开关、UI 和 Stage 7 未变化。
+
+- verifier 复用现有 recurrence/source/event 映射，一次核对 parent 与固定 successor 的完整事实、规则、revision、source、proof/marker/plan 绑定和原始 Workspace hash；仅 details 批次可通过。无关任务、关联、outcome、提醒事实和旧回执必须保持。
+- ack 继续要求 keyring 锚定的 applied、非 unknown root，双 proved 与 compensation pending，result.future 完全对应 proof；LocalBinding 必须匹配被冻结的 root plan。唯一未过期 capability 回执须绑定 ID、幂等键、root/batch、plan、hash、observedAt 及当前 Workspace revision，且实际 Workspace 必须包含一次原子应用后的双事件。
+- keyring 提交失败保持旧锚定状态；恢复只重试同一回执。成功后持久化 receipt_id；同一已确认回执重试不再增加 ledger version、不重写 Workspace。沿用现有 TS localApplied 确认流程；不新增镜像状态机。
+- 修正 4B2b1 的 pivot 映射：冻结身份位于 intent.plan.pivot，旧代码及旧测试误读 intent.pivot，可能输出 null。新合同检查会拒绝该缺失身份。
+- RED：真实 TS future fixture 在旧 verifier 上失败。GREEN：原始 TS fixture 校验、partial parent/successor、事件身份/标题/规则/source、plan/hash/marker/steps、回执身份/重复/错绑定/过期/revision、stale/restore/permission 拒绝；真实 SQLite 与 keyring-double 覆盖同组无效 Workspace、持久化失败恢复及幂等 ack。SQLite 集成仅将 fixture 的占位 preview hash 替换为本地冻结预览 hash，其余事件事实保持 TS 输出。
+- 最终验证：future 定向 26/26，完整 rust:verify 95/95（fmt/clippy/all-features/no-default-features 通过）；Node recurrence projection 7/7，包含重新运行真实 TS capability generator 并比对已批准 fixture；docs/diff 检查通过。TS 与 fixture 未修改，typecheck 未重复运行。真实 Google、系统 keyring、通知与邮件、UI/Stage 7 均 NOT_RUN。
