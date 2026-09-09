@@ -23,6 +23,8 @@ static TICKETS: OnceLock<Mutex<HashMap<String, ConfirmationTicket>>> = OnceLock:
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Ledger {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    recurring_recurrence: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     future: Option<Value>,
@@ -617,7 +619,7 @@ pub async fn write_prepare<R: tauri::Runtime>(
             owner: &owner,
             epoch: generation,
         };
-        if !preflight(&http, &preview).await? {
+        if !preflight(&http, &preview).await?.0 {
             return Err("WRITE_CONFLICT".into());
         }
     }
@@ -626,6 +628,7 @@ pub async fn write_prepare<R: tauri::Runtime>(
     let mirror=serde_json::from_value(json!({"preview":preview,"version":1,"state":"pending","outcomeUnknown":false,"attempts":0,"leaseId":null,"leaseUntil":0,"error":null,"result":null,"localApplied":false})).map_err(|_|"WRITE_INVALID")?;
     write_outbox::dispatch(&pool, write_outbox::Request::Insert { operation: mirror }).await?;
     let record = Ledger {
+        recurring_recurrence: None,
         error: None,
         preview: preview.clone(),
         grant_epoch: epoch,
@@ -901,14 +904,51 @@ fn supported(event: &Value, intent: &Value) -> bool {
         && event["locked"] != true
         && match kind {
             Some("recurring.single") => {
-                event["recurringEventId"] == intent["parent"]["eventId"]
+                recurring_metadata(event)
+                    && event.get("recurrence").is_none()
+                    && event["recurringEventId"] == intent["parent"]["eventId"]
                     && event["originalStartTime"].is_object()
             }
             Some("recurring.series") => {
-                event["recurrence"].as_array().is_some_and(|v| v.len() == 1)
+                recurring_metadata(event)
+                    && write_local::projection::supported_recurring_parent(event)
             }
             _ => event.get("recurrence").is_none() && event.get("recurringEventId").is_none(),
         }
+}
+fn recurring_metadata(event: &Value) -> bool {
+    if event["unsupportedRecurrenceFields"] == true
+        || event.get("attachments").is_some()
+        || event.get("conferenceData").is_some()
+        || event["attendeesOmitted"] == true
+        || event.get("attendees").is_some_and(|v| {
+            v.as_array().is_none_or(|items| {
+                items.iter().any(|a| {
+                    a["resource"] == true || a.get("additionalGuests").is_some_and(|v| v != 0)
+                })
+            })
+        })
+    {
+        return false;
+    }
+    event.get("extendedProperties").is_none_or(|properties| {
+        exact(properties, &["private"]).is_ok()
+            && exact(
+                &properties["private"],
+                &["meowOperationId", "meowOperationHash"],
+            )
+            .is_ok()
+            && properties["private"]["meowOperationId"].is_string()
+            && properties["private"]["meowOperationHash"]
+                .as_str()
+                .is_some_and(|s| {
+                    s.strip_prefix("sha256:").is_some_and(|v| {
+                        v.len() == 64
+                            && v.bytes()
+                                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                    })
+                })
+    })
 }
 fn body(preview: &Value) -> Result<Value, String> {
     let intent = &preview["intent"];
@@ -1039,7 +1079,7 @@ fn original_start_matches(raw: &Value, frozen: &str) -> bool {
     chrono::DateTime::parse_from_rfc3339(actual).ok()
         == chrono::DateTime::parse_from_rfc3339(frozen).ok()
 }
-async fn preflight<H: Http>(http: &H, preview: &Value) -> Result<bool, String> {
+async fn preflight<H: Http>(http: &H, preview: &Value) -> Result<(bool, Option<Value>), String> {
     let directory = http
         .call(
             "GET",
@@ -1066,7 +1106,7 @@ async fn preflight<H: Http>(http: &H, preview: &Value) -> Result<bool, String> {
         .await?;
     let intent = &preview["intent"];
     if intent["kind"] == "create" {
-        return Ok(remote.status == 404);
+        return Ok((remote.status == 404, None));
     }
     if remote.status != 200 {
         return Err("WRITE_READ_FAILED".into());
@@ -1089,9 +1129,7 @@ async fn preflight<H: Http>(http: &H, preview: &Value) -> Result<bool, String> {
         if parent.status != 200
             || parent.body["id"] != intent["parent"]["eventId"]
             || parent.body["etag"] != intent["parent"]["etag"]
-            || parent.body["recurrence"]
-                .as_array()
-                .is_none_or(|rules| rules.len() != 1)
+            || !supported(&parent.body, &json!({"kind":"recurring.series"}))
         {
             return Err("WRITE_UNSUPPORTED".into());
         }
@@ -1120,7 +1158,27 @@ async fn preflight<H: Http>(http: &H, preview: &Value) -> Result<bool, String> {
     {
         return Err("WRITE_UNSUPPORTED".into());
     }
-    Ok(event["etag"] == intent_etag(intent)?)
+    let expected_recurrence = if intent["kind"] == "recurring.series" {
+        let mut expected = event.clone();
+        for (key, value) in body(preview)?.as_object().ok_or("WRITE_INVALID")? {
+            expected[key] = value.clone();
+        }
+        if !supported(&expected, intent) {
+            return Err("WRITE_UNSUPPORTED".into());
+        }
+        Some(expected["recurrence"].clone())
+    } else {
+        None
+    };
+    Ok((event["etag"] == intent_etag(intent)?, expected_recurrence))
+}
+fn ledger_proof(record: &Ledger, event: &Value) -> bool {
+    proof(&record.preview, event).unwrap_or(false)
+        && (record.preview["intent"]["kind"] != "recurring.series"
+            || record
+                .recurring_recurrence
+                .as_ref()
+                .is_some_and(|rules| *rules == event["recurrence"]))
 }
 #[allow(clippy::too_many_arguments)] // Keep invocation authorization and budget explicit.
 async fn execute<V: Vault, H: Http>(
@@ -1168,7 +1226,7 @@ async fn execute<V: Vault, H: Http>(
             .call("GET", &event_path(&record.preview)?, None, None, None)
             .await
         {
-            if reply.status == 200 && proof(&record.preview, &reply.body).unwrap_or(false) {
+            if reply.status == 200 && ledger_proof(&record, &reply.body) {
                 record.state = "applied".into();
                 record.outcome_unknown = false;
                 record.result = Some(result(&record.preview, reply.body["etag"].clone()));
@@ -1191,7 +1249,8 @@ async fn execute<V: Vault, H: Http>(
         }
     }
     validate_intent(&record.preview["intent"])?;
-    if !preflight(http, &record.preview).await? {
+    let (matches, expected_recurrence) = preflight(http, &record.preview).await?;
+    if !matches {
         record.state = "conflict".into();
         record.version += 1;
         persist(pool, vault, owner, id, &record, a.previous).await?;
@@ -1200,6 +1259,7 @@ async fn execute<V: Vault, H: Http>(
     let request_body = body(&record.preview)?;
     let kind = field(&record.preview["intent"], "kind")?.to_owned();
     record.state = "applying".into();
+    record.recurring_recurrence = expected_recurrence;
     record.outcome_unknown = true;
     record.version += 1;
     // Durable keyring applying anchor is mandatory before crossing the mutation boundary.
@@ -1235,10 +1295,24 @@ async fn execute<V: Vault, H: Http>(
             },
         )
         .await;
-    if let Ok(reply) = reply {
+    if let Ok(mut reply) = reply {
+        if ["recurring.single", "recurring.series"].contains(&kind.as_str())
+            && (200..300).contains(&reply.status)
+        {
+            // Only exact readback may resolve a recurring mutation, including cancellation.
+            reply = http
+                .call("GET", &event_path(&record.preview)?, None, None, None)
+                .await
+                .unwrap_or(HttpReply {
+                    status: 0,
+                    body: Value::Null,
+                });
+            if reply.status != 200 || !ledger_proof(&record, &reply.body) {
+                reply.status = 0;
+            }
+        }
         if (reply.status == 204 && kind == "delete")
-            || ((reply.status == 200 || reply.status == 201)
-                && proof(&record.preview, &reply.body).unwrap_or(false))
+            || ((reply.status == 200 || reply.status == 201) && ledger_proof(&record, &reply.body))
         {
             record.state = "applied".into();
             record.outcome_unknown = false;
@@ -1490,6 +1564,7 @@ mod tests {
     }
     type RecordedRequest = (String, Option<String>, Option<Value>);
     struct FakeHttp {
+        readback: Mutex<Option<Value>>,
         event: Mutex<Option<Value>>,
         parents: Mutex<HashMap<String, Value>>,
         writes: AtomicUsize,
@@ -1500,6 +1575,7 @@ mod tests {
     impl FakeHttp {
         fn new() -> Self {
             Self {
+                readback: Mutex::new(None),
                 event: Mutex::new(None),
                 parents: Mutex::new(HashMap::new()),
                 writes: AtomicUsize::new(0),
@@ -1533,6 +1609,17 @@ mod tests {
                         status: 200,
                         body: json!({"id":"cal","accessRole":"owner"}),
                     });
+                }
+                if self.writes.load(Ordering::SeqCst) > 0 {
+                    if let Some(value) = self.readback.lock().unwrap().clone() {
+                        if value == "error" {
+                            return Err("READ_FAILED".into());
+                        }
+                        return Ok(HttpReply {
+                            status: if value.is_null() { 404 } else { 200 },
+                            body: value,
+                        });
+                    }
                 }
                 if let Some(parent) = self
                     .parents
@@ -1613,6 +1700,7 @@ mod tests {
             .unwrap();
         let vault = MemoryVault::default();
         let record = Ledger {
+            recurring_recurrence: None,
             error: None,
             preview,
             grant_epoch: "grant".into(),
@@ -2364,10 +2452,10 @@ mod tests {
                     && message.contains("实例 ID：instance")
             );
             let http = FakeHttp::new();
-            http.parents.lock().unwrap().insert(
-                "parent".into(),
-                json!({"id":"parent","etag":"p1","recurrence":["RRULE:FREQ=DAILY"]}),
-            );
+            http.parents
+                .lock()
+                .unwrap()
+                .insert("parent".into(), recurring_parent());
             *http.event.lock().unwrap() = Some(
                 json!({"id":"instance","etag":"i1","recurringEventId":"parent","originalStartTime":{"dateTime":"2026-09-09T09:00:00Z"},"start":{"dateTime":"2026-09-09T09:00:00Z","timeZone":"UTC"},"end":{"dateTime":"2026-09-09T10:00:00Z","timeZone":"UTC"}}),
             );
@@ -2395,9 +2483,7 @@ mod tests {
                 .contains("整个系列（entire series）"));
             let mut http = FakeHttp::new();
             http.reject = 412;
-            *http.event.lock().unwrap() = Some(
-                json!({"id":"parent","etag":"p1","recurrence":["RRULE:FREQ=DAILY"],"organizer":{"self":true}}),
-            );
+            *http.event.lock().unwrap() = Some(recurring_parent());
             assert_eq!(
                 execute(&pool, &vault, &http, "owner", "op", "grant", false)
                     .await
@@ -2456,6 +2542,193 @@ mod tests {
             assert!(!proof(&record.preview, &marker_event).unwrap());
             marker_event["originalStartTime"] = json!({"dateTime":"2026-09-09T09:00:00+00:00"});
             assert!(proof(&record.preview, &marker_event).unwrap());
+        });
+    }
+
+    fn recurring_parent() -> Value {
+        json!({"id":"parent","etag":"p1","summary":"Series","recurrence":["RRULE:FREQ=DAILY"],"start":{"dateTime":"2026-09-09T09:00:00Z","timeZone":"UTC"},"end":{"dateTime":"2026-09-09T10:00:00Z","timeZone":"UTC"},"organizer":{"self":true,"email":"owner@example.com"}})
+    }
+
+    #[test]
+    fn recurring_success_requires_exact_get_and_restart_reconcile_never_replays() {
+        tauri::async_runtime::block_on(async {
+            for scope in ["recurring.single", "recurring.series"] {
+                for action in ["update", "cancel", "recurrence"] {
+                    if scope == "recurring.single" && action == "recurrence" {
+                        continue;
+                    }
+                    for failure in [
+                        "none",
+                        "missing",
+                        "error",
+                        "marker",
+                        "scope",
+                        "original",
+                        "facts",
+                        "recurrence",
+                    ] {
+                        let mut intent = json!({"kind":scope,"parent":{"eventId":"parent","etag":"p1"},"action":action});
+                        if action == "recurrence" {
+                            intent["action"] = json!("update");
+                            intent["recurrence"] = json!(["RRULE:FREQ=DAILY;COUNT=4"]);
+                        }
+                        if scope == "recurring.single" {
+                            intent["instance"] = json!({"eventId":"instance","etag":"i1"});
+                            intent["originalStart"] = json!("2026-09-09T09:00:00Z");
+                        }
+                        if action != "cancel" {
+                            intent["fields"] = if scope == "recurring.single" {
+                                json!({"time":{"kind":"fixed","startAt":"2026-09-09T11:00:00Z","endAt":"2026-09-09T12:00:00Z","timezone":"UTC"}})
+                            } else {
+                                json!({"title":"Updated"})
+                            };
+                        }
+                        let (pool, vault, record) = fixture(intent).await;
+                        let http = FakeHttp::new();
+                        let mut event = recurring_parent();
+                        if scope == "recurring.single" {
+                            http.parents
+                                .lock()
+                                .unwrap()
+                                .insert("parent".into(), event.clone());
+                            event.as_object_mut().unwrap().remove("recurrence");
+                            event["id"] = json!("instance");
+                            event["etag"] = json!("i1");
+                            event["recurringEventId"] = json!("parent");
+                            event["originalStartTime"] = json!({"dateTime":"2026-09-09T09:00:00Z"});
+                        }
+                        *http.event.lock().unwrap() = Some(event.clone());
+                        for (key, value) in body(&record.preview).unwrap().as_object().unwrap() {
+                            event[key] = value.clone();
+                        }
+                        event["etag"] = json!("get-v3");
+                        match failure {
+                            "missing" => event = Value::Null,
+                            "error" => event = json!("error"),
+                            "marker" => {
+                                event["extendedProperties"]["private"]["meowOperationId"] =
+                                    json!("other")
+                            }
+                            "scope" => event["id"] = json!("other"),
+                            "original" if scope == "recurring.single" => {
+                                event["originalStartTime"]["dateTime"] =
+                                    json!("2026-09-10T09:00:00Z")
+                            }
+                            "facts" if action == "cancel" => event["status"] = json!("confirmed"),
+                            "facts" if scope == "recurring.series" => {
+                                event["summary"] = json!("Wrong")
+                            }
+                            "facts" => event["start"]["dateTime"] = json!("2026-09-09T13:00:00Z"),
+                            "recurrence" if scope == "recurring.series" => {
+                                event["recurrence"] = json!(["RRULE:FREQ=DAILY;COUNT=3"])
+                            }
+                            "recurrence" => event["recurrence"] = json!(["RRULE:FREQ=DAILY"]),
+                            "original" => event["recurringEventId"] = json!("other"),
+                            _ => {}
+                        }
+                        *http.readback.lock().unwrap() = Some(event);
+                        let result = execute(&pool, &vault, &http, "owner", "op", "grant", false)
+                            .await
+                            .unwrap();
+                        assert_eq!(http.requests.lock().unwrap().last().unwrap().0, "GET");
+                        assert_eq!(http.writes.load(Ordering::SeqCst), 1);
+                        if failure == "none" {
+                            assert_eq!(result["state"], "applied");
+                            assert_eq!(result["result"]["etag"], "get-v3");
+                        } else {
+                            assert_eq!(
+                                result["outcomeUnknown"], true,
+                                "{scope}/{action}/{failure}"
+                            );
+                            assert!(holds_lock(&anchor(&vault, "owner", "op").unwrap()));
+                            // Reload from the durable ledger/anchor, without a confirmation ticket.
+                            assert!(execute(&pool, &vault, &http, "owner", "op", "grant", false)
+                                .await
+                                .is_err());
+                            assert_eq!(
+                                execute(&pool, &vault, &http, "owner", "op", "grant", true)
+                                    .await
+                                    .unwrap()["outcomeUnknown"],
+                                true
+                            );
+                            *http.readback.lock().unwrap() = None;
+                            assert_eq!(
+                                execute(&pool, &vault, &http, "owner", "op", "grant", true)
+                                    .await
+                                    .unwrap()["state"],
+                                "applied"
+                            );
+                            assert_eq!(http.writes.load(Ordering::SeqCst), 1);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn recurring_preflight_rejects_unsupported_current_parent_before_any_mutation() {
+        tauri::async_runtime::block_on(async {
+            for scope in ["recurring.single", "recurring.series"] {
+                for action in ["update", "cancel"] {
+                    for (key, value) in [
+                        ("recurrence", json!(["RDATE:20260909T090000Z"])),
+                        ("recurrence", json!(["RRULE:FREQ=DAILY;BYHOUR=9"])),
+                        ("recurrence", json!(["RRULE:FREQ=DAILY;COUNT=01"])),
+                        (
+                            "recurrence",
+                            json!(["RRULE:FREQ=DAILY", "EXDATE:20260910T090000Z"]),
+                        ),
+                        ("eventType", json!("focusTime")),
+                        ("locked", json!(true)),
+                        ("attachments", json!([])),
+                        ("conferenceData", json!({})),
+                        ("extendedProperties", json!({"private":{"foreign":"value"}})),
+                        (
+                            "attendees",
+                            json!([{"email":"room@example.com","resource":true}]),
+                        ),
+                    ] {
+                        let mut intent = json!({"kind":scope,"parent":{"eventId":"parent","etag":"p1"},"action":action});
+                        if scope == "recurring.single" {
+                            intent["instance"] = json!({"eventId":"instance","etag":"i1"});
+                            intent["originalStart"] = json!("2026-09-09T09:00:00Z");
+                        }
+                        if action == "update" {
+                            intent["fields"] = if scope == "recurring.series" {
+                                json!({"title":"Updated"})
+                            } else {
+                                json!({"time":{"kind":"fixed","startAt":"2026-09-09T11:00:00Z","endAt":"2026-09-09T12:00:00Z","timezone":"UTC"}})
+                            };
+                        }
+                        let (pool, vault, record) = fixture(intent).await;
+                        let serialized = serde_json::to_value(&record).unwrap();
+                        assert!(serialized.get("recurringRecurrence").is_none());
+                        assert!(serde_json::from_value::<Ledger>(serialized)
+                            .unwrap()
+                            .recurring_recurrence
+                            .is_none());
+                        let http = FakeHttp::new();
+                        let mut parent = recurring_parent();
+                        parent[key] = value;
+                        if scope == "recurring.single" {
+                            http.parents.lock().unwrap().insert("parent".into(), parent);
+                            *http.event.lock().unwrap() = Some(
+                                json!({"id":"instance","etag":"i1","recurringEventId":"parent","originalStartTime":{"dateTime":"2026-09-09T09:00:00Z"},"organizer":{"self":true}}),
+                            );
+                        } else {
+                            *http.event.lock().unwrap() = Some(parent);
+                        }
+                        assert!(
+                            execute(&pool, &vault, &http, "owner", "op", "grant", false)
+                                .await
+                                .is_err(),
+                            "{scope}/{action}/{key}"
+                        );
+                        assert_eq!(http.writes.load(Ordering::SeqCst), 0);
+                    }
+                }
+            }
         });
     }
 }

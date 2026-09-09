@@ -1265,6 +1265,7 @@ mod tests {
         let preview = &frozen["preview"];
         let id = field(preview, "operationId").unwrap();
         let record = Ledger {
+            recurring_recurrence: None,
             error: None,
             preview: preview.clone(),
             future: Some(frozen["future"].clone()),

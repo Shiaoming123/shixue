@@ -74,6 +74,7 @@ pub(super) async fn prepare<V: Vault, H: Http>(
     let id = field(preview, "operationId")?;
     let previous = vault.get(&head_key(owner))?;
     let record = Ledger {
+        recurring_recurrence: None,
         error: None,
         preview: preview.clone(),
         future: Some(frozen["future"].clone()),

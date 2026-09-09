@@ -538,6 +538,53 @@ fn recurring_checked(base: &Value, current: &Value, batch: &Value) -> Option<boo
     }
     Some(current["calendarEvents"] == Value::Array(events))
 }
+pub(in super::super) fn supported_recurring_parent(raw: &Value) -> bool {
+    (|| -> Option<()> {
+        let rules = raw["recurrence"].as_array()?;
+        if rules.len() != 1 || raw.get("recurringEventId").is_some() {
+            return None;
+        }
+        let mut plain = raw.clone();
+        plain.as_object_mut()?.remove("recurrence");
+        let event = normalize(
+            &plain,
+            "parent",
+            "source",
+            "UTC",
+            "2026-01-01T00:00:00.000Z",
+        )?;
+        let time = &event["time"];
+        let rule = rules[0].as_str()?;
+        recurrence(rule, time)?;
+        for part in rule.strip_prefix("RRULE:")?.split(';') {
+            let (key, value) = part.split_once('=')?;
+            if ["INTERVAL", "COUNT", "BYMONTH", "BYMONTHDAY"].contains(&key)
+                && value.starts_with('0')
+            {
+                return None;
+            }
+            if key == "UNTIL"
+                && time["kind"] == "all-day"
+                && (value.len() != 8 || !value.bytes().all(|b| b.is_ascii_digit()))
+            {
+                return None;
+            }
+        }
+        if time["kind"] == "fixed" {
+            let zone = time["timezone"].as_str()?;
+            if !super::super::workspace_parse::supported_timezone(zone)
+                || (zone == "Asia/Shanghai"
+                    && wall(time, time["startAt"].as_str()?)?.0
+                        < NaiveDate::from_ymd_opt(1992, 1, 1)?)
+            {
+                return None;
+            }
+        }
+        Some(())
+    })()
+    .is_some()
+}
+
 fn recurrence(rule: &str, time: &Value) -> Option<Value> {
     let fields = rule
         .strip_prefix("RRULE:")?
