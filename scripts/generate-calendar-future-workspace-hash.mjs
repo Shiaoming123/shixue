@@ -248,6 +248,33 @@ taskCase('recurring-wrong-task',r=>{recurring(r);r.tasks.push({...r.tasks[0],id:
 taskCase('recurring-event-wrong-task',r=>{recurring(r);r.tasks.push({...r.tasks[0],id:'other',recurrenceSeriesId:null});r.taskEvents.push({...r.taskEvents[0],id:'other-event',sequence:2,taskId:'other'})},false)
 taskCase('recurring-duplicate-series',r=>{recurring(r);r.recurrenceSeries.push({...r.recurrenceSeries[0]})},false)
 taskCase('recurring-global-id',r=>{recurring(r);r.occurrences[0].id='tag';r.taskEvents[0].occurrenceId='tag'},false)
+function session(r) {
+  r.tasks[0].status = 'in_progress'
+  r.taskEvents[0].toStatus = 'in_progress'
+  r.studySessions = [{ id: 'session', taskId: 'task', state: 'running', startedAt: stamp, activeSince: stamp, elapsedSeconds: 0, scratchpad: '', createdAt: stamp, updatedAt: stamp, deletedAt: null }]
+}
+taskCase('session-running', session)
+taskCase('session-paused', r => { session(r); Object.assign(r.studySessions[0], { state: 'paused', activeSince: null, elapsedSeconds: 1e21, scratchpad: '笔记😀\n\u000f' }) })
+taskCase('session-finished-unrelated', r => { session(r); r.studySessions.push({ ...r.studySessions[0], id: 'finished', state: 'finished', activeSince: null }); r.studySessions.push({ ...r.studySessions[0], id: 'deleted', deletedAt: stamp }) })
+taskCase('session-no-time-order-policy', r => { session(r); r.studySessions[0].activeSince = '2020-01-01T00:00:00Z' })
+for (const [name, change] of [
+ ['orphan', r => { r.studySessions[0].taskId = 'missing' }],
+ ['duplicate', r => { r.studySessions.push({ ...r.studySessions[0] }) }],
+ ['global-id', r => { r.studySessions[0].id = 'event' }],
+ ['two-active', r => { r.studySessions.push({ ...r.studySessions[0], id: 'second', state: 'paused', activeSince: null }) }],
+ ['wrong-task-status', r => { r.tasks[0].status = r.taskEvents[0].toStatus = 'inbox' }],
+ ['running-null', r => { r.studySessions[0].activeSince = null }],
+ ['paused-time', r => { r.studySessions[0].state = 'paused' }],
+ ['finished-time', r => { r.studySessions[0].state = 'finished' }],
+ ['state', r => { r.studySessions[0].state = 'unknown' }],
+ ['negative', r => { r.studySessions[0].elapsedSeconds = -1 }],
+ ['fraction', r => { r.studySessions[0].elapsedSeconds = 0.1 }],
+ ['number-type', r => { r.studySessions[0].elapsedSeconds = '0' }],
+ ['missing', r => { delete r.studySessions[0].activeSince }],
+ ['null-text', r => { r.studySessions[0].scratchpad = null }],
+ ['invalid-time', r => { r.studySessions[0].startedAt = 'invalid' }],
+ ['unknown-field', r => { r.studySessions[0].extra = true }],
+]) taskCase(`session-${name}`, r => { session(r); change(r) }, false)
 const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.json', import.meta.url)
 const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)

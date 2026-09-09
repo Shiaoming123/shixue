@@ -1,4 +1,4 @@
-//! Ordered tasks, recurrence and lifecycle chains; completion activity remains unsupported.
+//! Ordered tasks, recurrence, sessions and lifecycle chains; completion records remain unsupported.
 use super::{
     calendar::{fields, get, text},
     Json,
@@ -15,6 +15,17 @@ pub(super) fn collection(name: &str, raw: Json) -> Result<Json, String> {
         return Err(INVALID.into());
     }
     items.into_iter().map(|v| {
+        if name == "studySessions" {
+            let session = fields(v, &[
+                ("id", "text"), ("taskId", "text"), ("state", "running|paused|finished"),
+                ("startedAt", "stamp"), ("activeSince", "~stamp"), ("elapsedSeconds", "nonnegative"),
+                ("scratchpad", "empty"), ("createdAt", "stamp"), ("updatedAt", "stamp"), ("deletedAt", "~stamp"),
+            ])?;
+            if (text(get(&session, "state")?)? == "running") != (get(&session, "activeSince")? != &Json::Null) {
+                return Err(INVALID.into());
+            }
+            return Ok(session);
+        }
         if name == "recurrenceSeries" || name == "occurrences" {
             return recurrence(name, v);
         }
@@ -139,6 +150,19 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
     for task in tasks {
         if statuses[text(get(task, "id")?)?] != get(task, "status")? {
             return Err(INVALID.into());
+        }
+    }
+    let mut active = false;
+    for session in array(get(root, "studySessions")?)? {
+        let status = statuses
+            .get(text(get(session, "taskId")?)?)
+            .ok_or(INVALID)?;
+        if get(session, "deletedAt")? == &Json::Null && text(get(session, "state")?)? != "finished"
+        {
+            if active || text(status)? != "in_progress" {
+                return Err(INVALID.into());
+            }
+            active = true;
         }
     }
     Ok(())

@@ -188,7 +188,7 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
         }
         if matches!(
             *key,
-            "tasks" | "taskEvents" | "recurrenceSeries" | "occurrences"
+            "tasks" | "taskEvents" | "recurrenceSeries" | "occurrences" | "studySessions"
         ) {
             value = tasks::collection(key, value)?;
             normalized.push((key.to_string(), value));
