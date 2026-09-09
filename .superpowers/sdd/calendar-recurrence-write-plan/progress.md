@@ -56,3 +56,8 @@ Internal compensation now anchors latest ETag before one restore PATCH, requires
 ### 4B1c3a checkpoint
 
 Production-compilable internal saga now owns Run/Reconcile routing and one injectable invocation deadline. The eventual command caller owns WRITE_GATE; phase helpers never acquire it. Run advances only pending phases; reconcile resolves applying/unknown via GET only and returns before the next pending phase. New routing/deadline/caller-held-gate tests pass alongside prior phase recovery tests. Command wiring, durable cross-process lease, local projection and real provider validation remain outside this slice; Task 4 remains incomplete. See task-4-report.md. Protected research untouched.
+
+
+### 4B1c3b checkpoint
+
+Production execute/Run/Reconcile now route future records to the reviewed saga under the command-owned WRITE_GATE and one 30-second monotonic invocation deadline. Initial Run still consumes a confirmation ticket; native-anchored applying/unknown future progress may resume after volatile tickets disappear. Reconcile remains GET-only and never starts a pending successor/compensation. Runtime ENABLED remains false with no enable command. RED/GREEN and rust:verify (91 tests) pass; command guard proof is unit/source-level, not native command E2E. No local future projection, UI, real Google or Stage 7. Next: review this slice before separately authorized 4B2. Task 4 remains incomplete; research untouched/unstaged.

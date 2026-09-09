@@ -1,4 +1,4 @@
-//! Prepare/confirm only. The caller holds WRITE_GATE; sending remains unsupported.
+//! Prepare/confirm only. The caller holds WRITE_GATE.
 use super::*;
 
 pub(super) fn operation_id() -> Result<String, String> {
@@ -324,10 +324,21 @@ mod tests {
                 .is_err());
             for reconcile in [false, true] {
                 assert_eq!(
-                    execute(&pool, &vault, &http, "owner", id, "grant", reconcile)
-                        .await
-                        .unwrap_err(),
-                    "WRITE_UNSUPPORTED"
+                    execute(
+                        &pool,
+                        &vault,
+                        &http,
+                        "owner",
+                        id,
+                        "grant",
+                        reconcile,
+                        || Err("WRITE_UNAVAILABLE".into()),
+                        std::time::Duration::from_secs(30),
+                        || std::time::Duration::ZERO
+                    )
+                    .await
+                    .unwrap_err(),
+                    "WRITE_UNAVAILABLE"
                 );
             }
             assert_eq!(http.calls.get(), 12);

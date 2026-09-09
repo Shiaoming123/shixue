@@ -1,4 +1,4 @@
-//! Internal future saga. The eventual command caller owns WRITE_GATE.
+//! Future saga. The command caller owns WRITE_GATE.
 use super::*;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -539,6 +539,283 @@ async fn call<H: Http>(
 mod tests {
     use super::*;
     use std::cell::{Cell, RefCell};
+    // Exercise orchestration through the production execute entry used by commands.
+    #[allow(clippy::too_many_arguments)]
+    async fn saga<V: Vault, H: Http>(
+        pool: &SqlitePool,
+        vault: &V,
+        http: &H,
+        owner: &str,
+        id: &str,
+        epoch: &str,
+        mode: Mode,
+        authorization: impl Fn() -> Result<(), String>,
+        deadline: std::time::Duration,
+        now: impl Fn() -> std::time::Duration,
+    ) -> Result<Ledger, String> {
+        execute(
+            pool,
+            vault,
+            http,
+            owner,
+            id,
+            epoch,
+            mode == Mode::Reconcile,
+            authorization,
+            deadline,
+            now,
+        )
+        .await?;
+        ledger(pool, vault, owner, id, epoch).await
+    }
+
+    #[test]
+    fn native_future_execute_refuses_authority_state_anchor_and_lock() {
+        tauri::async_runtime::block_on(async {
+            let _gate = WRITE_GATE.lock().await;
+            for fault in [
+                "session",
+                "grant",
+                "generation",
+                "access",
+                "deadline",
+                "state",
+                "digest",
+                "lock",
+            ] {
+                let (pool, vault, preview, snapshot) = setup().await;
+                let id = field(&preview, "operationId").unwrap();
+                let http = Fake {
+                    pool: &pool,
+                    vault: &vault,
+                    id: id.into(),
+                    original: snapshot["parent"].clone(),
+                    pivot: snapshot["pivot"].clone(),
+                    event: RefCell::new(Value::Null),
+                    child: RefCell::new(Value::Null),
+                    requests: RefCell::new(vec![]),
+                    fault,
+                };
+                if fault == "state" {
+                    let mut record = ledger(&pool, &vault, "owner", id, "grant").await.unwrap();
+                    record.state = "prepared".into();
+                    record.version += 1;
+                    persist(&pool, &vault, "owner", id, &record, None)
+                        .await
+                        .unwrap();
+                }
+                if fault == "digest" {
+                    sqlx::query("UPDATE calendar_write_outbox SET native_payload='{}'")
+                        .execute(&pool)
+                        .await
+                        .unwrap();
+                }
+                if fault == "lock" {
+                    let mut other = anchor(&vault, "owner", id).unwrap();
+                    other.state = "applying".into();
+                    other.previous = Some(id.into());
+                    vault
+                        .set(
+                            &anchor_key("owner", "other"),
+                            &serde_json::to_string(&other).unwrap(),
+                        )
+                        .unwrap();
+                    vault.set(&head_key("owner"), "other").unwrap();
+                }
+                let deadline = std::time::Duration::from_secs(30);
+                let reply = execute(
+                    &pool,
+                    &vault,
+                    &http,
+                    "owner",
+                    id,
+                    "grant",
+                    false,
+                    || {
+                        if ["grant", "generation", "access"].contains(&fault) {
+                            Err("WRITE_GRANT_CHANGED".into())
+                        } else {
+                            Ok(())
+                        }
+                    },
+                    deadline,
+                    || {
+                        if fault == "deadline" {
+                            deadline
+                        } else {
+                            std::time::Duration::ZERO
+                        }
+                    },
+                )
+                .await;
+                assert!(reply.is_err(), "{fault}");
+                assert!(http.requests.borrow().iter().all(|m| m == "GET"), "{fault}");
+            }
+        });
+    }
+    #[test]
+    fn native_future_restart_uses_anchored_progress_without_new_ticket() {
+        tauri::async_runtime::block_on(async {
+            let _gate = WRITE_GATE.lock().await;
+            let (pool, vault, preview, snapshot) = setup().await;
+            let id = field(&preview, "operationId").unwrap();
+            TICKETS
+                .get_or_init(Default::default)
+                .lock()
+                .unwrap()
+                .remove(id);
+            let record = ledger(&pool, &vault, "owner", id, "grant").await.unwrap();
+            assert_eq!(
+                consume_run_ticket(id, &record, 7).unwrap_err(),
+                "WRITE_CONFIRM_REQUIRED"
+            );
+            prepared_ticket(&preview, 7).unwrap();
+            assert!(consume_run_ticket(id, &record, 8).is_err());
+            consume_run_ticket(id, &record, 7).unwrap();
+            assert!(consume_run_ticket(id, &record, 7).is_err());
+            let mut http = Fake {
+                pool: &pool,
+                vault: &vault,
+                id: id.into(),
+                original: snapshot["parent"].clone(),
+                pivot: snapshot["pivot"].clone(),
+                event: RefCell::new(Value::Null),
+                child: RefCell::new(Value::Null),
+                requests: RefCell::new(vec![]),
+                fault: "read-loss",
+            };
+            let deadline = std::time::Duration::from_secs(30);
+            saga(
+                &pool,
+                &vault,
+                &http,
+                "owner",
+                id,
+                "grant",
+                Mode::Run,
+                || Ok(()),
+                deadline,
+                || std::time::Duration::ZERO,
+            )
+            .await
+            .unwrap();
+            // Process restart loses every volatile ticket; durable ledger and provider survive.
+            TICKETS
+                .get_or_init(Default::default)
+                .lock()
+                .unwrap()
+                .remove(id);
+            let restarted = ledger(&pool, &vault, "owner", id, "grant").await.unwrap();
+            consume_run_ticket(id, &restarted, 9).unwrap();
+            assert_eq!(
+                saga(
+                    &pool,
+                    &vault,
+                    &http,
+                    "owner",
+                    id,
+                    "grant",
+                    Mode::Run,
+                    || Ok(()),
+                    deadline,
+                    || std::time::Duration::ZERO
+                )
+                .await
+                .err()
+                .unwrap(),
+                "WRITE_RECONCILE_REQUIRED"
+            );
+            http.fault = "child-success";
+            http.requests.borrow_mut().clear();
+            let recovered = saga(
+                &pool,
+                &vault,
+                &http,
+                "owner",
+                id,
+                "grant",
+                Mode::Reconcile,
+                || Ok(()),
+                deadline,
+                || std::time::Duration::ZERO,
+            )
+            .await
+            .unwrap();
+            assert_eq!(*http.requests.borrow(), ["GET"]);
+            assert_eq!(
+                recovered.future.as_ref().unwrap()["successor"]["state"],
+                "pending"
+            );
+            consume_run_ticket(id, &recovered, 9).unwrap();
+            let done = saga(
+                &pool,
+                &vault,
+                &http,
+                "owner",
+                id,
+                "grant",
+                Mode::Run,
+                || Ok(()),
+                deadline,
+                || std::time::Duration::ZERO,
+            )
+            .await
+            .unwrap();
+            assert_eq!(done.state, "applied");
+            assert_eq!(
+                http.requests
+                    .borrow()
+                    .iter()
+                    .filter(|m| *m != "GET")
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                ["POST"]
+            );
+            assert!(!ENABLED.load(Ordering::SeqCst));
+        });
+    }
+    #[test]
+    fn native_future_execute_routes_success() {
+        tauri::async_runtime::block_on(async {
+            let _gate = WRITE_GATE.lock().await;
+            let (pool, vault, preview, snapshot) = setup().await;
+            let id = field(&preview, "operationId").unwrap();
+            let http = Fake {
+                pool: &pool,
+                vault: &vault,
+                id: id.into(),
+                original: snapshot["parent"].clone(),
+                pivot: snapshot["pivot"].clone(),
+                event: RefCell::new(Value::Null),
+                child: RefCell::new(Value::Null),
+                requests: RefCell::new(vec![]),
+                fault: "child-success",
+            };
+            let result = execute(
+                &pool,
+                &vault,
+                &http,
+                "owner",
+                id,
+                "grant",
+                false,
+                || Ok(()),
+                std::time::Duration::from_secs(30),
+                || std::time::Duration::ZERO,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result["state"], "applied");
+            assert_eq!(
+                http.requests
+                    .borrow()
+                    .iter()
+                    .filter(|m| *m != "GET")
+                    .count(),
+                2
+            );
+        });
+    }
     #[test]
     fn native_future_shared_deadline_expires_after_parent_proof() {
         tauri::async_runtime::block_on(async {
@@ -608,6 +885,7 @@ mod tests {
                 "read-loss",
                 "child-loss",
                 "child-reject",
+                "child-reject-restore-412",
                 "reject",
             ] {
                 let (pool, vault, preview, snapshot) = setup().await;
@@ -648,6 +926,17 @@ mod tests {
                 assert!(http.requests.borrow().is_empty());
                 now.set(deadline - std::time::Duration::from_nanos(1));
                 let result = invoke(Mode::Run).await.unwrap();
+                assert_eq!(
+                    http.requests.borrow().len(),
+                    match fault {
+                        "read-loss" => 8,
+                        "reject" => 7,
+                        "child-reject" => 15,
+                        "child-reject-restore-412" => 14,
+                        _ => 12,
+                    },
+                    "{fault}"
+                );
                 let mutations = http
                     .requests
                     .borrow()
@@ -658,7 +947,7 @@ mod tests {
                     mutations,
                     if fault == "read-loss" || fault == "reject" {
                         1
-                    } else if fault == "child-reject" {
+                    } else if fault.starts_with("child-reject") {
                         3
                     } else {
                         2
@@ -713,6 +1002,9 @@ mod tests {
                     .await
                     .unwrap();
                     assert_eq!(done.state, "applied");
+                } else if fault == "child-reject-restore-412" {
+                    assert_eq!(result.error.as_deref(), Some("COMPENSATION_CONFLICT"));
+                    assert!(holds_lock(&anchor(&vault, "owner", id).unwrap()));
                 } else if fault == "child-reject" {
                     assert_eq!(result.error.as_deref(), Some("COMPENSATED"));
                 } else if fault == "reject" {
@@ -803,7 +1095,7 @@ mod tests {
                     body.as_ref().unwrap(),
                     &record.preview["intent"]["plan"]["successor"]["body"]
                 );
-                if self.fault == "child-reject" {
+                if self.fault.starts_with("child-reject") {
                     return Ok(HttpReply {
                         status: 403,
                         body: Value::Null,
@@ -851,9 +1143,11 @@ mod tests {
                     body.as_ref().unwrap(),
                     &record.preview["intent"]["plan"]["compensation"]["body"]
                 );
-                if ["restore-reject", "restore-412"].contains(&self.fault) {
+                if ["restore-reject", "restore-412", "child-reject-restore-412"]
+                    .contains(&self.fault)
+                {
                     return Ok(HttpReply {
-                        status: if self.fault == "restore-412" {
+                        status: if self.fault.ends_with("restore-412") {
                             412
                         } else {
                             403

@@ -1092,6 +1092,7 @@ async fn preflight<H: Http>(http: &H, preview: &Value) -> Result<bool, String> {
     }
     Ok(event["etag"] == intent_etag(intent)?)
 }
+#[allow(clippy::too_many_arguments)] // Keep invocation authorization and budget explicit.
 async fn execute<V: Vault, H: Http>(
     pool: &SqlitePool,
     vault: &V,
@@ -1100,10 +1101,30 @@ async fn execute<V: Vault, H: Http>(
     id: &str,
     epoch: &str,
     reconcile: bool,
+    authorization: impl Fn() -> Result<(), String>,
+    deadline: std::time::Duration,
+    monotonic_now: impl Fn() -> std::time::Duration,
 ) -> Result<Value, String> {
     let mut record = ledger(pool, vault, owner, id, epoch).await?;
     if record.preview["intent"]["kind"] == "recurring.future" {
-        return Err("WRITE_UNSUPPORTED".into());
+        let record = future_parent::saga(
+            pool,
+            vault,
+            http,
+            owner,
+            id,
+            epoch,
+            if reconcile {
+                future_parent::Mode::Reconcile
+            } else {
+                future_parent::Mode::Run
+            },
+            authorization,
+            deadline,
+            monotonic_now,
+        )
+        .await?;
+        return Ok(safe(&record));
     }
     let a = anchor(vault, owner, id)?;
     if record.state == "applied" {
@@ -1211,31 +1232,58 @@ async fn execute<V: Vault, H: Http>(
     persist(pool, vault, owner, id, &record, a.previous).await?;
     Ok(safe(&record))
 }
+// Only a ledger already verified against the native anchor may reach this boundary.
+fn consume_run_ticket(id: &str, record: &Ledger, generation: u64) -> Result<(), String> {
+    if record.future.is_some()
+        && (record.state == "applying" || (record.state == "failed" && record.outcome_unknown))
+    {
+        return Ok(());
+    }
+    ticket(id, field(&record.preview, "hash")?, generation, true)
+}
+fn require_enabled() -> Result<(), String> {
+    if !ENABLED.load(Ordering::SeqCst) {
+        return Err("WRITE_UNAVAILABLE".into());
+    }
+    Ok(())
+}
 #[tauri::command]
 pub async fn write_run<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     config: Config,
     operation_id: String,
 ) -> Result<Value, String> {
-    if !ENABLED.load(Ordering::SeqCst) {
-        return Err("WRITE_UNAVAILABLE".into());
-    }
+    let started = std::time::Instant::now();
+    require_enabled()?;
     let _guard = WRITE_GATE.lock().await;
     let (owner, epoch, generation) = grant(&config)?;
     let pool = sync_store::database(&app).await?;
     let record = ledger(&pool, &Keyring, &owner, &operation_id, &epoch).await?;
-    ticket(
-        &operation_id,
-        field(&record.preview, "hash")?,
-        generation,
-        true,
-    )?;
+    consume_run_ticket(&operation_id, &record, generation)?;
     let http = GoogleHttp {
         config: &config,
         owner: &owner,
         epoch: generation,
     };
-    execute(&pool, &Keyring, &http, &owner, &operation_id, &epoch, false).await
+    execute(
+        &pool,
+        &Keyring,
+        &http,
+        &owner,
+        &operation_id,
+        &epoch,
+        false,
+        || {
+            require_enabled()?;
+            if grant(&config)? != (owner.clone(), epoch.clone(), generation) {
+                return Err("WRITE_GRANT_CHANGED".into());
+            }
+            http.check_future_session()
+        },
+        std::time::Duration::from_secs(30),
+        || started.elapsed(),
+    )
+    .await
 }
 #[tauri::command]
 pub async fn write_reconcile<R: tauri::Runtime>(
@@ -1243,6 +1291,7 @@ pub async fn write_reconcile<R: tauri::Runtime>(
     config: Config,
     operation_id: String,
 ) -> Result<Value, String> {
+    let started = std::time::Instant::now();
     let _guard = WRITE_GATE.lock().await;
     let (owner, epoch, generation) = grant(&config)?;
     let pool = sync_store::database(&app).await?;
@@ -1251,13 +1300,73 @@ pub async fn write_reconcile<R: tauri::Runtime>(
         owner: &owner,
         epoch: generation,
     };
-    execute(&pool, &Keyring, &http, &owner, &operation_id, &epoch, true).await
+    execute(
+        &pool,
+        &Keyring,
+        &http,
+        &owner,
+        &operation_id,
+        &epoch,
+        true,
+        || {
+            if grant(&config)? != (owner.clone(), epoch.clone(), generation) {
+                return Err("WRITE_GRANT_CHANGED".into());
+            }
+            http.check_future_session()
+        },
+        std::time::Duration::from_secs(30),
+        || started.elapsed(),
+    )
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+    #[test]
+    fn public_write_run_closed_before_grant_database_or_http() {
+        assert_eq!(require_enabled().unwrap_err(), "WRITE_UNAVAILABLE");
+        let source = include_str!("calendar_write_native.rs");
+        let command = source
+            .split("pub async fn write_run")
+            .nth(1)
+            .unwrap()
+            .split("#[tauri::command]")
+            .next()
+            .unwrap();
+        assert!(
+            command.find("require_enabled()?").unwrap()
+                < command.find("WRITE_GATE.lock()").unwrap()
+        );
+        let production = source.split("mod tests {").next().unwrap();
+        assert!(!production.contains("ENABLED.store(true"));
+        assert!(!production.contains("ENABLED.swap("));
+    }
+    async fn execute<V: Vault, H: Http>(
+        pool: &SqlitePool,
+        vault: &V,
+        http: &H,
+        owner: &str,
+        id: &str,
+        epoch: &str,
+        reconcile: bool,
+    ) -> Result<Value, String> {
+        super::execute(
+            pool,
+            vault,
+            http,
+            owner,
+            id,
+            epoch,
+            reconcile,
+            || Ok(()),
+            std::time::Duration::from_secs(30),
+            || std::time::Duration::ZERO,
+        )
+        .await
+    }
+
     #[derive(Default)]
     struct MemoryVault {
         data: Mutex<HashMap<String, String>>,
@@ -2134,9 +2243,7 @@ mod workspace_parse;
 
 #[path = "calendar_write_future_local.rs"]
 mod future_local;
-#[allow(dead_code)] // Internal saga only; command wiring remains unsupported.
 #[path = "calendar_write_future_parent.rs"]
 mod future_parent;
-#[allow(dead_code)] // Used only by the unwired internal saga.
 #[path = "calendar_write_future_step.rs"]
 mod future_step;
