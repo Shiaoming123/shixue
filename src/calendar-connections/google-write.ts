@@ -1,6 +1,7 @@
 import { array, record, string } from './types.ts'
 import { parseCalendarEventTime } from '../domain/workspace/parse.ts'
 import { writePreviewHash } from './write-outbox.ts'
+import { createGoogleFutureReader } from './google-future.ts'
 import type { CalendarWriter, WriteFields, WriteIntent, WritePreview, WriteResponse, WriteSession } from './write-outbox.ts'
 
 export interface GoogleWriteRequest { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string; headers: Record<string, string>; query: Record<string, string>; body?: Record<string, unknown> }
@@ -67,7 +68,7 @@ function proof(preview: WritePreview, value: Record<string, unknown>): WriteResp
 }
 
 /** Request-level contract only. There is no fetch/native sender; only an explicitly injected fake transport. */
-export function createGoogleCalendarWriter(transport?: GoogleWriteTransport): CalendarWriter {
+export function createGoogleCalendarWriter(transport?: GoogleWriteTransport, loadWorkspace?: () => Promise<unknown>): CalendarWriter {
   const check = (preview: WritePreview, epoch?: number) => {
     if (!transport || transport.kind !== 'fake') throw new Error('WRITE_UNAVAILABLE')
     const session = transport.session(preview.connectionId)
@@ -113,6 +114,7 @@ export function createGoogleCalendarWriter(transport?: GoogleWriteTransport): Ca
     return { connectionId: preview.connectionId, calendarId: preview.calendarId, eventId: preview.eventId, canWrite: value.locked !== true, etag: string(value.etag), selfEmail: array(value.attendees ?? []).map(record).find((item) => item.self === true)?.email as string | undefined ?? null }
   }
   return {
+    ...(transport && loadWorkspace ? { readFuture: createGoogleFutureReader(transport, loadWorkspace) } : {}),
     mode: transport ? 'fake' : 'native',
     session: (connectionId) => transport?.session(connectionId) ?? { connected: false, generation: 0, canWrite: false },
     inspect,
