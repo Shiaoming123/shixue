@@ -1,9 +1,9 @@
-//! Current and legacy-shaped reminder rules; deliveries remain fail-closed.
+//! Ordered reminder rules and deliveries with TS reference invariants.
 use super::{
     calendar::{fields, get, text},
     Json,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 const INVALID: &str = "WORKSPACE_REMINDER_INVALID";
 fn take(props: &mut Vec<(String, Json)>, key: &str) -> Option<Json> {
     props
@@ -23,6 +23,49 @@ pub(super) fn rules(raw: Json) -> Result<Json, String> {
         .map(rule)
         .collect::<Result<Vec<_>, _>>()
         .map(Json::Array)
+}
+pub(super) fn deliveries(raw: Json, rules: &Json) -> Result<Json, String> {
+    let (Json::Array(items), Json::Array(rules)) = (raw, rules) else {
+        return Err(INVALID.into());
+    };
+    if items.len() > 100_000 {
+        return Err(INVALID.into());
+    }
+    let by_id = rules
+        .iter()
+        .map(|rule| Ok((text(get(rule, "id")?)?, rule)))
+        .collect::<Result<HashMap<_, _>, String>>()?;
+    items.into_iter().map(|raw| {
+        let Json::Object(mut props) = raw else { return Err(INVALID.into()); };
+        let start = take(&mut props, "originalStart");
+        let claim = take(&mut props, "claim").map(|raw| fields(raw, &[("token", "text"), ("armedAt", "stamp")])).transpose()?;
+        let mut output = fields(Json::Object(props), &[
+            ("id", "text"), ("revision", "?number"), ("acknowledgedAt", "?stamp"),
+            ("reminderRuleId", "text"), ("occurrenceId", "~text"), ("scheduledFor", "stamp"),
+            ("status", "pending|delivered|snoozed|acted|dismissed|failed|cancelled|armed|ambiguous"),
+            ("snoozedUntil", "~stamp"), ("action", "~complete|open"),
+        ])?;
+        if text(get(&output, "status")?)? == "armed" && (claim.is_none() || get(&output, "revision").is_err()) { return Err(INVALID.into()); }
+        let rule = by_id.get(text(get(&output, "reminderRuleId")?)?).ok_or(INVALID)?;
+        let target = get(rule, "target")?;
+        let event_start = if text(get(target, "kind")?)? == "event" {
+            if get(&output, "occurrenceId")? != &Json::Null || text(get(&output, "action")?).ok() == Some("complete") { return Err(INVALID.into()); }
+            let start = original_start(start.unwrap_or(Json::Null))?;
+            if get(target, "originalStart")? != &Json::Null && get(target, "originalStart")? != &start { return Err(INVALID.into()); }
+            Some(start)
+        } else {
+            if start.is_some_and(|v| v != Json::Null) { return Err(INVALID.into()); }
+            None
+        };
+        if let Json::Object(ref mut props) = output {
+            if let Some(claim) = claim {
+                let index = if props.iter().any(|(k, _)| k == "revision") { 2 } else { 1 };
+                props.insert(index, ("claim".into(), claim));
+            }
+            if let Some(start) = event_start { props.push(("originalStart".into(), start)); }
+        }
+        Ok(output)
+    }).collect::<Result<Vec<_>, _>>().map(Json::Array)
 }
 fn rule(raw: Json) -> Result<Json, String> {
     let Json::Object(mut props) = raw else {
@@ -182,6 +225,44 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
                     return Err(INVALID.into());
                 }
             }
+        }
+    }
+    let Json::Array(deliveries) = get(root, "reminderDeliveries")? else {
+        return Err(INVALID.into());
+    };
+    let mut keys = HashSet::new();
+    for delivery in deliveries {
+        let rule_id = text(get(delivery, "reminderRuleId")?)?;
+        let rule = collections["reminderRules"].get(rule_id).ok_or(INVALID)?;
+        let target = get(rule, "target")?;
+        let occurrence_id = get(delivery, "occurrenceId")?;
+        let occurrence_key = if text(get(target, "kind")?)? == "task" {
+            if get(target, "occurrenceId")? != &Json::Null
+                && get(target, "occurrenceId")? != occurrence_id
+            {
+                return Err(INVALID.into());
+            }
+            if occurrence_id != &Json::Null {
+                let occurrence = collections["occurrences"]
+                    .get(text(occurrence_id)?)
+                    .ok_or(INVALID)?;
+                let series = collections["recurrenceSeries"]
+                    .get(text(get(occurrence, "seriesId")?)?)
+                    .ok_or(INVALID)?;
+                if get(series, "taskId")? != get(target, "taskId")? {
+                    return Err(INVALID.into());
+                }
+            }
+            occurrence_id
+        } else {
+            get(delivery, "originalStart")?
+        };
+        // Date.parse truncates fractional seconds to milliseconds before keying.
+        let instant = chrono::DateTime::parse_from_rfc3339(text(get(delivery, "scheduledFor")?)?)
+            .map_err(|_| INVALID)?
+            .timestamp_millis();
+        if !keys.insert((rule_id, occurrence_key.encode()?, instant)) {
+            return Err(INVALID.into());
         }
     }
     Ok(())

@@ -183,6 +183,15 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
             normalized.push((key.to_string(), value));
             continue;
         }
+        if *key == "reminderDeliveries" {
+            let rules = normalized
+                .iter()
+                .find(|(name, _)| name == "reminderRules")
+                .ok_or("WORKSPACE_MISSING_FIELD")?;
+            value = reminders::deliveries(value, &rules.1)?;
+            normalized.push((key.to_string(), value));
+            continue;
+        }
         if matches!(*key, "calendarSources" | "calendarEvents") {
             value = calendar::collection(key, value)?;
             normalized.push((key.to_string(), value));
