@@ -31,3 +31,7 @@
 - Latest implementation slice: 4B1b2b native future prepare/confirmation/anchoring, based on `d5548e5`; see task-4-report.md for evidence.
 - Protected untracked file: `docs/experiments/calendar-competitor-research.md` (untouched and unstaged)
 - Next action: review 4B1b2b native prepare/confirmation/anchor integration; then continue separately authorized sender/recovery/local projection work. Task 4 remains incomplete.
+
+### 4B1c1a checkpoint
+
+Internal test-only parent/successor request/proof helper and 150 actual TS adapter fixtures implemented; RED/GREEN and rust:verify (80 tests) pass. Execute/reconcile remain unsupported. Next: resolve duplicate-provider-key parsing before sender wiring, then implement phase persistence/authorization and read-only recovery separately. Full Task 4 remains incomplete; see task-4-report.md. Protected research unchanged.

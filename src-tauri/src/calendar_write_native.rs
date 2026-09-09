@@ -2119,3 +2119,6 @@ mod workspace_parse;
 
 #[path = "calendar_write_future_local.rs"]
 mod future_local;
+#[cfg(test)]
+#[path = "calendar_write_future_step.rs"]
+mod future_step;
