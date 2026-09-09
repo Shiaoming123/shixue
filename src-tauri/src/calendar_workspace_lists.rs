@@ -1,4 +1,4 @@
-//! Ordered list organization subset; tasks require the still-unmodeled event chain.
+//! Ordered list organization subset and global IDs for supported entities.
 use super::{
     calendar::{fields, get, text, whitespace},
     Json,
@@ -49,6 +49,8 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
         "tags",
         "calendarSources",
         "calendarEvents",
+        "tasks",
+        "taskEvents",
     ] {
         let Json::Array(items) = get(root, key)? else {
             return Err(INVALID.into());

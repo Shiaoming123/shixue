@@ -158,3 +158,68 @@ const listOutput = new URL('../tests/fixtures/calendar-future-workspace-lists.js
 const listBytes = `${JSON.stringify(listCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(listOutput, 'utf8').replaceAll('\r\n', '\n'), listBytes)
 else writeFileSync(listOutput, listBytes)
+const taskCases = []
+function taskCase(name, change, accepted = true) {
+  const raw = JSON.parse(listCases[0].rawJson)
+  raw.tasks = [{ id: 'task', revision: 1, mode: 'general', listId: 'list', sectionId: 'section', tagIds: ['tag'], title: '任务😀', notes: '', status: 'inbox', schedule: { startAt: null, startOn: null, estimateMinutes: null }, deadline: { dueAt: null, dueOn: null }, priority: 'none', checklist: [], learning: null, recurrenceSeriesId: null, createdAt: stamp, updatedAt: stamp, deletedAt: null }]
+  raw.taskEvents = [{ id: 'event', sequence: 1, taskId: 'task', type: 'captured', occurredAt: stamp, fromStatus: null, toStatus: 'inbox', reason: null, completionRecordId: null }]
+  change(raw)
+  let parsedJson = null
+  try { parsedJson = JSON.stringify(parseWorkspaceStateV4(structuredClone(raw))) } catch { assert.equal(accepted, false, name) }
+  const reverse = v => Array.isArray(v) ? v.map(reverse) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).reverse().map(([k, x]) => [k, reverse(x)])) : v
+  taskCases.push({ name, rawJson: JSON.stringify(reverse(raw)), accepted, parsedJson, hash: parsedJson === null ? null : `sha256:${createHash('sha256').update(parsedJson).digest('hex')}` })
+}
+taskCase('created-omitted-occurrence', () => {})
+taskCase('explicit-null-occurrence', r => { r.taskEvents[0].occurrenceId = null })
+taskCase('learning-planned', r => { Object.assign(r.tasks[0], { mode: 'learning', learning: { acceptanceCriteria: ['理解'], blockedReason: null }, status: 'planned', sectionId: null }); Object.assign(r.taskEvents[0], { type: 'planned', toStatus: 'planned' }) })
+taskCase('schedule-deadline-checklist-numbers', r => { Object.assign(r.tasks[0], { revision: 1e21, priority: 'high', notes: '\u000f\n中文', schedule: { startOn: '2026-09-09', startAt: null, estimateMinutes: 1e20 }, deadline: { dueAt: stamp, dueOn: null }, checklist: [{ id: 'item', text: '检查😀', checked: true, checkedAt: stamp, position: -0 }] }) })
+taskCase('timestamp-schedule-date-deadline', r => { r.tasks[0].schedule.startAt = stamp; r.tasks[0].deadline.dueOn = '2026-09-10' })
+taskCase('full-chain-completed', r => {
+  for (const [type, status] of [['planned', 'planned'], ['started', 'in_progress'], ['blocked', 'blocked'], ['resumed', 'in_progress'], ['completed', 'completed'], ['reopened', 'inbox'], ['cancelled', 'cancelled'], ['reopened', 'planned'], ['paused', 'planned'], ['rescheduled', 'planned'], ['completed', 'completed'], ['deleted', 'completed']]) {
+    r.taskEvents.push({ ...r.taskEvents[0], id: `event-${r.taskEvents.length}`, sequence: r.taskEvents.length + 1, type, fromStatus: r.taskEvents.at(-1).toStatus, toStatus: status, reason: '原因' })
+  }
+  r.tasks[0].status = 'completed'; r.tasks[0].deletedAt = stamp
+})
+taskCase('interleaved-tasks', r => { r.tasks.push({ ...r.tasks[0], id: 'other' }); r.taskEvents.push({ ...r.taskEvents[0], id: 'other-event', sequence: 2, taskId: 'other', type: 'migrated' }) })
+for (const [name, change] of [
+  ['missing-field', r => { delete r.tasks[0].notes }],
+  ['unknown-task', r => { r.tasks[0].extra = 1 }],
+  ['unknown-schedule', r => { r.tasks[0].schedule.extra = 1 }],
+  ['unknown-deadline', r => { r.tasks[0].deadline.extra = 1 }],
+  ['unknown-event', r => { r.taskEvents[0].extra = 1 }],
+  ['unknown-learning', r => { r.tasks[0].mode = 'learning'; r.tasks[0].learning = { acceptanceCriteria: [], blockedReason: null, extra: 1 } }],
+  ['unknown-checklist', r => { r.tasks[0].checklist = [{ id: 'i', text: 'x', checked: false, checkedAt: null, position: 0, extra: 1 }] }],
+  ['bad-status', r => { r.tasks[0].status = 'open' }],
+  ['bad-priority', r => { r.tasks[0].priority = 'urgent' }],
+  ['bad-event-type', r => { r.taskEvents[0].type = 'created' }],
+  ['bad-revision', r => { r.tasks[0].revision = 0 }],
+  ['bad-estimate', r => { r.tasks[0].schedule.estimateMinutes = 0.5 }],
+  ['bad-date', r => { r.tasks[0].deadline.dueOn = '2026-02-30' }],
+  ['both-starts', r => { r.tasks[0].schedule.startAt = stamp; r.tasks[0].schedule.startOn = '2026-09-09' }],
+  ['both-dues', r => { r.tasks[0].deadline.dueAt = stamp; r.tasks[0].deadline.dueOn = '2026-09-09' }],
+  ['learning-mode-mismatch', r => { r.tasks[0].mode = 'learning' }],
+  ['list-orphan', r => { r.tasks[0].listId = 'missing' }],
+  ['section-orphan', r => { r.tasks[0].sectionId = 'missing' }],
+  ['section-wrong-list', r => { r.lists.push({ ...r.lists[0], id: 'other' }); r.tasks[0].listId = 'other' }],
+  ['tag-orphan', r => { r.tasks[0].tagIds = ['missing'] }],
+  ['duplicate-tag', r => { r.tasks[0].tagIds.push('tag') }],
+  ['duplicate-checklist', r => { r.tasks[0].checklist = Array(2).fill({ id: 'i', text: 'x', checked: false, checkedAt: null, position: 0 }) }],
+  ['checklist-type', r => { r.tasks[0].checklist = [{ id: 'i', text: 'x', checked: 1, checkedAt: null, position: 0 }] }],
+  ['duplicate-global-id', r => { r.tasks[0].id = 'tag' }],
+  ['event-global-id', r => { r.taskEvents[0].id = 'list' }],
+  ['event-task-orphan', r => { r.taskEvents[0].taskId = 'missing' }],
+  ['missing-chain', r => { r.taskEvents = [] }],
+  ['bad-first-status', r => { r.taskEvents[0].fromStatus = 'inbox' }],
+  ['null-to-status', r => { r.taskEvents[0].toStatus = null }],
+  ['current-state-mismatch', r => { r.tasks[0].status = 'completed' }],
+  ['sequence-gap', r => { r.taskEvents[0].sequence = 2 }],
+  ['duplicate-sequence', r => { r.taskEvents.push({ ...r.taskEvents[0], id: 'second', fromStatus: 'inbox' }) }],
+  ['broken-chain', r => { r.taskEvents.push({ ...r.taskEvents[0], id: 'second', sequence: 2, fromStatus: 'completed' }) }],
+  ['recurrence-ref', r => { r.tasks[0].recurrenceSeriesId = 'series' }],
+  ['completion-ref', r => { r.taskEvents[0].completionRecordId = 'record' }],
+  ['occurrence-ref', r => { r.taskEvents[0].occurrenceId = 'occurrence' }],
+]) taskCase(name, change, false)
+const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.json', import.meta.url)
+const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
+if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)
+else writeFileSync(taskOutput, taskBytes)

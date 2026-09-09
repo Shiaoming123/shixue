@@ -1,8 +1,10 @@
-//! Partial workspace parser: calendar entities and list organization only.
+//! Partial workspace parser: calendar, list organization, tasks and task event chains.
 #[path = "calendar_workspace_calendar.rs"]
 mod calendar;
 #[path = "calendar_workspace_lists.rs"]
 mod lists;
+#[path = "calendar_workspace_tasks.rs"]
+mod tasks;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use std::fmt;
 
@@ -148,7 +150,7 @@ const ROOT: &[&str] = &[
     "eventOutcomes",
 ];
 
-/// Deliberately incomplete. Tasks and dependent collections remain fail-closed.
+/// Deliberately incomplete. Recurrence and other dependent collections remain fail-closed.
 pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     let Json::Object(mut fields) = parse(raw)? else {
         return Err("WORKSPACE_INVALID".into());
@@ -184,6 +186,11 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
             normalized.push((key.to_string(), value));
             continue;
         }
+        if matches!(*key, "tasks" | "taskEvents") {
+            value = tasks::collection(key, value)?;
+            normalized.push((key.to_string(), value));
+            continue;
+        }
         match (*key, &value) {
             ("version", Json::Number(v)) if *v == 4.0 => {}
             ("revision", Json::Number(v)) if *v > 0.0 && v.fract() == 0.0 => {}
@@ -198,6 +205,7 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     let normalized = Json::Object(normalized);
     calendar::references(&normalized)?;
     lists::references(&normalized)?;
+    tasks::references(&normalized)?;
     Ok(normalized.encode()?.into_bytes())
 }
 
@@ -235,6 +243,31 @@ mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
 
+    #[test]
+    fn tasks_and_event_chains_match_ts_and_fail_closed() {
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/calendar-future-workspace-tasks.json"
+        ))
+        .unwrap();
+        for fixture in fixtures.as_array().unwrap() {
+            let result = normalize_empty_root(fixture["rawJson"].as_str().unwrap().as_bytes());
+            if fixture["accepted"] == true {
+                let bytes = result.unwrap_or_else(|error| panic!("{}: {error}", fixture["name"]));
+                assert_eq!(
+                    String::from_utf8(bytes.clone()).unwrap(),
+                    fixture["parsedJson"],
+                    "{}",
+                    fixture["name"]
+                );
+                assert_eq!(
+                    format!("sha256:{:x}", Sha256::digest(&bytes)),
+                    fixture["hash"]
+                );
+            } else {
+                assert!(result.is_err(), "{}", fixture["name"]);
+            }
+        }
+    }
     #[test]
     fn list_entities_match_ts_and_fail_closed() {
         let fixtures: serde_json::Value = serde_json::from_str(include_str!(
