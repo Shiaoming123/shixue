@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, Utc};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, SecondsFormat, Utc};
 use serde_json::{json, Value};
 
 /// Verify actual source/event facts, independently of the receipt's claimed success.
@@ -415,10 +415,14 @@ fn recurrence(rule: &str, time: &Value) -> Option<Value> {
         Some(value) => number(value)?,
         None => 1,
     };
-    let anchor = time["startOn"]
-        .as_str()
-        .or_else(|| time["startAt"].as_str().and_then(|v| v.get(..10)))?;
-    let date = NaiveDate::parse_from_str(anchor, "%Y-%m-%d").ok()?;
+    let anchor = wall(
+        time,
+        time["startOn"]
+            .as_str()
+            .or_else(|| time["startAt"].as_str())?,
+    )?
+    .0;
+    let date = anchor;
     let weekday = date.weekday().num_days_from_sunday();
     let kind = *fields.get("FREQ")?;
     let cadence = match kind {
@@ -477,14 +481,36 @@ fn recurrence(rule: &str, time: &Value) -> Option<Value> {
         _ => return None,
     };
     let end = if let Some(count) = fields.get("COUNT") {
-        json!({"kind":"after","count":count.parse::<u64>().ok()?})
+        json!({"kind":"after","count":number(count)?})
     } else if let Some(until) = fields.get("UNTIL") {
-        let date = if time["kind"] == "all-day" {
-            NaiveDate::parse_from_str(until, "%Y%m%d").ok()?
+        let (mut date, until_time) = if time["kind"] == "all-day" {
+            (NaiveDate::parse_from_str(until, "%Y%m%d").ok()?, None)
         } else {
-            NaiveDate::parse_from_str(until.get(..8)?, "%Y%m%d").ok()?
+            let instant = DateTime::parse_from_rfc3339(&format!(
+                "{}-{}-{}T{}:{}:{}Z",
+                &until[0..4],
+                &until[4..6],
+                &until[6..8],
+                &until[9..11],
+                &until[11..13],
+                &until[13..15]
+            ))
+            .ok()?;
+            let (date, clock) = wall(time, &instant.to_rfc3339())?;
+            (date, clock)
         };
-        if date < NaiveDate::parse_from_str(anchor, "%Y-%m-%d").ok()? {
+        let anchor_clock = if time["kind"] == "all-day" {
+            None
+        } else {
+            wall(time, time["startAt"].as_str()?)?.1
+        };
+        if until_time
+            .zip(anchor_clock)
+            .is_some_and(|(clock, anchor_clock)| clock < anchor_clock)
+        {
+            date -= Duration::days(1);
+        }
+        if date < anchor {
             return None;
         }
         json!({"kind":"on","date":date.format("%Y-%m-%d").to_string()})
@@ -494,28 +520,33 @@ fn recurrence(rule: &str, time: &Value) -> Option<Value> {
     Some(json!({"cadence":cadence,"end":end,"exceptions":[]}))
 }
 fn occurs(recurrence: &Value, time: &Value, original: &str) -> bool {
-    let Some(anchor) = time["startOn"]
-        .as_str()
-        .or_else(|| time["startAt"].as_str())
-    else {
-        return false;
-    };
-    let original = if time["kind"] == "all-day" {
-        original.to_owned()
+    let Some((start, clock)) = (if time["kind"] == "all-day" {
+        time["startOn"]
+            .as_str()
+            .and_then(|v| NaiveDate::parse_from_str(v, "%Y-%m-%d").ok())
+            .map(|v| (v, None))
     } else {
-        original.get(..10).unwrap_or("").to_owned()
-    };
-    let (Ok(start), Ok(target)) = (
-        NaiveDate::parse_from_str(&anchor[..10], "%Y-%m-%d"),
-        NaiveDate::parse_from_str(&original, "%Y-%m-%d"),
-    ) else {
+        time["startAt"].as_str().and_then(|v| wall(time, v))
+    }) else {
         return false;
     };
+    let Some((target, target_clock)) = (if time["kind"] == "all-day" {
+        NaiveDate::parse_from_str(original, "%Y-%m-%d")
+            .ok()
+            .map(|v| (v, None))
+    } else {
+        wall(time, original)
+    }) else {
+        return false;
+    };
+    if clock != target_clock {
+        return false;
+    }
     if target < start
         || recurrence["end"]["kind"] == "on"
             && recurrence["end"]["date"]
                 .as_str()
-                .is_none_or(|date| original.as_str() > date)
+                .is_none_or(|date| target.format("%Y-%m-%d").to_string().as_str() > date)
     {
         return false;
     }
@@ -548,7 +579,37 @@ fn occurs(recurrence: &Value, time: &Value, original: &str) -> bool {
         }
         _ => false,
     };
-    valid
+    if !valid {
+        return false;
+    }
+    let ordinal = (0..=days)
+        .filter(|offset| cadence_day(&recurrence["cadence"], start + Duration::days(*offset)))
+        .count() as u64;
+    recurrence["end"]["kind"] != "after"
+        || ordinal <= recurrence["end"]["count"].as_u64().unwrap_or(0)
+}
+fn cadence_day(cadence: &Value, target: NaiveDate) -> bool {
+    match cadence["kind"].as_str() {
+        Some("weekly") => cadence["weekdays"].as_array().is_some_and(|days| {
+            days.iter()
+                .any(|day| day.as_u64() == Some(target.weekday().num_days_from_sunday() as u64))
+        }),
+        _ => true,
+    }
+}
+fn wall(time: &Value, value: &str) -> Option<(NaiveDate, Option<chrono::NaiveTime>)> {
+    if time["kind"] == "all-day" {
+        return Some((NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?, None));
+    }
+    let offset = match time["timezone"].as_str()? {
+        "Asia/Shanghai" => FixedOffset::east_opt(8 * 3600)?,
+        "UTC" | "Etc/UTC" | "Etc/GMT" => FixedOffset::east_opt(0)?,
+        _ => return None,
+    };
+    let local = DateTime::parse_from_rfc3339(value)
+        .ok()?
+        .with_timezone(&offset);
+    Some((local.date_naive(), Some(local.time())))
 }
 
 fn stable_id(connection: &str, calendar: &str, remote: Option<&str>) -> String {
@@ -818,6 +879,21 @@ mod tests {
         receipt["commandReceipts"][index]["result"]["data"]["writeProjection"]["plan"]
             ["originalStart"] = json!("2026-09-20");
         assert!(!verify(&case["base"], &receipt, &impossible));
+    }
+    #[test]
+    fn timed_recurrence_uses_event_timezone_instant_and_count_membership() {
+        let time = json!({"kind":"fixed","startAt":"2026-09-09T16:30:00.000Z","endAt":"2026-09-09T17:30:00.000Z","timezone":"Asia/Shanghai"});
+        let weekly =
+            recurrence("RRULE:FREQ=WEEKLY;BYDAY=TH;UNTIL=20260910T160000Z", &time).unwrap();
+        assert_eq!(weekly["end"], json!({"kind":"on","date":"2026-09-10"}));
+        assert!(occurs(&weekly, &time, "2026-09-09T16:30:00Z"));
+        assert!(!occurs(&weekly, &time, "2026-09-09T17:30:00Z"));
+        assert!(recurrence("RRULE:FREQ=MONTHLY;COUNT=1", &time).is_some());
+        assert!(recurrence("RRULE:FREQ=YEARLY;COUNT=1", &time).is_some());
+        assert!(recurrence("RRULE:FREQ=DAILY;COUNT=0", &time).is_none());
+        assert!(recurrence("RRULE:FREQ=DAILY;COUNT=10001", &time).is_none());
+        let once = recurrence("RRULE:FREQ=DAILY;COUNT=1", &time).unwrap();
+        assert!(!occurs(&once, &time, "2026-09-10T16:30:00Z"));
     }
     #[test]
     fn malformed_provider_participants_do_not_become_acknowledgeable_facts() {

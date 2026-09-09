@@ -1600,6 +1600,16 @@ mod tests {
                     .execute(&pool)
                     .await
                     .unwrap();
+                sqlx::query(
+                    "CREATE TABLE calendar_connector_sync(owner TEXT, calendar TEXT, payload TEXT)",
+                )
+                .execute(&pool)
+                .await
+                .unwrap();
+                sqlx::query("INSERT INTO calendar_connector_sync VALUES('owner','calendar','ordinary-cursor-sentinel')")
+                    .execute(&pool)
+                    .await
+                    .unwrap();
                 let mut forged = current.clone();
                 forged["calendarEvents"][0]["title"] = json!("forged projection");
                 sqlx::query("INSERT INTO study_state VALUES(1,4,?)")
@@ -1678,6 +1688,16 @@ mod tests {
                     .execute(&pool)
                     .await
                     .unwrap();
+                sqlx::query(
+                    "CREATE TABLE calendar_connector_sync(owner TEXT, calendar TEXT, payload TEXT)",
+                )
+                .execute(&pool)
+                .await
+                .unwrap();
+                sqlx::query("INSERT INTO calendar_connector_sync VALUES('owner','calendar','ordinary-cursor-sentinel')")
+                    .execute(&pool)
+                    .await
+                    .unwrap();
                 let mut current = case["current"].clone();
                 let receipt_index = current["commandReceipts"]
                     .as_array()
@@ -1734,15 +1754,15 @@ mod tests {
                     "{}",
                     case["name"]
                 );
-                let cursors: i64 = sqlx::query_scalar(
-                    "SELECT count(*) FROM sqlite_master WHERE name='calendar_connector_sync'",
+                let cursor: String = sqlx::query_scalar(
+                    "SELECT payload FROM calendar_connector_sync WHERE owner='owner' AND calendar='calendar'",
                 )
                 .fetch_one(&pool)
                 .await
                 .unwrap();
                 assert_eq!(
-                    cursors, 0,
-                    "{} must not create or advance ordinary sync cursor state",
+                    cursor, "ordinary-cursor-sentinel",
+                    "{} must preserve ordinary sync cursor state",
                     case["name"]
                 );
             }
