@@ -35,3 +35,8 @@
 ### 4B1c1a checkpoint
 
 Internal test-only parent/successor request/proof helper and 150 actual TS adapter fixtures implemented; RED/GREEN and rust:verify (80 tests) pass. Execute/reconcile remain unsupported. Next: resolve duplicate-provider-key parsing before sender wiring, then implement phase persistence/authorization and read-only recovery separately. Full Task 4 remains incomplete; see task-4-report.md. Protected research unchanged.
+
+
+### 4B1c1b checkpoint
+
+Shared read_body rejects recursive duplicate provider JSON keys while retaining Value scalar semantics and HTTP/size behavior. Actual response-path RED/GREEN, rust:verify (82 tests), standalone calendar-connections feature check, docs and diff checks pass. Next: review this boundary fix, then separately implement the sender phase persistence/authorization and read-only recovery. Full Task 4 remains incomplete; protected research unchanged. See task-4-report.md for evidence.

@@ -215,6 +215,58 @@ fn form(values: &[(&str, &str)]) -> String {
     out.query_pairs_mut().extend_pairs(values.iter().copied());
     out.query().unwrap_or("").to_owned()
 }
+// Preserve Value's scalar representation while rejecting ambiguous provider objects.
+struct ProviderJson(Value);
+impl<'de> Deserialize<'de> for ProviderJson {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::{self, MapAccess, SeqAccess, Visitor};
+        struct JsonVisitor;
+        impl<'de> Visitor<'de> for JsonVisitor {
+            type Value = ProviderJson;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("JSON with unique object keys")
+            }
+            fn visit_unit<E: de::Error>(self) -> Result<ProviderJson, E> {
+                Ok(ProviderJson(Value::Null))
+            }
+            fn visit_bool<E: de::Error>(self, v: bool) -> Result<ProviderJson, E> {
+                Ok(ProviderJson(v.into()))
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<ProviderJson, E> {
+                Ok(ProviderJson(v.into()))
+            }
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<ProviderJson, E> {
+                Ok(ProviderJson(v.into()))
+            }
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<ProviderJson, E> {
+                Ok(ProviderJson(v.into()))
+            }
+            fn visit_f64<E: de::Error>(self, v: f64) -> Result<ProviderJson, E> {
+                Ok(ProviderJson(Value::from(v)))
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<ProviderJson, A::Error> {
+                let mut values = Vec::new();
+                while let Some(ProviderJson(value)) = seq.next_element()? {
+                    values.push(value);
+                }
+                Ok(ProviderJson(Value::Array(values)))
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<ProviderJson, A::Error> {
+                let mut values = serde_json::Map::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    if values.contains_key(&key) {
+                        return Err(de::Error::custom("duplicate JSON key"));
+                    }
+                    let ProviderJson(value) = map.next_value()?;
+                    values.insert(key, value);
+                }
+                Ok(ProviderJson(Value::Object(values)))
+            }
+        }
+        deserializer.deserialize_any(JsonVisitor)
+    }
+}
+
 async fn read_body(mut response: Response) -> Result<Value, String> {
     let status = response.status().as_u16();
     let mut bytes = Vec::new();
@@ -224,7 +276,7 @@ async fn read_body(mut response: Response) -> Result<Value, String> {
         }
         bytes.extend_from_slice(&chunk);
     }
-    let value: Value =
+    let ProviderJson(value) =
         serde_json::from_slice(&bytes).map_err(|_| format!("HTTP_INVALID_JSON:{status}"))?;
     Ok(value)
 }
@@ -787,6 +839,83 @@ pub async fn free_busy(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn response(status: u16, body: &[u8]) -> Response {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let body = body.to_vec();
+        std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            assert!(socket.read(&mut request).unwrap() > 0);
+            write!(
+                socket,
+                "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            // Oversize responses may be rejected before the server finishes writing.
+            let _ = socket.write_all(&body);
+        });
+        tauri::async_runtime::block_on(Client::new().get(format!("http://{address}")).send())
+            .unwrap()
+    }
+
+    #[test]
+    fn read_body_rejects_duplicate_provider_keys_recursively() {
+        for body in [
+            r#"{"id":"first","id":"second"}"#,
+            r#"{"event":{"id":1,"id":1}}"#,
+            r#"{"items":[{"id":1,"\u0069d":2}]}"#,
+        ] {
+            for status in [200, 403] {
+                assert_eq!(
+                    tauri::async_runtime::block_on(read_body(response(status, body.as_bytes()))),
+                    Err(format!("HTTP_INVALID_JSON:{status}")),
+                    "{body}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn read_body_preserves_values_errors_and_size_limit() {
+        let body = br#"{"items":[{"id":1},{"id":2}],"n":[18446744073709551615,-9223372036854775808,1.25,null,true,"ok"]}"#;
+        for status in [200, 400] {
+            assert_eq!(
+                tauri::async_runtime::block_on(read_body(response(status, body))).unwrap(),
+                serde_json::from_slice::<Value>(body).unwrap()
+            );
+            for invalid in [b"".as_slice(), b"{", b"{} {}"] {
+                assert_eq!(
+                    tauri::async_runtime::block_on(read_body(response(status, invalid))),
+                    Err(format!("HTTP_INVALID_JSON:{status}"))
+                );
+            }
+        }
+        let mut boundary = vec![b' '; MAX_BODY];
+        boundary[..4].copy_from_slice(b"null");
+        assert_eq!(
+            tauri::async_runtime::block_on(read_body(response(200, &boundary))),
+            Ok(Value::Null)
+        );
+        boundary.push(b' ');
+        assert_eq!(
+            tauri::async_runtime::block_on(read_body(response(200, &boundary))),
+            Err("RESPONSE_TOO_LARGE".into())
+        );
+        assert_eq!(
+            tauri::async_runtime::block_on(read_json(response(
+                400,
+                br#"{"error":"invalid_grant"}"#
+            ))),
+            Err("REAUTHORIZE".into())
+        );
+        assert_eq!(
+            tauri::async_runtime::block_on(read_json(response(403, b"{}"))),
+            Err("HTTP_ERROR:403".into())
+        );
+    }
+
     #[test]
     fn full_event_write_scope_also_grants_directory_details() {
         let scopes = vec![
