@@ -318,3 +318,17 @@ CommandReceipts, calendarEventLinks/eventOutcomes, reminderMigration and nonempt
 Evidence: task-4b-links-red.log fails link-attached with WORKSPACE_COLLECTION_UNSUPPORTED; focused GREEN passes in task-4b-links-green.log. Final generator --check passed. task-4b-links-rust-verify.log passes fmt/clippy, 73 Rust tests and both feature checks. Doctor passed (Windows filesystem probe unavailable); Node tests 967/967, typecheck, desktop/Web builds passed in corresponding task-4b-links logs. Existing linker/chunk-size warnings remain. An optional fixture extension attempt failed on Python's Windows encoding before that extension wrote; explicit UTF-8 retry and final regeneration passed. Docs/diff checks run below before commit.
 
 No LocalEvidence/prepare/send/projection/UI/Stage 7 change. Protected research remains untouched/unstaged. Remaining receipt/migration parsers and complete scanner integration must precede trusted LocalEvidence/hash. Exact token usage unavailable; no count claimed.
+
+## 4B command receipts parser checkpoint
+
+2026-09-09; base `710b7b2`. Bounded split: commandReceipts implemented; migration/full-root fixtures and complete Task 4 remain pending.
+
+- Ordered fields, missing fingerprint default to null, nullable fingerprint, positive revision, source enum and required timestamps reuse existing validators. Arbitrary result must be an object; nested JSON is preserved through the existing finite, duplicate-key-rejecting ordered AST and JS array-index enumeration encoder. Receipt IDs join global uniqueness; idempotency keys are unique. TS imposes no commandType vocabulary or expiresAt ordering beyond valid timestamps.
+- Added 24 actual TS fixtures: 5 accepted bytes/hash cases (defaults, numeric/Unicode/nested/index-key result order and all sources), 19 rejections (required fields, invalid result/scalars/timestamps/fingerprint/source/revision, unknown field, global/receipt/idempotency collisions). Unknown fields remain intentionally stricter than TS. Inherited JSON depth/size/string/timestamp/timezone ceilings remain.
+- Corrected task fixture generation to derive expected TS bytes from the exact reversed serialized rawJson supplied to Rust. Previously the fixture helper calculated expectations before reversing ordinary JSON object keys; arbitrary receipt result order exposed that test-generator defect. Existing fixture outputs stayed unchanged.
+
+Evidence: task-4b-receipts-red.log fails receipt-default with WORKSPACE_COLLECTION_UNSUPPORTED. Final focused GREEN and generator --check pass. task-4b-receipts-rust-verify.log passes fmt, clippy, 73 Rust tests and both feature checks (existing Windows linker warnings remain). Diff check passed. Doctor, npm test/typecheck/build/build:web and docs check remain to be run by the parent for the changed generator/report; this checkpoint is not a claim those gates passed.
+
+Migration and nonempty legacy previewReceipts remain fail-closed. No LocalEvidence/prepare/send/projection/UI/Stage 7 change. Protected research untouched/unstaged. Exact usage unavailable; bounded split taken before further implementation.
+
+Next: migration mapped rows need nonempty deliveryIds referencing task-only deliveries, matching rule task and Date.parse(reminderAt) instant. TS permits duplicate IDs/rows and arbitrary nonempty deliveredAt/quarantine reason text, with no quarantine references. No migration status/default fields exist. Finish migration parsing and full-workspace combined fixtures, then promote root naming; LocalEvidence remains a separate slice.

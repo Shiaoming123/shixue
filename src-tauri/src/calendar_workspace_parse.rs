@@ -152,7 +152,7 @@ const ROOT: &[&str] = &[
     "eventOutcomes",
 ];
 
-/// Deliberately incomplete. Receipts and migration remain fail-closed.
+/// Deliberately incomplete. Migration and legacy preview receipts remain fail-closed.
 pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     let Json::Object(mut fields) = parse(raw)? else {
         return Err("WORKSPACE_INVALID".into());
@@ -178,6 +178,11 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
             .position(|(name, _)| name == key)
             .ok_or("WORKSPACE_MISSING_FIELD")?;
         let (_, mut value) = fields.remove(index);
+        if *key == "commandReceipts" {
+            value = receipts(value)?;
+            normalized.push((key.to_string(), value));
+            continue;
+        }
         if *key == "reminderRules" {
             value = reminders::rules(value)?;
             normalized.push((key.to_string(), value));
@@ -237,6 +242,59 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     reminders::references(&normalized)?;
     calendar::attachment_references(&normalized)?;
     Ok(normalized.encode()?.into_bytes())
+}
+
+// Arbitrary result JSON has already passed the ordered AST trust boundary.
+fn receipts(raw: Json) -> Result<Json, String> {
+    use calendar::{fields, get, text};
+    let Json::Array(items) = raw else {
+        return Err("WORKSPACE_RECEIPT_INVALID".into());
+    };
+    if items.len() > 100_000 {
+        return Err("WORKSPACE_RECEIPT_INVALID".into());
+    }
+    let mut keys = std::collections::HashSet::new();
+    items
+        .into_iter()
+        .map(|item| {
+            let Json::Object(mut input) = item else {
+                return Err("WORKSPACE_RECEIPT_INVALID".into());
+            };
+            let index = input
+                .iter()
+                .position(|(key, _)| key == "result")
+                .ok_or("WORKSPACE_MISSING_FIELD")?;
+            let result = input.remove(index).1;
+            if !matches!(result, Json::Object(_)) {
+                return Err("WORKSPACE_RECEIPT_INVALID".into());
+            }
+            if !input.iter().any(|(key, _)| key == "requestFingerprint") {
+                input.push(("requestFingerprint".into(), Json::Null));
+            }
+            let normalized = fields(
+                Json::Object(input),
+                &[
+                    ("id", "text"),
+                    ("idempotencyKey", "text"),
+                    ("requestFingerprint", "~text"),
+                    ("commandType", "text"),
+                    ("source", "human-ui|keyboard|notification|agent"),
+                    ("workspaceRevision", "number"),
+                    ("createdAt", "stamp"),
+                    ("expiresAt", "stamp"),
+                ],
+            )?;
+            if !keys.insert(text(get(&normalized, "idempotencyKey")?)?.to_string()) {
+                return Err("WORKSPACE_RECEIPT_INVALID".into());
+            }
+            let Json::Object(mut output) = normalized else {
+                unreachable!()
+            };
+            output.insert(6, ("result".into(), result));
+            Ok(Json::Object(output))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Json::Array)
 }
 
 /// Internal extraction only; normalization still rejects unsupported collections.

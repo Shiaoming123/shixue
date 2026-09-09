@@ -165,9 +165,10 @@ function taskCase(name, change, accepted = true) {
   raw.taskEvents = [{ id: 'event', sequence: 1, taskId: 'task', type: 'captured', occurredAt: stamp, fromStatus: null, toStatus: 'inbox', reason: null, completionRecordId: null }]
   change(raw)
   let parsedJson = null
-  try { parsedJson = JSON.stringify(parseWorkspaceStateV4(structuredClone(raw))) } catch { assert.equal(accepted, false, name) }
   const reverse = v => Array.isArray(v) ? v.map(reverse) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).reverse().map(([k, x]) => [k, reverse(x)])) : v
-  taskCases.push({ name, rawJson: JSON.stringify(reverse(raw)), accepted, parsedJson, hash: parsedJson === null ? null : `sha256:${createHash('sha256').update(parsedJson).digest('hex')}` })
+  const rawJson = JSON.stringify(reverse(raw))
+  try { parsedJson = JSON.stringify(parseWorkspaceStateV4(JSON.parse(rawJson))) } catch { assert.equal(accepted, false, name) }
+  taskCases.push({ name, rawJson, accepted, parsedJson, hash: parsedJson === null ? null : `sha256:${createHash('sha256').update(parsedJson).digest('hex')}` })
 }
 taskCase('created-omitted-occurrence', () => {})
 taskCase('explicit-null-occurrence', r => { r.taskEvents[0].occurrenceId = null })
@@ -416,6 +417,16 @@ taskCase('outcome-moved-destination-rejected', r => { outcomeCalendar(r); r.cale
 
 taskCase('outcome-distinct-actions', r => { outcomeCalendar(r); r.eventOutcomes.push({ ...r.eventOutcomes[0], id: 'second', action: 'dismiss' }) })
 for (const start of ['2026-09-10', '2026-09-15']) taskCase(`outcome-outside-series-${start}`, r => { outcomeCalendar(r); r.calendarEvents[0].recurrence = { cadence: { kind: 'daily', interval: 2 }, end: { kind: 'after', count: 2 }, exceptions: [] }; r.eventOutcomes[0].occurrenceId = start }, false)
+function receiptWorkspace(r) {
+  r.commandReceipts = [{ id: 'receipt', idempotencyKey: 'key', commandType: 'anything', source: 'agent', workspaceRevision: 1e21, result: {}, createdAt: stamp, expiresAt: stamp }]
+}
+taskCase('receipt-default', receiptWorkspace)
+taskCase('receipt-json-order', r => { receiptWorkspace(r); r.commandReceipts[0].result = { z: [null, true, -0, 1e-7, 1e21, { '10': false, '2': '\u4e2d\u6587', x: [] }], '4294967295': {}, '00': '😀', '0': '\n' } })
+for (const source of ['human-ui', 'keyboard', 'notification']) taskCase(`receipt-source-${source}`, r => { receiptWorkspace(r); Object.assign(r.commandReceipts[0], { source, requestFingerprint: 'fingerprint' }) })
+for (const key of ['id', 'idempotencyKey', 'commandType', 'source', 'workspaceRevision', 'result', 'createdAt', 'expiresAt']) taskCase(`receipt-missing-${key}`, r => { receiptWorkspace(r); delete r.commandReceipts[0][key] }, false)
+for (const [key, value] of [['result', []], ['result', null], ['source', 'bad'], ['workspaceRevision', 0], ['requestFingerprint', ''], ['createdAt', 'bad'], ['expiresAt', null], ['extra', true], ['id', 'task']]) taskCase(`receipt-invalid-${key}-${value}`, r => { receiptWorkspace(r); r.commandReceipts[0][key] = value }, false)
+taskCase('receipt-idempotency-duplicate', r => { receiptWorkspace(r); r.commandReceipts.push({ ...r.commandReceipts[0], id: 'other' }) }, false)
+taskCase('receipt-id-duplicate', r => { receiptWorkspace(r); r.commandReceipts.push({ ...r.commandReceipts[0], idempotencyKey: 'other' }) }, false)
 const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.json', import.meta.url)
 const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)
