@@ -1,0 +1,1059 @@
+{
+  "cases": [
+    {
+      "name": "future-split",
+      "base": {
+        "version": 4,
+        "revision": 2,
+        "listGroups": [],
+        "lists": [
+          {
+            "id": "synthetic-list",
+            "groupId": null,
+            "title": "Synthetic calendar baseline",
+            "position": 0,
+            "goal": "",
+            "successCriteria": [],
+            "weeklyTargetMinutes": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "archivedAt": null
+          }
+        ],
+        "sections": [],
+        "tags": [],
+        "tasks": [
+          {
+            "id": "timed",
+            "revision": 1,
+            "mode": "general",
+            "listId": "synthetic-list",
+            "sectionId": null,
+            "tagIds": [],
+            "title": "Synthetic timed task",
+            "notes": "",
+            "status": "planned",
+            "schedule": {
+              "startAt": "2026-09-09T09:00:00+08:00",
+              "startOn": null,
+              "estimateMinutes": 45
+            },
+            "deadline": {
+              "dueAt": null,
+              "dueOn": null
+            },
+            "priority": "high",
+            "checklist": [],
+            "learning": null,
+            "recurrenceSeriesId": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "all-day",
+            "revision": 1,
+            "mode": "general",
+            "listId": "synthetic-list",
+            "sectionId": null,
+            "tagIds": [],
+            "title": "Synthetic all-day task",
+            "notes": "",
+            "status": "planned",
+            "schedule": {
+              "startAt": null,
+              "startOn": "2026-09-09",
+              "estimateMinutes": null
+            },
+            "deadline": {
+              "dueAt": null,
+              "dueOn": "2026-09-10"
+            },
+            "priority": "none",
+            "checklist": [],
+            "learning": null,
+            "recurrenceSeriesId": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "deadline",
+            "revision": 1,
+            "mode": "general",
+            "listId": "synthetic-list",
+            "sectionId": null,
+            "tagIds": [],
+            "title": "Synthetic deadline task",
+            "notes": "",
+            "status": "planned",
+            "schedule": {
+              "startAt": null,
+              "startOn": null,
+              "estimateMinutes": null
+            },
+            "deadline": {
+              "dueAt": "2026-09-09T23:30:00-07:00",
+              "dueOn": null
+            },
+            "priority": "none",
+            "checklist": [],
+            "learning": null,
+            "recurrenceSeriesId": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "unscheduled",
+            "revision": 1,
+            "mode": "general",
+            "listId": "synthetic-list",
+            "sectionId": null,
+            "tagIds": [],
+            "title": "Synthetic unscheduled task",
+            "notes": "",
+            "status": "inbox",
+            "schedule": {
+              "startAt": null,
+              "startOn": null,
+              "estimateMinutes": null
+            },
+            "deadline": {
+              "dueAt": null,
+              "dueOn": null
+            },
+            "priority": "none",
+            "checklist": [],
+            "learning": null,
+            "recurrenceSeriesId": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "recurring",
+            "revision": 1,
+            "mode": "general",
+            "listId": "synthetic-list",
+            "sectionId": null,
+            "tagIds": [],
+            "title": "Synthetic recurring task",
+            "notes": "",
+            "status": "planned",
+            "schedule": {
+              "startAt": "2026-09-09T09:00:00-07:00",
+              "startOn": null,
+              "estimateMinutes": 30
+            },
+            "deadline": {
+              "dueAt": null,
+              "dueOn": null
+            },
+            "priority": "none",
+            "checklist": [],
+            "learning": null,
+            "recurrenceSeriesId": "synthetic-series",
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          }
+        ],
+        "recurrenceSeries": [
+          {
+            "id": "synthetic-series",
+            "taskId": "recurring",
+            "revision": 1,
+            "cadence": {
+              "kind": "daily",
+              "interval": 1
+            },
+            "basis": "fixed_schedule",
+            "anchorAt": "2026-09-09T09:00:00-07:00",
+            "anchorOn": null,
+            "end": {
+              "kind": "after",
+              "count": 2
+            },
+            "timezone": "America/Los_Angeles",
+            "createdThrough": "2026-09-10T09:00:00-07:00",
+            "createdCount": 2
+          }
+        ],
+        "occurrences": [
+          {
+            "id": "synthetic-occurrence-1",
+            "seriesId": "synthetic-series",
+            "ordinal": 1,
+            "scheduledAt": "2026-09-09T09:00:00-07:00",
+            "scheduledOn": null,
+            "status": "pending",
+            "override": {
+              "scheduledAt": null,
+              "scheduledOn": "2026-09-10",
+              "estimateMinutes": 30
+            },
+            "completedAt": null,
+            "revision": 1
+          },
+          {
+            "id": "synthetic-occurrence-2",
+            "seriesId": "synthetic-series",
+            "ordinal": 2,
+            "scheduledAt": "2026-09-10T09:00:00-07:00",
+            "scheduledOn": null,
+            "status": "pending",
+            "override": null,
+            "completedAt": null,
+            "revision": 1
+          }
+        ],
+        "reminderRules": [],
+        "reminderDeliveries": [],
+        "studySessions": [],
+        "taskEvents": [
+          {
+            "id": "synthetic-event-1",
+            "sequence": 1,
+            "taskId": "timed",
+            "type": "captured",
+            "occurredAt": "2026-09-09T00:00:00.000Z",
+            "fromStatus": null,
+            "toStatus": "planned",
+            "reason": null,
+            "completionRecordId": null
+          },
+          {
+            "id": "synthetic-event-2",
+            "sequence": 2,
+            "taskId": "all-day",
+            "type": "captured",
+            "occurredAt": "2026-09-09T00:00:00.000Z",
+            "fromStatus": null,
+            "toStatus": "planned",
+            "reason": null,
+            "completionRecordId": null
+          },
+          {
+            "id": "synthetic-event-3",
+            "sequence": 3,
+            "taskId": "deadline",
+            "type": "captured",
+            "occurredAt": "2026-09-09T00:00:00.000Z",
+            "fromStatus": null,
+            "toStatus": "planned",
+            "reason": null,
+            "completionRecordId": null
+          },
+          {
+            "id": "synthetic-event-4",
+            "sequence": 4,
+            "taskId": "unscheduled",
+            "type": "captured",
+            "occurredAt": "2026-09-09T00:00:00.000Z",
+            "fromStatus": null,
+            "toStatus": "inbox",
+            "reason": null,
+            "completionRecordId": null
+          },
+          {
+            "id": "synthetic-event-5",
+            "sequence": 5,
+            "taskId": "recurring",
+            "type": "captured",
+            "occurredAt": "2026-09-09T00:00:00.000Z",
+            "fromStatus": null,
+            "toStatus": "planned",
+            "reason": null,
+            "completionRecordId": null
+          }
+        ],
+        "completionRecords": [],
+        "reviewTaskLinks": [],
+        "commandReceipts": [
+          {
+            "id": "receipt:series-create",
+            "idempotencyKey": "recurrence:series-create",
+            "requestFingerprint": "sha256:e4fbdbf9336bd52f10b3c1e51dbf5ea34006d1d1f80ac7e5867c8d5f70e126d2",
+            "commandType": "calendar_external.apply",
+            "source": "human-ui",
+            "workspaceRevision": 2,
+            "result": {
+              "receiptId": "receipt:series-create",
+              "workspaceRevision": 2,
+              "affected": [
+                {
+                  "type": "calendar_source",
+                  "id": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+                  "revision": 1
+                }
+              ],
+              "events": [],
+              "undoToken": null,
+              "data": {
+                "batchId": "recurrence:series-create",
+                "provider": "google",
+                "connectionId": "connection",
+                "calendarId": "calendar",
+                "sourceId": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+                "mode": "incremental",
+                "applied": true,
+                "operationId": "op",
+                "writeProjection": {
+                  "plan": {
+                    "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "kind": "recurring.series",
+                    "parentEventId": "parent"
+                  },
+                  "expectedWorkspaceHash": "sha256:1c12e7f4b2a566c61ba6cb6500c6af389c9e18721371b956c5f50cac519c25cf",
+                  "observedAt": "2026-09-09T00:00:00.000Z"
+                }
+              }
+            },
+            "createdAt": "2026-09-09T00:01:00.000Z",
+            "expiresAt": "2026-10-09T00:01:00.000Z"
+          }
+        ],
+        "updatedAt": "2026-09-09T00:01:00.000Z",
+        "calendarSources": [
+          {
+            "id": "calendar:local",
+            "revision": 1,
+            "provider": "local",
+            "title": "个人日历",
+            "color": "#668575",
+            "group": null,
+            "permission": "write",
+            "selected": true,
+            "hidden": false,
+            "timezone": "UTC",
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "archivedAt": null
+          },
+          {
+            "id": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+            "revision": 1,
+            "provider": "google",
+            "title": "Remote",
+            "color": "#668575",
+            "group": null,
+            "permission": "read",
+            "selected": true,
+            "hidden": false,
+            "timezone": "UTC",
+            "createdAt": "2026-09-09T00:01:00.000Z",
+            "updatedAt": "2026-09-09T00:01:00.000Z",
+            "archivedAt": null
+          }
+        ],
+        "calendarEvents": [
+          {
+            "id": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%2C%22parent%22%5D",
+            "revision": 1,
+            "sourceId": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+            "title": "Series",
+            "notes": "",
+            "location": "",
+            "meetingUrl": null,
+            "sourceUrl": null,
+            "organizer": null,
+            "attendees": [],
+            "availability": "busy",
+            "status": "confirmed",
+            "time": {
+              "kind": "all-day",
+              "startOn": "2026-09-09",
+              "endOnExclusive": "2026-09-10"
+            },
+            "recurrence": {
+              "cadence": {
+                "kind": "daily",
+                "interval": 1
+              },
+              "end": {
+                "kind": "after",
+                "count": 5
+              },
+              "exceptions": []
+            },
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%2C%22unrelated%22%5D",
+            "revision": 1,
+            "sourceId": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+            "title": "Unrelated",
+            "notes": "",
+            "location": "",
+            "meetingUrl": null,
+            "sourceUrl": null,
+            "organizer": null,
+            "attendees": [],
+            "availability": "busy",
+            "status": "confirmed",
+            "time": {
+              "kind": "all-day",
+              "startOn": "2026-09-09",
+              "endOnExclusive": "2026-09-10"
+            },
+            "recurrence": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          }
+        ],
+        "calendarEventLinks": [],
+        "eventOutcomes": []
+      },
+      "current": {
+        "version": 4,
+        "revision": 3,
+        "listGroups": [],
+        "lists": [
+          {
+            "id": "synthetic-list",
+            "groupId": null,
+            "title": "Synthetic calendar baseline",
+            "position": 0,
+            "goal": "",
+            "successCriteria": [],
+            "weeklyTargetMinutes": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "archivedAt": null
+          }
+        ],
+        "sections": [],
+        "tags": [],
+        "tasks": [
+          {
+            "id": "timed",
+            "revision": 1,
+            "mode": "general",
+            "listId": "synthetic-list",
+            "sectionId": null,
+            "tagIds": [],
+            "title": "Synthetic timed task",
+            "notes": "",
+            "status": "planned",
+            "schedule": {
+              "startAt": "2026-09-09T09:00:00+08:00",
+              "startOn": null,
+              "estimateMinutes": 45
+            },
+            "deadline": {
+              "dueAt": null,
+              "dueOn": null
+            },
+            "priority": "high",
+            "checklist": [],
+            "learning": null,
+            "recurrenceSeriesId": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "all-day",
+            "revision": 1,
+            "mode": "general",
+            "listId": "synthetic-list",
+            "sectionId": null,
+            "tagIds": [],
+            "title": "Synthetic all-day task",
+            "notes": "",
+            "status": "planned",
+            "schedule": {
+              "startAt": null,
+              "startOn": "2026-09-09",
+              "estimateMinutes": null
+            },
+            "deadline": {
+              "dueAt": null,
+              "dueOn": "2026-09-10"
+            },
+            "priority": "none",
+            "checklist": [],
+            "learning": null,
+            "recurrenceSeriesId": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "deadline",
+            "revision": 1,
+            "mode": "general",
+            "listId": "synthetic-list",
+            "sectionId": null,
+            "tagIds": [],
+            "title": "Synthetic deadline task",
+            "notes": "",
+            "status": "planned",
+            "schedule": {
+              "startAt": null,
+              "startOn": null,
+              "estimateMinutes": null
+            },
+            "deadline": {
+              "dueAt": "2026-09-09T23:30:00-07:00",
+              "dueOn": null
+            },
+            "priority": "none",
+            "checklist": [],
+            "learning": null,
+            "recurrenceSeriesId": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "unscheduled",
+            "revision": 1,
+            "mode": "general",
+            "listId": "synthetic-list",
+            "sectionId": null,
+            "tagIds": [],
+            "title": "Synthetic unscheduled task",
+            "notes": "",
+            "status": "inbox",
+            "schedule": {
+              "startAt": null,
+              "startOn": null,
+              "estimateMinutes": null
+            },
+            "deadline": {
+              "dueAt": null,
+              "dueOn": null
+            },
+            "priority": "none",
+            "checklist": [],
+            "learning": null,
+            "recurrenceSeriesId": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "recurring",
+            "revision": 1,
+            "mode": "general",
+            "listId": "synthetic-list",
+            "sectionId": null,
+            "tagIds": [],
+            "title": "Synthetic recurring task",
+            "notes": "",
+            "status": "planned",
+            "schedule": {
+              "startAt": "2026-09-09T09:00:00-07:00",
+              "startOn": null,
+              "estimateMinutes": 30
+            },
+            "deadline": {
+              "dueAt": null,
+              "dueOn": null
+            },
+            "priority": "none",
+            "checklist": [],
+            "learning": null,
+            "recurrenceSeriesId": "synthetic-series",
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          }
+        ],
+        "recurrenceSeries": [
+          {
+            "id": "synthetic-series",
+            "taskId": "recurring",
+            "revision": 1,
+            "cadence": {
+              "kind": "daily",
+              "interval": 1
+            },
+            "basis": "fixed_schedule",
+            "anchorAt": "2026-09-09T09:00:00-07:00",
+            "anchorOn": null,
+            "end": {
+              "kind": "after",
+              "count": 2
+            },
+            "timezone": "America/Los_Angeles",
+            "createdThrough": "2026-09-10T09:00:00-07:00",
+            "createdCount": 2
+          }
+        ],
+        "occurrences": [
+          {
+            "id": "synthetic-occurrence-1",
+            "seriesId": "synthetic-series",
+            "ordinal": 1,
+            "scheduledAt": "2026-09-09T09:00:00-07:00",
+            "scheduledOn": null,
+            "status": "pending",
+            "override": {
+              "scheduledAt": null,
+              "scheduledOn": "2026-09-10",
+              "estimateMinutes": 30
+            },
+            "completedAt": null,
+            "revision": 1
+          },
+          {
+            "id": "synthetic-occurrence-2",
+            "seriesId": "synthetic-series",
+            "ordinal": 2,
+            "scheduledAt": "2026-09-10T09:00:00-07:00",
+            "scheduledOn": null,
+            "status": "pending",
+            "override": null,
+            "completedAt": null,
+            "revision": 1
+          }
+        ],
+        "reminderRules": [],
+        "reminderDeliveries": [],
+        "studySessions": [],
+        "taskEvents": [
+          {
+            "id": "synthetic-event-1",
+            "sequence": 1,
+            "taskId": "timed",
+            "type": "captured",
+            "occurredAt": "2026-09-09T00:00:00.000Z",
+            "fromStatus": null,
+            "toStatus": "planned",
+            "reason": null,
+            "completionRecordId": null
+          },
+          {
+            "id": "synthetic-event-2",
+            "sequence": 2,
+            "taskId": "all-day",
+            "type": "captured",
+            "occurredAt": "2026-09-09T00:00:00.000Z",
+            "fromStatus": null,
+            "toStatus": "planned",
+            "reason": null,
+            "completionRecordId": null
+          },
+          {
+            "id": "synthetic-event-3",
+            "sequence": 3,
+            "taskId": "deadline",
+            "type": "captured",
+            "occurredAt": "2026-09-09T00:00:00.000Z",
+            "fromStatus": null,
+            "toStatus": "planned",
+            "reason": null,
+            "completionRecordId": null
+          },
+          {
+            "id": "synthetic-event-4",
+            "sequence": 4,
+            "taskId": "unscheduled",
+            "type": "captured",
+            "occurredAt": "2026-09-09T00:00:00.000Z",
+            "fromStatus": null,
+            "toStatus": "inbox",
+            "reason": null,
+            "completionRecordId": null
+          },
+          {
+            "id": "synthetic-event-5",
+            "sequence": 5,
+            "taskId": "recurring",
+            "type": "captured",
+            "occurredAt": "2026-09-09T00:00:00.000Z",
+            "fromStatus": null,
+            "toStatus": "planned",
+            "reason": null,
+            "completionRecordId": null
+          }
+        ],
+        "completionRecords": [],
+        "reviewTaskLinks": [],
+        "commandReceipts": [
+          {
+            "id": "receipt:series-create",
+            "idempotencyKey": "recurrence:series-create",
+            "requestFingerprint": "sha256:e4fbdbf9336bd52f10b3c1e51dbf5ea34006d1d1f80ac7e5867c8d5f70e126d2",
+            "commandType": "calendar_external.apply",
+            "source": "human-ui",
+            "workspaceRevision": 2,
+            "result": {
+              "receiptId": "receipt:series-create",
+              "workspaceRevision": 2,
+              "affected": [
+                {
+                  "type": "calendar_source",
+                  "id": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+                  "revision": 1
+                }
+              ],
+              "events": [],
+              "undoToken": null,
+              "data": {
+                "batchId": "recurrence:series-create",
+                "provider": "google",
+                "connectionId": "connection",
+                "calendarId": "calendar",
+                "sourceId": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+                "mode": "incremental",
+                "applied": true,
+                "operationId": "op",
+                "writeProjection": {
+                  "plan": {
+                    "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "kind": "recurring.series",
+                    "parentEventId": "parent"
+                  },
+                  "expectedWorkspaceHash": "sha256:1c12e7f4b2a566c61ba6cb6500c6af389c9e18721371b956c5f50cac519c25cf",
+                  "observedAt": "2026-09-09T00:00:00.000Z"
+                }
+              }
+            },
+            "createdAt": "2026-09-09T00:01:00.000Z",
+            "expiresAt": "2026-10-09T00:01:00.000Z"
+          },
+          {
+            "id": "receipt:future-split",
+            "idempotencyKey": "recurrence:future-split",
+            "requestFingerprint": "sha256:c47d58cb7139b97af73a452b0f620ea6ed2c5091075f15c29f7921eba07ba57c",
+            "commandType": "calendar_external.apply",
+            "source": "human-ui",
+            "workspaceRevision": 3,
+            "result": {
+              "receiptId": "receipt:future-split",
+              "workspaceRevision": 3,
+              "affected": [
+                {
+                  "type": "calendar_source",
+                  "id": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+                  "revision": 2
+                }
+              ],
+              "events": [],
+              "undoToken": null,
+              "data": {
+                "batchId": "recurrence:future-split",
+                "provider": "google",
+                "connectionId": "connection",
+                "calendarId": "calendar",
+                "sourceId": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+                "mode": "incremental",
+                "applied": true,
+                "operationId": "op",
+                "writeProjection": {
+                  "plan": {
+                    "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "kind": "recurring.future",
+                    "parentEventId": "parent",
+                    "pivotEventId": "instance",
+                    "successorEventId": "mop",
+                    "originalStart": "2026-09-10",
+                    "markerHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "steps": {
+                      "parent": {
+                        "state": "proved",
+                        "proof": {
+                          "end": {
+                            "date": "2026-09-10"
+                          },
+                          "etag": "parent-proved",
+                          "extendedProperties": {
+                            "private": {
+                              "meowOperationHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                              "meowOperationId": "op"
+                            }
+                          },
+                          "id": "parent",
+                          "recurrence": [
+                            "RRULE:FREQ=DAILY;COUNT=1"
+                          ],
+                          "start": {
+                            "date": "2026-09-09"
+                          },
+                          "summary": "Series"
+                        }
+                      },
+                      "successor": {
+                        "state": "proved",
+                        "proof": {
+                          "end": {
+                            "date": "2026-09-11"
+                          },
+                          "etag": "successor-proved",
+                          "extendedProperties": {
+                            "private": {
+                              "meowOperationHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                              "meowOperationId": "op"
+                            }
+                          },
+                          "id": "mop",
+                          "recurrence": [
+                            "RRULE:FREQ=DAILY;COUNT=4"
+                          ],
+                          "start": {
+                            "date": "2026-09-10"
+                          },
+                          "summary": "After"
+                        }
+                      }
+                    }
+                  },
+                  "expectedWorkspaceHash": "sha256:711ca65e17944c93ee0a779540da3dcaeb6eafb499f3f7c9c62fef8902a6bfe2",
+                  "observedAt": "2026-09-09T00:00:00.000Z"
+                }
+              }
+            },
+            "createdAt": "2026-09-09T00:01:00.000Z",
+            "expiresAt": "2026-10-09T00:01:00.000Z"
+          }
+        ],
+        "updatedAt": "2026-09-09T00:01:00.001Z",
+        "calendarSources": [
+          {
+            "id": "calendar:local",
+            "revision": 1,
+            "provider": "local",
+            "title": "个人日历",
+            "color": "#668575",
+            "group": null,
+            "permission": "write",
+            "selected": true,
+            "hidden": false,
+            "timezone": "UTC",
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "archivedAt": null
+          },
+          {
+            "id": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+            "revision": 2,
+            "provider": "google",
+            "title": "Remote",
+            "color": "#668575",
+            "group": null,
+            "permission": "read",
+            "selected": true,
+            "hidden": false,
+            "timezone": "UTC",
+            "createdAt": "2026-09-09T00:01:00.000Z",
+            "updatedAt": "2026-09-09T00:01:00.000Z",
+            "archivedAt": null
+          }
+        ],
+        "calendarEvents": [
+          {
+            "id": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%2C%22parent%22%5D",
+            "revision": 2,
+            "sourceId": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+            "title": "Series",
+            "notes": "",
+            "location": "",
+            "meetingUrl": null,
+            "sourceUrl": null,
+            "organizer": null,
+            "attendees": [],
+            "availability": "busy",
+            "status": "confirmed",
+            "time": {
+              "kind": "all-day",
+              "startOn": "2026-09-09",
+              "endOnExclusive": "2026-09-10"
+            },
+            "recurrence": {
+              "cadence": {
+                "kind": "daily",
+                "interval": 1
+              },
+              "end": {
+                "kind": "after",
+                "count": 1
+              },
+              "exceptions": []
+            },
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%2C%22unrelated%22%5D",
+            "revision": 1,
+            "sourceId": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+            "title": "Unrelated",
+            "notes": "",
+            "location": "",
+            "meetingUrl": null,
+            "sourceUrl": null,
+            "organizer": null,
+            "attendees": [],
+            "availability": "busy",
+            "status": "confirmed",
+            "time": {
+              "kind": "all-day",
+              "startOn": "2026-09-09",
+              "endOnExclusive": "2026-09-10"
+            },
+            "recurrence": null,
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          },
+          {
+            "id": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%2C%22mop%22%5D",
+            "revision": 1,
+            "sourceId": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+            "title": "After",
+            "notes": "",
+            "location": "",
+            "meetingUrl": null,
+            "sourceUrl": null,
+            "organizer": null,
+            "attendees": [],
+            "availability": "busy",
+            "status": "confirmed",
+            "time": {
+              "kind": "all-day",
+              "startOn": "2026-09-10",
+              "endOnExclusive": "2026-09-11"
+            },
+            "recurrence": {
+              "cadence": {
+                "kind": "daily",
+                "interval": 1
+              },
+              "end": {
+                "kind": "after",
+                "count": 4
+              },
+              "exceptions": []
+            },
+            "createdAt": "2026-09-09T00:00:00.000Z",
+            "updatedAt": "2026-09-09T00:00:00.000Z",
+            "deletedAt": null
+          }
+        ],
+        "calendarEventLinks": [],
+        "eventOutcomes": []
+      },
+      "batch": {
+        "batchId": "recurrence:future-split",
+        "operationId": "op",
+        "provider": "google",
+        "connectionId": "connection",
+        "calendarId": "calendar",
+        "sourceId": "calendar-provider:%5B%22google%22%2C%22connection%22%2C%22calendar%22%5D",
+        "mode": "incremental",
+        "access": "details",
+        "title": "Remote",
+        "timezone": "UTC",
+        "observedAt": "2026-09-09T00:00:00.000Z",
+        "expectedWorkspaceHash": "sha256:711ca65e17944c93ee0a779540da3dcaeb6eafb499f3f7c9c62fef8902a6bfe2",
+        "plan": {
+          "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "kind": "recurring.future",
+          "parentEventId": "parent",
+          "pivotEventId": "instance",
+          "successorEventId": "mop",
+          "originalStart": "2026-09-10",
+          "markerHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "steps": {
+            "parent": {
+              "state": "proved",
+              "proof": {
+                "id": "parent",
+                "summary": "Series",
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=1"
+                ],
+                "start": {
+                  "date": "2026-09-09"
+                },
+                "end": {
+                  "date": "2026-09-10"
+                },
+                "etag": "parent-proved",
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "op",
+                    "meowOperationHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                  }
+                }
+              }
+            },
+            "successor": {
+              "state": "proved",
+              "proof": {
+                "id": "mop",
+                "etag": "successor-proved",
+                "summary": "After",
+                "recurrence": [
+                  "RRULE:FREQ=DAILY;COUNT=4"
+                ],
+                "start": {
+                  "date": "2026-09-10"
+                },
+                "end": {
+                  "date": "2026-09-11"
+                },
+                "extendedProperties": {
+                  "private": {
+                    "meowOperationId": "op",
+                    "meowOperationHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "items": [
+          {
+            "id": "parent",
+            "summary": "Series",
+            "recurrence": [
+              "RRULE:FREQ=DAILY;COUNT=1"
+            ],
+            "start": {
+              "date": "2026-09-09"
+            },
+            "end": {
+              "date": "2026-09-10"
+            },
+            "etag": "parent-proved",
+            "extendedProperties": {
+              "private": {
+                "meowOperationId": "op",
+                "meowOperationHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              }
+            }
+          },
+          {
+            "id": "mop",
+            "etag": "successor-proved",
+            "summary": "After",
+            "recurrence": [
+              "RRULE:FREQ=DAILY;COUNT=4"
+            ],
+            "start": {
+              "date": "2026-09-10"
+            },
+            "end": {
+              "date": "2026-09-11"
+            },
+            "extendedProperties": {
+              "private": {
+                "meowOperationId": "op",
+                "meowOperationHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -66,3 +66,7 @@ Production execute/Run/Reconcile now route future records to the reviewed saga u
 #### 4B1c3b P2 transport review checkpoint
 
 Future Run now reuses its exact invocation guard at the GoogleHttp send boundary after token authorization awaits. The new delayed-authorization fake guard test proves zero send on expiry/authority changes; GET and nonfuture paths remain unchanged. RED/GREEN and rust:verify 92/92 pass. Continue review of this slice; Task 4 remains incomplete and 4B2 is not implemented.
+
+### 4B2a checkpoint
+
+TS future batch projection now freezes root/plan/identity/marker and full parent+successor proved summaries, then uses one existing capability transaction/receipt. Partial/tampered/downgraded/stale input saves nothing. Actual service output is in a separate future projection fixture; existing Rust fixtures remain unchanged. RED/GREEN, focused checks, typecheck, Node 969/969, both builds, docs/diff pass. Next: review this TS contract, then implement native future stage/ack verification separately. No native/UI/real-Google/Stage-7 claim; Task 4 remains incomplete. Research untouched/unstaged; exact usage unavailable. See task-4-report.md.

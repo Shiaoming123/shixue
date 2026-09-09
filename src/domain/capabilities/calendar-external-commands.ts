@@ -1,6 +1,6 @@
 import type { CalendarEvent, CalendarSource } from '../calendar/types.ts'
 import { validateCalendarEventRecurrence } from '../calendar/event-occurrences.ts'
-import type { WorkspaceStateV4 } from '../workspace/types.ts'
+import type { JsonValue, WorkspaceStateV4 } from '../workspace/types.ts'
 import { safeSourceUrl, stableId, type CalendarProvider, type ProviderEvent, type ReadAccess } from '../../calendar-connections/types.ts'
 import { DomainCommandError, type CapabilityCommandContext, type CommandApplication, type EntityRef } from './types.ts'
 
@@ -12,7 +12,7 @@ export interface ExternalCalendarBatch {
   operationId?: string
   expectedWorkspaceHash?: string
   writeProjection?: {
-    plan: { hash: string; parentEventId: string } & ({ kind: 'recurring.series' } | { kind: 'recurring.single'; instanceEventId: string; originalStart: string })
+    plan: { hash: string; parentEventId: string } & ({ kind: 'recurring.series' } | { kind: 'recurring.single'; instanceEventId: string; originalStart: string } | { kind: 'recurring.future'; pivotEventId: string; successorEventId: string; originalStart: string; markerHash: string; steps: { parent: { state: 'proved'; proof: Record<string, JsonValue> }; successor: { state: 'proved'; proof: Record<string, JsonValue> } } })
     expectedWorkspaceHash: string; observedAt: string
   }
 }
@@ -24,6 +24,10 @@ export type CalendarPreferencesCompensation = { type: 'calendar_source.preferenc
 
 export function applyExternalCalendarBatch(state: WorkspaceStateV4, batch: ExternalCalendarBatch, context: CapabilityCommandContext): CommandApplication {
   if (batch.writeProjection && (batch.operationId === undefined || batch.writeProjection.expectedWorkspaceHash !== batch.expectedWorkspaceHash || batch.mode !== 'incremental')) invalid('Recurrence projection binding mismatch.')
+  if (batch.writeProjection?.plan.kind === 'recurring.future') {
+    const plan = batch.writeProjection.plan
+    if (batch.access !== 'details' || batch.deletedRemoteIds.length || batch.upserts.length !== 2 || ![plan.parentEventId, plan.successorEventId].every((id) => batch.upserts.some((entry) => entry.remoteId === id && entry.event.recurrence !== null))) invalid('Future projection requires both proved series.')
+  }
   if (batch.operationId !== undefined) {
     if (!batch.operationId.trim() || !/^sha256:[a-f0-9]{64}$/.test(batch.expectedWorkspaceHash ?? '')) invalid('Write completion requires a native workspace baseline.')
   } else if (batch.expectedWorkspaceHash !== undefined) invalid('A write completion baseline requires an operation identity.')

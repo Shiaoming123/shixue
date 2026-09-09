@@ -3,7 +3,59 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { normalizeNativeCalendarBatch } from '../src/calendar-connections/runtime.ts'
 
-import { recurringBatch, generateRecurrenceProjectionFixtures } from '../scripts/generate-calendar-recurrence-projection.ts'
+import { recurringBatch, futureBatch, generateRecurrenceProjectionFixtures } from '../scripts/generate-calendar-recurrence-projection.ts'
+
+test('future projection requires the full frozen root proof and saves both series in one receipt', async () => {
+  const { createInMemoryWorkspaceStore } = await import('../src/storage/study/in-memory.ts')
+  const { createTaskCapabilityService, fingerprintWorkspace } = await import('../src/domain/capabilities/service.ts')
+  const original = futureBatch()
+  for (const [index, mutate] of [
+    (b: any) => {}, (b: any) => b.items.pop(), (b: any) => b.items.shift(),
+    (b: any) => b.items.push(structuredClone(b.items[0])),
+    (b: any) => { b.operationId = 'child' }, (b: any) => { b.sourceId = 'wrong' },
+    (b: any) => { b.access = 'none'; b.items = [] }, (b: any) => { b.mode = 'full' },
+    (b: any) => { b.items[0].summary = 'tampered' },
+    (b: any) => { b.plan.steps.successor.state = 'unknown' },
+    (b: any) => { b.plan.pivotEventId = 'wrong' }, (b: any) => { b.plan.originalStart = 'wrong' },
+    (b: any) => { b.items[1].extendedProperties.private.meowOperationHash = 'wrong' },
+    (b: any) => { b.expectedWorkspaceHash = `sha256:${'d'.repeat(64)}` },
+  ].entries()) {
+    const store = createInMemoryWorkspaceStore(), base = await store.load(), batch = structuredClone(original)
+    batch.expectedWorkspaceHash = await fingerprintWorkspace(base)
+    const expected = { operationId: batch.operationId, plan: structuredClone(batch.plan) }
+    mutate(batch)
+    let saves = 0
+    const service = createTaskCapabilityService({ ...store, save: async (...args) => { saves++; return store.save(...args) } }, () => batch.observedAt, () => 'receipt:future', {
+      loadExternalBatch: async (_id, state) => normalizeNativeCalendarBatch(batch, 'connection', 'calendar', original.observedAt, state.calendarEvents, expected),
+    })
+    const execute = () => service.execute({ protocolVersion: 1, source: 'human-ui', idempotencyKey: batch.batchId, expectedWorkspaceRevision: base.revision, command: { type: 'calendar_external.apply', batchId: batch.batchId } })
+    if (index === 0) {
+      await execute(); await execute()
+      const current = await store.load()
+      assert.equal(saves, 1); assert.equal(current.revision, base.revision + 1)
+      assert.equal(current.commandReceipts.length, 1); assert.equal(current.calendarEvents.length, 2)
+    } else {
+      await assert.rejects(execute)
+      assert.equal(saves, 0); assert.deepEqual(await store.load(), base)
+    }
+  }
+})
+
+test('future normalizer rejects self-consistent incomplete or extra step evidence', () => {
+  for (const mutate of [
+    (b: any) => { b.plan.steps.parent.state = 'unknown' },
+    (b: any) => { b.plan.steps.successor.extra = true },
+    (b: any) => { b.items[0].description = 'unplanned fact' },
+    (b: any) => { b.items[0].etag = '' },
+    (b: any) => { b.items[1].extendedProperties.private.meowOperationId = 'child' },
+    (b: any) => { b.items[1].id = b.plan.successorEventId = 'other' },
+    (b: any) => { b.plan.pivotEventId = b.plan.parentEventId },
+    (b: any) => { b.plan.originalStart = '2026-09-11' },
+  ]) {
+    const batch = futureBatch(); mutate(batch)
+    assert.throws(() => normalizeNativeCalendarBatch(batch, 'connection', 'calendar', batch.observedAt, [], { operationId: batch.operationId, plan: structuredClone(batch.plan) }), /invalid-response/)
+  }
+})
 
 test('recurrence projection binds receipt evidence and rejects substituted plan identities', () => {
   const batch = recurringBatch()
@@ -20,8 +72,9 @@ test('recurrence projection binds receipt evidence and rejects substituted plan 
 })
 
 test('real capability fixtures fold exceptions into parents and preserve unrelated workspace facts', async () => {
-  const fixture = await generateRecurrenceProjectionFixtures()
-  assert.deepEqual(fixture, JSON.parse(readFileSync(new URL('./fixtures/calendar-recurrence-projection.json', import.meta.url), 'utf8')))
+  const fixture = await generateRecurrenceProjectionFixtures(true)
+  const recorded = ['recurrence', 'future'].flatMap((kind) => JSON.parse(readFileSync(new URL(`./fixtures/calendar-${kind}-projection.json`, import.meta.url), 'utf8')).cases)
+  assert.deepEqual(fixture.cases, recorded)
   for (const { name, base, current, batch } of fixture.cases) {
     const mutable = new Set(['calendarSources', 'calendarEvents', 'commandReceipts', 'revision', 'updatedAt'])
     for (const key of Object.keys(base)) if (!mutable.has(key)) assert.deepEqual(current[key as keyof typeof current], base[key], `${name}: ${key}`)

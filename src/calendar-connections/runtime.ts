@@ -40,12 +40,26 @@ export function normalizeNativeCalendarBatch(value: unknown, connectionId: strin
     if (!expectedWrite || expectedWrite.operationId !== operationId || canonicalJson(expectedWrite.plan) !== canonicalJson(batch.plan)) throw new CalendarProviderError('invalid-response')
     const raw = record(batch.plan), kind = string(raw.kind), hash = string(raw.hash), parentEventId = string(raw.parentEventId)
     const expectedWorkspaceHash = string(batch.expectedWorkspaceHash), observedAt = instant(batch.observedAt)
-    if (!string(batch.operationId).trim() || batch.mode !== 'incremental' || observedAt !== now || !/^sha256:[a-f0-9]{64}$/.test(expectedWorkspaceHash) || !/^sha256:[a-f0-9]{64}$/.test(hash) || !['recurring.single', 'recurring.series'].includes(kind)) throw new CalendarProviderError('invalid-response')
+    if (!string(batch.operationId).trim() || batch.mode !== 'incremental' || observedAt !== now || !/^sha256:[a-f0-9]{64}$/.test(expectedWorkspaceHash) || !/^sha256:[a-f0-9]{64}$/.test(hash) || !['recurring.single', 'recurring.series', 'recurring.future'].includes(kind)) throw new CalendarProviderError('invalid-response')
     const plan: NonNullable<ExternalCalendarBatch['writeProjection']>['plan'] = kind === 'recurring.single'
       ? { hash, kind, parentEventId, instanceEventId: string(raw.instanceEventId), originalStart: string(raw.originalStart) }
-      : { hash, kind: 'recurring.series', parentEventId }
+      : kind === 'recurring.future'
+        ? { hash, kind, parentEventId, pivotEventId: string(raw.pivotEventId), successorEventId: string(raw.successorEventId), originalStart: string(raw.originalStart), markerHash: string(raw.markerHash), steps: { parent: { state: 'proved', proof: JSON.parse(canonicalJson(record(record(record(raw.steps).parent).proof))) }, successor: { state: 'proved', proof: JSON.parse(canonicalJson(record(record(record(raw.steps).successor).proof))) } } }
+        : { hash, kind: 'recurring.series', parentEventId }
     if (Object.keys(raw).some((key) => !(key in plan))) throw new CalendarProviderError('invalid-response')
-    if (batch.access === 'details') {
+    if (plan.kind === 'recurring.future') {
+      if (canonicalJson(raw) !== canonicalJson(plan) || batch.access !== 'details' || items.length !== 2 || new Set([parentEventId, plan.pivotEventId, plan.successorEventId]).size !== 3 || plan.successorEventId !== `m${operationId!.replace(/-/g, '')}` || !/^sha256:[a-f0-9]{64}$/.test(plan.markerHash)) throw new CalendarProviderError('invalid-response')
+      for (const step of ['parent', 'successor'] as const) {
+        const proof = plan.steps[step].proof, eventId = step === 'parent' ? parentEventId : plan.successorEventId
+        const item = items.map(record).find((item) => item.id === eventId)
+        if (Object.keys(proof).some((key) => !['id', 'etag', 'summary', 'start', 'end', 'recurrence', 'extendedProperties', 'eventType', 'status', 'created', 'updated', 'kind', 'htmlLink', 'iCalUID', 'sequence'].includes(key))) throw new CalendarProviderError('invalid-response')
+        if (!item || canonicalJson(item) !== canonicalJson(proof) || !string(proof.etag).trim() || /[\r\n]/.test(string(proof.etag)) || proof.recurringEventId !== undefined || proof.status === 'cancelled' || proof.recurrence === undefined) throw new CalendarProviderError('invalid-response')
+        const marker = record(record(proof.extendedProperties).private)
+        if (marker.meowOperationId !== operationId || marker.meowOperationHash !== plan.markerHash) throw new CalendarProviderError('invalid-response')
+      }
+      const start = record(plan.steps.successor.proof.start)
+      if ((start.date === undefined ? instant(start.dateTime) : string(start.date)) !== plan.originalStart) throw new CalendarProviderError('invalid-response')
+    } else if (batch.access === 'details') {
       const parent = items.map(record).find((item) => item.id === parentEventId)
       if (!parent || parent.recurringEventId !== undefined || parent.recurrence === undefined || items.length !== (plan.kind === 'recurring.single' ? 2 : 1)) throw new CalendarProviderError('invalid-response')
       if (parent.status === 'cancelled') normalizeGoogleBatch([{ ...parent, status: 'confirmed' }], { connectionId, calendarId, timezone, now, cursor: null }, [], 'incremental')
