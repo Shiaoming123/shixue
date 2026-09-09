@@ -42,7 +42,7 @@ fn local(s: &str) -> bool {
         && date(&s[..10])
         && chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M").is_ok()
 }
-fn zone(s: &str) -> bool {
+pub(in super::super) fn zone(s: &str) -> bool {
     if matches!(s, "UTC" | "Etc/UTC" | "Etc/GMT" | "Asia/Shanghai") {
         return true;
     }

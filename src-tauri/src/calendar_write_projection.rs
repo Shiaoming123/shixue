@@ -553,6 +553,12 @@ pub(in super::super) fn future_occurrence(
         return None;
     }
     let time = &event["time"];
+    if time["kind"] == "fixed"
+        && (!super::super::workspace_parse::supported_timezone(time["timezone"].as_str()?)
+            || iso(original)? != original)
+    {
+        return None;
+    }
     let rules = parent["recurrence"].as_array()?;
     if rules.len() != 1 {
         return None;

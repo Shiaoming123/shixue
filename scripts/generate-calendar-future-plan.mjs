@@ -35,9 +35,13 @@ await add('existing-marker', (_, s) => { s.parent.extendedProperties = { private
 for (const [rule, date, end] of [['FREQ=WEEKLY;BYDAY=TU,FR;COUNT=10', '2026-09-04', '2026-09-05'], ['FREQ=MONTHLY;COUNT=10', '2026-10-01', '2026-10-02'], ['FREQ=YEARLY;COUNT=10', '2027-09-01', '2027-09-02']]) await add(rule, (b, s) => {
   s.parent.recurrence = [`RRULE:${rule}`]; b.intent.originalStart = date; s.pivot.originalStartTime.date = date; s.pivot.start.date = date; s.pivot.end.date = end
 })
-for (const zone of ['UTC', 'Asia/Shanghai', 'Etc/GMT+2', 'America/New_York']) await add(`fixed-${zone}`, (b, s) => {
+for (const zone of ['UTC', 'Asia/Shanghai', 'Etc/GMT+2', 'America/New_York', 'Etc/GMT+12', 'Etc/GMT-14', 'Etc/GMT+0', 'Etc/GMT-0', 'Etc/GMT+13', 'Etc/GMT+02', 'Etc/GMT-014', 'Etc/GMT-15']) await add(`fixed-${zone}`, (b, s) => {
   s.parent.start = { dateTime: '2026-09-01T09:00:00.000Z', timeZone: zone }; s.parent.end = { dateTime: '2026-09-01T10:00:00.000Z', timeZone: zone }
   b.intent.originalStart = '2026-09-04T09:00:00.000Z'; s.pivot.originalStartTime = { dateTime: b.intent.originalStart }; s.pivot.start = { dateTime: b.intent.originalStart, timeZone: zone }; s.pivot.end = { dateTime: '2026-09-04T10:00:00.000Z', timeZone: zone }
+})
+for (const original of ['2026-09-04T09:00:00+00:00', '2026-09-04T09:00:00Z', '2026-09-04T17:00:00.000+08:00']) await add(`fixed-original-${original}`, (b, s) => {
+  s.parent.start = { dateTime: '2026-09-01T09:00:00.000Z', timeZone: 'UTC' }; s.parent.end = { dateTime: '2026-09-01T10:00:00.000Z', timeZone: 'UTC' }
+  b.intent.originalStart = original; s.pivot.originalStartTime = { dateTime: original }; s.pivot.start = { dateTime: '2026-09-04T09:00:00.000Z', timeZone: 'UTC' }; s.pivot.end = { dateTime: '2026-09-04T10:00:00.000Z', timeZone: 'UTC' }
 })
 for (const rule of ['FREQ=DAILY;COUNT=01', 'FREQ=DAILY;COUNT=0', 'FREQ=DAILY;COUNT=2', 'FREQ=DAILY;COUNT=10;COUNT=11', 'FREQ=DAILY;UNTIL=20260903']) await add(rule, (_, s) => { s.parent.recurrence = [`RRULE:${rule}`] })
 await add('cancelled', (_, s) => { s.pivot.status = 'cancelled' })

@@ -1,6 +1,7 @@
 //! Ordered WorkspaceStateV4 parser within the explicit native scalar ceilings.
 #[path = "calendar_workspace_calendar.rs"]
 mod calendar;
+pub(super) use calendar::zone as supported_timezone;
 #[path = "calendar_workspace_lists.rs"]
 mod lists;
 #[path = "calendar_workspace_reminders.rs"]
