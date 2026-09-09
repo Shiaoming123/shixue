@@ -379,6 +379,43 @@ taskCase('delivery-foreign-occurrence', r => { recurring(r); delivery(r); r.task
 for (const [field, value] of [['action', 'complete'], ['occurrenceId', 'missing'], ['originalStart', 'bad'], ['originalStart', 1]]) taskCase(`delivery-event-invalid-${field}`, r => { eventDelivery(r); r.reminderDeliveries[0][field] = value }, false)
 taskCase('delivery-event-start-mismatch', r => { eventDelivery(r); r.reminderRules[0].target.originalStart = '2026-09-09' }, false)
 taskCase('delivery-event-duplicate-normalized-start', r => { eventDelivery(r); r.reminderDeliveries[0].originalStart = '2026-09-09T10:00:00+08:00'; r.reminderDeliveries.push({ ...r.reminderDeliveries[0], id: 'second', originalStart: '2026-09-09T02:00:00Z' }) }, false)
+
+function linkedCalendar(r) {
+  r.calendarSources = [structuredClone(source)]
+  r.calendarEvents = [{ ...structuredClone(event), id: 'calendar' }]
+  r.calendarEventLinks = [{ id: 'link', eventId: 'calendar', taskId: 'task' }]
+}
+function outcomeCalendar(r) {
+  linkedCalendar(r)
+  r.eventOutcomes = [{ id: 'outcome', eventId: 'calendar', occurrenceId: null, action: 'note', taskId: null, note: '\n中文😀\u000f', createdAt: stamp }]
+}
+taskCase('link-attached', linkedCalendar)
+for (const action of ['note', 'dismiss', 'followup']) taskCase(`outcome-${action}`, r => { outcomeCalendar(r); Object.assign(r.eventOutcomes[0], { action, taskId: action === 'followup' ? 'task' : null }) })
+taskCase('outcome-unrelated', r => { outcomeCalendar(r); r.calendarEvents.push({ ...r.calendarEvents[0], id: 'unrelated' }); r.calendarEventLinks[0].eventId = 'unrelated'; r.eventOutcomes[0].eventId = 'unrelated' })
+for (const kind of ['all-day', 'floating', 'fixed']) for (const state of ['single', 'moved', 'cancelled', 'deleted', 'restored']) taskCase(`outcome-${kind}-${state}`, r => {
+  outcomeCalendar(r)
+  const e = r.calendarEvents[0]
+  const start = kind === 'all-day' ? '2026-09-09' : kind === 'floating' ? '2026-09-09T10:00' : '2026-09-09T10:00:00+08:00'
+  e.time = kind === 'all-day' ? e.time : kind === 'floating' ? { kind, startLocal: start, endLocal: '2026-09-09T11:00' } : { kind, startAt: start, endAt: '2026-09-09T11:00:00+08:00', timezone: 'Asia/Shanghai' }
+  r.eventOutcomes[0].occurrenceId = start
+  if (state !== 'single') e.recurrence = { cadence: { kind: 'daily', interval: 1 }, end: { kind: 'after', count: 3 }, exceptions: [{ originalStart: start, time: state === 'moved' ? { ...e.time, ...(kind === 'all-day' ? { startOn: '2026-09-15', endOnExclusive: '2026-09-16' } : kind === 'floating' ? { startLocal: '2026-09-15T10:00', endLocal: '2026-09-15T11:00' } : { startAt: '2026-09-15T10:00:00+08:00', endAt: '2026-09-15T11:00:00+08:00' }) } : null }] }
+  if (state === 'cancelled') e.status = 'cancelled'
+  if (state === 'deleted') e.deletedAt = stamp
+  if (state === 'restored') e.recurrence.exceptions = []
+})
+taskCase('outcome-equivalent-raw-identities', r => { outcomeCalendar(r); r.calendarEvents[0].time = { kind: 'fixed', startAt: stamp, endAt: '2026-09-09T01:00:00Z', timezone: 'UTC' }; r.eventOutcomes[0].occurrenceId = stamp; r.eventOutcomes.push({ ...r.eventOutcomes[0], id: 'second', occurrenceId: '2026-09-09T08:00:00+08:00' }) })
+for (const collection of ['calendarEventLinks', 'eventOutcomes']) {
+  const keys = collection === 'calendarEventLinks' ? ['id', 'eventId', 'taskId'] : ['id', 'eventId', 'occurrenceId', 'action', 'taskId', 'note', 'createdAt']
+  for (const key of keys) taskCase(`${collection}-missing-${key}`, r => { outcomeCalendar(r); delete r[collection][0][key] }, false)
+  for (const [key, value] of [['id', null], ['id', 'task'], ['eventId', 'missing'], ['taskId', 'missing'], ['extra', true]]) taskCase(`${collection}-invalid-${key}-${value}`, r => { outcomeCalendar(r); r[collection][0][key] = value }, false)
+  taskCase(`${collection}-duplicate`, r => { outcomeCalendar(r); r[collection].push({ ...r[collection][0], id: 'duplicate' }) }, false)
+}
+for (const [key, value] of [['action', 'complete'], ['taskId', 'task'], ['note', null], ['createdAt', 'bad'], ['occurrenceId', 'bad'], ['occurrenceId', '2026-09-10'], ['occurrenceId', '2026-09-09T00:00'], ['occurrenceId', '2026-02-30']]) taskCase(`outcome-invalid-${key}-${value}`, r => { outcomeCalendar(r); r.eventOutcomes[0][key] = value }, false)
+taskCase('outcome-followup-without-task', r => { outcomeCalendar(r); r.eventOutcomes[0].action = 'followup' }, false)
+taskCase('outcome-moved-destination-rejected', r => { outcomeCalendar(r); r.calendarEvents[0].recurrence = { cadence: { kind: 'daily', interval: 1 }, end: { kind: 'after', count: 1 }, exceptions: [{ originalStart: '2026-09-09', time: { kind: 'all-day', startOn: '2026-09-15', endOnExclusive: '2026-09-16' } }] }; r.eventOutcomes[0].occurrenceId = '2026-09-15' }, false)
+
+taskCase('outcome-distinct-actions', r => { outcomeCalendar(r); r.eventOutcomes.push({ ...r.eventOutcomes[0], id: 'second', action: 'dismiss' }) })
+for (const start of ['2026-09-10', '2026-09-15']) taskCase(`outcome-outside-series-${start}`, r => { outcomeCalendar(r); r.calendarEvents[0].recurrence = { cadence: { kind: 'daily', interval: 2 }, end: { kind: 'after', count: 2 }, exceptions: [] }; r.eventOutcomes[0].occurrenceId = start }, false)
 const taskOutput = new URL('../tests/fixtures/calendar-future-workspace-tasks.json', import.meta.url)
 const taskBytes = `${JSON.stringify(taskCases, null, 2)}\n`
 if (process.argv.includes('--check')) assert.equal(readFileSync(taskOutput, 'utf8').replaceAll('\r\n', '\n'), taskBytes)

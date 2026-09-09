@@ -152,7 +152,7 @@ const ROOT: &[&str] = &[
     "eventOutcomes",
 ];
 
-/// Deliberately incomplete. Review links and other dependent collections remain fail-closed.
+/// Deliberately incomplete. Receipts and migration remain fail-closed.
 pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     let Json::Object(mut fields) = parse(raw)? else {
         return Err("WORKSPACE_INVALID".into());
@@ -192,7 +192,10 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
             normalized.push((key.to_string(), value));
             continue;
         }
-        if matches!(*key, "calendarSources" | "calendarEvents") {
+        if matches!(
+            *key,
+            "calendarSources" | "calendarEvents" | "calendarEventLinks" | "eventOutcomes"
+        ) {
             value = calendar::collection(key, value)?;
             normalized.push((key.to_string(), value));
             continue;
@@ -232,7 +235,19 @@ pub(super) fn normalize_empty_root(raw: &[u8]) -> Result<Vec<u8>, String> {
     lists::references(&normalized)?;
     tasks::references(&normalized)?;
     reminders::references(&normalized)?;
+    calendar::attachment_references(&normalized)?;
     Ok(normalized.encode()?.into_bytes())
+}
+
+/// Internal extraction only; normalization still rejects unsupported collections.
+pub(super) fn target_calendar_attachments(
+    root: &Json,
+    event_id: &str,
+) -> Result<Vec<String>, String> {
+    calendar::target_attachments(root, event_id)?
+        .into_iter()
+        .map(Json::encode)
+        .collect()
 }
 
 fn valid_timestamp(value: &str) -> bool {
@@ -289,6 +304,31 @@ mod tests {
                     format!("sha256:{:x}", Sha256::digest(&bytes)),
                     fixture["hash"]
                 );
+                if fixture["name"].as_str().unwrap().starts_with("outcome-")
+                    || fixture["name"] == "link-attached"
+                {
+                    let root = parse(&bytes).unwrap();
+                    let normalized: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                    for target in ["calendar", "unrelated", "absent"] {
+                        let expected: Vec<String> = ["calendarEventLinks", "eventOutcomes"]
+                            .into_iter()
+                            .flat_map(|key| normalized[key].as_array().unwrap())
+                            .filter(|item| item["eventId"] == target)
+                            .map(|item| serde_json::to_string(item).unwrap())
+                            .collect();
+                        let actual: Vec<String> = target_calendar_attachments(&root, target)
+                            .unwrap()
+                            .into_iter()
+                            .map(|item| {
+                                serde_json::to_string(
+                                    &serde_json::from_str::<serde_json::Value>(&item).unwrap(),
+                                )
+                                .unwrap()
+                            })
+                            .collect();
+                        assert_eq!(actual, expected, "{} target {target}", fixture["name"]);
+                    }
+                }
             } else {
                 assert!(result.is_err(), "{}", fixture["name"]);
             }

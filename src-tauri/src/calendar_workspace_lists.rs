@@ -49,6 +49,8 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
         "tags",
         "calendarSources",
         "calendarEvents",
+        "calendarEventLinks",
+        "eventOutcomes",
         "tasks",
         "taskEvents",
         "recurrenceSeries",

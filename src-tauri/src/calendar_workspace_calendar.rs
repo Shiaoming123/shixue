@@ -274,7 +274,25 @@ pub(super) fn collection(name: &str, raw: Json) -> Result<Json, String> {
     items
         .into_iter()
         .map(|item| {
-            if name == "calendarSources" {
+            if name == "calendarEventLinks" {
+                fields(
+                    item,
+                    &[("id", "text"), ("eventId", "text"), ("taskId", "text")],
+                )
+            } else if name == "eventOutcomes" {
+                fields(
+                    item,
+                    &[
+                        ("id", "text"),
+                        ("eventId", "text"),
+                        ("occurrenceId", "~text"),
+                        ("action", "followup|note|dismiss"),
+                        ("taskId", "~text"),
+                        ("note", "empty"),
+                        ("createdAt", "stamp"),
+                    ],
+                )
+            } else if name == "calendarSources" {
                 fields(
                     item,
                     &[
@@ -390,6 +408,15 @@ fn validate_recurrence(event: &mut Json) -> Result<(), String> {
 }
 fn occurs(event: &Value, original: &str) -> Result<bool, String> {
     let time = &event["time"];
+    let valid = match time["kind"].as_str() {
+        Some("all-day") => date(original),
+        Some("floating") => local(original),
+        Some("fixed") => valid_timestamp(original),
+        _ => false,
+    };
+    if !valid {
+        return err();
+    }
     let wall = |value: &str| -> Option<(NaiveDate, String)> {
         if time["kind"] == "fixed" {
             super::super::write_local::projection::wall(time, value)
@@ -416,6 +443,9 @@ fn occurs(event: &Value, original: &str) -> Result<bool, String> {
         return Ok(false);
     }
     let recurrence = &event["recurrence"];
+    if recurrence.is_null() {
+        return Ok(anchor == target);
+    }
     let cadence = &recurrence["cadence"];
     let end = &recurrence["end"];
     let interval = cadence["interval"].as_f64().ok_or(INVALID)?;
@@ -498,6 +528,71 @@ pub(super) fn references(root: &Json) -> Result<(), String> {
                 } else if !sources.contains(text(get(item, "sourceId")?)?) {
                     return err();
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Only these two attachment groups; callers must not infer full workspace clearance.
+pub(super) fn target_attachments<'a>(
+    root: &'a Json,
+    event_id: &str,
+) -> Result<Vec<&'a Json>, String> {
+    let mut attached = Vec::new();
+    for key in ["calendarEventLinks", "eventOutcomes"] {
+        let Json::Array(items) = get(root, key)? else {
+            return err();
+        };
+        for item in items {
+            if text(get(item, "eventId")?)? == event_id {
+                attached.push(item);
+            }
+        }
+    }
+    Ok(attached)
+}
+
+pub(super) fn attachment_references(root: &Json) -> Result<(), String> {
+    let root: Value = serde_json::from_str(&root.encode()?).map_err(|_| INVALID)?;
+    let events: std::collections::HashMap<_, _> = root["calendarEvents"]
+        .as_array()
+        .ok_or(INVALID)?
+        .iter()
+        .map(|e| (e["id"].as_str().unwrap(), e))
+        .collect();
+    let tasks: std::collections::HashSet<_> = root["tasks"]
+        .as_array()
+        .ok_or(INVALID)?
+        .iter()
+        .map(|t| t["id"].as_str().unwrap())
+        .collect();
+    let mut links = std::collections::HashSet::new();
+    for link in root["calendarEventLinks"].as_array().ok_or(INVALID)? {
+        let event = link["eventId"].as_str().ok_or(INVALID)?;
+        let task = link["taskId"].as_str().ok_or(INVALID)?;
+        if !events.contains_key(event) || !tasks.contains(task) || !links.insert((event, task)) {
+            return err();
+        }
+    }
+    let mut outcomes = std::collections::HashSet::new();
+    for outcome in root["eventOutcomes"].as_array().ok_or(INVALID)? {
+        let event_id = outcome["eventId"].as_str().ok_or(INVALID)?;
+        let event = events.get(event_id).ok_or(INVALID)?;
+        let task = outcome["taskId"].as_str();
+        let start = outcome["occurrenceId"].as_str();
+        let action = outcome["action"].as_str().ok_or(INVALID)?;
+        if task.is_some_and(|id| !tasks.contains(id))
+            || (action == "followup") != task.is_some()
+            || !outcomes.insert((event_id, start, action))
+        {
+            return err();
+        }
+        // Membership uses original identities, including cancelled/moved/deleted facts.
+        // The stored text stays verbatim, as does the TS duplicate-action key.
+        if let Some(start) = start {
+            if !occurs(event, start)? {
+                return err();
             }
         }
     }
