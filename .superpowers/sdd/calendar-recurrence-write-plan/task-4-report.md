@@ -60,3 +60,11 @@ Remaining 4A2b interface/work:
 - Deterministic child rejection must prove parent still belongs to this root, freeze latest ETag in compensation state, then restore original recurrence. Divergence is compensation conflict; lost compensation response reconciles only.
 - Add success/loss/compensation/restart/series-lock/fixed-ID/no-duplicate notification tests. Revalidation, saga and full result proof are not yet implemented. Workspace hashing is deliberately conservative: any parsed workspace change invalidates prepare; larger calendars remain unsupported.
 - Accurate token accounting unavailable; this checkpoint does not invent usage counts.
+
+## 4A2a review correction: recurrence linkage evidence
+
+- Fixed the shared full-page reader before classification: any row containing recurringEventId or Google instance originalStartTime must have a valid nonempty string recurringEventId. Arrays, objects, null, empty strings, explicit undefined and missing instance linkage now reject instead of being silently treated as unrelated rows.
+- Added direct readFuture regression cases so the assertion verifies the authoritative reader itself cannot return false complete/no-exception evidence. Added parent reread ETag divergence and session generation change coverage; all remain GET-only.
+- RED: malformed/missing-linkage test failed Missing expected rejection (3/4 passed). GREEN: focused future-reader/future-plan/google-write/outbox/google-recurrence 30/30; npm run typecheck and git diff --check passed.
+- Scoped review checks only: full npm test and builds were not rerun for this one-line validation correction; the earlier 944/944 and build evidence belongs to the preceding checkpoint. The existing page ceiling remains tested; no separate item ceiling test was added.
+- Execute/reconcile remain disabled. 4A2b/4B and the documented remote snapshot limitations remain pending; protected research was not modified or staged.

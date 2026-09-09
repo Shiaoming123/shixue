@@ -8,19 +8,21 @@ import { normalizeGoogleBatch } from '../src/calendar-connections/google-recurre
 const parent = { id: 'parent', etag: 'p1', summary: 'Before', start: { date: '2026-09-01' }, end: { date: '2026-09-02' }, recurrence: ['RRULE:FREQ=DAILY;COUNT=10'] }
 const pivot = { id: 'pivot', etag: 'i1', recurringEventId: 'parent', originalStartTime: { date: '2026-09-04' }, start: { date: '2026-09-04' }, end: { date: '2026-09-05' } }
 const intent = { kind: 'recurring.future' as const, parent: { eventId: 'parent', etag: 'p1' }, originalStart: '2026-09-04', fields: { title: 'After' } }
-async function fixture(mode = '') {
+async function fixture(mode = '', extraRows: Record<string, unknown>[] = []) {
   const workspace = await createInMemoryWorkspaceStore().load()
   const calls: GoogleWriteRequest[] = []
-  const writer = createGoogleCalendarWriter({ kind: 'fake', session: () => ({ connected: true, canWrite: true, generation: 1 }), async request(_id, request) {
+  let generation = 1, parentReads = 0
+  const writer = createGoogleCalendarWriter({ kind: 'fake', session: () => ({ connected: true, canWrite: true, generation }), async request(_id, request) {
     calls.push(request)
     if (request.path.includes('/calendarList/')) return { status: 200, body: { id: 'cal', accessRole: 'owner' } }
-    if (request.path.endsWith('/parent')) return { status: 200, body: parent }
+    if (request.path.endsWith('/parent')) { parentReads++; return { status: 200, body: mode === 'parent-changed' && parentReads === 2 ? { ...parent, etag: 'p2' } : parent } }
     if (request.path.endsWith('/instances')) return { status: 200, body: { items: mode === 'no-pivot' ? [] : [pivot] } }
     if (mode === 'malformed') return { status: 200, body: {} }
+    if (mode === 'session-changed') generation++
     if (mode === 'denied') return { status: 403 }
     if (mode === 'ceiling') return { status: 200, body: { items: request.query.pageToken ? [] : [parent], nextPageToken: String(Number(request.query.pageToken ?? 0) + 1) } }
     if (!request.query.pageToken) return { status: 200, body: { items: [parent], nextPageToken: 'page2' } }
-    return { status: 200, body: { items: mode === 'exception' ? [pivot] : mode === 'duplicate' ? [parent] : [], ...(mode === 'loop' ? { nextPageToken: 'page2' } : {}) } }
+    return { status: 200, body: { items: mode === 'exception' ? [pivot] : mode === 'duplicate' ? [parent] : extraRows, ...(mode === 'loop' ? { nextPageToken: 'page2' } : {}) } }
   } }, async () => mode === 'unknown' ? { ...workspace, unknownFacts: [] } : workspace)
   const core = new CalendarWriteOutbox({} as WriteOutboxStore, writer, async () => {})
   return { writer, core, calls, workspace }
@@ -39,9 +41,17 @@ test('authoritative future prepare enumerates every page and derives stable loca
   assert.ok(calls.every((request) => request.method === 'GET'))
 })
 test('future evidence fails closed on pagination loops, exceptions and unknown local fields', async () => {
-  for (const mode of ['loop', 'exception', 'unknown', 'ceiling', 'malformed', 'denied', 'duplicate', 'no-pivot']) {
+  for (const mode of ['loop', 'exception', 'unknown', 'ceiling', 'malformed', 'denied', 'duplicate', 'no-pivot', 'parent-changed', 'session-changed']) {
     const { core, calls } = await fixture(mode)
     await assert.rejects(core.prepare('c', 'cal', intent, 'all'))
+    assert.ok(calls.every((request) => request.method === 'GET'))
+  }
+})
+test('malformed or missing recurrence linkage cannot masquerade as unrelated list rows', async () => {
+  const { recurringEventId: _parent, ...unlinked } = pivot
+  for (const row of [unlinked, ...[undefined, null, '', ['parent'], {}].map((recurringEventId) => ({ ...pivot, recurringEventId })), { id: 'unrelated', recurringEventId: ['other-parent'] }]) {
+    const { writer, calls } = await fixture('', [row])
+    await assert.rejects(writer.readFuture!('c', 'cal', intent.parent, intent.originalStart))
     assert.ok(calls.every((request) => request.method === 'GET'))
   }
 })

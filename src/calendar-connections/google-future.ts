@@ -31,6 +31,7 @@ export function createGoogleFutureReader(transport: GoogleWriteTransport, loadWo
         const body = await get(path, { ...query, maxResults: '250', ...(pageToken ? { pageToken } : {}) })
         for (const raw of array(body.items)) {
           const item = record(raw), id = string(item.id)
+          if ('recurringEventId' in item || 'originalStartTime' in item) string(item.recurringEventId)
           if (ids.has(id) || items.length >= 25_000) unsupported()
           ids.add(id); items.push(item)
         }
