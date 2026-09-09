@@ -10,7 +10,7 @@ export function createNativeWriteOutboxStore(invoke?: Invoke): WriteOutboxStore 
     insert: (operation) => call({ kind: 'insert', operation }) as Promise<boolean>,
     get: (id) => call({ kind: 'get', id }) as Promise<WriteOperation | null>,
     list: () => call({ kind: 'list' }) as Promise<WriteOperation[]>,
-    claim: (id, version, leaseId, now, leaseUntil) => call({ kind: 'claim', id, version, leaseId, now, leaseUntil }) as Promise<WriteOperation | null>,
+    claim: (id, version, leaseId, now, leaseUntil, lockKeys) => call({ kind: 'claim', id, version, leaseId, now, leaseUntil, lockKeys }) as Promise<WriteOperation | null>,
     cas: (id, version, next) => call({ kind: 'cas', id, version, next }) as Promise<boolean>,
   }
 }

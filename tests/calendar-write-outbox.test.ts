@@ -9,9 +9,9 @@ class Memory implements WriteOutboxStore {
   async get(id: string) { return structuredClone(this.rows.get(id) ?? null) }
   async list() { return structuredClone([...this.rows.values()]) }
   async cas(id: string, version: number, next: WriteOperation) { if (this.rows.get(id)?.version !== version || next.version !== version + 1) return false; this.rows.set(id, structuredClone(next)); return true }
-  async claim(id: string, version: number, leaseId: string, now: number, leaseUntil: number) {
+  async claim(id: string, version: number, leaseId: string, now: number, leaseUntil: number, lockKeys: string[]) {
     const old = this.rows.get(id); if (!old || old.version !== version || old.leaseUntil > now) return null
-    if ([...this.rows.values()].some((other) => other.preview.operationId !== id && (other.state === 'applying' || other.outcomeUnknown) && ['connectionId', 'calendarId', 'eventId'].every((key) => other.preview[key as keyof WritePreview] === old.preview[key as keyof WritePreview]))) return null
+    if ([...this.rows.values()].some((other) => other.preview.operationId !== id && (other.state === 'applying' || other.outcomeUnknown) && other.preview.connectionId === old.preview.connectionId && other.preview.calendarId === old.preview.calendarId && other.preview.lockKeys.some((key) => lockKeys.includes(key)))) return null
     const next = { ...old, version: version + 1, state: 'applying' as const, outcomeUnknown: true, attempts: old.attempts + 1, leaseId, leaseUntil }; this.rows.set(id, structuredClone(next)); return structuredClone(next)
   }
 }
@@ -34,8 +34,16 @@ const create = { kind: 'create' as const, fields: { title: 'Meeting', time: { ki
 test('native store bridge only invokes device persistence with lease/CAS fields', async () => {
   const calls: Array<Record<string, unknown>> = []
   const store = createNativeWriteOutboxStore(async (command, args) => { assert.equal(command, 'plugin:calendar-connections|outbox_store'); calls.push(args); return null })
-  await store.claim('id', 2, 'lease', 100, 200); await store.get('id'); await store.list()
-  assert.deepEqual(calls, [{ request: { kind: 'claim', id: 'id', version: 2, leaseId: 'lease', now: 100, leaseUntil: 200 } }, { request: { kind: 'get', id: 'id' } }, { request: { kind: 'list' } }])
+  await store.claim('id', 2, 'lease', 100, 200, ['event']); await store.get('id'); await store.list()
+  assert.deepEqual(calls, [{ request: { kind: 'claim', id: 'id', version: 2, leaseId: 'lease', now: 100, leaseUntil: 200, lockKeys: ['event'] } }, { request: { kind: 'get', id: 'id' } }, { request: { kind: 'list' } }])
+})
+test('recurring single locks its parent and instance while unknown', async () => {
+  const { core, store } = setup(); core.enabled = true
+  const single = await core.prepare('c', 'cal', { kind: 'recurring.single', parent: { eventId: 'parent', etag: 'p1' }, originalStart: '2026-09-09T00:00:00.000Z', instance: { eventId: 'instance', etag: 'v1' }, action: 'cancel' }, 'all')
+  const series = await core.prepare('c', 'cal', { kind: 'recurring.series', parent: { eventId: 'parent', etag: 'p1' }, action: 'cancel' }, 'all')
+  await core.enqueue(single.operationId, single.hash, true); await core.enqueue(series.operationId, series.hash, true)
+  await store.claim(single.operationId, 1, 'crashed', 0, 1, single.lockKeys)
+  await assert.rejects(core.run(series.operationId), /WRITE_BUSY/)
 })
 function setup() { const store = new Memory(); const writer = new Fake(); let localFailure = false; let localCount = 0; const core = new CalendarWriteOutbox(store, writer, async () => { localCount++; if (localFailure) throw new Error('local CAS failed') }, () => 100_000); return { store, writer, core, localCount: () => localCount, failLocal: (value: boolean) => { localFailure = value } } }
 

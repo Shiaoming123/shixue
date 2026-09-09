@@ -68,3 +68,6 @@ test('recurring single freezes the parent, original instance and instance ETag',
   assert.equal(request.path.endsWith('/events/instance'), true); assert.deepEqual(request.headers, { 'If-Match': 'v1' })
   assert.ok(f.calls.some((call) => call.path.endsWith('/events/parent/instances') && call.query.maxResults === '250'))
 })
+test('recurring series rejects complex RRULE before sending', async () => {
+  await assert.rejects(prepare({ kind: 'recurring.series', parent: { eventId: 'parent', etag: 'v1' }, action: 'update', fields: { title: 'New' }, recurrence: ['RRULE:FREQ=MONTHLY;BYSETPOS=-1'] }), /WRITE_UNSUPPORTED/)
+})

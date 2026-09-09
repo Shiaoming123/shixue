@@ -15,7 +15,7 @@ export type WriteIntent =
   | { kind: 'recurring.series'; parent: RecurringRef; action: 'update'; fields: Omit<WriteFields, 'attendees'>; recurrence?: string[] }
   | { kind: 'recurring.series'; parent: RecurringRef; action: 'cancel' }
   | { kind: 'recurring.future' }
-export interface WritePreview { operationId: string; connectionId: string; calendarId: string; eventId: string; sendUpdates: SendUpdates; intent: WriteIntent; hash: string }
+export interface WritePreview { operationId: string; connectionId: string; calendarId: string; eventId: string; lockKeys: string[]; sendUpdates: SendUpdates; intent: WriteIntent; hash: string }
 export interface WriteOperation { preview: WritePreview; version: number; state: 'pending' | 'applying' | 'applied' | 'conflict' | 'failed'; outcomeUnknown: boolean; attempts: number; leaseId: string | null; leaseUntil: number; error: string | null; result: WriteResult | null; localApplied: boolean }
 export interface WriteResult { connectionId: string; calendarId: string; eventId: string; etag: string | null; operationId: string }
 export interface WriteOutboxStore {
@@ -23,7 +23,7 @@ export interface WriteOutboxStore {
   get(id: string): Promise<WriteOperation | null>
   list(): Promise<WriteOperation[]>
   /** Atomic CAS; set applying/outcomeUnknown, increment version/attempts, assign lease. Reject active leases and any OTHER applying or outcomeUnknown operation for the same connection/calendar/event, even after its lease expires. */
-  claim(id: string, version: number, leaseId: string, now: number, leaseUntil: number): Promise<WriteOperation | null>
+  claim(id: string, version: number, leaseId: string, now: number, leaseUntil: number, lockKeys: string[]): Promise<WriteOperation | null>
   /** Atomic compare-and-swap; next.version must equal expectedVersion + 1. */
   cas(id: string, expectedVersion: number, next: WriteOperation): Promise<boolean>
 }
@@ -106,7 +106,8 @@ export class CalendarWriteOutbox {
       }
     }
     const eventId = normalized.kind === 'create' ? `m${operationId.replace(/-/g, '')}` : normalized.kind === 'recurring.single' ? normalized.instance.eventId : normalized.kind === 'recurring.series' ? normalized.parent.eventId : normalized.eventId
-    const value = { operationId, connectionId, calendarId, eventId, sendUpdates, intent: normalized }
+    const lockKeys = normalized.kind === 'recurring.single' ? [normalized.parent.eventId, normalized.instance.eventId].sort() : normalized.kind === 'recurring.series' ? [normalized.parent.eventId] : [eventId]
+    const value = { operationId, connectionId, calendarId, eventId, lockKeys, sendUpdates, intent: normalized }
     const preview = { ...value, hash: await writePreviewHash(value) }
     this.previews.set(operationId, structuredClone(preview)); return structuredClone(preview)
   }
@@ -135,7 +136,7 @@ export class CalendarWriteOutbox {
     if (reconcile && !operation.outcomeUnknown && operation.state !== 'applying') fail('RECONCILE_NOT_REQUIRED')
     const epoch = this.active(operation.preview)
     const leaseId = crypto.randomUUID(); const now = this.now()
-    operation = await this.store.claim(id, operation.version, leaseId, now, now + 30_000) ?? fail('WRITE_BUSY')
+    operation = await this.store.claim(id, operation.version, leaseId, now, now + 30_000, operation.preview.lockKeys) ?? fail('WRITE_BUSY')
     let response: WriteResponse; let sent = false
     try {
       if (reconcile) { this.active(operation.preview, epoch); response = await this.writer.reconcile(structuredClone(operation.preview)) }
@@ -169,4 +170,9 @@ export class CalendarWriteOutbox {
   }
 }
 function recurringRef(raw: unknown): RecurringRef { keys(record(raw), ['eventId', 'etag']); const eventId = string(record(raw).eventId), etag = string(record(raw).etag); if (/[\r\n]/.test(etag)) fail('WRITE_INVALID'); return { eventId, etag } }
-function recurrenceRules(raw: unknown): string[] { if (!Array.isArray(raw) || raw.length !== 1 || typeof raw[0] !== 'string' || !raw[0].startsWith('RRULE:')) fail('WRITE_UNSUPPORTED'); return [raw[0]] }
+function recurrenceRules(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length !== 1 || typeof raw[0] !== 'string' || !raw[0].startsWith('RRULE:')) fail('WRITE_UNSUPPORTED')
+  const parts = raw[0].slice(6).split(';').map((part) => part.split('=')); const rule = Object.fromEntries(parts)
+  if (parts.some((part) => part.length !== 2) || new Set(parts.map(([key]) => key)).size !== parts.length || Object.keys(rule).some((key) => !['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST'].includes(key)) || !['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(rule.FREQ) || rule.BYSETPOS !== undefined) fail('WRITE_UNSUPPORTED')
+  return [raw[0]]
+}

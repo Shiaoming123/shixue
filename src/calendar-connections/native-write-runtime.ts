@@ -16,16 +16,18 @@ function safeIntent(input: unknown): WriteIntent {
   if (value.kind === 'recurring.single') {
     const rawStart = string(value.originalStart), originalStart = /^\d{4}-\d{2}-\d{2}$/.test(rawStart) ? rawStart : instant(rawStart), parent = ref(value.parent), instance = ref(value.instance)
     if (value.action === 'cancel') return { kind: 'recurring.single', parent, instance, originalStart, action: 'cancel' }
-    const time = parseCalendarEventTime(record(value.fields).time); if (time.kind !== 'all-day' && time.kind !== 'fixed') invalid()
+    if (value.action !== 'update') invalid()
+    const raw = record(value.fields); if (Object.keys(raw).some((key) => key !== 'time')) invalid(); const time = parseCalendarEventTime(raw.time); if (time.kind !== 'all-day' && time.kind !== 'fixed') invalid()
     return { kind: 'recurring.single', parent, instance, originalStart, action: 'update', fields: { time } }
   }
   if (value.kind === 'recurring.series') {
     const parent = ref(value.parent)
     if (value.action === 'cancel') return { kind: 'recurring.series', parent, action: 'cancel' }
-    const raw = record(value.fields), fields: Omit<WriteFields, 'attendees'> = {}
+    if (value.action !== 'update') invalid()
+    const raw = record(value.fields), fields: Omit<WriteFields, 'attendees'> = {}; if (Object.keys(raw).some((key) => !['title', 'time'].includes(key))) invalid()
     if (raw.title !== undefined) fields.title = string(raw.title)
     if (raw.time !== undefined) { const time = parseCalendarEventTime(raw.time); if (time.kind === 'floating') invalid(); fields.time = time }
-    const recurrence = value.recurrence === undefined ? undefined : array(value.recurrence).map(string)
+    const recurrence = value.recurrence === undefined ? undefined : array(value.recurrence).map(string); if (recurrence && (recurrence.length !== 1 || !recurrence[0]!.startsWith('RRULE:'))) invalid(); if (Object.keys(fields).length === 0 && recurrence === undefined) invalid()
     return { kind: 'recurring.series', parent, action: 'update', fields, ...(recurrence ? { recurrence } : {}) }
   }
   if (value.kind === 'create' || value.kind === 'update') {
@@ -74,7 +76,8 @@ export function createNativeCalendarWriteRuntime(options: { enabled?: boolean; r
       const responseIntent = safeIntent(value.intent), eventId = string(value.eventId)
       const requestedEventId = requested.kind === 'recurring.single' ? requested.instance.eventId : requested.kind === 'recurring.series' ? requested.parent.eventId : 'eventId' in requested ? requested.eventId : null
       if (canonicalJson(responseIntent) !== canonicalJson(requested) || (requested.kind === 'create' ? !/^[a-v0-9]{5,1024}$/.test(eventId) : eventId !== requestedEventId)) invalid()
-      const preview: WritePreview = { operationId, connectionId: config.connectionId, calendarId, eventId, sendUpdates: policy, intent: responseIntent, hash }
+      const lockKeys = responseIntent.kind === 'recurring.single' ? [responseIntent.parent.eventId, responseIntent.instance.eventId].sort() : responseIntent.kind === 'recurring.series' ? [responseIntent.parent.eventId] : [eventId]
+      const preview: WritePreview = { operationId, connectionId: config.connectionId, calendarId, eventId, lockKeys, sendUpdates: policy, intent: responseIntent, hash }
       return { operationId, preview, hash, expiresAt: Number(raw.expiresAt) }
     },
     async confirm(operationId: string, hash: string) {
