@@ -15,7 +15,7 @@ function single(value: Record<string, unknown>) { if (value.recurrence !== undef
 function eventId(intent: WriteIntent) { return intent.kind === 'recurring.single' ? intent.instance.eventId : intent.kind === 'recurring.series' ? intent.parent.eventId : 'eventId' in intent ? intent.eventId : null }
 function etag(intent: WriteIntent) { return intent.kind === 'recurring.single' ? intent.instance.etag : intent.kind === 'recurring.series' ? intent.parent.etag : 'etag' in intent ? intent.etag : null }
 function recurring(value: Record<string, unknown>, intent: WriteIntent) {
-  if (intent.kind === 'recurring.single') { const start = record(value.originalStartTime).dateTime; if (value.recurringEventId !== intent.parent.eventId || typeof start !== 'string' || new Date(start).toISOString() !== intent.originalStart) invalid(); return }
+  if (intent.kind === 'recurring.single') { const original = record(value.originalStartTime), start = original.dateTime ?? original.date; const expected = /^\d{4}-\d{2}-\d{2}$/.test(intent.originalStart) ? intent.originalStart : new Date(intent.originalStart).toISOString(); if (value.recurringEventId !== intent.parent.eventId || start !== expected) invalid(); return }
   if (intent.kind === 'recurring.series') { if (!Array.isArray(value.recurrence) || value.recurringEventId !== undefined) invalid(); return }
   single(value)
 }
@@ -51,6 +51,17 @@ function proof(preview: WritePreview, value: Record<string, unknown>): WriteResp
       if (JSON.stringify(desiredAttendees) !== JSON.stringify(actual)) return unknown()
     }
   }
+  if (intent.kind === 'recurring.single' && intent.action === 'update') {
+    const desired = bodyFields(intent.fields)
+    for (const field of ['start', 'end']) if (JSON.stringify(desired[field]) !== JSON.stringify(value[field])) return unknown()
+  }
+  if (intent.kind === 'recurring.series' && intent.action === 'update') {
+    const desired = bodyFields(intent.fields)
+    if (desired.summary !== undefined && desired.summary !== value.summary) return unknown()
+    for (const field of ['start', 'end']) if (desired[field] !== undefined && JSON.stringify(desired[field]) !== JSON.stringify(value[field])) return unknown()
+    if (intent.recurrence !== undefined && JSON.stringify(intent.recurrence) !== JSON.stringify(value.recurrence)) return unknown()
+  }
+  if ((intent.kind === 'recurring.single' || intent.kind === 'recurring.series') && intent.action === 'cancel' && value.status !== 'cancelled') return unknown()
   if (intent.kind === 'rsvp' && !array(value.attendees ?? []).some((raw) => { const item = record(raw); return item.self === true && item.email === intent.selfEmail && item.responseStatus === intent.response })) return unknown()
   return { kind: 'applied', result: { operationId: preview.operationId, connectionId: preview.connectionId, calendarId: preview.calendarId, eventId: preview.eventId, etag: value.etag } }
 }

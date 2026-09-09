@@ -12,6 +12,22 @@ function invalid(): never { throw new Error('WRITE_RESPONSE_INVALID') }
 function updates(value: unknown): SendUpdates { if (value === 'all' || value === 'externalOnly' || value === 'none') return value; return invalid() }
 function safeIntent(input: unknown): WriteIntent {
   const value = record(input)
+  const ref = (raw: unknown) => { const item = record(raw); return { eventId: string(item.eventId), etag: string(item.etag) } }
+  if (value.kind === 'recurring.single') {
+    const rawStart = string(value.originalStart), originalStart = /^\d{4}-\d{2}-\d{2}$/.test(rawStart) ? rawStart : instant(rawStart), parent = ref(value.parent), instance = ref(value.instance)
+    if (value.action === 'cancel') return { kind: 'recurring.single', parent, instance, originalStart, action: 'cancel' }
+    const time = parseCalendarEventTime(record(value.fields).time); if (time.kind !== 'all-day' && time.kind !== 'fixed') invalid()
+    return { kind: 'recurring.single', parent, instance, originalStart, action: 'update', fields: { time } }
+  }
+  if (value.kind === 'recurring.series') {
+    const parent = ref(value.parent)
+    if (value.action === 'cancel') return { kind: 'recurring.series', parent, action: 'cancel' }
+    const raw = record(value.fields), fields: Omit<WriteFields, 'attendees'> = {}
+    if (raw.title !== undefined) fields.title = string(raw.title)
+    if (raw.time !== undefined) { const time = parseCalendarEventTime(raw.time); if (time.kind === 'floating') invalid(); fields.time = time }
+    const recurrence = value.recurrence === undefined ? undefined : array(value.recurrence).map(string)
+    return { kind: 'recurring.series', parent, action: 'update', fields, ...(recurrence ? { recurrence } : {}) }
+  }
   if (value.kind === 'create' || value.kind === 'update') {
     const raw = record(value.fields), fields: WriteFields = {}
     if (raw.title !== undefined) fields.title = string(raw.title)
