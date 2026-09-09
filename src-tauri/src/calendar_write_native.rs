@@ -2134,9 +2134,9 @@ mod workspace_parse;
 
 #[path = "calendar_write_future_local.rs"]
 mod future_local;
-#[cfg(test)]
+#[allow(dead_code)] // Internal saga only; command wiring remains unsupported.
 #[path = "calendar_write_future_parent.rs"]
 mod future_parent;
-#[cfg(test)]
+#[allow(dead_code)] // Used only by the unwired internal saga.
 #[path = "calendar_write_future_step.rs"]
 mod future_step;

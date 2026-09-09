@@ -52,3 +52,7 @@ Test-only successor continuation now anchors applying before its single POST, GE
 ### 4B1c2a checkpoint
 
 Internal compensation now anchors latest ETag before one restore PATCH, requires exact GET proof, and recovers applying/unknown phases with GET only. Successor conflict and rejected/divergent restore retain a durable conflict lock; proved compensation releases it with COMPENSATED. RED/GREEN and final rust:verify (85 tests) pass; one unchanged Windows temporary-file cleanup failure passed on full retry. No production/lease/projection wiring. Next: review compensation and shared lock compatibility, then finish the remaining production authorization/routing boundary. See task-4-report.md; protected research unchanged.
+
+### 4B1c3a checkpoint
+
+Production-compilable internal saga now owns Run/Reconcile routing and one injectable invocation deadline. The eventual command caller owns WRITE_GATE; phase helpers never acquire it. Run advances only pending phases; reconcile resolves applying/unknown via GET only and returns before the next pending phase. New routing/deadline/caller-held-gate tests pass alongside prior phase recovery tests. Command wiring, durable cross-process lease, local projection and real provider validation remain outside this slice; Task 4 remains incomplete. See task-4-report.md. Protected research untouched.

@@ -1,5 +1,95 @@
-//! Parent/successor phases. Test-only until the complete future sender is reviewed.
+//! Internal future saga. The eventual command caller owns WRITE_GATE.
 use super::*;
+
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum Mode {
+    Run,
+    Reconcile,
+}
+
+// Invocation-local monotonic deadline only; this is not a cross-process lease.
+#[allow(clippy::too_many_arguments)] // Keep the phase context and injectable deadline explicit.
+pub(super) async fn saga<V: Vault, H: Http>(
+    pool: &SqlitePool,
+    vault: &V,
+    http: &H,
+    owner: &str,
+    id: &str,
+    epoch: &str,
+    mode: Mode,
+    authorization: impl Fn() -> Result<(), String>,
+    deadline: std::time::Duration,
+    now: impl Fn() -> std::time::Duration,
+) -> Result<Ledger, String> {
+    let check = || {
+        authorization()?;
+        if now() >= deadline {
+            return Err("WRITE_LEASE_LOST".into());
+        }
+        Ok(())
+    };
+    loop {
+        check()?;
+        http.check_future_session()?;
+        let mut record = ledger(pool, vault, owner, id, epoch).await?;
+        let future = record.future.as_ref().ok_or("WRITE_UNSUPPORTED")?;
+        if record.state == "applied"
+            || record.state == "conflict"
+            || record.error.as_deref() == Some("COMPENSATED")
+            || (record.state == "failed" && !record.outcome_unknown)
+        {
+            return Ok(record);
+        }
+        let parent_state = field(&future["parent"], "state")?;
+        if matches!(parent_state, "rejected" | "conflict") {
+            if mode == Mode::Reconcile {
+                return Err("WRITE_RECONCILE_REQUIRED".into());
+            }
+            record.state = if parent_state == "conflict" {
+                "conflict"
+            } else {
+                "failed"
+            }
+            .into();
+            record.error = Some("PARENT_REJECTED".into());
+            record.outcome_unknown = false;
+            record.version += 1;
+            let previous = anchor(vault, owner, id)?.previous;
+            persist(pool, vault, owner, id, &record, previous).await?;
+            return Ok(record);
+        }
+        let name = if parent_state != "proved" {
+            "parent"
+        } else if matches!(
+            future["successor"]["state"].as_str(),
+            Some("rejected" | "conflict")
+        ) {
+            "compensation"
+        } else {
+            "successor"
+        };
+        let phase = field(&future[name], "state")?;
+        match (mode, phase) {
+            (Mode::Run, "pending") | (Mode::Reconcile, "applying" | "unknown") => (),
+            (_, "pending" | "applying" | "unknown") => {
+                return Err("WRITE_RECONCILE_REQUIRED".into())
+            }
+            _ => return Err("WRITE_INVALID".into()),
+        }
+        let next = match name {
+            "parent" => parent(pool, vault, http, owner, id, epoch, &check).await?,
+            "successor" => successor(pool, vault, http, owner, id, epoch, &check).await?,
+            _ => compensate(pool, vault, http, owner, id, epoch, &check).await?,
+        };
+        if mode == Mode::Reconcile
+            || next.outcome_unknown
+            || next.state == "applied"
+            || next.error.as_deref() == Some("COMPENSATED")
+        {
+            return Ok(next);
+        }
+    }
+}
 
 async fn parent<V: Vault, H: Http>(
     pool: &SqlitePool,
@@ -10,14 +100,9 @@ async fn parent<V: Vault, H: Http>(
     epoch: &str,
     authorization: impl Fn() -> Result<(), String>,
 ) -> Result<Ledger, String> {
-    let _gate = WRITE_GATE.lock().await;
-    let lease = std::time::Instant::now();
     let check = || -> Result<(), String> {
         authorization()?;
         http.check_future_session()?;
-        if lease.elapsed() >= std::time::Duration::from_secs(30) {
-            return Err("WRITE_LEASE_LOST".into());
-        }
         Ok(())
     };
     check()?;
@@ -134,7 +219,6 @@ async fn successor<V: Vault, H: Http>(
     epoch: &str,
     authorization: impl Fn() -> Result<(), String>,
 ) -> Result<Ledger, String> {
-    let _gate = WRITE_GATE.lock().await;
     let check = || -> Result<(), String> {
         authorization()?;
         http.check_future_session()
@@ -272,7 +356,6 @@ async fn compensate<V: Vault, H: Http>(
     epoch: &str,
     authorization: impl Fn() -> Result<(), String>,
 ) -> Result<Ledger, String> {
-    let _gate = WRITE_GATE.lock().await;
     let check = || -> Result<(), String> {
         authorization()?;
         http.check_future_session()
@@ -456,6 +539,148 @@ async fn call<H: Http>(
 mod tests {
     use super::*;
     use std::cell::{Cell, RefCell};
+    #[test]
+    fn native_future_orchestrator_routes_and_deadline() {
+        tauri::async_runtime::block_on(async {
+            let _gate = WRITE_GATE.lock().await;
+            for fault in [
+                "child-success",
+                "read-loss",
+                "child-loss",
+                "child-reject",
+                "reject",
+            ] {
+                let (pool, vault, preview, snapshot) = setup().await;
+                let id = field(&preview, "operationId").unwrap();
+                let mut http = Fake {
+                    pool: &pool,
+                    vault: &vault,
+                    id: id.into(),
+                    original: snapshot["parent"].clone(),
+                    pivot: snapshot["pivot"].clone(),
+                    event: RefCell::new(Value::Null),
+                    child: RefCell::new(Value::Null),
+                    requests: RefCell::new(vec![]),
+                    fault,
+                };
+                let now = Cell::new(std::time::Duration::ZERO);
+                let deadline = std::time::Duration::from_secs(30);
+                let invoke = |mode| {
+                    saga(
+                        &pool,
+                        &vault,
+                        &http,
+                        "owner",
+                        id,
+                        "grant",
+                        mode,
+                        || Ok(()),
+                        deadline,
+                        || now.get(),
+                    )
+                };
+                assert_eq!(
+                    invoke(Mode::Reconcile).await.err().unwrap(),
+                    "WRITE_RECONCILE_REQUIRED"
+                );
+                now.set(deadline);
+                assert_eq!(invoke(Mode::Run).await.err().unwrap(), "WRITE_LEASE_LOST");
+                assert!(http.requests.borrow().is_empty());
+                now.set(deadline - std::time::Duration::from_nanos(1));
+                let result = invoke(Mode::Run).await.unwrap();
+                let mutations = http
+                    .requests
+                    .borrow()
+                    .iter()
+                    .filter(|m| *m != "GET")
+                    .count();
+                assert_eq!(
+                    mutations,
+                    if fault == "read-loss" || fault == "reject" {
+                        1
+                    } else if fault == "child-reject" {
+                        3
+                    } else {
+                        2
+                    }
+                );
+                if fault == "read-loss" || fault == "child-loss" {
+                    assert_eq!(
+                        invoke(Mode::Run).await.err().unwrap(),
+                        "WRITE_RECONCILE_REQUIRED"
+                    );
+                    http.fault = "child-success";
+                    let recovered = saga(
+                        &pool,
+                        &vault,
+                        &http,
+                        "owner",
+                        id,
+                        "grant",
+                        Mode::Reconcile,
+                        || Ok(()),
+                        deadline,
+                        || now.get(),
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(
+                        http.requests
+                            .borrow()
+                            .iter()
+                            .filter(|m| *m != "GET")
+                            .count(),
+                        mutations
+                    );
+                    if fault == "read-loss" {
+                        assert_eq!(
+                            recovered.future.as_ref().unwrap()["successor"]["state"],
+                            "pending"
+                        );
+                    }
+                    let done = saga(
+                        &pool,
+                        &vault,
+                        &http,
+                        "owner",
+                        id,
+                        "grant",
+                        Mode::Run,
+                        || Ok(()),
+                        deadline,
+                        || now.get(),
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(done.state, "applied");
+                } else if fault == "child-reject" {
+                    assert_eq!(result.error.as_deref(), Some("COMPENSATED"));
+                } else if fault == "reject" {
+                    assert_eq!(result.state, "conflict");
+                } else {
+                    assert_eq!(result.state, "applied");
+                }
+                let count = http.requests.borrow().len();
+                for mode in [Mode::Run, Mode::Reconcile] {
+                    saga(
+                        &pool,
+                        &vault,
+                        &http,
+                        "owner",
+                        id,
+                        "grant",
+                        mode,
+                        || Ok(()),
+                        deadline,
+                        || now.get(),
+                    )
+                    .await
+                    .unwrap();
+                }
+                assert_eq!(http.requests.borrow().len(), count);
+            }
+        });
+    }
     #[derive(Default)]
     struct Memory {
         data: RefCell<HashMap<String, String>>,
@@ -560,7 +785,7 @@ mod tests {
                     record.future.as_ref().unwrap()["compensation"]["state"],
                     "applying"
                 );
-                assert_eq!(etag, Some("latest"));
+                assert_eq!(etag, self.event.borrow()["etag"].as_str());
                 assert_eq!(send, Some("all"));
                 assert_eq!(
                     body.as_ref().unwrap(),
