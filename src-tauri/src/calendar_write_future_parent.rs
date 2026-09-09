@@ -117,7 +117,7 @@ fn locks<V: Vault>(vault: &V, owner: &str, id: &str, record: &Ledger) -> Result<
     for (other_id, other) in indexed(vault, owner)? {
         if other_id != id
             && other.calendar_id == field(&record.preview, "calendarId")?
-            && other.state == "applying"
+            && holds_lock(&other)
             && other.lock_keys.iter().any(|key| locks.contains(key))
         {
             return Err("WRITE_BUSY".into());
@@ -263,13 +263,176 @@ async fn successor<V: Vault, H: Http>(
     persist(pool, vault, owner, id, &record, previous).await?;
     Ok(record)
 }
+async fn compensate<V: Vault, H: Http>(
+    pool: &SqlitePool,
+    vault: &V,
+    http: &H,
+    owner: &str,
+    id: &str,
+    epoch: &str,
+    authorization: impl Fn() -> Result<(), String>,
+) -> Result<Ledger, String> {
+    let _gate = WRITE_GATE.lock().await;
+    let check = || -> Result<(), String> {
+        authorization()?;
+        http.check_future_session()
+    };
+    check()?;
+    let mut record = ledger(pool, vault, owner, id, epoch).await?;
+    let future = record.future.as_ref().ok_or("WRITE_UNSUPPORTED")?;
+    if record.error.as_deref() == Some("COMPENSATED") {
+        return Ok(record);
+    }
+    if future["parent"]["state"] != "proved"
+        || !matches!(
+            future["successor"]["state"].as_str(),
+            Some("rejected" | "conflict")
+        )
+    {
+        return Err("WRITE_INVALID".into());
+    }
+    let phase = field(&future["compensation"], "state")?.to_string();
+    let previous = anchor(vault, owner, id)?.previous;
+    let mut conflict = matches!(phase.as_str(), "conflict" | "rejected")
+        || future["successor"]["state"] == "conflict";
+    if phase == "pending" && !conflict {
+        let current = call(http, &record.preview, "parent", false).await;
+        check()?;
+        match current {
+            Ok(reply) if reply["kind"] == "proved" => {
+                let etag = field(&reply["proof"], "etag")?.to_string();
+                let directory = http
+                    .call(
+                        "GET",
+                        &format!(
+                            "users/me/calendarList/{}",
+                            segment(field(&record.preview, "calendarId")?)
+                        ),
+                        None,
+                        None,
+                        None,
+                    )
+                    .await?;
+                check()?;
+                if directory.status != 200
+                    || directory.body["id"] != record.preview["calendarId"]
+                    || !matches!(
+                        directory.body["accessRole"].as_str(),
+                        Some("owner" | "writer")
+                    )
+                {
+                    return Err("WRITE_PERMISSION".into());
+                }
+                locks(vault, owner, id, &record)?;
+                record.future.as_mut().unwrap()["compensation"] =
+                    json!({"state":"applying","outcomeUnknown":true,"etag":etag});
+                record.state = "applying".into();
+                record.outcome_unknown = true;
+                record.error = None;
+                record.version += 1;
+                persist(pool, vault, owner, id, &record, previous.clone()).await?;
+                let trusted = ledger(pool, vault, owner, id, epoch).await?;
+                if serde_json::to_value(&trusted).unwrap() != serde_json::to_value(&record).unwrap()
+                {
+                    return Err("WRITE_AUTHORITY_MISMATCH".into());
+                }
+                locks(vault, owner, id, &record)?;
+                check()?;
+                let req = future_step::restore_request(&record.preview, &etag)?;
+                let response = http
+                    .call(
+                        "PATCH",
+                        field(&req, "path")?
+                            .strip_prefix("/calendar/v3/")
+                            .ok_or("WRITE_INVALID")?,
+                        Some(&etag),
+                        Some(field(&record.preview, "sendUpdates")?),
+                        req.get("body").cloned(),
+                    )
+                    .await;
+                check()?;
+                if let Ok(reply) = response {
+                    conflict = matches!(
+                        future_step::response(
+                            &record.preview,
+                            "compensation",
+                            true,
+                            reply.status,
+                            &reply.body
+                        )["kind"]
+                            .as_str(),
+                        Some("conflict" | "rejected")
+                    );
+                }
+            }
+            Ok(reply) if reply["kind"] == "conflict" || reply["kind"] == "rejected" => {
+                conflict = true
+            }
+            _ => {
+                record.state = "failed".into();
+                record.outcome_unknown = true;
+                record.error = Some("COMPENSATION_REQUIRED".into());
+                record.version += 1;
+                persist(pool, vault, owner, id, &record, previous).await?;
+                return Ok(record);
+            }
+        }
+    } else if !conflict && !matches!(phase.as_str(), "applying" | "unknown" | "proved") {
+        return Err("WRITE_INVALID".into());
+    }
+    if !conflict {
+        check()?;
+        let reply = call(http, &record.preview, "compensation", false).await;
+        check()?;
+        match reply {
+            Ok(reply) if reply["kind"] == "proved" => {
+                let state = &mut record.future.as_mut().unwrap()["compensation"];
+                state["state"] = json!("proved");
+                state["outcomeUnknown"] = json!(false);
+                state["proof"] = reply["proof"].clone();
+                record.state = "failed".into();
+                record.outcome_unknown = false;
+                record.error = Some("COMPENSATED".into());
+            }
+            Ok(reply) if reply["kind"] == "conflict" || reply["kind"] == "rejected" => {
+                conflict = true
+            }
+            _ => {
+                let state = &mut record.future.as_mut().unwrap()["compensation"];
+                state["state"] = json!("unknown");
+                state["outcomeUnknown"] = json!(true);
+                record.state = "failed".into();
+                record.outcome_unknown = true;
+                record.error = Some("OUTCOME_UNKNOWN".into());
+            }
+        }
+    }
+    if conflict {
+        record.future.as_mut().unwrap()["compensation"]["state"] = json!("conflict");
+        record.state = "conflict".into();
+        record.outcome_unknown = true;
+        record.error = Some("COMPENSATION_CONFLICT".into());
+    }
+    record.result = None;
+    record.version += 1;
+    persist(pool, vault, owner, id, &record, previous).await?;
+    Ok(record)
+}
 async fn call<H: Http>(
     http: &H,
     preview: &Value,
     name: &str,
     mutate: bool,
 ) -> Result<Value, String> {
-    let request = future_step::request(preview, name, mutate)?;
+    let request = future_step::request(
+        preview,
+        if name == "compensation" {
+            "parent"
+        } else {
+            name
+        },
+        mutate,
+    )?;
     let reply = http
         .call(
             field(&request, "method")?,
@@ -389,6 +552,42 @@ mod tests {
                     body: proof,
                 });
             }
+            if method == "PATCH" && !self.event.borrow().is_null() {
+                let record = ledger(self.pool, self.vault, "owner", &self.id, "grant")
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    record.future.as_ref().unwrap()["compensation"]["state"],
+                    "applying"
+                );
+                assert_eq!(etag, Some("latest"));
+                assert_eq!(send, Some("all"));
+                assert_eq!(
+                    body.as_ref().unwrap(),
+                    &record.preview["intent"]["plan"]["compensation"]["body"]
+                );
+                if ["restore-reject", "restore-412"].contains(&self.fault) {
+                    return Ok(HttpReply {
+                        status: if self.fault == "restore-412" {
+                            412
+                        } else {
+                            403
+                        },
+                        body: Value::Null,
+                    });
+                }
+                let mut restored = self.original.clone();
+                restored
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(body.unwrap().as_object().unwrap().clone());
+                restored["etag"] = json!("restored");
+                *self.event.borrow_mut() = restored;
+                if self.fault == "restore-commit" {
+                    self.vault.fail.set(true);
+                }
+                return Err("WRITE_OUTCOME_UNKNOWN".into());
+            }
             if method == "PATCH" {
                 let record = ledger(self.pool, self.vault, "owner", &self.id, "grant")
                     .await
@@ -435,7 +634,9 @@ mod tests {
             } else if self.event.borrow().is_null() {
                 self.original.clone()
             } else {
-                if self.fault == "read-loss" {
+                if self.fault == "read-loss"
+                    || (self.fault == "restore-loss" && self.event.borrow()["etag"] == "restored")
+                {
                     return Err("LOST".into());
                 }
                 let mut proof = self.event.borrow().clone();
@@ -485,6 +686,7 @@ mod tests {
         let preview = &frozen["preview"];
         let id = field(preview, "operationId").unwrap();
         let record = Ledger {
+            error: None,
             preview: preview.clone(),
             future: Some(frozen["future"].clone()),
             grant_epoch: "grant".into(),
@@ -727,6 +929,108 @@ mod tests {
                 assert!(recovered.local.is_none());
                 let expected = json!({"operationId":preview["operationId"],"connectionId":preview["connectionId"],"calendarId":preview["calendarId"],"eventId":preview["intent"]["plan"]["parent"]["eventId"],"etag":parent_result.future.as_ref().unwrap()["parent"]["etag"],"future":{"markerHash":preview["intent"]["plan"]["markerHash"],"parent":parent_result.future.as_ref().unwrap()["parent"]["proof"],"successor":http.child.borrow().clone()}});
                 assert_eq!(recovered.result, Some(expected));
+            }
+        });
+    }
+    #[test]
+    fn native_future_compensation_restores_once_or_retains_lock() {
+        tauri::async_runtime::block_on(async {
+            for fault in [
+                "",
+                "restore-loss",
+                "restore-reject",
+                "restore-412",
+                "restore-commit",
+                "wrong-proof",
+                "keyring",
+                "child-conflict",
+            ] {
+                let (pool, vault, preview, snapshot) = setup().await;
+                let id = field(&preview, "operationId").unwrap();
+                let mut http = Fake {
+                    pool: &pool,
+                    vault: &vault,
+                    id: id.into(),
+                    original: snapshot["parent"].clone(),
+                    pivot: snapshot["pivot"].clone(),
+                    event: RefCell::new(Value::Null),
+                    child: RefCell::new(Value::Null),
+                    requests: RefCell::new(vec![]),
+                    fault: "",
+                };
+                parent(&pool, &vault, &http, "owner", id, "grant", || Ok(()))
+                    .await
+                    .unwrap();
+                http.fault = "child-reject";
+                let mut record = successor(&pool, &vault, &http, "owner", id, "grant", || Ok(()))
+                    .await
+                    .unwrap();
+                if fault == "child-conflict" {
+                    record.future.as_mut().unwrap()["successor"]["state"] = json!("conflict");
+                    record.version += 1;
+                    persist(&pool, &vault, "owner", id, &record, None)
+                        .await
+                        .unwrap();
+                }
+                http.event.borrow_mut()["etag"] = json!("latest");
+                http.fault = fault;
+                http.requests.borrow_mut().clear();
+                if fault == "keyring" {
+                    vault.fail.set(true);
+                }
+                let result =
+                    compensate(&pool, &vault, &http, "owner", id, "grant", || Ok(())).await;
+                let writes = http
+                    .requests
+                    .borrow()
+                    .iter()
+                    .filter(|s| s.as_str() == "PATCH")
+                    .count();
+                assert_eq!(
+                    writes,
+                    if ["wrong-proof", "keyring", "child-conflict"].contains(&fault) {
+                        0
+                    } else {
+                        1
+                    },
+                    "{fault}"
+                );
+                if fault == "keyring" {
+                    assert!(result.is_err());
+                    continue;
+                }
+                if fault == "restore-commit" {
+                    assert!(result.is_err());
+                    vault.fail.set(false);
+                } else {
+                    let record = result.unwrap();
+                    assert!(record.result.is_none());
+                    assert!(record.local.is_none());
+                    if [
+                        "wrong-proof",
+                        "restore-reject",
+                        "restore-412",
+                        "child-conflict",
+                    ]
+                    .contains(&fault)
+                    {
+                        assert_eq!(record.state, "conflict");
+                        assert!(record.outcome_unknown);
+                        assert_eq!(record.error.as_deref(), Some("COMPENSATION_CONFLICT"));
+                        assert!(holds_lock(&anchor(&vault, "owner", id).unwrap()));
+                        continue;
+                    }
+                }
+                http.fault = "";
+                http.requests.borrow_mut().clear();
+                let record = compensate(&pool, &vault, &http, "owner", id, "grant", || Ok(()))
+                    .await
+                    .unwrap();
+                assert!(http.requests.borrow().iter().all(|s| s == "GET"));
+                assert_eq!(record.state, "failed");
+                assert!(!record.outcome_unknown);
+                assert_eq!(record.error.as_deref(), Some("COMPENSATED"));
+                assert!(!holds_lock(&anchor(&vault, "owner", id).unwrap()));
             }
         });
     }

@@ -48,3 +48,7 @@ Unwired parent-phase transition now persists applying before its single PATCH, G
 ### 4B1c1d checkpoint
 
 Test-only successor continuation now anchors applying before its single POST, GET-proves the fixed child, and persists the exact successful future root result. Unknown/restart is GET-only; deterministic child rejection retains the root lock for compensation. RED/GREEN and rust:verify (84 tests) pass; no command/projection/UI wiring. Next: review the internal phase implementation, then address remaining root authorization/lease/routing and compensation boundaries separately. See task-4-report.md; Task 4 remains incomplete.
+
+### 4B1c2a checkpoint
+
+Internal compensation now anchors latest ETag before one restore PATCH, requires exact GET proof, and recovers applying/unknown phases with GET only. Successor conflict and rejected/divergent restore retain a durable conflict lock; proved compensation releases it with COMPENSATED. RED/GREEN and final rust:verify (85 tests) pass; one unchanged Windows temporary-file cleanup failure passed on full retry. No production/lease/projection wiring. Next: review compensation and shared lock compatibility, then finish the remaining production authorization/routing boundary. See task-4-report.md; protected research unchanged.

@@ -54,7 +54,7 @@ pub(super) async fn prepare<V: Vault, H: Http>(
     let keys = lock_keys(&preview["intent"])?;
     if entries.iter().any(|(_, a)| {
         a.calendar_id == calendar
-            && a.state == "applying"
+            && holds_lock(a)
             && a.lock_keys.iter().any(|key| keys.contains(key))
     }) {
         return Err("WRITE_BUSY".into());
@@ -74,6 +74,7 @@ pub(super) async fn prepare<V: Vault, H: Http>(
     let id = field(preview, "operationId")?;
     let previous = vault.get(&head_key(owner))?;
     let record = Ledger {
+        error: None,
         preview: preview.clone(),
         future: Some(frozen["future"].clone()),
         grant_epoch: epoch.into(),
@@ -351,6 +352,7 @@ mod tests {
                 }
                 if fault == "busy" {
                     let blocker = Anchor {
+                        future_unknown: None,
                         digest: "unused".into(),
                         version: 1,
                         state: "applying".into(),

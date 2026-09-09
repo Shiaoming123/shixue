@@ -23,6 +23,8 @@ static TICKETS: OnceLock<Mutex<HashMap<String, ConfirmationTicket>>> = OnceLock:
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Ledger {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     future: Option<Value>,
     preview: Value,
     grant_epoch: String,
@@ -36,6 +38,8 @@ struct Ledger {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Anchor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    future_unknown: Option<bool>,
     digest: String,
     version: u64,
     state: String,
@@ -46,6 +50,9 @@ struct Anchor {
     previous: Option<String>,
     #[serde(default)]
     lock_keys: Vec<String>,
+}
+fn holds_lock(anchor: &Anchor) -> bool {
+    anchor.state == "applying" || anchor.future_unknown == Some(true)
 }
 trait Vault {
     fn get(&self, key: &str) -> Result<Option<String>, String>;
@@ -320,6 +327,11 @@ async fn ledger<V: Vault>(
         return Err("WRITE_AUTHORITY_MISMATCH".into());
     }
     validate_future_record(&record)?;
+    if a.future_unknown
+        .is_some_and(|value| record.future.is_none() || value != record.outcome_unknown)
+    {
+        return Err("WRITE_AUTHORITY_MISMATCH".into());
+    }
     if record.future.is_some() && a.lock_keys != lock_keys(&record.preview["intent"])? {
         return Err("WRITE_AUTHORITY_MISMATCH".into());
     }
@@ -358,6 +370,7 @@ async fn persist<V: Vault>(
         return Err("WRITE_AUTHORITY_MISMATCH".into());
     }
     let a = Anchor {
+        future_unknown: record.future.as_ref().map(|_| record.outcome_unknown),
         digest: digest(&value)?,
         version: record.version,
         state: record.state.clone(),
@@ -606,6 +619,7 @@ pub async fn write_prepare<R: tauri::Runtime>(
     let mirror=serde_json::from_value(json!({"preview":preview,"version":1,"state":"pending","outcomeUnknown":false,"attempts":0,"leaseId":null,"leaseUntil":0,"error":null,"result":null,"localApplied":false})).map_err(|_|"WRITE_INVALID")?;
     write_outbox::dispatch(&pool, write_outbox::Request::Insert { operation: mirror }).await?;
     let record = Ledger {
+        error: None,
         preview: preview.clone(),
         grant_epoch: epoch,
         version: 1,
@@ -1120,7 +1134,7 @@ async fn execute<V: Vault, H: Http>(
         if other_id != id
             && other.calendar_id == a.calendar_id
             && other.lock_keys.iter().any(|key| a.lock_keys.contains(key))
-            && other.state == "applying"
+            && holds_lock(&other)
         {
             return Err("WRITE_BUSY".into());
         }
@@ -1392,6 +1406,7 @@ mod tests {
             .unwrap();
         let vault = MemoryVault::default();
         let record = Ledger {
+            error: None,
             preview,
             grant_epoch: "grant".into(),
             version: 1,

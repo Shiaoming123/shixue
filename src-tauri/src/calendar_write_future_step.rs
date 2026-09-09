@@ -34,6 +34,15 @@ pub(super) fn request(preview: &Value, name: &str, mutate: bool) -> Result<Value
         json!({"method":if name == "successor" {"POST"} else {"PATCH"},"path":if name == "successor" {path} else {format!("{path}/{}",component(field(step,"eventId")?))},"headers":if name == "successor" {json!({})} else {json!({"If-Match":field(step,"etag")?})},"query":{"sendUpdates":preview["sendUpdates"]},"body":step["body"]}),
     )
 }
+pub(super) fn restore_request(preview: &Value, etag: &str) -> Result<Value, String> {
+    if etag.is_empty() || etag.contains(['\r', '\n']) {
+        return Err("WRITE_INVALID".into());
+    }
+    let mut request = request(preview, "parent", true)?;
+    request["body"] = preview["intent"]["plan"]["compensation"]["body"].clone();
+    request["headers"]["If-Match"] = json!(etag);
+    Ok(request)
+}
 // encodeURIComponent contract; URL path encoding leaves reserved characters unescaped.
 fn component(value: &str) -> String {
     value
@@ -54,7 +63,17 @@ pub(super) fn response(
     status: u16,
     body: &Value,
 ) -> Value {
-    if request(preview, name, mutate).is_err() {
+    if request(
+        preview,
+        if name == "compensation" {
+            "parent"
+        } else {
+            name
+        },
+        mutate,
+    )
+    .is_err()
+    {
         return json!({"kind":"conflict"});
     }
     if mutate {
@@ -88,7 +107,7 @@ fn proved(preview: &Value, name: &str, body: &Value) -> bool {
         return false;
     }
     let mut expected = json!({"status":"confirmed","eventType":"default"});
-    if name == "parent" {
+    if name != "successor" {
         expected
             .as_object_mut()
             .unwrap()
