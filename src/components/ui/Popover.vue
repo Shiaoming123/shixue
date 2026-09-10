@@ -180,10 +180,12 @@ defineExpose({ close: requestClose, updatePosition })
   max-width: calc(100vw - 16px);
   max-height: calc(100dvh - 16px);
   overflow: auto;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   background: var(--material-regular);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), var(--glass-highlight);
+  -webkit-backdrop-filter: var(--glass-filter-strong);
+  backdrop-filter: var(--glass-filter-strong);
   pointer-events: auto;
 }
 
@@ -220,7 +222,7 @@ defineExpose({ close: requestClose, updatePosition })
     max-width: none;
     max-height: calc(100dvh - 32px - env(safe-area-inset-bottom, 0px));
     border-radius: var(--radius-2xl);
-    background: var(--surface);
+    background: var(--material-regular);
   }
 }
 

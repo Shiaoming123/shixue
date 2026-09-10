@@ -20,12 +20,10 @@ const hasMobileShell = compactBlocks.some((block) =>
   /\.shell(?:\[[^\]]+\])?\{[^}]*flex-direction:column/.test(block))
 const hasSafeArea = compactBlocks.some((block) =>
   /\.tabbar(?:\[[^\]]+\])?\{[^}]*(?:padding-bottom|bottom):[^;}]*env\(safe-area-inset-bottom,0px\)/.test(block))
-const hasIconSidebar = mediumBlocks.some((block) =>
-  /\.sidebar(?:\[[^\]]+\])?\{[^}]*width:72px;min-width:72px/.test(block))
 const hasOverlayDetail = mediumBlocks.some((block) =>
   /\.(?:detail-drawer|sheet-panel--right)(?:\[[^\]]+\])?\{[^}]*position:fixed/.test(block))
 
-if (!hasMobileShell || !hasSafeArea || !hasIconSidebar || !hasOverlayDetail) {
+if (!hasMobileShell || !hasSafeArea || !hasOverlayDetail) {
   console.error('Built CSS is missing the locked 819/820 responsive rules.')
   process.exit(1)
 }

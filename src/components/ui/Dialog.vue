@@ -87,11 +87,13 @@ function requestClose(reason: OverlayCloseReason = 'select') {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-xl);
   outline: 0;
   background: var(--material-regular);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), var(--glass-highlight);
+  -webkit-backdrop-filter: var(--glass-filter-strong);
+  backdrop-filter: var(--glass-filter-strong);
 }
 
 .dialog-panel--sm { width: min(100%, 400px); }

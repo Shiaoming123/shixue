@@ -94,8 +94,8 @@ onUnmounted(clearTimer)
   background: color-mix(in srgb, var(--text) 88%, transparent);
   color: var(--bg);
   box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(18px) saturate(118%);
-  -webkit-backdrop-filter: blur(18px) saturate(118%);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   font-size: var(--text-sm);
   pointer-events: auto;
 }

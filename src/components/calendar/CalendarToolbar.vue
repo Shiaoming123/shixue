@@ -51,17 +51,21 @@ const dateOpen = ref(false)
 </template>
 
 <style scoped>
-.calendar-toolbar { height: 56px; flex: 0 0 56px; display: flex; flex-wrap: nowrap; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--hairline); }
+.calendar-toolbar { position: relative; z-index: 7; height: 56px; flex: 0 0 56px; display: flex; flex-wrap: nowrap; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--glass-border); background: var(--material-thin); box-shadow: var(--glass-highlight); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
 .calendar-toolbar__actions { min-width: 0; width: 100%; display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-1); }
 .calendar-toolbar__spacer { min-width: 8px; flex: 1; }
 .calendar-toolbar__modes { display: flex; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--control-fill); }
 .calendar-toolbar__modes button { min-width: 40px; min-height: max(30px, var(--control-hit)); padding: 0 var(--space-2); border: 0; border-radius: calc(var(--radius-md) - 2px); background: transparent; color: var(--muted); font: inherit; font-size: var(--text-sm); }
 .calendar-toolbar__modes button[aria-pressed='true'] { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
 .calendar-toolbar__date-panel { width: min(360px, calc(100vw - 32px)); padding: var(--space-3); }
+@media (max-width: 1099px) {
+  .calendar-toolbar__actions { justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .calendar-toolbar__actions::-webkit-scrollbar { display: none; }
+  .calendar-toolbar__spacer { display: none; }
+}
 @media (max-width: 819px) {
   .calendar-toolbar { height: auto; min-height: 56px; align-items: stretch; padding: 6px 12px; }
-  .calendar-toolbar__actions { justify-content: flex-start; overflow-x: auto; padding-bottom: 2px; }
-  .calendar-toolbar__spacer { display: none; }
+  .calendar-toolbar__actions { padding-bottom: 2px; }
   .calendar-toolbar__actions :deep(.btn) { min-height: 44px; }
   .calendar-toolbar__modes button { min-width: 44px; min-height: 44px; }
 }

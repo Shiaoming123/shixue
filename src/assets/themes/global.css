@@ -92,18 +92,22 @@
   --font-medium: 500;
   --font-semibold: 600;
 
-  /* ---- 结构 token：阴影（桌面端轻微层次） ---- */
-  --shadow-sm: 0 2px 8px -5px #25233022;
-  --shadow-md: 0 10px 28px -14px #25233035;
-  --shadow-lg: 0 24px 64px -22px #15151c52, 0 8px 24px -16px #15151c38;
+  /* ---- 结构 token：阴影（内容克制、浮层宽而柔） ---- */
+  --shadow-sm: 0 8px 22px -17px color-mix(in srgb, var(--text) 28%, transparent);
+  --shadow-md: 0 18px 44px -24px color-mix(in srgb, var(--text) 34%, transparent);
+  --shadow-lg: 0 30px 72px -28px color-mix(in srgb, var(--text) 42%, transparent), 0 10px 30px -24px color-mix(in srgb, var(--text) 30%, transparent);
 
   /* ---- 平台功能层材质 ---- */
   --hairline: color-mix(in srgb, var(--border) 82%, transparent);
-  --material-thin: var(--surface);
-  --material-regular: var(--surface);
-  --material-clear: color-mix(in srgb, var(--surface) 18%, transparent);
-  --chrome-blur: 0px;
-  --chrome-saturation: 180%;
+  --material-thin: color-mix(in srgb, var(--surface) 68%, transparent);
+  --material-regular: color-mix(in srgb, var(--surface) 82%, transparent);
+  --material-clear: color-mix(in srgb, var(--surface) 38%, transparent);
+  --glass-border: color-mix(in srgb, var(--border) 44%, rgba(255, 255, 255, 0.58));
+  --glass-highlight: inset 0 1px 0 color-mix(in srgb, white 66%, transparent);
+  --glass-filter: blur(24px) saturate(170%);
+  --glass-filter-strong: blur(36px) saturate(185%);
+  --chrome-blur: 24px;
+  --chrome-saturation: 170%;
   --control-fill: color-mix(in srgb, var(--surface-alt) 78%, var(--surface));
   --press-fill: color-mix(in srgb, var(--accent) 17%, var(--surface));
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
@@ -143,6 +147,13 @@ body {
 html {
   height: 100%;
   background: var(--bg);
+}
+
+:root[data-mode='dark'] {
+  --material-thin: color-mix(in srgb, var(--surface) 72%, transparent);
+  --material-regular: color-mix(in srgb, var(--surface) 86%, transparent);
+  --glass-border: color-mix(in srgb, var(--border) 72%, rgba(255, 255, 255, 0.12));
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 body {
@@ -280,6 +291,10 @@ time,
     --danger-text: Canvas !important;
     --material-thin: Canvas;
     --material-regular: Canvas;
+    --glass-border: CanvasText;
+    --glass-highlight: inset 0 0 0 transparent;
+    --glass-filter: none;
+    --glass-filter-strong: none;
   }
 
   ::-webkit-scrollbar-thumb {
@@ -291,6 +306,10 @@ time,
   :root {
     --material-thin: var(--surface);
     --material-regular: var(--surface);
+    --glass-border: var(--border);
+    --glass-highlight: inset 0 0 0 transparent;
+    --glass-filter: none;
+    --glass-filter-strong: none;
   }
 
   :root *,
@@ -304,6 +323,10 @@ time,
 :root[data-reduced-glass='on'] {
   --material-thin: var(--surface);
   --material-regular: var(--surface);
+  --glass-border: var(--border);
+  --glass-highlight: inset 0 0 0 transparent;
+  --glass-filter: none;
+  --glass-filter-strong: none;
 }
 
 :root[data-reduced-glass='on'] *,
@@ -311,6 +334,17 @@ time,
 :root[data-reduced-glass='on'] *::after {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root {
+    --material-thin: var(--surface);
+    --material-regular: var(--surface);
+    --glass-border: var(--border);
+    --glass-highlight: inset 0 0 0 transparent;
+    --glass-filter: none;
+    --glass-filter-strong: none;
+  }
 }
 
 :root[data-ui-platform='ios'] {

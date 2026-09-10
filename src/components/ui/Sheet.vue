@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useModalOverlay, type OverlayCloseReason } from './use-overlay'
 
 const props = withDefaults(defineProps<{
@@ -20,7 +20,15 @@ const emit = defineEmits<{
 }>()
 
 const panel = ref<HTMLElement | null>(null)
-const modal = () => props.open && props.placement !== 'inline'
+const renderedPlacement = ref(props.placement)
+watch(
+  () => [props.open, props.placement] as const,
+  ([open, placement]) => {
+    if (open) renderedPlacement.value = placement
+  },
+  { flush: 'sync' },
+)
+const modal = () => props.open && renderedPlacement.value !== 'inline'
 const { layerId } = useModalOverlay(modal, panel, requestClose, {
   kind: 'sheet',
   closeOnOutside: () => props.closeOnOutside,
@@ -33,18 +41,18 @@ function requestClose(reason: OverlayCloseReason) {
 </script>
 
 <template>
-  <Teleport defer to="#ui-overlay-host" :disabled="placement === 'inline'">
-    <Transition name="sheet-overlay">
-      <div v-if="open" class="sheet-layer" :class="`sheet-layer--${placement}`">
+  <Teleport defer to="#ui-overlay-host" :disabled="renderedPlacement === 'inline'">
+    <Transition name="sheet-overlay" :css="renderedPlacement !== 'inline'">
+      <div v-if="open" class="sheet-layer" :class="`sheet-layer--${renderedPlacement}`">
         <section
           ref="panel"
           class="sheet-panel"
-          :class="[`sheet-panel--${placement}`, `sheet-panel--${size}`]"
-          :data-overlay-layer="placement === 'inline' ? undefined : layerId"
-          :role="placement === 'inline' ? undefined : 'dialog'"
-          :aria-modal="placement === 'inline' ? undefined : 'true'"
-          :aria-label="placement === 'inline' ? undefined : label"
-          :tabindex="placement === 'inline' ? undefined : -1"
+          :class="[`sheet-panel--${renderedPlacement}`, `sheet-panel--${size}`]"
+          :data-overlay-layer="renderedPlacement === 'inline' ? undefined : layerId"
+          :role="renderedPlacement === 'inline' ? undefined : 'dialog'"
+          :aria-modal="renderedPlacement === 'inline' ? undefined : 'true'"
+          :aria-label="renderedPlacement === 'inline' ? undefined : label"
+          :tabindex="renderedPlacement === 'inline' ? undefined : -1"
         >
           <header v-if="$slots.header" class="sheet-header"><slot name="header" :close="requestClose" /></header>
           <div class="sheet-body"><slot :close="requestClose" /></div>
@@ -75,11 +83,13 @@ function requestClose(reason: OverlayCloseReason) {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-xl);
   outline: 0;
   background: var(--material-regular);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), var(--glass-highlight);
+  -webkit-backdrop-filter: var(--glass-filter-strong);
+  backdrop-filter: var(--glass-filter-strong);
 }
 
 .sheet-panel--sm { width: min(100%, 440px); }
@@ -99,7 +109,7 @@ function requestClose(reason: OverlayCloseReason) {
   padding: 0;
   border-width: 1px;
   border-radius: 18px;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), var(--glass-highlight);
 }
 .sheet-panel--right.sheet-panel--lg { width: 420px; }
 .sheet-panel--right .sheet-body, .sheet-panel--inline .sheet-body { padding: 0; }
@@ -115,6 +125,8 @@ function requestClose(reason: OverlayCloseReason) {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .sheet-panel--inline.sheet-panel--lg { width: 420px; }
 

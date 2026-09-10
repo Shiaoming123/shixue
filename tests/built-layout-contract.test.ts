@@ -36,7 +36,6 @@ function cssAtBoundary(compactMax: number, mediumMin: number): string {
       .tabbar[data-v-tabs] { bottom: max(8px, env(safe-area-inset-bottom, 0px)); }
     }
     @media (min-width: ${mediumMin}px) and (max-width: 1279px) {
-      .sidebar[data-v-sidebar] { width: 72px; min-width: 72px; }
       .sheet-panel--right[data-v-sheet] { position: fixed; }
     }
   `

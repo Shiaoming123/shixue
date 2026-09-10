@@ -62,10 +62,12 @@ function isActive(view: WorkspaceView) {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     padding: 6px 8px;
     overflow: hidden;
-    border: 1px solid var(--border);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-xl);
-    background: var(--surface);
-    box-shadow: var(--shadow-md);
+    background: var(--material-regular);
+    box-shadow: var(--shadow-md), var(--glass-highlight);
+    -webkit-backdrop-filter: var(--glass-filter-strong);
+    backdrop-filter: var(--glass-filter-strong);
   }
 
   .tab {

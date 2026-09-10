@@ -327,7 +327,7 @@ onMounted(() => pageTitle.value?.focus())
 
 <style scoped>
 .settings-view { width: min(100%, 1100px); min-height: 100%; display: grid; grid-template-columns: 224px minmax(0, 1fr); margin: 0 auto; }
-.settings-navigation { position: sticky; top: 0; align-self: start; max-height: 100dvh; overflow-y: auto; padding: 28px 16px; border-right: 1px solid var(--hairline); }
+.settings-navigation { position: sticky; top: 0; align-self: start; max-height: 100dvh; overflow-y: auto; padding: 28px 16px; border-right: 1px solid var(--glass-border); background: var(--material-thin); box-shadow: var(--glass-highlight); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
 .settings-navigation > strong { display: block; padding: 0 10px 18px; font-size: var(--text-lg); font-weight: 650; }
 .settings-navigation nav { display: grid; gap: 3px; }
 .settings-navigation a { min-height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: var(--radius-md); color: var(--muted); font-size: var(--text-sm); text-decoration: none; }
@@ -338,7 +338,7 @@ onMounted(() => pageTitle.value?.focus())
 .page-header p { margin: 7px 0 0; color: var(--muted); font-size: var(--text-base); line-height: 1.55; }
 .local-badge { min-height: 32px; display: inline-flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border: 1px solid var(--hairline); border-radius: var(--radius-full); background: var(--control-fill); color: var(--accent); font-size: var(--text-xs); white-space: nowrap; }
 .settings-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
-.settings-section { min-width: 0; scroll-margin-top: 20px; padding: 20px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--surface) 72%, transparent); }
+.settings-section { min-width: 0; scroll-margin-top: 20px; padding: 20px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--surface); }
 .settings-section--wide { grid-column: 1 / -1; }
 .section-title { display: flex; align-items: flex-start; gap: var(--space-3); padding-bottom: var(--space-4); border-bottom: 1px solid var(--hairline); }
 .section-title > svg { flex: 0 0 auto; margin-top: 2px; color: var(--accent); }
