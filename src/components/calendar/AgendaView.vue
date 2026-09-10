@@ -158,4 +158,7 @@ function formatMinute(minute: number) { return `${String(Math.floor(minute / 60)
   .agenda-view__row { min-height: 48px; grid-template-columns: 76px minmax(0, 1fr); }
   .agenda-view__row > span { grid-column: 2; }
 }
+
+.agenda-view__item { margin: 2px 0; overflow: hidden; border: 0; border-radius: var(--radius-lg); }
+.agenda-view__row { padding-inline: 10px; border-radius: var(--radius-lg); }
 </style>

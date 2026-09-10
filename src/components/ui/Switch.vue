@@ -38,9 +38,14 @@ const emit = defineEmits<{ 'update:modelValue': [checked: boolean] }>()
   align-items: center;
   gap: var(--space-3);
   padding: 10px 2px;
-  border-bottom: 1px solid var(--border);
+  border: 0;
+  border-radius: var(--radius-lg);
   color: var(--text);
   cursor: pointer;
+}
+
+.switch:hover:not(.disabled) {
+  background: color-mix(in srgb, var(--control-fill) 70%, transparent);
 }
 
 .ui-native-underlay {
@@ -70,7 +75,7 @@ const emit = defineEmits<{ 'update:modelValue': [checked: boolean] }>()
 
 .switch-copy strong {
   font-size: var(--text-base);
-  font-weight: 600;
+  font-weight: var(--font-medium);
 }
 
 .switch-copy small {

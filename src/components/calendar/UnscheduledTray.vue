@@ -142,4 +142,8 @@ function plan(task: Task, close: (reason: 'select') => void) {
   .unscheduled-tray__menu { width: 44px; height: 44px; top: 0; right: 0; }
   .unscheduled-tray__panel footer :deep(.btn) { min-height: 44px; }
 }
+
+.unscheduled-tray__items { gap: var(--space-1); }
+.unscheduled-tray__item { border: 0; border-radius: var(--radius-md); }
+.unscheduled-tray__item:hover { background: var(--control-fill); }
 </style>

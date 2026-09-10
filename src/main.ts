@@ -9,7 +9,6 @@ import {
   runtimeInfoForNativePlatform,
 } from "./lib/platform";
 import { reportSmokePhase } from "./lib/smoke";
-import "@fontsource-variable/manrope/wght.css";
 import "@fontsource-variable/noto-sans-sc/wght.css";
 import "./assets/themes/global.css";
 

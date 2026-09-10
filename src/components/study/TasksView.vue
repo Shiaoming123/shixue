@@ -222,4 +222,9 @@ defineExpose({ activateQuickAdd })
 .task-list-leave-active { position: absolute; width: 100%; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .task-list-move, .task-list-enter-active, .task-list-leave-active { transition: none; }.task-list-enter-from, .task-list-leave-to { transform: none; } }
 @media (hover: none) { .row-actions { display: none !important; } }
+
+.task-list { display: grid; gap: var(--space-1); border: 0; }
+.task-row { margin: 0; border: 0; border-radius: var(--radius-lg); }
+.task-copy strong { font-weight: var(--font-medium); letter-spacing: -.006em; }
+.task-list :deep(.occurrence-row) { border: 0; border-radius: var(--radius-lg); }
 </style>

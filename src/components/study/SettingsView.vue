@@ -406,4 +406,10 @@ onMounted(() => pageTitle.value?.focus())
   .cloud-form { grid-template-columns: 1fr; }.cloud-form > p { grid-column: auto; }
 }
 @media (max-width: 420px) { .setting-row { align-items: stretch; flex-direction: column; }.setting-row :deep(.listbox) { width: 100%; flex-basis: auto; }.segmented button { gap: var(--space-1); font-size: var(--text-xs); }.theme-grid { grid-template-columns: 1fr; } }
+
+.settings-navigation > strong, .page-header h1, .section-title h2 { font-weight: var(--font-semibold); }
+.theme-card strong, .setting-row strong, .action-row strong { font-weight: var(--font-medium); }
+.setting-row, .action-row { padding-inline: var(--space-3); border: 0; border-radius: var(--radius-lg); }
+.setting-row:hover, .action-row:hover { background: color-mix(in srgb, var(--control-fill) 70%, transparent); }
+.data-actions { gap: var(--space-1) var(--space-2); }
 </style>

@@ -256,4 +256,11 @@ h1 { max-width: 560px; margin: 0; font-size: clamp(31px, 3.2vw, 42px); line-heig
   .primary-actions { align-items: stretch; flex-direction: column; gap: 2px; padding-bottom: 20px; }.start-button { width: 100%; min-width: 0; min-height: 54px; }.text-button { width: 100%; }
   .queue > button { min-height: 76px; grid-template-columns: 30px 1fr 18px; }.duration { display: none; }.weekly-line { align-items: flex-start; flex-direction: column; gap: 8px; }
 }
+
+.overdue-row, .order-panel li, .queue > button, .completed-section button { border-bottom: 0; }
+.order-panel ol, .queue, .completed-section { display: grid; gap: var(--space-1); }
+.order-panel > header, .queue > header { grid-column: 1 / -1; }
+.order-panel li, .queue > button, .completed-section button { border-radius: var(--radius-lg); }
+.order-panel li:hover, .completed-section button:hover { background: color-mix(in srgb, var(--control-fill) 70%, transparent); }
+.order-open strong, .task-copy strong, .overdue-main strong { font-weight: var(--font-medium); letter-spacing: -.006em; }
 </style>
