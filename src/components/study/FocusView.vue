@@ -158,21 +158,23 @@ textarea {
   min-height: 154px;
   resize: vertical;
   padding: 16px 17px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-xl);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   outline: none;
-  background: var(--surface);
+  background: var(--field-fill);
   color: var(--text);
   font-size: 14px;
   line-height: 1.65;
-  box-shadow: var(--shadow-sm);
   transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease);
 }
 
 textarea:focus {
   border-color: var(--accent);
-  box-shadow: var(--focus-ring), var(--shadow-sm);
+  background: var(--field-focus-fill);
+  box-shadow: var(--field-focus-ring);
 }
+
+textarea:hover:not(:focus) { background: var(--field-hover-fill); }
 
 .scratchpad small {
   display: block;

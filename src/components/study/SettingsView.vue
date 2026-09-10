@@ -388,8 +388,9 @@ onMounted(() => pageTitle.value?.focus())
 .cloud-form { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: var(--space-3); padding-top: var(--space-4); }
 .cloud-form > p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: var(--text-xs); }
 .cloud-form label span { display: block; margin-bottom: var(--space-2); font-size: var(--text-xs); font-weight: 600; }
-.cloud-form input { width: 100%; min-height: 40px; padding: 0 var(--space-3); border: 1px solid var(--hairline); border-radius: var(--radius-md); outline: 0; background: var(--control-fill); color: var(--text); font-size: var(--text-base); }
-.cloud-form input:focus { border-color: var(--accent); box-shadow: var(--focus-ring); }
+.cloud-form input { width: 100%; min-height: var(--field-min-height); padding: 0 var(--space-3); border: 1px solid transparent; border-radius: var(--radius-md); outline: 0; background: var(--field-fill); color: var(--text); font-size: var(--text-base); }
+.cloud-form input:hover:not(:focus) { background: var(--field-hover-fill); }
+.cloud-form input:focus { border-color: var(--accent); background: var(--field-focus-fill); box-shadow: var(--field-focus-ring); }
 .cloud-form > button { border: 0; background: var(--accent); color: var(--accent-text); }
 .cloud-form > button:disabled { opacity: .4; }
 .cloud-message { margin: var(--space-3) 0 0; }.cloud-message.error { color: var(--danger); }

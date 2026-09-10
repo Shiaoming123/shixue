@@ -34,7 +34,7 @@
   --font-body-leading: 21px;
   --control-hit: 32px;
   --icon-hit: 28px;
-  --field-min-height: 40px;
+  --field-min-height: 38px;
   --row-min-height: 48px;
   --screen-inline: 28px;
   font-family: var(--font-sans);
@@ -109,6 +109,10 @@
   --chrome-blur: 24px;
   --chrome-saturation: 170%;
   --control-fill: color-mix(in srgb, var(--surface-alt) 78%, var(--surface));
+  --field-fill: color-mix(in srgb, var(--surface-alt) 62%, var(--surface));
+  --field-hover-fill: color-mix(in srgb, var(--surface-alt) 48%, var(--surface));
+  --field-focus-fill: var(--surface);
+  --field-focus-ring: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
   --press-fill: color-mix(in srgb, var(--accent) 17%, var(--surface));
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   --press-opacity: 0.8;

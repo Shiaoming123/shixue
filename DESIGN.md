@@ -133,7 +133,7 @@
 | 控件 | 必须提供 | 禁止 |
 | --- | --- | --- |
 | `Button` / `IconButton` | default/hover（支持时）/pressed/focus/disabled/loading，图标按钮有 tooltip 与可访问名；每视图至多一个 prominent 背景 | 无状态裸 `<button>`、危险操作作为默认主操作 |
-| `TextField` / `TextArea` | label 或可访问名、placeholder、错误、只读、清除 | 以说明段落替代 label |
+| `TextField` / `TextArea` | label 或可访问名、placeholder、错误、只读、清除；静止态使用浅填充和透明边界，hover 轻微提亮，focus 切换为内容表面与 1px 强调色描边 | 以说明段落替代 label、同屏混用厚描边与无边界输入样式 |
 | `Select` / `Listbox` | 自绘触发器与列表、选中标记、方向键/Home/End/Enter/Escape、外点关闭、碰撞定位 | 可见原生 `<select>` 弹出菜单 |
 | `Combobox` | 输入过滤、无结果、清除、ARIA combobox/listbox 关系 | 只支持鼠标 |
 | `Checkbox` / `Radio` / `Switch` | 隐藏原生语义控件、自绘可见层、indeterminate、焦点、禁用 | 直接显示平台默认方框/开关 |

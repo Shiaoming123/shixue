@@ -340,24 +340,26 @@ function normalizeText(value: string): string {
 
 <style scoped>
 .search-box {
-  min-height: 52px;
+  min-height: var(--field-min-height);
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-xl);
-  background: var(--control-fill);
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--field-fill);
   color: var(--muted);
   transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease);
 }
 
 .search-box:focus-within {
   border-color: var(--accent);
-  background: var(--surface);
-  box-shadow: var(--focus-ring);
+  background: var(--field-focus-fill);
+  box-shadow: var(--field-focus-ring);
 }
+
+.search-box:hover:not(:focus-within) { background: var(--field-hover-fill); }
 
 .search-box input {
   width: 100%;

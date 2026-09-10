@@ -73,6 +73,8 @@ CSS zoom、等效回流视口、系统真实缩放分别命名；不能以 CSS z
 
 每个基础控件至少覆盖：default、hover（支持时）、pressed、focus-visible、disabled、loading/error（适用时）、light、dark、high-contrast。浮层类额外覆盖顶部/底部边界翻转、Escape、外点关闭和焦点返回。
 
+输入控件需在同一视口核对静止、hover、focus 三态：静止态无显眼描边，focus 为 1px 强调色轮廓；桌面单行字段高 38px，iOS/触控 44px，Android 48px，复合输入的尾部操作不得挤压文字。
+
 | 业务状态 | 必须看到 |
 | --- | --- |
 | 全新空状态 | 轻量插画、简短标题、一个主要行动；无教学段落 |

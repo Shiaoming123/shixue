@@ -169,12 +169,12 @@ label small {
 input,
 textarea {
   width: 100%;
-  min-height: 45px;
-  padding: 11px 13px;
-  border: 1px solid var(--hairline);
+  min-height: var(--field-min-height);
+  padding: 9px 12px;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   outline: none;
-  background: var(--control-fill);
+  background: var(--field-fill);
   color: var(--text);
   font-size: 13px;
 }
@@ -188,9 +188,12 @@ textarea {
 input:focus,
 textarea:focus {
   border-color: var(--accent);
-  background: var(--surface);
-  box-shadow: var(--focus-ring);
+  background: var(--field-focus-fill);
+  box-shadow: var(--field-focus-ring);
 }
+
+input:hover:not(:focus),
+textarea:hover:not(:focus) { background: var(--field-hover-fill); }
 
 fieldset {
   display: flex;

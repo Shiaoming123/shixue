@@ -55,15 +55,16 @@ function onInput(e: Event) {
 
 .field__input {
   width: 100%;
-  padding: var(--space-2) var(--space-3);
+  min-height: var(--field-min-height);
+  padding: 0 var(--space-3);
   font-size: var(--text-md);
   font-family: inherit;
   color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--field-fill);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   outline: none;
-  transition: border-color var(--motion-fast) var(--ease);
+  transition: background var(--motion-fast) var(--ease), border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease);
 }
 
 .field__input::placeholder {
@@ -72,7 +73,11 @@ function onInput(e: Event) {
 
 .field__input:focus {
   border-color: var(--accent);
+  background: var(--field-focus-fill);
+  box-shadow: var(--field-focus-ring);
 }
+
+.field__input:hover:not(:focus):not(:disabled) { background: var(--field-hover-fill); }
 
 .field__input:disabled {
   opacity: 0.5;

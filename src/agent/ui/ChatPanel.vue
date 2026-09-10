@@ -257,18 +257,23 @@ onUnmounted(() => settleApproval(false))
 
 .chat-input input {
   flex: 1;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
+  min-height: var(--field-min-height);
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  outline: 0;
+  background: var(--field-fill);
   color: var(--text);
   font-size: 13px;
 }
 
 .chat-input input:focus {
-  outline: none;
   border-color: var(--accent);
+  background: var(--field-focus-fill);
+  box-shadow: var(--field-focus-ring);
 }
+
+.chat-input input:hover:not(:focus) { background: var(--field-hover-fill); }
 
 .chat-input button {
   display: grid;

@@ -152,12 +152,14 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 | --- | --- | --- | --- | --- |
 | `--control-hit` | 32px | 44px | 48px | 常规交互命中高度 |
 | `--icon-hit` | 28px | 44px | 48px | 独立图标按钮命中区 |
-| `--field-min-height` | 40px | 44px | 48px | 字段与选择器 |
+| `--field-min-height` | 38px | 44px | 48px | 字段与选择器 |
 | `--row-min-height` | 40px | 48px | 48px | 列表行基础高度 |
 | `--font-body-size/leading` | 13/18px | 17/22px | 16/24px | 平台正文角色 |
 | `--screen-inline` | 28px | 16px | 16px | 紧凑页面边距 |
 
 入口在挂载 Vue 前设置 `data-ui-platform=windows|macos|linux|ios|android|web` 和 `data-input=fine|coarse`。它们只控制表现，不授予任何 Tauri 权限。iPadOS 的桌面 UA 通过 `MacIntel + maxTouchPoints` 识别为 iOS；真正的能力可用性仍以运行时 capability 为准。
+
+字段统一消费 `--field-fill / --field-hover-fill / --field-focus-fill / --field-focus-ring`：静止时为浅色填充和透明边界，聚焦时使用 1px 强调色描边。单行字段在细指针桌面为 38px，触控平台继续使用 44/48px；多行字段按内容保留必要高度。
 
 字体映射：iOS/iPadOS 使用系统字体与 PingFang SC，不打包 SF；Android 使用 Roboto/Noto；Windows 保留 Manrope/Noto/Segoe 品牌栈。Lucide 是当前 WebView 的统一图标实现，原生壳可把同一语义图标名映射为 SF Symbols、Fluent 或 Material Symbols。
 

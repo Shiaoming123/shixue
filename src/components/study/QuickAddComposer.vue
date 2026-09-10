@@ -317,12 +317,13 @@ defineExpose({ focus })
 </template>
 
 <style scoped>
-.quick-add-composer { margin-top: var(--space-5); padding: var(--space-1); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease); }
-.quick-add-composer:focus-within { border-color: color-mix(in srgb, var(--accent) 58%, var(--border)); box-shadow: var(--focus-ring); }
-.quick-add-input-row { min-height: max(48px, var(--field-min-height)); display: grid; grid-template-columns: 24px minmax(0, 1fr) auto max(36px, var(--icon-hit)); align-items: center; gap: var(--space-2); padding: 0 var(--space-1) 0 var(--space-3); }
+.quick-add-composer { margin-top: var(--space-5); padding: 2px; border: 1px solid transparent; border-radius: var(--radius-lg); background: var(--field-fill); transition: background var(--motion-fast) var(--ease), border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease); }
+.quick-add-composer:hover:not(:focus-within) { background: var(--field-hover-fill); }
+.quick-add-composer:focus-within { border-color: var(--accent); background: var(--field-focus-fill); box-shadow: var(--field-focus-ring); }
+.quick-add-input-row { min-height: var(--field-min-height); display: grid; grid-template-columns: 20px minmax(0, 1fr) auto max(34px, var(--icon-hit)); align-items: center; gap: var(--space-2); padding: 0 2px 0 10px; }
 .quick-add-input-row > svg { color: var(--accent); }
-.quick-add-input-row input { min-width: 0; min-height: 44px; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--text-base); }
-.quick-add-input-row > button { width: max(36px, var(--icon-hit)); height: max(36px, var(--icon-hit)); display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: var(--accent); color: var(--accent-text); }
+.quick-add-input-row input { min-width: 0; min-height: var(--field-min-height); border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--text-base); }
+.quick-add-input-row > button { width: max(34px, var(--icon-hit)); height: max(34px, var(--icon-hit)); display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: var(--accent); color: var(--accent-text); }
 .quick-add-input-row > .learning-mode { width: 80px; min-width: 80px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 var(--space-2); border: 1px solid var(--hairline); background: var(--control-fill); color: var(--muted); font: inherit; font-size: var(--text-xs); white-space: nowrap; }
 .quick-add-input-row > .learning-mode[aria-pressed="true"] { border-color: color-mix(in srgb, var(--accent) 45%, var(--hairline)); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); font-weight: 650; }
 .quick-add-input-row > button:disabled { opacity: .28; }
@@ -340,7 +341,7 @@ defineExpose({ focus })
 @keyframes quick-add-spin { to { transform: rotate(360deg); } }
 @media (max-width: 819px) {
   .quick-add-composer { margin-top: var(--space-3); }
-  .quick-add-input-row { min-height: 52px; }
+  .quick-add-input-row { min-height: var(--field-min-height); }
   .quick-add-input-row > button { width: 44px; height: 44px; }
   .quick-add-input-row > .learning-mode { width: 80px; min-width: 80px; }
   .quick-add-chips { gap: var(--space-2); }

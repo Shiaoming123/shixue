@@ -98,3 +98,29 @@ test('functional chrome shares adaptive glass materials with opaque accessibilit
   const tasks = rootSource('src/components/study/TasksView.vue')
   assert.doesNotMatch(tasks.match(/\.task-row\s*\{[^}]+\}/)?.[0] ?? '', /backdrop-filter/, 'content rows stay flat')
 })
+
+test('text entry controls share one compact rest and focus treatment', () => {
+  const global = rootSource('src/assets/themes/global.css')
+  assert.match(global, /--field-min-height:\s*38px/)
+  assert.match(global, /--field-fill:\s*color-mix\(/)
+  assert.match(global, /--field-focus-fill:\s*var\(--surface\)/)
+  assert.match(global, /--field-focus-ring:\s*0 0 0 1px/)
+  assert.match(global, /data-input='coarse'[\s\S]*--field-min-height:\s*44px/)
+
+  for (const path of [
+    'src/components/ui/Input.vue',
+    'src/components/ui/Listbox.vue',
+    'src/components/ui/DateTimePicker.vue',
+    'src/components/ui/TimePicker.vue',
+    'src/components/study/QuickAddComposer.vue',
+    'src/components/study/GlobalSearchDialog.vue',
+  ]) {
+    const source = rootSource(path)
+    assert.match(source, /var\(--field-fill\)/, `${path} uses the shared resting fill`)
+    assert.match(source, /var\(--field-focus-ring\)/, `${path} uses the shared focused outline`)
+  }
+
+  const composer = rootSource('src/components/study/QuickAddComposer.vue')
+  assert.match(composer, /min-height:\s*var\(--field-min-height\)/)
+  assert.doesNotMatch(composer.match(/\.quick-add-composer\s*\{[^}]+\}/)?.[0] ?? '', /var\(--shadow-sm\)/)
+})

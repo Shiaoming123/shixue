@@ -206,15 +206,15 @@ watch(() => props.options.length, () => {
 
 .listbox-trigger {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--field-min-height);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 12px;
   align-items: center;
   gap: var(--space-2);
   padding: 0 var(--space-3);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--control-fill);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--field-fill);
   color: var(--text);
   font-size: var(--text-base);
   text-align: left;
@@ -239,9 +239,11 @@ watch(() => props.options.length, () => {
 
 .listbox-trigger[aria-expanded='true'] {
   border-color: var(--accent);
-  background: var(--surface);
-  box-shadow: var(--focus-ring);
+  background: var(--field-focus-fill);
+  box-shadow: var(--field-focus-ring);
 }
+
+.listbox-trigger:hover:not([aria-expanded='true']) { background: var(--field-hover-fill); }
 
 .listbox-trigger[aria-expanded='true'] > i {
   transform: translateY(2px) rotate(225deg);
