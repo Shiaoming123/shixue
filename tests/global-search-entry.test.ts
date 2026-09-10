@@ -17,7 +17,10 @@ test('global search is a shell command and leaves the five domains unchanged', (
 
 test('task pages do not duplicate the global search field', () => {
   const tasks = readFileSync(new URL('../src/components/study/TasksView.vue', import.meta.url), 'utf8')
-  assert.doesNotMatch(tasks, /class="search-input"|placeholder="搜索任务"/)
+  assert.doesNotMatch(tasks, /aria-label="搜索任务"|placeholder="搜索"/)
+  assert.match(tasks, /<div v-if="toolbarOpen \|\| searchModel" class="filters">\s*<label class="search-field">/)
+  assert.match(tasks, /aria-label="筛选当前清单"/)
+  assert.match(tasks, /toolbarOpen.value = true; await nextTick\(\); searchInput.value\?\.focus\(\)/)
 })
 
 test('the single global search command keeps its accessible keyboard shortcut', () => {

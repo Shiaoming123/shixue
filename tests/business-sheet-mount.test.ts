@@ -70,7 +70,7 @@ function componentFrom(name: string, controls: Record<string, (...args: any[]) =
     setup(props, { emit, slots }) {
       controls.close = (reason = 'outside') => emit('close', reason)
       controls.placement = () => props.placement
-      return () => props.open ? Vue.h('section', slots.default?.()) : null
+      return () => props.open ? Vue.h('section', [Vue.h('div', { class: 'sheet-body' }, slots.default?.()), slots.footer ? Vue.h('footer', slots.footer()) : null]) : null
     },
   })
   const ReminderEditor = Vue.defineComponent({
@@ -273,6 +273,10 @@ test('mounted TaskEditSheet stages child reminder and recurrence events until ou
   events.length = 0
   const submit = find(root, 'FORM')?.props.onSubmit as ((event: Event) => void) | undefined
   assert.ok(submit, 'the mounted task editor renders its real outer form')
+  const saveButton = findByClass(root, 'save')!
+  assert.equal(saveButton.parent?.tagName, 'FOOTER', 'save stays outside the scrolling body')
+  assert.equal(saveButton.props.form, find(root, 'FORM')?.props.id, 'footer submit retains native form validation and Enter submission')
+  assert.equal(saveButton.props.type, 'submit')
   submit(new Event('submit', { cancelable: true }))
   assert.equal(events[0][0], 'save')
   assert.deepEqual(events[0][2], {
