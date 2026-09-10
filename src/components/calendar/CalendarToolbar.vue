@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import { CalendarDays, ChevronLeft, ChevronRight } from '@lucide/vue'
 import Button from '../ui/Button.vue'
+import IconButton from '../ui/IconButton.vue'
+import PageHeader from '../ui/PageHeader.vue'
 import DatePicker from '../ui/DatePicker.vue'
 import Popover from '../ui/Popover.vue'
 import type { CalendarView } from '../../domain/calendar/range.ts'
@@ -18,13 +20,9 @@ const dateOpen = ref(false)
 </script>
 
 <template>
-  <header class="calendar-toolbar">
-    <div>
-      <p>时间规划</p>
-      <h1>日历</h1>
-    </div>
-    <div class="calendar-toolbar__actions">
-      <Button variant="ghost" size="sm" title="上一段时间" aria-label="上一段时间" @click="emit('previous')"><ChevronLeft :size="17" /></Button>
+  <PageHeader class="calendar-toolbar" title="日历" subtitle="时间规划">
+    <template #actions><div class="calendar-toolbar__actions">
+      <IconButton size="sm" aria-label="上一段时间" @click="emit('previous')"><ChevronLeft :size="17" /></IconButton>
       <Popover v-model:open="dateOpen" mobile-sheet mobile-sheet-label="选择日历日期">
         <template #trigger="{ triggerProps }">
           <Button variant="secondary" size="sm" v-bind="triggerProps" title="选择日期"><CalendarDays :size="16" />{{ anchorLabel }}</Button>
@@ -35,26 +33,24 @@ const dateOpen = ref(false)
           </div>
         </template>
       </Popover>
-      <Button variant="ghost" size="sm" title="下一段时间" aria-label="下一段时间" @click="emit('next')"><ChevronRight :size="17" /></Button>
-      <Button variant="ghost" size="sm" @click="emit('today')">今天</Button>
+      <IconButton size="sm" aria-label="下一段时间" @click="emit('next')"><ChevronRight :size="17" /></IconButton>
+      <Button variant="quiet" size="sm" @click="emit('today')">今天</Button>
       <div class="calendar-toolbar__modes" aria-label="日历视图">
-        <button type="button" :aria-pressed="mode === 'day'" @click="emit('update:mode', 'day')">日</button>
-        <button type="button" :aria-pressed="mode === 'week'" :title="compact ? '窄屏使用日视图' : undefined" @click="emit('update:mode', 'week')">周</button>
-        <button type="button" :aria-pressed="mode === 'month'" @click="emit('update:mode', 'month')">月</button>
-        <button type="button" :aria-pressed="mode === 'agenda'" @click="emit('update:mode', 'agenda')">议程</button>
+        <Button variant="quiet" size="sm" :aria-pressed="mode === 'day'" @click="emit('update:mode', 'day')">日</Button>
+        <Button variant="quiet" size="sm" :aria-pressed="mode === 'week'" :title="compact ? '窄屏使用日视图' : undefined" @click="emit('update:mode', 'week')">周</Button>
+        <Button variant="quiet" size="sm" :aria-pressed="mode === 'month'" @click="emit('update:mode', 'month')">月</Button>
+        <Button variant="quiet" size="sm" :aria-pressed="mode === 'agenda'" @click="emit('update:mode', 'agenda')">议程</Button>
       </div>
-    </div>
-  </header>
+    </div></template>
+  </PageHeader>
 </template>
 
 <style scoped>
-.calendar-toolbar { display: flex; align-items: end; justify-content: space-between; gap: var(--space-4); padding: 24px; border-bottom: 1px solid var(--hairline); }
-.calendar-toolbar p { margin: 0 0 2px; color: var(--muted); font-size: var(--text-xs); }
-.calendar-toolbar h1 { margin: 0; color: var(--text); font-size: var(--text-xl); font-weight: var(--font-semibold); }
+.calendar-toolbar { display: flex; align-items: end; justify-content: space-between; gap: var(--space-4); padding: 24px; border-bottom: 1px solid var(--hairline); background: var(--material-thin); }
 .calendar-toolbar__actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-1); }
 .calendar-toolbar__modes { display: flex; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--control-fill); }
 .calendar-toolbar__modes button { min-width: 40px; min-height: max(30px, var(--control-hit)); padding: 0 var(--space-2); border: 0; border-radius: calc(var(--radius-md) - 2px); background: transparent; color: var(--muted); font: inherit; font-size: var(--text-sm); }
-.calendar-toolbar__modes button[aria-pressed='true'] { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
+.calendar-toolbar__modes button[aria-pressed='true'] { background: var(--surface); color: var(--accent); }
 .calendar-toolbar__date-panel { width: min(360px, calc(100vw - 32px)); padding: var(--space-3); }
 @media (max-width: 819px) {
   .calendar-toolbar { align-items: stretch; flex-direction: column; padding: 14px 16px 10px; }

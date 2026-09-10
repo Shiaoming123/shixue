@@ -5,9 +5,9 @@ import test from 'node:test'
 const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const review = readFileSync(new URL('../src/components/study/ReviewView.vue', import.meta.url), 'utf8')
 
-test('App exposes one global search overlay from desktop, mobile, and Ctrl or Command K', () => {
-  assert.match(app, /<AppSidebar\b[^>]*@search="openGlobalSearch"/)
-  assert.match(app, /class="mobile-actions"[\s\S]*aria-label="全局搜索"/)
+test('App exposes one global search overlay from the shell and Ctrl or Command K', () => {
+  assert.match(app, /<IconButton\b[^>]*ariaLabel="全局搜索"[^>]*aria-keyshortcuts="Control\+K Meta\+K"[^>]*@click="openGlobalSearch"/)
+  assert.doesNotMatch(app, /<AppSidebar\b[^>]*@search=/)
   assert.match(app, /<GlobalSearchDialog\b[^>]*v-model:open="globalSearchOpen"/)
   assert.match(app, /\(event\.ctrlKey \|\| event\.metaKey\)/)
   assert.match(app, /event\.key\.toLocaleLowerCase\(\) !== 'k'/)

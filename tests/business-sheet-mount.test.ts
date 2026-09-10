@@ -45,6 +45,26 @@ function componentFrom(name: string, controls: Record<string, (...args: any[]) =
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText
   const passthrough = Vue.defineComponent({ setup: (_, { slots }) => () => Vue.h('div', slots.default?.()) })
+  const ActionButton = Vue.defineComponent({
+    inheritAttrs: false,
+    props: ['ariaLabel', 'disabled', 'loading', 'type'], emits: ['click'],
+    setup(props, { attrs, emit, slots }) {
+      return () => Vue.h('button', {
+        ...attrs,
+        type: props.type ?? 'button',
+        disabled: props.disabled || props.loading,
+        'aria-label': props.ariaLabel ?? attrs['aria-label'],
+        onClick: (event: MouseEvent) => emit('click', event),
+      }, slots.default?.())
+    },
+  })
+  const FieldControl = Vue.defineComponent({
+    props: ['modelValue', 'label'], emits: ['update:modelValue'],
+    setup(props, { emit }) {
+      controls[`set:${props.label}`] = (value: string) => emit('update:modelValue', value)
+      return () => Vue.h('div')
+    },
+  })
   const Sheet = Vue.defineComponent({
     props: ['open', 'label', 'placement'], emits: ['close'],
     setup(props, { emit, slots }) {
@@ -71,6 +91,8 @@ function componentFrom(name: string, controls: Record<string, (...args: any[]) =
     if (injected) return injected
     if (id === 'vue') return Vue
     if (id === '@lucide/vue') return new Proxy({}, { get: () => passthrough })
+    if (id.endsWith('/Button.vue') || id.endsWith('/IconButton.vue')) return { default: ActionButton }
+    if (id.endsWith('/DateTimePicker.vue') || id.endsWith('/Listbox.vue')) return { default: FieldControl }
     if (id.endsWith('/Sheet.vue')) return { default: Sheet }
     if (id.endsWith('/ReminderEditor.vue')) return { default: ReminderEditor }
     if (id.endsWith('/RecurrenceEditor.vue')) return { default: RecurrenceEditor }
@@ -192,6 +214,37 @@ test('mounted QuickAdd reports a committed task when catalog refresh fails after
   assert.equal(learning.props['aria-pressed'], false)
   assert.equal(input.focusCalls, 1)
   assert.equal(findByClass(root, 'quick-add-message')?.text, '任务已保存，但清单与标签未能刷新。')
+  app.unmount()
+})
+
+test('mounted QuickAdd sends first-level schedule and list choices through task.create', async () => {
+  const commands: any[] = []
+  const controls: Record<string, (...args: any[]) => void> = {}
+  const service = {
+    query: async () => ({ revision: 1, lists: [{ id: 'list:one', title: 'One', archivedAt: null }, { id: 'list:two', title: 'Two', archivedAt: null }], tags: [] }),
+    execute: async (envelope: any) => {
+      commands.push(envelope.command)
+      return { affected: [{ type: 'task', id: envelope.command.taskId, revision: 1 }] }
+    },
+  }
+  const Component = componentFrom('QuickAddComposer', controls, {
+    '/capabilities/types': { CAPABILITY_PROTOCOL_VERSION: 1 },
+    '/capabilities/service': { createTaskCapabilityService: () => service },
+    '/quick-add/command': { buildQuickAddCommand }, '/quick-add/parse': { parseQuickAdd },
+    '/recurrence/timezone': recurrenceTimezone, '/workspace/registry': { getWorkspaceStore: () => ({}) },
+    '/use-quick-add-candidate-state': { useQuickAddCandidateState },
+  })
+  const root = new HostNode()
+  const app = renderer.createApp(Component, { destinationListId: 'list:one' })
+  app.mount(root)
+  await Vue.nextTick()
+  controls['set:计划日期与时间']('2026-09-12T09:30')
+  controls['set:清单']('list:two')
+  ;(find(root, 'INPUT')!.props['onUpdate:modelValue'] as (value: string) => void)('Plan review')
+  ;(find(root, 'FORM')!.props.onSubmit as (event: Event) => void)(new Event('submit', { cancelable: true }))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(commands[0]?.listId, 'list:two')
+  assert.equal(commands[0]?.startAt, recurrenceTimezone.zonedDateTimeToInstant('2026-09-12', '09:30', Intl.DateTimeFormat().resolvedOptions().timeZone).toISOString())
   app.unmount()
 })
 

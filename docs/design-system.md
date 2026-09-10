@@ -15,7 +15,8 @@ src/
 └── components/
     ├── Icon.vue         ← Lucide 图标封装（静态注册表，构建期确定依赖）
     └── ui/
-        ├── Button.vue
+        ├── Button.vue / IconButton.vue
+        ├── PageHeader.vue
         ├── Input.vue
         ├── Card.vue
         ├── Badge.vue
@@ -83,13 +84,14 @@ src/
 | Token | 值 | 适用 |
 |---|---|---|
 | `--radius-sm` | 8px | tag、小 badge |
-| `--radius-md` | 10px | 小按钮、分段控件 |
-| `--radius-lg` | 14px | 按钮、输入框 |
-| `--radius-xl` | 20px | 内容分组、卡片 |
-| `--radius-2xl` | 26px | Sheet、浮动导航 |
-| `--radius-full` | 999px | 圆形（头像、dot、徽章） |
+| `--radius-md` | 12px | 输入、普通按钮、分段控件 |
+| `--radius-lg` | 16px | Popover、小型浮层 |
+| `--radius-xl` | 22px | Sheet、浮动导航 |
+| `--radius-pill` | 999px | 胶囊按钮、圆形图标底 |
 
-**字号**（克制：只 6 档）：
+`--radius-2xl` 和 `--radius-full` 分别保留为 `xl` 与 `pill` 的兼容别名。
+
+**字号**：
 
 | Token | 值 | 用途 |
 |---|---|---|
@@ -99,6 +101,8 @@ src/
 | `--text-md` | 14px | 卡片标题、正文 |
 | `--text-lg` | 16px | 主区顶栏标题 |
 | `--text-xl` | 20px | 页面主标题 |
+
+新页面和共享组件使用 `--font-large-title-*`、`--font-title-1-*`、`--font-title-2-*`、`--font-headline-*`、`--font-body-*`、`--font-callout-*`、`--font-subheadline-*`、`--font-footnote-*`、`--font-caption-1-*` 与 `--font-caption-2-*` 语义角色。旧 `--text-*` token 暂时保留给现有调用者；平台映射负责具体字号与行高。
 
 **字重**（正文使用 token，产品页标题可使用系统字体的可变字重）：
 
@@ -118,13 +122,13 @@ src/
 
 Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 Fontsource 包本地加载，不依赖在线字体服务；发行产物同时包含 `third-party-font-licenses.txt`。保留系统字体回退，确保字体资源异常时界面仍可读。
 
-**阴影**（三层叠加）：
+**阴影**：
 
 | Token | 值 | 适用 |
 |---|---|---|
-| `--shadow-sm` | 细描边 + 1px 轻投影 | 分段控件、列表分组 |
-| `--shadow-md` | 双层低对比投影 | 主任务、复习卡片 |
-| `--shadow-lg` | 大范围柔和投影 | Sheet、抽屉、浮动导航 |
+| `--shadow-sm` | 轻微层次 | 兼容现有组件，普通内容默认不使用 |
+| `--shadow-md` | `0 8px 24px rgba(15,23,42,.12)` | Popover |
+| `--shadow-lg` | `0 18px 48px rgba(15,23,42,.18)` | Sheet、Dialog |
 
 **动效**（一致节奏）：
 
@@ -155,11 +159,13 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 | `--field-min-height` | 40px | 44px | 48px | 字段与选择器 |
 | `--row-min-height` | 40px | 48px | 48px | 列表行基础高度 |
 | `--font-body-size/leading` | 13/18px | 17/22px | 16/24px | 平台正文角色 |
-| `--screen-inline` | 28px | 16px | 16px | 紧凑页面边距 |
+| `--screen-inline` | 由窗口宽度映射 | 由窗口宽度映射 | 由窗口宽度映射 | 页面横向边距 |
 
 入口在挂载 Vue 前设置 `data-ui-platform=windows|macos|linux|ios|android|web` 和 `data-input=fine|coarse`。它们只控制表现，不授予任何 Tauri 权限。iPadOS 的桌面 UA 通过 `MacIntel + maxTouchPoints` 识别为 iOS；真正的能力可用性仍以运行时 capability 为准。
 
 字体映射：iOS/iPadOS 使用系统字体与 PingFang SC，不打包 SF；Android 使用 Roboto/Noto；Windows 保留 Manrope/Noto/Segoe 品牌栈。Lucide 是当前 WebView 的统一图标实现，原生壳可把同一语义图标名映射为 SF Symbols、Fluent 或 Material Symbols。
+
+页面横向边距按可用窗口映射：320–389px 为 16px，390–819px 为 20px，820–1279px 为 28px，1280px 以上为 32px。平台仍分别映射常规命中高度为 Windows 32px、iOS/iPadOS 44px、Android 48px。
 
 ---
 
@@ -170,23 +176,39 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 ### 2.1 Button
 
 ```vue
-<Button variant="primary" @click="save">保存更改</Button>
-<Button variant="ghost" size="sm">取消</Button>
-<Button variant="danger" :disabled="busy">删除</Button>
+<Button variant="prominent" :loading="saving" @click="save">保存任务</Button>
+<Button variant="quiet" size="sm">取消</Button>
+<Button variant="destructive" :disabled="busy">删除此任务</Button>
+<IconButton aria-label="更多操作" title="更多操作">…</IconButton>
 ```
 
 | Prop | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `variant` | `primary` / `secondary` / `ghost` / `danger` | `secondary` | 视觉变体 |
+| `variant` | `prominent` / `standard` / `quiet` / `destructive` | `standard` | 动作角色；旧名称仍可作为兼容别名 |
 | `size` | `sm` / `md` | `md` | 尺寸 |
 | `disabled` | boolean | `false` | 禁用 |
+| `loading` | boolean | `false` | 保持原宽度并阻止重复提交 |
+| `icon` | boolean | `false` | 使用平台 `--icon-hit` 的方形图标命中区 |
 | `type` | `button` / `submit` | `button` | 原生 type |
 
 **写法约定**：按钮文案用祈使句（"保存"、"删除"、"开始对话"），不用名词短语。
 
 每个视图最多一个填充强调色的主按钮。iOS 按压使用 opacity/轻微 scale 且无 ripple；Android 可以由平台适配器使用受控 ripple；Windows 保留 hover、focus 和 pressed。危险操作不能成为默认主操作，并始终提供取消或撤销。
 
-### 2.2 Input
+`IconButton` 复用 `Button` 的全部状态与命中区，必须提供 `aria-label`；`title` 默认沿用该名称。`primary / secondary / ghost / danger` 分别是 `prominent / standard / quiet / destructive` 的兼容别名，新代码使用语义角色名。
+
+### 2.2 PageHeader
+
+```vue
+<PageHeader title="今天" subtitle="9 月 10 日" variant="large">
+  <template #leading>…返回操作…</template>
+  <template #actions>…当前页操作…</template>
+</PageHeader>
+```
+
+`PageHeader` 只提供标题语义和排版。`title`、`subtitle` 可由 prop 或同名 slot 提供，`leading` 放返回/导航，`actions` 放当前页操作；`large` 用于顶层入口，`inline` 用于详情和编辑。每个页面只渲染一个 `PageHeader`。
+
+### 2.3 Input
 
 ```vue
 <Input v-model="title" label="待办标题" placeholder="说点什么…" />
@@ -198,7 +220,7 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 | `label` | string | 顶部标签 |
 | `placeholder` | string | 占位文案 |
 
-### 2.3 Card
+### 2.4 Card
 
 ```vue
 <Card title="数据层" padding="lg">…内容…</Card>
@@ -217,7 +239,7 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 
 **何时用 Card**：任何需要"区分上下文"的块（数据列表、设置项、统计、demo 等）。**不要**对每个 div 都套 Card——会显得支离破碎。
 
-### 2.4 Badge
+### 2.5 Badge
 
 ```vue
 <Badge>默认</Badge>
@@ -229,7 +251,7 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 
 `tone` 对应 5 种语义色。用 Badge 标记状态（短小文字），不要当按钮用。
 
-### 2.5 Progress
+### 2.6 Progress
 
 ```vue
 <Progress :value="percent" />
@@ -238,7 +260,7 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 
 确定性进度（百分比已知）传 `value`；不确定时（加载中、不知何时结束）用 `indeterminate`，会显示横向滑动动画。
 
-### 2.6 EmptyState
+### 2.7 EmptyState
 
 ```vue
 <EmptyState
@@ -252,7 +274,7 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 
 **空状态是邀请行动**：写清「这是什么」+「怎么开始」。永远不要写"暂无数据"这种让用户摸不着头脑的句子。
 
-### 2.7 Icon（静态注册表）
+### 2.8 Icon（静态注册表）
 
 ```vue
 <Icon name="settings" :size="16" />
@@ -262,7 +284,7 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 
 名称支持 PascalCase、kebab-case、空格或下划线（自动转换）。默认注册表只包含模板实际使用的 5 个图标；需要其他 Lucide 图标时，在 `src/assets/icons/registry.ts` 增加静态 import 和映射。图标名未注册会在控制台 warn，不会抛错导致白屏。
 
-### 2.8 统一选择、日期与布尔控件
+### 2.9 统一选择、日期与布尔控件
 
 ```vue
 <Listbox v-model="sort" :options="sortOptions" label="排序" />
@@ -276,7 +298,7 @@ Manrope 和 Noto Sans SC 均以 SIL Open Font License 1.1 发布。字体通过 
 - `Checkbox` 与 `Switch` 保留 `.ui-native-underlay` 原生语义层，页面上只显示主题化外观。
 - `DateTimePicker` 的日期值为本地 `YYYY-MM-DD`，日期时间值为本地 `YYYY-MM-DDTHH:mm`；日期、时间和日历数字均使用等宽数字。`datetime` 模式明确按当前设备本地时间解释。
 
-### 2.9 浮层与提示
+### 2.10 浮层与提示
 
 应用根部只挂载一次 `<OverlayHost />`。`Popover`、`Dialog`、`Sheet` 与 `ToastRegion` 会传送到这个宿主；业务组件不要再创建新的 Portal 根节点。
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { Check, LoaderCircle, Plus } from '@lucide/vue'
+import { Check, Plus } from '@lucide/vue'
 import { CAPABILITY_PROTOCOL_VERSION, type EntityRef } from '../../domain/capabilities/types'
 import { createTaskCapabilityService } from '../../domain/capabilities/service'
 import { buildQuickAddCommand } from '../../domain/quick-add/command'
@@ -9,6 +9,9 @@ import type { QuickAddCandidate, QuickAddCandidateKind } from '../../domain/quic
 import { parseZonedDateTime, zonedDateTimeToInstant } from '../../domain/recurrence/timezone'
 import { getWorkspaceStore } from '../../storage/workspace/registry'
 import DatePicker from '../ui/DatePicker.vue'
+import DateTimePicker from '../ui/DateTimePicker.vue'
+import Button from '../ui/Button.vue'
+import IconButton from '../ui/IconButton.vue'
 import Listbox, { type ListboxOption } from '../ui/Listbox.vue'
 import Popover from '../ui/Popover.vue'
 import TimePicker from '../ui/TimePicker.vue'
@@ -44,6 +47,18 @@ const error = ref('')
 const submitting = ref(false)
 const learningMode = ref(false)
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+function initialQuickStart() {
+  if (!props.defaultStartAt) return props.defaultStartOn ?? ''
+  const local = parseZonedDateTime(props.defaultStartAt, timezone)
+  return `${local.date}T${local.time}`
+}
+const quickStart = ref(initialQuickStart())
+const quickStartEdited = ref(false)
+const quickStartModel = computed({
+  get: () => quickStart.value,
+  set: (value: string) => { quickStart.value = value; quickStartEdited.value = true },
+})
+const quickListId = ref(props.destinationListId)
 const capabilityService = createTaskCapabilityService(
   getWorkspaceStore(),
   () => new Date().toISOString(),
@@ -86,6 +101,9 @@ const recurrenceOptions: ListboxOption[] = [
   { value: 'yearly', label: '每年' },
 ]
 const listOptions = computed<ListboxOption[]>(() => lists.value.map(({ id, title }) => ({ value: id, label: title })))
+const quickListOptions = computed<ListboxOption[]>(() => listOptions.value.some(({ value }) => value === quickListId.value)
+  ? listOptions.value
+  : [{ value: quickListId.value, label: '当前清单' }, ...listOptions.value])
 const tagOptions = computed<ListboxOption[]>(() => tags.value.map(({ id, title }) => ({ value: id, label: title })))
 
 watch(input, () => {
@@ -98,6 +116,8 @@ watch(input, () => {
 watch(() => props.catalogRevision, () => void refreshCatalog().catch((reason) => {
   error.value = reason instanceof Error ? reason.message : '无法读取清单与标签。'
 }))
+watch(() => [props.defaultStartAt, props.defaultStartOn] as const, () => { quickStart.value = initialQuickStart(); quickStartEdited.value = false })
+watch(() => props.destinationListId, (value) => { quickListId.value = value })
 
 onMounted(() => void refreshCatalog().catch((reason) => {
   error.value = reason instanceof Error ? reason.message : '无法读取清单与标签。'
@@ -110,12 +130,16 @@ async function refreshCatalog() {
 }
 
 function buildCommand(ids: { taskId?: string; eventId?: string; seriesId?: string } = {}) {
+  const scheduled = !quickStartEdited.value && props.defaultStartAt
+    ? props.defaultStartAt
+    : quickStart.value.length > 10 && !/(?:Z|[+-]\d{2}:\d{2})$/u.test(quickStart.value)
+    ? zonedDateTimeToInstant(quickStart.value.slice(0, 10), quickStart.value.slice(11, 16), timezone).toISOString()
+    : quickStart.value
   return buildQuickAddCommand({
     input: input.value,
     candidates: acceptedCandidates.value,
-    destinationListId: props.destinationListId,
-    defaultStartOn: props.defaultStartOn,
-    defaultStartAt: props.defaultStartAt,
+    destinationListId: quickListId.value,
+    ...(scheduled.length === 10 ? { defaultStartOn: scheduled } : scheduled ? { defaultStartAt: scheduled } : {}),
     fallbackRecurrenceAnchorOn: localToday(),
     timezone,
     defaultEstimateMinutes: props.defaultEstimateMinutes,
@@ -263,11 +287,13 @@ defineExpose({ focus })
         :aria-invalid="hasAmbiguousCandidate || Boolean(error)"
         :placeholder="defaultStartOn ? '添加到今天，也可以输入时间、优先级或重复' : '添加任务，也可以输入日期、优先级或重复'"
       />
-      <button class="learning-mode" type="button" aria-label="学习任务" :aria-pressed="learningMode" :disabled="submitting" @click="learningMode = !learningMode"><Check v-if="learningMode" :size="14" aria-hidden="true" />学习任务</button>
-      <button type="submit" :disabled="!canSubmit" :aria-label="submitting ? '正在添加' : '添加'">
-        <LoaderCircle v-if="submitting" class="spinner" :size="17" aria-hidden="true" />
-        <Check v-else :size="17" aria-hidden="true" />
-      </button>
+      <Button class="learning-mode" variant="standard" aria-label="学习任务" :aria-pressed="learningMode" :disabled="submitting" @click="learningMode = !learningMode"><Check v-if="learningMode" :size="14" aria-hidden="true" />学习任务</Button>
+      <IconButton type="submit" :disabled="!canSubmit" :loading="submitting" :aria-label="submitting ? '正在添加' : '添加'" variant="prominent"><Check :size="17" aria-hidden="true" /></IconButton>
+    </div>
+
+    <div class="quick-add-fields">
+      <DateTimePicker v-model="quickStartModel" label="计划日期与时间" mode="datetime" placeholder="日期与时间" />
+      <Listbox v-model="quickListId" :options="quickListOptions" label="清单" variant="compact" />
     </div>
 
     <div v-if="acceptedCandidates.length" class="quick-add-chips" aria-label="识别结果">
@@ -303,8 +329,8 @@ defineExpose({ focus })
           <Listbox v-else v-model="editValue" :options="optionsFor(candidate.kind)" :label="`选择${candidateLabel(candidate)}`" :inline="modal" />
           <p v-if="candidate.status === 'ambiguous'" class="ambiguous-note">这项有多种解释，请确认后再创建。</p>
           <footer>
-            <button type="button" class="cancel" @click="close('select')">取消</button>
-            <button type="button" class="apply" :disabled="(candidate.kind === 'schedule' || candidate.kind === 'deadline') ? (!editDate || !editTimeValid) : !editValue" @click="applyEdit(candidate, close)">应用</button>
+            <Button class="cancel" variant="standard" @click="close('select')">取消</Button>
+            <Button class="apply" variant="prominent" :disabled="(candidate.kind === 'schedule' || candidate.kind === 'deadline') ? (!editDate || !editTimeValid) : !editValue" @click="applyEdit(candidate, close)">应用</Button>
           </footer>
         </section>
         </template>
@@ -336,8 +362,7 @@ defineExpose({ focus })
 .candidate-editor footer .apply { border-color: transparent; background: var(--accent); color: var(--accent-text); }
 .candidate-editor footer .apply:disabled { opacity: .42; }
 .ambiguous-note { margin: 0; color: var(--warning); font-size: var(--text-xs); }
-.spinner { animation: quick-add-spin .8s linear infinite; }
-@keyframes quick-add-spin { to { transform: rotate(360deg); } }
+.quick-add-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2); padding: 0 var(--space-3) var(--space-3); }
 @media (max-width: 819px) {
   .quick-add-composer { margin-top: var(--space-3); }
   .quick-add-input-row { min-height: 52px; }
@@ -348,5 +373,5 @@ defineExpose({ focus })
 @media (max-width: 369px) {
   .candidate-editor { padding-right: var(--space-1); padding-left: var(--space-1); }
 }
-@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+@media (max-width: 479px) { .quick-add-fields { grid-template-columns: 1fr; } }
 </style>

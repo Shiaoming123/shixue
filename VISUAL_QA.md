@@ -4,6 +4,8 @@
 
 本轮以 `docs/experiments/ios-ui-ux-restructure-plan.md` 和 `DESIGN.md` 顶部覆盖合同为准。代表流程固定为：今天 → 任务详情 → 编辑日期 → 开始学习 → 证据完成 → 回顾；另验收日历、清单、学习与设置。
 
+实现验收结论见 `docs/experiments/ios-ui-ux-restructure-review.md`：WebView 8/8 视口与主题组合通过，完整前端与 Rust 验证通过；原生 iOS Simulator、VoiceOver、Dynamic Type、safe area、触觉和真机性能保持 `NOT_RUN`。
+
 | 视口/环境 | 必验内容 |
 | --- | --- |
 | 1440×960 | 五领域侧栏、主内容、详情并列、单一工具栏、键盘与 hover |

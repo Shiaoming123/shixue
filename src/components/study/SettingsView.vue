@@ -13,6 +13,7 @@ import Button from '../ui/Button.vue'
 import Dialog from '../ui/Dialog.vue'
 import Listbox, { type ListboxOption } from '../ui/Listbox.vue'
 import Switch from '../ui/Switch.vue'
+import PageHeader from '../ui/PageHeader.vue'
 
 export type CloudAccountStatus = 'signed-out' | 'signed-in' | 'syncing' | 'failed'
 
@@ -68,7 +69,7 @@ const emit = defineEmits<{
 }>()
 
 const confirmReset = ref(false)
-const pageTitle = ref<HTMLHeadingElement>()
+const pageTitle = ref<HTMLSpanElement>()
 const importInput = ref<HTMLInputElement>()
 const importFileName = ref('')
 const importPreview = shallowRef<ReturnType<typeof prepareWorkspaceImport> | null>(null)
@@ -160,13 +161,10 @@ onMounted(() => pageTitle.value?.focus())
 
 <template>
   <div class="settings-view">
-    <header class="page-header">
-      <div>
-        <h1 ref="pageTitle" tabindex="-1">设置</h1>
-        <p>管理拾学在这台设备上的显示、导航、快捷记录与数据。</p>
-      </div>
-      <span class="local-badge"><ShieldCheck :size="15" />本地优先</span>
-    </header>
+    <PageHeader subtitle="管理拾学在这台设备上的显示、导航、快捷记录与数据。">
+      <template #title><span ref="pageTitle" tabindex="-1">设置</span></template>
+      <template #actions><span class="local-badge"><ShieldCheck :size="15" />本地优先</span></template>
+    </PageHeader>
 
     <div class="settings-grid">
       <section class="settings-section settings-section--wide">
@@ -174,7 +172,7 @@ onMounted(() => pageTitle.value?.focus())
         <div class="setting-block">
           <span class="setting-label">配色方案</span>
           <div class="theme-grid" role="group" aria-label="配色方案">
-            <button
+            <Button
               v-for="theme in themePreviews"
               :key="theme.id"
               type="button"
@@ -190,7 +188,7 @@ onMounted(() => pageTitle.value?.focus())
             >
               <span class="theme-swatches" aria-hidden="true"><i /><i /><i /></span>
               <span><strong>{{ theme.name }}</strong><small>{{ theme.description }}</small></span>
-            </button>
+            </Button>
             <label
               class="theme-card theme-card--custom"
               :class="{ active: themeId === 'custom' }"
@@ -206,9 +204,9 @@ onMounted(() => pageTitle.value?.focus())
         <div class="setting-block">
           <span class="setting-label">显示模式</span>
           <div class="segmented segmented--three" role="group" aria-label="显示模式">
-            <button type="button" :class="{ active: themeMode === 'system' }" :aria-pressed="themeMode === 'system'" @click="emit('setThemeMode', 'system')"><Monitor :size="17" />跟随系统</button>
-            <button type="button" :class="{ active: themeMode === 'light' }" :aria-pressed="themeMode === 'light'" @click="emit('setThemeMode', 'light')"><Sun :size="17" />浅色</button>
-            <button type="button" :class="{ active: themeMode === 'dark' }" :aria-pressed="themeMode === 'dark'" @click="emit('setThemeMode', 'dark')"><Moon :size="17" />深色</button>
+            <Button type="button" :class="{ active: themeMode === 'system' }" :aria-pressed="themeMode === 'system'" @click="emit('setThemeMode', 'system')"><Monitor :size="17" />跟随系统</Button>
+            <Button type="button" :class="{ active: themeMode === 'light' }" :aria-pressed="themeMode === 'light'" @click="emit('setThemeMode', 'light')"><Sun :size="17" />浅色</Button>
+            <Button type="button" :class="{ active: themeMode === 'dark' }" :aria-pressed="themeMode === 'dark'" @click="emit('setThemeMode', 'dark')"><Moon :size="17" />深色</Button>
           </div>
         </div>
       </section>
@@ -218,14 +216,14 @@ onMounted(() => pageTitle.value?.focus())
         <div class="setting-block sidebar-mode-control">
           <span class="setting-label">默认显示</span>
           <div class="segmented" role="group" aria-label="侧边栏默认显示">
-            <button type="button" :class="{ active: sidebarDisplayMode === 'expanded' }" :aria-pressed="sidebarDisplayMode === 'expanded'" @click="emit('setSidebarDisplayMode', 'expanded')"><PanelLeft :size="17" />展开文字</button>
-            <button type="button" :class="{ active: sidebarDisplayMode === 'icons' }" :aria-pressed="sidebarDisplayMode === 'icons'" @click="emit('setSidebarDisplayMode', 'icons')"><PanelLeft :size="17" />仅图标</button>
+            <Button type="button" :class="{ active: sidebarDisplayMode === 'expanded' }" :aria-pressed="sidebarDisplayMode === 'expanded'" @click="emit('setSidebarDisplayMode', 'expanded')"><PanelLeft :size="17" />展开文字</Button>
+            <Button type="button" :class="{ active: sidebarDisplayMode === 'icons' }" :aria-pressed="sidebarDisplayMode === 'icons'" @click="emit('setSidebarDisplayMode', 'icons')"><PanelLeft :size="17" />仅图标</Button>
           </div>
           <p class="medium-mode-note">当前窗口使用图标侧栏；展开偏好会在宽屏生效。</p>
         </div>
-        <button class="action-row" type="button" :disabled="!sidebarOrderCustomized" @click="emit('resetSidebarOrder')">
+        <Button class="action-row" type="button" :disabled="!sidebarOrderCustomized" @click="emit('resetSidebarOrder')">
           <RotateCcw :size="18" /><span><strong>恢复默认菜单顺序</strong><small>{{ sidebarOrderCustomized ? '清除当前拖动排序结果' : '当前已使用默认顺序' }}</small></span>
-        </button>
+        </Button>
       </section>
 
       <section class="settings-section">
@@ -240,8 +238,8 @@ onMounted(() => pageTitle.value?.focus())
       <section class="settings-section">
         <div class="section-title"><Bell :size="18" /><div><h2>提醒</h2><p>通知内容保持最少披露。</p></div></div>
         <Switch :model-value="remindersEnabled" :disabled="reminderBusy" label="任务提醒" :description="remindersAvailable ? '系统通知会显示任务标题；完成与稍后提醒在应用内操作' : '仅应用内提醒；浏览器页面保持打开时可用'" @update:model-value="emit('setReminders', $event)" />
-        <button v-if="remindersAvailable" type="button" class="action-row" :disabled="reminderBusy" @click="emit('testNotification')"><Bell :size="18" /><span>测试系统通知</span></button>
-        <button type="button" class="action-row" @click="emit('openReminders')"><Bell :size="18" /><span>查看任务提醒（{{ reminderCount ?? 0 }}）</span></button>
+        <Button v-if="remindersAvailable" type="button" class="action-row" :disabled="reminderBusy" @click="emit('testNotification')"><Bell :size="18" /><span>测试系统通知</span></Button>
+        <Button type="button" class="action-row" @click="emit('openReminders')"><Bell :size="18" /><span>查看任务提醒（{{ reminderCount ?? 0 }}）</span></Button>
         <p v-if="reminderMessage" role="status">{{ reminderMessage }}</p>
       </section>
 
@@ -258,15 +256,15 @@ onMounted(() => pageTitle.value?.focus())
       <section class="settings-section settings-section--wide">
         <div class="section-title"><Download :size="18" /><div><h2>本地数据</h2><p>备份、迁移或恢复这台设备上的记录。</p></div></div>
         <div class="data-actions">
-          <button class="action-row" type="button" :disabled="!workspace" @click="emit('exportJson')"><FileJson :size="18" /><span><strong>导出 JSON 备份</strong><small>完整备份，可重新导入拾学</small></span></button>
-          <button class="action-row" type="button" :disabled="!workspace" @click="emit('exportMarkdown')"><FileText :size="18" /><span><strong>导出 Markdown 阅读版</strong><small>只含完成记录，无需拾学也能阅读</small></span></button>
+          <Button class="action-row" type="button" :disabled="!workspace" @click="emit('exportJson')"><FileJson :size="18" /><span><strong>导出 JSON 备份</strong><small>完整备份，可重新导入拾学</small></span></Button>
+          <Button class="action-row" type="button" :disabled="!workspace" @click="emit('exportMarkdown')"><FileText :size="18" /><span><strong>导出 Markdown 阅读版</strong><small>只含完成记录，无需拾学也能阅读</small></span></Button>
           <input ref="importInput" class="file-input" type="file" accept="application/json,.json" tabindex="-1" @change="selectImport" />
-          <button v-if="!importFileName" class="action-row" type="button" :disabled="dataBusy || !workspace" @click="importInput?.click()"><Upload :size="18" /><span><strong>导入学习记录</strong><small>完整验证后替换本地记录</small></span></button>
+          <Button v-if="!importFileName" class="action-row" type="button" :disabled="dataBusy || !workspace" @click="importInput?.click()"><Upload :size="18" /><span><strong>导入学习记录</strong><small>完整验证后替换本地记录</small></span></Button>
           <div v-else class="confirm-row" :role="importError ? 'alert' : 'status'">
             <p><strong>{{ importFileName }}</strong><span>{{ importError || '文件已验证，确认影响后导入。' }}</span></p>
-            <div><button type="button" :disabled="dataBusy" @click="clearImport">取消</button><button v-if="importPreview" type="button" :disabled="dataBusy" @click="confirmReset = false; importOpen = true">查看导入摘要</button><button type="button" :disabled="dataBusy" @click="importInput?.click()">重新选择</button></div>
+            <div><Button type="button" :disabled="dataBusy" @click="clearImport">取消</Button><Button v-if="importPreview" type="button" :disabled="dataBusy" @click="confirmReset = false; importOpen = true">查看导入摘要</Button><Button type="button" :disabled="dataBusy" @click="importInput?.click()">重新选择</Button></div>
           </div>
-          <button class="action-row" type="button" :disabled="dataBusy || !workspace" @click="openReset"><RotateCcw :size="18" /><span><strong>恢复演示内容</strong><small>替换为拾学的初始学习路线</small></span></button>
+          <Button class="action-row" type="button" :disabled="dataBusy || !workspace" @click="openReset"><RotateCcw :size="18" /><span><strong>恢复演示内容</strong><small>替换为拾学的初始学习路线</small></span></Button>
         </div>
       </section>
 
@@ -274,13 +272,13 @@ onMounted(() => pageTitle.value?.focus())
         <div class="section-title"><Cloud :size="18" /><div><h2>可选云同步</h2><p>本地记录始终是事实源。</p></div></div>
         <div v-if="cloudEmail && cloudStatus !== 'signed-out'" class="cloud-session">
           <p><strong>{{ cloudStatus === 'syncing' ? '正在同步…' : cloudStatus === 'failed' ? '同步需要重试' : '已安全登录' }}</strong><small>{{ cloudEmail }}</small></p>
-          <div><button type="button" :disabled="cloudStatus === 'syncing'" @click="emit('cloudSync')">立即同步</button><button type="button" class="danger" :disabled="cloudStatus === 'syncing'" @click="emit('cloudSignOut')">退出账号</button></div>
+          <div><Button type="button" :disabled="cloudStatus === 'syncing'" @click="emit('cloudSync')">立即同步</Button><Button type="button" class="danger" :disabled="cloudStatus === 'syncing'" @click="emit('cloudSignOut')">退出账号</Button></div>
         </div>
         <form v-else class="cloud-form" @submit.prevent="signIn">
           <p>登录令牌只保存在系统钥匙串，不写入 WebView 存储。</p>
           <label><span>邮箱</span><input v-model="cloudEmailDraft" type="email" autocomplete="username" required /></label>
           <label><span>密码</span><input v-model="cloudPassword" type="password" autocomplete="current-password" required /></label>
-          <button type="submit" :disabled="!cloudEmailDraft.trim() || !cloudPassword">登录并同步</button>
+          <Button type="submit" :disabled="!cloudEmailDraft.trim() || !cloudPassword">登录并同步</Button>
         </form>
         <p v-if="cloudMessage" class="cloud-message" :class="{ error: cloudStatus === 'failed' }" role="status">{{ cloudMessage }}</p>
       </section>
@@ -314,12 +312,9 @@ onMounted(() => pageTitle.value?.focus())
 
 <style scoped>
 .settings-view { width: min(100%, 980px); min-height: 100%; margin: 0 auto; padding: var(--space-8) var(--screen-inline) 80px; }
-.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-6); margin-bottom: var(--space-8); }
-.page-header h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 650; letter-spacing: -.025em; }
-.page-header p { margin: 7px 0 0; color: var(--muted); font-size: var(--text-base); line-height: 1.55; }
 .local-badge { min-height: 32px; display: inline-flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border: 1px solid var(--hairline); border-radius: var(--radius-full); background: var(--control-fill); color: var(--accent); font-size: var(--text-xs); white-space: nowrap; }
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
-.settings-section { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); }
+.settings-section { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
 .settings-section--wide { grid-column: 1 / -1; }
 .section-title { display: flex; align-items: flex-start; gap: var(--space-3); padding-bottom: var(--space-4); border-bottom: 1px solid var(--hairline); }
 .section-title > svg { flex: 0 0 auto; margin-top: 2px; color: var(--accent); }
@@ -344,7 +339,7 @@ onMounted(() => pageTitle.value?.focus())
 .segmented { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-lg); background: var(--control-fill); }
 .segmented--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .segmented button { min-height: 40px; display: flex; align-items: center; justify-content: center; gap: var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--muted); font-size: var(--text-sm); }
-.segmented button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.segmented button.active { background: var(--surface); color: var(--text); }
 .setting-row, .action-row { width: 100%; min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 2px; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--text); text-align: left; }
 .setting-row > span, .action-row > span { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .setting-row strong, .action-row strong { font-size: var(--text-base); font-weight: 600; }
@@ -378,7 +373,7 @@ onMounted(() => pageTitle.value?.focus())
 .privacy { margin: var(--space-8) var(--space-1) 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.65; }
 @media (max-width: 819px) {
   .settings-view { width: 100%; padding: var(--space-5) var(--screen-inline) calc(118px + env(safe-area-inset-bottom, 0px)); }
-  .page-header { margin-bottom: var(--space-6); }.page-header h1 { font-size: 24px; }.page-header p { max-width: 240px; }.local-badge { display: none; }
+  .local-badge { display: none; }
   .settings-grid { grid-template-columns: 1fr; gap: var(--space-4); }.settings-section--wide { grid-column: auto; }
   .settings-section { padding: var(--space-4); }
   .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowRight, Bell, CalendarDays, Check, Clock3, Flag, Inbox, MoreHorizontal, Pencil, Plus, RotateCcw, Tag, Trash2, X } from '@lucide/vue'
+import { ArrowRight, Bell, CalendarDays, Check, Clock3, Flag, Inbox, MoreHorizontal, Plus, RotateCcw, Tag, X } from '@lucide/vue'
 import type { TaskViewItem } from './TasksView.vue'
 import type { TaskOccurrence } from '../../domain/workspace/types'
 import Sheet from '../ui/Sheet.vue'
+import Button from '../ui/Button.vue'
+import IconButton from '../ui/IconButton.vue'
+import Popover from '../ui/Popover.vue'
 import { resolveTaskDetailPlacement } from '../../lib/responsive-shell'
 
 export interface TaskEventViewItem {
@@ -52,8 +55,27 @@ onMounted(() => {
 })
 onUnmounted(() => window.removeEventListener('resize', updateViewportWidth))
 const confirmDelete = ref(false)
+const actionMenuOpen = ref(false)
 const checklistLocked = computed(() => props.task?.status === 'completed' || props.task?.status === 'cancelled')
-watch(() => props.task?.id, () => { checklistDraft.value = ''; confirmDelete.value = false })
+watch(() => props.task?.id, () => { checklistDraft.value = ''; confirmDelete.value = false; actionMenuOpen.value = false })
+
+function taskAction(action: 'edit' | 'defer' | 'block' | 'cancel' | 'delete') {
+  const task = props.task
+  if (!task) return
+  actionMenuOpen.value = false
+  if (action === 'delete') { confirmDelete.value = true; return }
+  if (action === 'edit') emit('edit', task.id)
+  if (action === 'defer') emit('defer', task.id)
+  if (action === 'block') emit('block', task.id)
+  if (action === 'cancel') emit('cancel', task.id)
+}
+
+function occurrenceAction(action: 'occurrenceReschedule' | 'occurrenceSkip') {
+  if (!props.occurrenceId) return
+  actionMenuOpen.value = false
+  if (action === 'occurrenceReschedule') emit('occurrenceReschedule', props.occurrenceId)
+  if (action === 'occurrenceSkip') emit('occurrenceSkip', props.occurrenceId)
+}
 
 const primaryLabel = computed(() => {
   if (!props.task) return ''
@@ -77,22 +99,33 @@ function addChecklistItem() {
   <Sheet :open="Boolean(task)" label="任务详情" :placement="detailPlacement" @close="emit('close')">
   <aside v-if="task" class="detail-drawer" :class="{ mobile }" :role="covering ? undefined : 'complementary'" aria-label="任务详情">
     <header class="drawer-header">
-      <div><button title="编辑任务" aria-label="编辑任务" @click="emit('edit', task.id)"><Pencil :size="18" /></button><button title="删除任务" aria-label="删除任务" @click="confirmDelete = true"><Trash2 :size="18" /></button></div>
-      <button title="关闭任务详情" aria-label="关闭任务详情" @click="emit('close')"><X :size="22" /></button>
+      <IconButton aria-label="关闭任务详情" @click="emit('close')"><X :size="22" /></IconButton>
+      <Popover :open="actionMenuOpen" kind="menu" align="end" mobile-sheet mobile-sheet-label="更多任务操作" @update:open="actionMenuOpen = $event">
+        <template #trigger="{ triggerProps }"><IconButton v-bind="triggerProps" aria-label="更多任务操作"><MoreHorizontal :size="20" /></IconButton></template>
+        <div class="action-menu" role="menu" aria-label="任务操作">
+          <Button variant="quiet" role="menuitem" @click="taskAction('edit')">编辑任务</Button>
+          <Button v-if="occurrenceId && occurrenceStatus === 'pending'" variant="quiet" role="menuitem" @click="occurrenceAction('occurrenceReschedule')">本次改期</Button>
+          <Button v-if="occurrenceId && occurrenceStatus === 'pending'" variant="quiet" role="menuitem" class="danger" @click="occurrenceAction('occurrenceSkip')">跳过本次</Button>
+          <Button v-if="!occurrenceId && ['planned', 'in_progress', 'blocked', 'backlog'].includes(task.status)" variant="quiet" role="menuitem" @click="taskAction('defer')">延期</Button>
+          <Button v-if="!occurrenceId && task.status !== 'blocked' && ['planned', 'in_progress', 'backlog'].includes(task.status)" variant="quiet" role="menuitem" @click="taskAction('block')">标记受阻</Button>
+          <Button v-if="!occurrenceId && ['planned', 'in_progress', 'blocked', 'backlog'].includes(task.status)" variant="quiet" role="menuitem" class="danger" @click="taskAction('cancel')">取消任务</Button>
+          <Button variant="quiet" role="menuitem" class="danger" @click="taskAction('delete')">删除任务</Button>
+        </div>
+      </Popover>
     </header>
 
-    <div v-if="confirmDelete" class="delete-confirm" role="alert"><span><strong>删除这个任务？</strong></span><div><button @click="confirmDelete = false">取消</button><button class="danger" @click="emit('delete', task.id)">删除</button></div></div>
+    <div v-if="confirmDelete" class="delete-confirm" role="alert"><span><strong>删除这个任务？</strong></span><div><Button @click="confirmDelete = false">取消</Button><Button variant="destructive" @click="emit('delete', task.id)">删除</Button></div></div>
 
     <div class="drawer-scroll">
       <section class="task-heading">
-        <button class="heading-check" :disabled="Boolean(occurrenceId && occurrenceStatus !== 'pending')" :aria-label="occurrenceId ? '完成本次' : task.status === 'completed' ? '重新打开任务' : '完成任务'" @click="occurrenceId ? emit('occurrenceComplete', occurrenceId) : emit('toggleComplete', task.id)"><span :class="{ checked: occurrenceId ? occurrenceStatus === 'completed' : task.status === 'completed' }"><Check :size="15" /></span></button>
+        <IconButton class="heading-check" :disabled="Boolean(occurrenceId && occurrenceStatus !== 'pending')" :aria-label="occurrenceId ? '完成本次' : task.status === 'completed' ? '重新打开任务' : '完成任务'" @click="occurrenceId ? emit('occurrenceComplete', occurrenceId) : emit('toggleComplete', task.id)"><span :class="{ checked: occurrenceId ? occurrenceStatus === 'completed' : task.status === 'completed' }"><Check :size="15" /></span></IconButton>
         <div><h1>{{ task.title }}</h1><p class="topic"><Inbox :size="14" />{{ task.topic }}</p></div>
         <p v-if="task.notes" class="notes">{{ task.notes }}</p>
       </section>
 
       <section class="criteria">
         <div class="section-title"><h2>执行检查项</h2><span v-if="task.checklist.length">{{ task.checklist.filter((item) => item.checked).length }} / {{ task.checklist.length }}</span></div>
-        <button
+        <Button
           v-for="item in task.checklist"
           :key="item.id"
           class="checklist-item"
@@ -100,10 +133,10 @@ function addChecklistItem() {
           :aria-pressed="item.checked"
           :disabled="checklistLocked"
           @click="emit('toggleChecklist', task.id, item.id, !item.checked)"
-        ><span><Check :size="15" /></span><b>{{ item.text }}</b></button>
+        ><span><Check :size="15" /></span><b>{{ item.text }}</b></Button>
         <form v-if="!checklistLocked" class="checklist-add" @submit.prevent="addChecklistItem">
           <input v-model="checklistDraft" aria-label="新增检查项" placeholder="新增一个执行检查项" />
-          <button :disabled="!checklistDraft.trim()" title="新增检查项" type="submit"><Plus :size="16" /></button>
+          <IconButton :disabled="!checklistDraft.trim()" aria-label="新增检查项" type="submit"><Plus :size="16" /></IconButton>
         </form>
         <div v-if="task.acceptanceCriteria.length" class="acceptance">
           <h3>完成时要验证</h3>
@@ -135,20 +168,11 @@ function addChecklistItem() {
 
     <footer class="drawer-actions">
       <p v-if="occurrenceId" class="empty-copy">本次暂不支持专注或重开；完成只作用于本次发生项。</p>
-      <div v-if="occurrenceId && occurrenceStatus === 'pending'" class="secondary-actions">
-        <button @click="emit('occurrenceReschedule', occurrenceId)">本次改期</button>
-        <button class="danger" @click="emit('occurrenceSkip', occurrenceId)">跳过本次</button>
-      </div>
-      <div v-if="!occurrenceId && (task.status === 'planned' || task.status === 'in_progress' || task.status === 'blocked' || task.status === 'backlog')" class="secondary-actions">
-        <button @click="emit('defer', task.id)">延期</button>
-        <button v-if="task.status !== 'blocked'" @click="emit('block', task.id)">标记受阻</button>
-        <button class="danger" @click="emit('cancel', task.id)">取消</button>
-      </div>
-      <button v-if="!occurrenceId || occurrenceStatus === 'pending'" class="primary" @click="occurrenceId ? emit('occurrenceComplete', occurrenceId) : emit('primary', task.id)">
+      <Button v-if="!occurrenceId || occurrenceStatus === 'pending'" class="primary" variant="prominent" @click="occurrenceId ? emit('occurrenceComplete', occurrenceId) : emit('primary', task.id)">
         <RotateCcw v-if="task.status === 'completed' || task.status === 'cancelled'" :size="18" />
         <MoreHorizontal v-else-if="task.status === 'blocked'" :size="18" />
         <span>{{ occurrenceId ? '完成本次' : primaryLabel }}</span><ArrowRight :size="20" />
-      </button>
+      </Button>
     </footer>
   </aside>
   </Sheet>
@@ -156,6 +180,7 @@ function addChecklistItem() {
 
 <style scoped>
 .detail-drawer { width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; background: var(--surface); }
+.action-menu { width: 190px; display: grid; gap: 2px; padding: 6px; }.action-menu :deep(.btn) { width: 100%; justify-content: flex-start; }.action-menu :deep(.btn__content) { width: 100%; justify-content: flex-start; }
 .drawer-header { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; }.drawer-header > div { display: flex; gap: 3px; }.drawer-header button { width: 42px; height: 42px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.drawer-header button:hover { background: var(--control-fill); }.drawer-header > div button:last-child { color: var(--danger); }
 .delete-confirm { margin: 0 28px 12px; padding: 13px; border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border)); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }.delete-confirm > span { display: flex; flex-direction: column; gap: 4px; }.delete-confirm strong { color: var(--danger); font-size: 12px; }.delete-confirm small { color: var(--muted); font-size: 10px; line-height: 1.5; }.delete-confirm > div { display: flex; justify-content: flex-end; gap: 7px; margin-top: 10px; }.delete-confirm button { min-height: 34px; padding: 0 11px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font-size: 11px; }.delete-confirm button.danger { color: var(--danger); }
 .drawer-scroll { flex: 1; overflow-y: auto; padding: 6px 24px 24px; }
@@ -165,6 +190,7 @@ function addChecklistItem() {
 .tag-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }.tag-list span { padding: 3px 7px; border-radius: var(--radius-full); background: var(--control-fill); color: var(--accent); }
 .event-section { padding: 24px 0; }.timeline { margin: 0; padding: 0; list-style: none; }.timeline li { position: relative; display: grid; grid-template-columns: 106px 18px 1fr; gap: 10px; min-height: 64px; }.timeline li::after { content: ''; position: absolute; left: 124px; top: 20px; bottom: -8px; width: 1px; background: var(--border); }.timeline li:last-child::after { display: none; }.timeline time { padding-top: 1px; color: var(--muted); font-size: 10px; white-space: nowrap; }.timeline i { z-index: 1; width: 15px; height: 15px; border: 2px solid var(--surface); border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 1px var(--muted); }.timeline li.accent i { background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }.timeline li.warning i { background: var(--warning); box-shadow: 0 0 0 1px var(--warning); }.timeline li.success i { background: var(--success); box-shadow: 0 0 0 1px var(--success); }.timeline li.danger i { background: var(--danger); box-shadow: 0 0 0 1px var(--danger); }.timeline span { display: flex; flex-direction: column; gap: 5px; }.timeline strong { font-size: 12px; font-weight: 600; }.timeline small { color: var(--muted); font-size: 10px; line-height: 1.35; }
 .empty-copy { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.checklist-item :deep(.btn__content), .primary :deep(.btn__content) { width: 100%; }
 .drawer-actions { padding: 20px 24px 24px; border-top: 1px solid var(--hairline); background: var(--surface); }.secondary-actions { display: flex; gap: 7px; margin-bottom: 10px; }.secondary-actions button { min-height: 36px; flex: 1; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--muted); font-size: 11px; }.secondary-actions .danger { color: var(--danger); }.primary { position: relative; width: 100%; min-height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 48px; border: 0; border-radius: var(--radius-lg); background: var(--accent); color: var(--accent-text); font-size: 14px; font-weight: 600; box-shadow: var(--shadow-sm); }.primary > svg:first-child:not(:last-child) { position: absolute; left: 18px; }.primary > svg:last-child { position: absolute; right: 18px; }.primary > span { text-align: center; }
 @media (max-width: 819px) {
   .detail-drawer { background: var(--bg); }.drawer-header { height: calc(60px + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) 16px 0; border-bottom: 1px solid var(--hairline); background: var(--surface); }.drawer-scroll { padding: 18px 20px calc(126px + env(safe-area-inset-bottom, 0px)); }.task-heading h1 { font-size: 25px; }.timeline li { grid-template-columns: 82px 18px 1fr; }.timeline li::after { left: 100px; }.drawer-actions { position: sticky; left: 0; right: 0; bottom: 0; padding: 11px 20px calc(12px + env(safe-area-inset-bottom, 0px)); }.secondary-actions { overflow-x: auto; scrollbar-width: none; }.secondary-actions::-webkit-scrollbar { display: none; }.secondary-actions button { min-width: 84px; }.primary { min-height: 54px; }

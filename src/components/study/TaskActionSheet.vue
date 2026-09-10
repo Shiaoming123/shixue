@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { ArrowRight, X } from '@lucide/vue'
 import DateTimePicker from '../ui/DateTimePicker.vue'
+import Button from '../ui/Button.vue'
+import IconButton from '../ui/IconButton.vue'
 import Listbox from '../ui/Listbox.vue'
 import Sheet from '../ui/Sheet.vue'
 
@@ -85,7 +87,7 @@ function submit() {
 <template>
   <Sheet :open="open" :label="title" @close="emit('close')">
     <form class="sheet-content" @submit.prevent="submit">
-      <header><div><p>任务操作</p><h2>{{ title }}</h2></div><button type="button" title="关闭" aria-label="关闭" @click="emit('close')"><X :size="20" /></button></header>
+      <header><div><p>任务操作</p><h2>{{ title }}</h2></div><IconButton aria-label="关闭" @click="emit('close')"><X :size="20" /></IconButton></header>
       <p class="task-title">{{ taskTitle }}</p>
 
       <template v-if="mode === 'plan'">
@@ -106,7 +108,7 @@ function submit() {
       <p v-if="mode === 'cancel'" class="danger-note">它会离开今天和主题待办，但已有学习记录与历史事件仍会保留。</p>
       <p v-if="mode === 'reopen'" class="note">原完成记录不会改变；再次完成时会新增一条记录。</p>
 
-      <footer><button type="button" class="cancel" @click="emit('close')">返回</button><button type="submit" class="save" :class="{ danger: mode === 'cancel' }" :disabled="!ready"><span>{{ submitLabel }}</span><ArrowRight :size="18" /></button></footer>
+      <footer><Button class="cancel" variant="standard" @click="emit('close')">返回</Button><Button type="submit" class="save" :variant="mode === 'cancel' ? 'destructive' : 'prominent'" :disabled="!ready"><span>{{ submitLabel }}</span><ArrowRight :size="18" /></Button></footer>
     </form>
   </Sheet>
 </template>

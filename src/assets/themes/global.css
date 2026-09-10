@@ -28,13 +28,35 @@
     'PingFang SC',
     'Microsoft YaHei UI',
     sans-serif;
+  --font-large-title-size: 26px;
+  --font-large-title-leading: 32px;
+  --font-large-title-weight: 600;
+  --font-title-1-size: 20px;
+  --font-title-1-leading: 26px;
+  --font-title-1-weight: 600;
+  --font-title-2-size: 18px;
+  --font-title-2-leading: 24px;
+  --font-title-2-weight: 600;
+  --font-headline-size: 15px;
+  --font-headline-leading: 20px;
+  --font-headline-weight: 600;
   --font-body-size: 14px;
-  --font-body-leading: 21px;
+  --font-body-leading: 20px;
+  --font-callout-size: 13px;
+  --font-callout-leading: 18px;
+  --font-subheadline-size: 12px;
+  --font-subheadline-leading: 16px;
+  --font-footnote-size: 11px;
+  --font-footnote-leading: 15px;
+  --font-caption-1-size: 11px;
+  --font-caption-1-leading: 14px;
+  --font-caption-2-size: 10px;
+  --font-caption-2-leading: 13px;
   --control-hit: 32px;
   --icon-hit: 28px;
   --field-min-height: 40px;
   --row-min-height: 48px;
-  --screen-inline: 28px;
+  --screen-inline: 32px;
   font-family: var(--font-sans);
   color-scheme: light dark;
   font-size: 16px;
@@ -71,11 +93,12 @@
 
   /* ---- 结构 token：圆角 ---- */
   --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 24px;
-  --radius-2xl: 24px;
-  --radius-full: 999px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-2xl: var(--radius-xl);
+  --radius-pill: 999px;
+  --radius-full: var(--radius-pill);
 
   /* ---- 结构 token：字号（正文 13/14，标题 15/16/20） ---- */
   --text-xs: 11px;
@@ -91,8 +114,8 @@
 
   /* ---- 结构 token：阴影（桌面端轻微层次） ---- */
   --shadow-sm: 0 3px 4px #25233002, 0 8px 16px -12px #2823330b;
-  --shadow-md: 0 12px 28px -14px #33324724;
-  --shadow-lg: 0 20px 56px -20px #15151c38;
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.12);
+  --shadow-lg: 0 18px 48px rgba(15, 23, 42, 0.18);
 
   /* ---- 平台功能层材质 ---- */
   --hairline: color-mix(in srgb, var(--border) 82%, transparent);
@@ -293,31 +316,77 @@ time,
 :root[data-ui-platform='ios'] {
   --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
   --font-display: var(--font-sans);
+  --font-large-title-size: 34px;
+  --font-large-title-leading: 41px;
+  --font-title-1-size: 28px;
+  --font-title-1-leading: 34px;
+  --font-title-2-size: 22px;
+  --font-title-2-leading: 28px;
+  --font-headline-size: 17px;
+  --font-headline-leading: 22px;
   --font-body-size: 17px;
   --font-body-leading: 22px;
+  --font-callout-size: 16px;
+  --font-callout-leading: 21px;
+  --font-subheadline-size: 15px;
+  --font-subheadline-leading: 20px;
+  --font-footnote-size: 13px;
+  --font-footnote-leading: 18px;
+  --font-caption-1-size: 12px;
+  --font-caption-1-leading: 16px;
+  --font-caption-2-size: 11px;
+  --font-caption-2-leading: 13px;
   --control-hit: 44px;
   --icon-hit: 44px;
   --field-min-height: 44px;
   --row-min-height: 48px;
-  --screen-inline: 16px;
 }
 
 :root[data-ui-platform='android'] {
   --font-sans: Roboto, 'Noto Sans SC Variable', 'Noto Sans SC', system-ui, sans-serif;
   --font-display: var(--font-sans);
+  --font-large-title-size: 32px;
+  --font-large-title-leading: 40px;
+  --font-title-1-size: 24px;
+  --font-title-1-leading: 32px;
+  --font-title-2-size: 20px;
+  --font-title-2-leading: 28px;
+  --font-headline-size: 16px;
+  --font-headline-leading: 24px;
   --font-body-size: 16px;
   --font-body-leading: 24px;
+  --font-callout-size: 14px;
+  --font-callout-leading: 20px;
+  --font-subheadline-size: 14px;
+  --font-subheadline-leading: 20px;
+  --font-footnote-size: 12px;
+  --font-footnote-leading: 16px;
+  --font-caption-1-size: 12px;
+  --font-caption-1-leading: 16px;
+  --font-caption-2-size: 12px;
+  --font-caption-2-leading: 16px;
   --control-hit: 48px;
   --icon-hit: 48px;
   --field-min-height: 48px;
   --row-min-height: 48px;
-  --screen-inline: 16px;
 }
 
 :root[data-input='coarse']:not([data-ui-platform='android']) {
   --control-hit: 44px;
   --icon-hit: 44px;
   --field-min-height: 44px;
+}
+
+@media (max-width: 1279px) {
+  :root { --screen-inline: 28px; }
+}
+
+@media (max-width: 819px) {
+  :root { --screen-inline: 20px; }
+}
+
+@media (max-width: 389px) {
+  :root { --screen-inline: 16px; }
 }
 
 /* ---- 语义色工具类 ---- */

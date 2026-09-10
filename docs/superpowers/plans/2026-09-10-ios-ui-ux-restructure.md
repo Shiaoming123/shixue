@@ -96,7 +96,7 @@
 
 **Files:**
 - Modify: `src/components/study/TasksView.vue`
-- Modify: `src/components/study/QuickAdd.vue`
+- Modify: `src/components/study/QuickAddComposer.vue`
 - Modify: `src/components/study/TaskDetailDrawer.vue`
 - Modify: `src/components/study/TaskActionSheet.vue`
 - Modify: `tests/task-detail-layout.test.ts`
@@ -118,7 +118,8 @@
 - Modify: `src/components/ui/Dialog.vue`
 - Modify: `src/components/ui/Popover.vue`
 - Modify: `src/components/study/TaskEditSheet.vue`
-- Modify: `src/components/study/DatePicker.vue`
+- Modify: `src/components/ui/DateTimePicker.vue`
+- Modify: `src/components/ui/DatePicker.vue`（仅当共享日期内容本身需要调整）
 - Modify: `src/components/study/ReminderEditor.vue`
 - Modify: `src/components/study/RecurrenceEditor.vue`
 - Modify: `tests/modal-overlay-lifecycle.test.ts`
@@ -175,4 +176,3 @@
 - Spec coverage：布局、层级、间距、圆角、阴影、字体、组件、导航合并、弹层统一、页面改造、可访问性和最终回查均映射到 Task 1–8。
 - Placeholder scan：无 TBD/TODO/implement later；平台不可用证据明确标为 NOT_RUN。
 - Interface consistency：继续使用现有 WorkspaceView、ShellDestination、OverlayHost 和能力服务；新增共享接口仅为 PageHeader 与 Button 视觉角色。
-

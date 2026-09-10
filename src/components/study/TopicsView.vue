@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Archive, ArrowRight, Check, ChevronRight, Folder, Pencil, Plus } from '@lucide/vue'
+import Button from '../ui/Button.vue'
+import PageHeader from '../ui/PageHeader.vue'
+import Popover from '../ui/Popover.vue'
 
 export interface TopicViewItem {
   id: string
@@ -19,6 +22,7 @@ const props = defineProps<{
   topics: TopicViewItem[]
   groups?: Array<{ id: string; title: string }>
   selectedId: string
+  listsMode?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -29,23 +33,27 @@ const emit = defineEmits<{
   archive: [id: string]
   createGroup: []
   editGroup: [id: string]
+  openSmart: [kind: 'upcoming' | 'completed']
 }>()
 
 const selectedTopic = computed(() => props.topics.find((topic) => topic.id === props.selectedId))
+const moreOpen = ref(false)
 </script>
 
 <template>
   <section class="topics-view">
-    <header>
-      <div><h1>清单与主题</h1><p>{{ topics.length }} 项</p></div>
-      <div class="header-actions"><button class="secondary-add" title="新建分组" aria-label="新建分组" @click="emit('createGroup')"><Folder :size="17" /></button><button class="add" title="新建清单" @click="emit('create')"><Plus :size="18" />新建</button></div>
-    </header>
+    <PageHeader :title="listsMode ? '清单' : '学习'" :subtitle="listsMode ? `${topics.length} 项用户清单` : `${topics.length} 个学习主题`">
+      <template v-if="listsMode" #actions><div class="header-actions"><Popover v-model:open="moreOpen" kind="menu" align="end" mobile-sheet mobile-sheet-label="清单更多操作"><template #trigger="{ triggerProps }"><Button variant="quiet" v-bind="triggerProps">更多</Button></template><Button role="menuitem" variant="quiet" @click="emit('createGroup')"><Folder :size="17" />新建分组</Button></Popover><Button variant="prominent" @click="emit('create')"><Plus :size="18" />新建清单</Button></div></template>
+    </PageHeader>
 
-    <div v-if="groups?.length" class="group-strip" aria-label="清单分组"><button v-for="group in groups" :key="group.id" :title="`编辑分组 ${group.title}`" @click="emit('editGroup', group.id)"><Folder :size="14" />{{ group.title }}<Pencil :size="12" /></button></div>
+    <nav v-if="listsMode" class="smart-lists" aria-label="智能清单"><h2>智能清单</h2><Button variant="quiet" @click="emit('openSmart', 'upcoming')">最近 7 天<ChevronRight :size="18" /></Button><Button variant="quiet" @click="emit('openSmart', 'completed')">已完成<ChevronRight :size="18" /></Button></nav>
+    <h2 v-if="listsMode" class="user-lists-heading">用户清单</h2>
+
+    <div v-if="listsMode && groups?.length" class="group-strip" aria-label="清单分组"><Button v-for="group in groups" :key="group.id" :title="`编辑分组 ${group.title}`" @click="emit('editGroup', group.id)"><Folder :size="14" />{{ group.title }}<Pencil :size="12" /></Button></div>
 
     <div class="topic-layout">
       <aside class="topic-list">
-        <button
+        <Button
           v-for="topic in topics"
           :key="topic.id"
           :class="{ active: topic.id === props.selectedId }"
@@ -56,7 +64,7 @@ const selectedTopic = computed(() => props.topics.find((topic) => topic.id === p
             <small>{{ topic.completedSteps }} / {{ topic.totalSteps }} 步 · {{ topic.recentLabel }}</small>
           </span>
           <ChevronRight :size="18" />
-        </button>
+        </Button>
       </aside>
 
       <article v-if="selectedTopic" class="topic-detail">
@@ -65,7 +73,7 @@ const selectedTopic = computed(() => props.topics.find((topic) => topic.id === p
             <h2>{{ selectedTopic.title }}</h2>
             <span>{{ selectedTopic.goal }}</span>
           </div>
-          <div class="topic-actions"><button title="编辑" aria-label="编辑清单" @click="emit('edit', selectedTopic.id)"><Pencil :size="17" /></button><button title="归档" aria-label="归档清单" @click="emit('archive', selectedTopic.id)"><Archive :size="17" /></button></div>
+          <div v-if="listsMode" class="topic-actions"><Button title="编辑" aria-label="编辑清单" @click="emit('edit', selectedTopic.id)"><Pencil :size="17" /></Button><Button title="归档" aria-label="归档清单" @click="emit('archive', selectedTopic.id)"><Archive :size="17" /></Button></div>
         </div>
 
         <section class="success-criteria">
@@ -79,7 +87,7 @@ const selectedTopic = computed(() => props.topics.find((topic) => topic.id === p
             <strong>{{ selectedTopic.currentStep }}</strong>
             <span>下一步：{{ selectedTopic.nextAction }}</span>
           </div>
-          <button @click="emit('start', selectedTopic.id)">继续学习<ArrowRight :size="18" /></button>
+          <Button @click="emit('start', selectedTopic.id)">继续学习<ArrowRight :size="18" /></Button>
         </section>
 
         <section class="timeline">
@@ -122,14 +130,6 @@ header p,
   font-weight: 600;
 }
 
-h1 {
-  margin: 0;
-  font-size: 22px;
-  line-height: 1.2;
-  font-weight: 650;
-  letter-spacing: -0.035em;
-}
-
 .add,
 .current-action button {
   min-height: 45px;
@@ -146,6 +146,8 @@ h1 {
   cursor: pointer;
 }
 .header-actions { display: flex; gap: 8px; }.secondary-add { width: 45px; min-height: 45px; display: grid; place-items: center; border: 1px solid var(--hairline); border-radius: 12px; background: var(--control-fill); color: var(--muted); }.group-strip { display: flex; gap: 7px; padding: 14px 0 0; overflow-x: auto; }.group-strip button { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--hairline); border-radius: var(--radius-full); background: var(--control-fill); color: var(--muted); font-size: 11px; white-space: nowrap; }
+
+.smart-lists { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); padding: var(--space-5) 0; border-bottom: 1px solid var(--border); }.smart-lists h2 { grid-column: 1 / -1; margin: 0; font-size: var(--text-sm); }.smart-lists :deep(.btn) { justify-content: space-between; }.user-lists-heading { margin: var(--space-5) 0 0; font-size: var(--text-sm); }
 
 .topic-layout {
   display: grid;
@@ -183,7 +185,6 @@ h1 {
 .topic-list button.active {
   background: var(--press-fill);
   color: var(--accent);
-  box-shadow: var(--shadow-sm);
 }
 
 .topic-list span {
@@ -216,7 +217,6 @@ h1 {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .detail-heading {
@@ -279,7 +279,6 @@ h3 {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .current-action div {
@@ -323,7 +322,6 @@ h3 {
   border: 2px solid var(--surface);
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .timeline-item small,

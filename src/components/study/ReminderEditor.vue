@@ -20,7 +20,8 @@ const props = withDefaults(defineProps<{
   permission?: ReminderPermission
   busy?: boolean
   error?: string
-}>(), { occurrenceId: null, originalStart: null, notificationAvailable: false, permission: 'unavailable', busy: false, error: '' })
+  inlinePicker?: boolean
+}>(), { occurrenceId: null, originalStart: null, notificationAvailable: false, permission: 'unavailable', busy: false, error: '', inlinePicker: false })
 const emit = defineEmits<{ set: [value: ReminderSetValue]; remove: [rule: ReminderRule] }>()
 const preset = ref('at_start')
 const anchor = ref('start')
@@ -90,7 +91,7 @@ function remove(rule: ReminderRule) { if (!props.busy && rule.enabled) emit('rem
     <div class="draft">
       <Listbox v-model="preset" :options="presetOptions" label="提醒时间" :disabled="busy" />
       <Listbox v-if="preset !== 'at_start' && preset !== 'custom'" v-model="anchor" :options="anchorOptions" label="提醒依据" :disabled="busy" />
-      <DateTimePicker v-if="preset === 'custom'" v-model="customAt" mode="datetime" label="自定义提醒时间" :disabled="busy" />
+      <DateTimePicker v-if="preset === 'custom'" v-model="customAt" mode="datetime" label="自定义提醒时间" :disabled="busy" :inline="inlinePicker" />
       <p v-if="!hasStart && !dueAt && preset !== 'custom'" class="availability">先设置具体计划时间，或选择自定义时间。</p>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <div class="rule-actions">

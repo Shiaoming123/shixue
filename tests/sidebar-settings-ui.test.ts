@@ -7,7 +7,8 @@ const studySource = (name: string) => readFileSync(new URL(`../src/components/st
 
 test('task header renders one page title without a duplicate title selector', () => {
   const tasks = studySource('TasksView.vue')
-  assert.equal(tasks.match(/<h1\b/g)?.length, 1)
+  assert.equal(tasks.match(/<PageHeader\b/g)?.length, 1)
+  assert.doesNotMatch(tasks, /<h1\b/)
   assert.doesNotMatch(tasks, /mobile-smart-view/)
   assert.match(tasks, /aria-label="切换智能清单"/)
 })
@@ -24,7 +25,8 @@ test('settings is a first-class page instead of a modal sheet', () => {
   assert.match(app, /<SettingsView\b/)
   assert.match(app, /page === 'settings'/)
   assert.doesNotMatch(app, /SettingsSheet|settingsOpen/)
-  assert.match(settings, /<h1[^>]*>设置<\/h1>/)
+  assert.match(settings, /<PageHeader\b[\s\S]*<template #title><span[^>]*>设置<\/span>/)
+  assert.doesNotMatch(settings, /<h1\b/)
   assert.doesNotMatch(settings, /role="dialog"|aria-modal|class="backdrop"/)
 })
 
