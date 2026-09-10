@@ -13,7 +13,7 @@ import Button from '../ui/Button.vue'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import TimePicker from '../ui/TimePicker.vue'
 
-const props = defineProps<{ open: boolean; event: CalendarEvent | null; sources: CalendarSource[]; initialDate: string; initialTime?: CalendarEventTime; submitting?: boolean; error?: string }>()
+const props = defineProps<{ open: boolean; event: CalendarEvent | null; sources: CalendarSource[]; initialDate: string; initialTime?: CalendarEventTime; initialTitle?: string; initialSourceId?: string; submitting?: boolean; error?: string }>()
 const emit = defineEmits<{ close: []; save: [command: EventCapabilityCommand]; delete: [command: EventCapabilityCommand] }>()
 const base = ref<CalendarEvent | null>(null)
 const sourceId = ref('')
@@ -57,8 +57,8 @@ watch([() => props.open, () => props.event?.id], ([open]) => {
   if (!open) return
   base.value = props.event ? structuredClone(toRaw(props.event)) : null
   const value = base.value
-  sourceId.value = value?.sourceId ?? props.sources.find((entry) => entry.provider === 'local' && entry.permission === 'write' && entry.archivedAt === null)?.id ?? ''
-  title.value = value?.title ?? ''; notes.value = value?.notes ?? ''; location.value = value?.location ?? ''; meetingUrl.value = value?.meetingUrl ?? ''
+  sourceId.value = value?.sourceId ?? props.sources.find((entry) => entry.id === props.initialSourceId && entry.provider === 'local' && entry.permission === 'write' && entry.archivedAt === null)?.id ?? props.sources.find((entry) => entry.provider === 'local' && entry.permission === 'write' && entry.archivedAt === null)?.id ?? ''
+  title.value = value?.title ?? props.initialTitle ?? ''; notes.value = value?.notes ?? ''; location.value = value?.location ?? ''; meetingUrl.value = value?.meetingUrl ?? ''
   participantsOpen.value = false; organizerName.value = value?.organizer?.name ?? ''; organizerEmail.value = value?.organizer?.email ?? ''
   attendees.value = structuredClone(toRaw(value?.attendees ?? []))
   availability.value = value?.availability ?? 'busy'; status.value = value?.status ?? 'confirmed'
@@ -144,6 +144,7 @@ async function openSource() {
   <Sheet :open="open" :label="base ? '日程详情' : '新建日程'" @close="close">
     <form class="event-editor" @submit.prevent="save">
       <header><h2>{{ base ? '日程详情' : '新建日程' }}</h2><Button variant="ghost" :disabled="submitting" @click="close">关闭</Button></header>
+      <div class="event-editor__body">
       <slot name="occurrence-actions" :event="base" :disabled="disabled" />
       <p v-if="!writable" class="hint">此日历只支持查看；请选择可写的本地日历创建日程。</p>
       <Button v-if="base?.sourceUrl" @click="openSource">在来源日历中打开</Button>
@@ -199,21 +200,25 @@ async function openSource() {
       <slot name="reminders" :event="base" :disabled="disabled" />
       <slot name="outcomes" />
       <p v-if="localError || error" class="error" role="alert">{{ localError || error }}</p>
+      </div>
       <footer><Button v-if="base && writable" variant="danger" :disabled="submitting" @click="remove">{{ base.recurrence ? '删除整个系列' : '删除日程' }}</Button><Button :disabled="submitting" @click="close">取消</Button><Button v-if="writable" variant="primary" type="submit" :disabled="submitting || !title.trim()">{{ submitting ? '保存中…' : base?.recurrence ? '保存整个系列' : '保存日程' }}</Button></footer>
     </form>
   </Sheet>
 </template>
 
 <style scoped>
-.event-editor { display: grid; gap: 14px; min-width: 0; }
+.event-editor { min-width: 0; width: 100%; height: min(760px, calc(100dvh - 88px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+.event-editor__body { min-width: 0; min-height: 0; display: grid; align-content: start; gap: 14px; overflow-y: auto; overscroll-behavior: contain; padding: 14px 2px; }
+:global(.sheet-panel:has(> .sheet-body > .event-editor)) { overflow: hidden; }
+@media (min-width: 820px) { :global(.sheet-panel:has(> .sheet-body > .event-editor)) { width: min(calc(100vw - 40px), 760px); } }
 .participants, .participants__body, .participants__person { display: grid; gap: 12px; min-width: 0; }
 .participants__person { border: 1px solid var(--hairline); border-radius: var(--radius-lg); padding: 12px; }
-header, footer { display: flex; align-items: center; gap: 9px; } header { justify-content: space-between; padding-bottom: 15px; border-bottom: 1px solid var(--hairline); } h2 { margin: 0; font-size: var(--text-xl); font-weight: 600; }
+header, footer { display: flex; flex: 0 0 auto; align-items: center; gap: 9px; } header { justify-content: space-between; padding-bottom: 15px; border-bottom: 1px solid var(--hairline); } h2 { margin: 0; font-size: var(--text-xl); font-weight: 600; }
 .field-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }.field-grid > * { min-width: 0; }
 .field-label, .notes > span { display: block; margin-bottom: 7px; color: var(--muted); font-size: var(--text-xs); font-weight: 600; }
 textarea { width: 100%; min-height: 72px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--control-fill); color: var(--text); font: inherit; resize: vertical; } textarea:focus { outline: 0; border-color: var(--accent); box-shadow: var(--focus-ring); } textarea:disabled { opacity: .6; }
 .hint { margin: 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.6; }.error { margin: 0; color: var(--danger); font-size: var(--text-sm); }.weekdays { display: flex; flex-wrap: wrap; gap: 6px; }
 .event-times :deep(.note), .event-times :deep(.clear) { display: none; }
 footer { flex-wrap: wrap; justify-content: flex-end; padding-top: 18px; border-top: 1px solid var(--hairline); } :deep(.btn) { min-height: 44px; }
-@media (max-width: 819px) { .field-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 819px) { .event-editor { height: calc(94dvh - 58px - env(safe-area-inset-bottom, 0px)); }.field-grid { grid-template-columns: minmax(0, 1fr); } }
 </style>

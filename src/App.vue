@@ -45,6 +45,8 @@ import OccurrenceRescheduleSheet from './components/study/OccurrenceRescheduleSh
 import { type RecurrenceRule } from './components/study/RecurrenceEditor.vue'
 import TasksView, { type OccurrenceViewItem, type TaskViewItem, type TaskViewStatus } from './components/study/TasksView.vue'
 import TopicsView, { type TopicViewItem } from './components/study/TopicsView.vue'
+import ListAppearancePicker from './components/study/ListAppearancePicker.vue'
+import IconButton from './components/ui/IconButton.vue'
 import Listbox from './components/ui/Listbox.vue'
 import Popover from './components/ui/Popover.vue'
 import OverlayHost from './components/ui/OverlayHost.vue'
@@ -79,7 +81,9 @@ import {
   type WorkspaceView,
 } from './lib/workspace-view'
 import { workspaceDestinationFromSmartView } from './lib/sidebar-navigation'
-import { hasRuntimeCapability, RUNTIME_INFO_KEY, runtimeInfoForNativePlatform } from './lib/platform'
+import { hasRuntimeCapability, isDesktopTauri, RUNTIME_INFO_KEY, runtimeInfoForNativePlatform } from './lib/platform'
+import { openSettingsWindow } from './lib/settings-window'
+import type { ListAppearance, ListIconId } from './lib/list-appearance'
 import { reportSmokePhase } from './lib/smoke'
 import { runNativeAndroidPersistenceSmoke } from './lib/android-persistence-smoke'
 import {
@@ -129,7 +133,8 @@ import { resolveRecurrenceEditWrite, resolveReminderEditWrite, resolveTaskEditWr
 import type { RecurrenceCadence, RecurrenceSeries, ReminderRule, Task, WorkspaceStateV4 } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
-const destination = ref<ShellDestination>({ kind: 'today' })
+const settingsWindow = isDesktopTauri() && new URLSearchParams(window.location.search).get('window') === 'settings'
+const destination = ref<ShellDestination>(settingsWindow ? { kind: 'settings' } : { kind: 'today' })
 const page = computed(() => renderPageForDestination(destination.value))
 const vPageMotion = {
   updated(element: HTMLElement, { value, oldValue }: { value: string; oldValue: string }) {
@@ -148,7 +153,7 @@ const vPageMotion = {
 const state = ref<StudyState>(createSeedStudyState())
 const loading = ref(true)
 const showFocus = ref(false)
-const calendarQuickAdd = ref<InstanceType<typeof QuickAddComposer> | null>(null)
+const calendarWorkspace = ref<InstanceType<typeof CalendarWorkspace> | null>(null)
 const completionOpen = ref(false)
 const completionTaskId = ref('')
 const completionOccurrenceId = ref('')
@@ -159,6 +164,8 @@ const topicTitle = ref('')
 const topicGoal = ref('')
 const topicMinutes = ref(120)
 const topicGroupId = ref('')
+const topicIcon = ref<ListIconId>('folder')
+const topicColor = ref('#3B82F6')
 const selectedGroupId = ref('')
 const groupTitle = ref('')
 const selectedTopicId = ref(state.value.topics[0]?.id ?? '')
@@ -259,6 +266,8 @@ const editingEvent = ref<CalendarEvent | null>(null)
 const editingEventOriginalStart = ref('')
 const eventInitialDate = ref('')
 const eventInitialTime = ref<CalendarEventTime | undefined>()
+const eventInitialTitle = ref('')
+const eventInitialSourceId = ref('')
 const taskSlot = ref<{ date: string; minute: number; duration: number; startAt: string } | null>(null)
 const scheduleTaskId = ref<string | null>(null)
 const scheduleSubmitting = ref(false)
@@ -444,7 +453,7 @@ const topicGroupOptions = computed(() => [
   { value: '', label: '无分组' },
   ...activeListGroups.value.map((group) => ({ value: group.id, label: group.title })),
 ])
-const listNavItems = computed(() => state.value.topics.filter((topic) => !topic.archivedAt).map((topic) => ({ id: topic.id, groupId: topic.groupId ?? null, title: topic.title, count: liveTasks.value.filter((task) => task.topicId === topic.id && task.status !== 'completed' && task.status !== 'cancelled').length })))
+const listNavItems = computed(() => state.value.topics.filter((topic) => !topic.archivedAt).map((topic) => ({ id: topic.id, groupId: topic.groupId ?? null, title: topic.title, icon: topic.icon, color: topic.color, count: liveTasks.value.filter((task) => task.topicId === topic.id && task.status !== 'completed' && task.status !== 'cancelled').length })))
 const sidebarMenuKeys = computed(() => [
   ...defaultSidebarMenuKeys.slice(0, 5),
   ...listNavItems.value.map(({ id }) => `list:${id}`),
@@ -493,7 +502,7 @@ const topicViews = computed<TopicViewItem[]>(() => state.value.topics.filter((to
   const records = completedRecords.value.filter((record) => record.topicId === topic.id)
   const current = tasks.find((task) => task.status === 'in_progress') ?? tasks.find((task) => task.status === 'blocked') ?? tasks.find((task) => task.status === 'planned')
   return {
-    id: topic.id, title: topic.title, goal: topic.goal, successCriteria: topic.successCriteria,
+    id: topic.id, title: topic.title, icon: topic.icon, color: topic.color, goal: topic.goal, successCriteria: topic.successCriteria,
     totalSteps: tasks.length, completedSteps: tasks.filter((task) => task.status === 'completed').length,
     currentStep: current?.title ?? '这个主题暂时没有待办任务', nextAction: records[0]?.nextAction || current?.title || '从收件箱安排下一步',
     recentLabel: records[0] ? formatShortDate(records[0].completedAt) : '还没有记录',
@@ -504,9 +513,9 @@ const topicViews = computed<TopicViewItem[]>(() => state.value.topics.filter((to
 const weeklyNext = computed(() => liveTasks.value.find((task) => task.status === 'in_progress' || task.status === 'planned')?.title || '从收件箱选择一个下一步')
 
 onMounted(async () => {
-  window.addEventListener('shixue:quick-add', handleQuickAdd)
+  if (!settingsWindow) window.addEventListener('shixue:quick-add', handleQuickAdd)
   window.addEventListener('shixue:module-error', handleModuleError)
-  window.addEventListener('keydown', handleGlobalSearchShortcut)
+  if (!settingsWindow) window.addEventListener('keydown', handleGlobalSearchShortcut)
   try {
     remindersEnabled.value = localStorage.getItem('meow-study-reminders') === 'enabled'
   } catch {
@@ -532,6 +541,7 @@ onMounted(async () => {
   if (workspaceReady) await reportSmokePhase('frontend-ready')
   if (cloudAvailable) void refreshCloudSession()
   await initializeDeviceCapabilities()
+  if (settingsWindow || disposed) return
   await initializeReminders()
   if (disposed) return
   clockTimer = setInterval(() => (clock.value = Date.now()), 1000)
@@ -564,7 +574,8 @@ async function initializeDeviceCapabilities() {
   }
   if (runtime.platform !== 'desktop') return
   if (defaultModuleConfig.tray) {
-    try {
+    if (settingsWindow) lifecycleAvailable.value = true
+    else try {
       const unlisten = await installWindowLifecycle({
         getBehavior: () => planningPreferences.value.closeBehavior,
         onAsk: () => {
@@ -753,7 +764,7 @@ function handleQuickAdd() {
     showFocus.value = false
     selectedTaskId.value = ''
     selectedOccurrenceId.value = ''
-    requestAnimationFrame(() => calendarQuickAdd.value?.focus())
+    requestAnimationFrame(() => calendarWorkspace.value?.openToolbarEvent())
     return
   }
   selectSmartView('inbox')
@@ -856,6 +867,8 @@ function createCalendarEvent(date: string) {
   editingEventOriginalStart.value = ''
   eventInitialDate.value = date
   eventInitialTime.value = undefined
+  eventInitialTitle.value = ''
+  eventInitialSourceId.value = ''
   eventEditorError.value = ''
   eventEditorOpen.value = true
 }
@@ -1060,11 +1073,36 @@ function setDestination(next: ShellDestination, options: { topicFilter?: string;
   if (taskDestination) selectedTaskId.value = automaticTaskSelection()
   else if (next.kind === 'calendar') selectedTaskId.value = ''
 }
+
+type CalendarQuickEventDraft = { title: string; date: string; startTime: string; endDate: string; endTime: string; sourceId: string }
+function quickEventTime(draft: CalendarQuickEventDraft): CalendarEventTime {
+  return { kind: 'fixed', startAt: zonedDateTimeToInstant(draft.date, draft.startTime, timezone).toISOString(), endAt: zonedDateTimeToInstant(draft.endDate, draft.endTime, timezone).toISOString(), timezone }
+}
+async function createQuickCalendarEvent(draft: CalendarQuickEventDraft) {
+  await saveCalendarEvent({ type: 'event.create', sourceId: draft.sourceId, event: { title: draft.title, notes: '', location: '', meetingUrl: null, organizer: null, attendees: [], availability: 'busy', status: 'confirmed', time: quickEventTime(draft), recurrence: null } })
+  if (!eventEditorError.value) calendarWorkspace.value?.closeQuickEvent()
+}
+function expandQuickCalendarEvent(draft: CalendarQuickEventDraft) {
+  createCalendarEvent(draft.date)
+  eventInitialTitle.value = draft.title
+  eventInitialSourceId.value = draft.sourceId
+  eventInitialTime.value = quickEventTime(draft)
+  calendarWorkspace.value?.closeQuickEvent()
+}
+function navigateShell(next: ShellDestination) {
+  if (next.kind !== 'settings' || !isDesktopTauri() || settingsWindow) return setDestination(next)
+  void openSettingsWindow().catch(() => notify('设置窗口未能打开，请重试。'))
+}
 function selectSmartView(view: StudyTaskSmartView) { setDestination(workspaceDestinationFromSmartView(view)) }
 function isLearningDestinationActive(view: WorkspaceView) {
   return view.kind === 'learning' && destination.value.kind === 'learning' && view.section === destination.value.section
 }
-function openTopicEditor(topic?: StudyTopic) { topicEditorOpen.value = true; selectedTopicId.value = topic?.id ?? ''; topicTitle.value = topic?.title ?? ''; topicGoal.value = topic?.goal ?? ''; topicMinutes.value = topic?.weeklyTargetMinutes ?? 120; topicGroupId.value = topic?.groupId ?? '' }
+function openTopicEditor(topic?: StudyTopic) { topicEditorOpen.value = true; selectedTopicId.value = topic?.id ?? ''; topicTitle.value = topic?.title ?? ''; topicGoal.value = topic?.goal ?? ''; topicMinutes.value = topic?.weeklyTargetMinutes ?? 120; topicGroupId.value = topic?.groupId ?? ''; topicIcon.value = topic?.icon ?? 'folder'; topicColor.value = topic?.color ?? '#3B82F6' }
+async function updateTopicAppearance(id: string, appearance: ListAppearance) {
+  const topic = state.value.topics.find((entry) => entry.id === id)
+  if (!topic) return
+  try { await saveStudyTopic({ ...topic, ...appearance, updatedAt: new Date().toISOString() }); await refreshState() } catch (error) { reportStorageError(error) }
+}
 function openGroupEditor(group?: StudyListGroup) { groupEditorOpen.value = true; selectedGroupId.value = group?.id ?? ''; groupTitle.value = group?.title ?? '' }
 function openTask(taskId: string) { if (page.value !== 'tasks' && page.value !== 'today' && page.value !== 'calendar') setDestination({ kind: 'inbox' }); selectedOccurrenceId.value = ''; selectedTaskId.value = taskId; showFocus.value = false }
 function openCalendarTask(taskId: string, occurrenceId: string | null) {
@@ -1793,7 +1831,7 @@ async function saveTopic() {
   if (!title) return
   const now = new Date().toISOString()
   const existing = state.value.topics.find((topic) => topic.id === selectedTopicId.value)
-  const topic: StudyTopic = { id: existing?.id ?? crypto.randomUUID(), groupId: topicGroupId.value || null, title, goal: topicGoal.value.trim() || `围绕“${title}”完成一个可验证的学习成果`, successCriteria: existing?.successCriteria ?? ['能用自己的话解释核心概念', '完成一个可以展示或运行的成果'], weeklyTargetMinutes: Math.max(30, topicMinutes.value), createdAt: existing?.createdAt ?? now, updatedAt: now, archivedAt: null }
+  const topic: StudyTopic = { id: existing?.id ?? crypto.randomUUID(), groupId: topicGroupId.value || null, title, icon: topicIcon.value, color: topicColor.value, goal: topicGoal.value.trim() || `围绕“${title}”完成一个可验证的学习成果`, successCriteria: existing?.successCriteria ?? ['能用自己的话解释核心概念', '完成一个可以展示或运行的成果'], weeklyTargetMinutes: Math.max(30, topicMinutes.value), createdAt: existing?.createdAt ?? now, updatedAt: now, archivedAt: null }
   try { await saveStudyTopic(topic); await refreshState(); selectedTopicId.value = topic.id; topicEditorOpen.value = false; topicTitle.value = ''; topicGoal.value = ''; notify(existing ? '清单已更新。' : '清单已创建。') } catch (error) { reportStorageError(error) }
 }
 
@@ -1992,9 +2030,9 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 <template>
   <div class="shell">
     <OverlayHost />
-    <AppSidebar v-if="!showFocus" :active="destination" :counts="smartViewCounts" :groups="activeListGroups" :lists="listNavItems" :display-mode="sidebarPreferences.displayMode" :order="sidebarPreferences.order" @search="openGlobalSearch" @navigate="setDestination" @update:display-mode="updateSidebarPreferences({ displayMode: $event })" @reorder="updateSidebarPreferences({ order: $event })" @create-list="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" />
+    <AppSidebar v-if="!showFocus && !settingsWindow" :active="destination" :counts="smartViewCounts" :groups="activeListGroups" :lists="listNavItems" :display-mode="sidebarPreferences.displayMode" :order="sidebarPreferences.order" @search="openGlobalSearch" @navigate="navigateShell" @update:display-mode="updateSidebarPreferences({ displayMode: $event })" @reorder="updateSidebarPreferences({ order: $event })" @create-list="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" />
     <div class="workspace">
-      <header v-if="!showFocus" class="mobile-header"><div class="mobile-brand"><img src="/shixue-mark.svg" alt="" /><strong>拾学</strong></div><div class="mobile-actions"><button type="button" title="全局搜索" aria-label="全局搜索" aria-keyshortcuts="Control+K Meta+K" @click="openGlobalSearch"><Search :size="21" /></button><button type="button" title="设置" aria-label="设置" :aria-current="destination.kind === 'settings' ? 'page' : undefined" @click="setDestination({ kind: 'settings' })"><Settings :size="22" /></button></div></header>
+      <header v-if="!showFocus && !settingsWindow" class="mobile-header"><div class="mobile-brand"><img src="/shixue-mark.svg" alt="" /><strong>拾学</strong></div><div class="mobile-actions"><IconButton label="全局搜索" aria-keyshortcuts="Control+K Meta+K" @click="openGlobalSearch"><Search /></IconButton><IconButton label="设置" :aria-current="destination.kind === 'settings' ? 'page' : undefined" @click="navigateShell({ kind: 'settings' })"><Settings /></IconButton></div></header>
       <main v-page-motion="`${JSON.stringify(destination)}:${showFocus}`" :class="{ 'focus-main': showFocus, 'tasks-main': (page === 'tasks' || page === 'today') && !showFocus, 'calendar-main': page === 'calendar' && !showFocus }">
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
         <FocusView v-if="!loading && showFocus && activeSession && activeTask" :back-label="page === 'calendar' ? '日历' : '今天'" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" :review-link-id="activeReviewLinkId || undefined" @back="showFocus = false" @toggle="toggleFocus" @finish="openFocusCompletion" @update:scratchpad="updateScratchpad" />
@@ -2008,8 +2046,8 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
             </Popover>
           </div>
           <div v-show="!showFocus" class="tasks-layout">
-          <CalendarWorkspace v-if="page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :target-offset="calendarTargetOffset" :execute-command="executeCalendarCommand" class="calendar-content" @open="openCalendarTask" @open-event="openCalendarEvent" @create-event="createCalendarEvent" @create-slot="createCalendarSlot" @toggle-task="toggleCalendarTask" @suggest-task="openScheduleSuggestion" @desktop-mode-selected="persistDesktopCalendarMode">
-            <template #quick-add="{ anchor }"><CalendarSourceManager :sources="recurrenceWorkspace?.calendarSources ?? []" :timezone="timezone" :execute="(command) => executeCalendarCommand(command, 'human-ui')"><template #connections><CalendarConnectionsPanel v-if="defaultModuleConfig.calendarConnections" :controller="calendarConnections" /></template></CalendarSourceManager><QuickAddComposer ref="calendarQuickAdd" destination-list-id="list:system:learning" :default-start-on="anchor" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :catalog-revision="recurrenceWorkspace?.revision" @created="quickAddCreated" /></template>
+          <CalendarWorkspace ref="calendarWorkspace" v-if="page === 'calendar'" :workspace="recurrenceWorkspace" :week-starts-on="planningPreferences.weekStartsOn" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :initial-mode="desktopCalendarMode" :now="new Date(clock).toISOString()" :target-offset="calendarTargetOffset" :execute-command="executeCalendarCommand" class="calendar-content" @open="openCalendarTask" @open-event="openCalendarEvent" @create-event="createCalendarEvent" @create-slot="createCalendarSlot" @quick-create-event="createQuickCalendarEvent" @expand-event="expandQuickCalendarEvent" @toggle-task="toggleCalendarTask" @suggest-task="openScheduleSuggestion" @desktop-mode-selected="persistDesktopCalendarMode">
+            <template #context><CalendarSourceManager :sources="recurrenceWorkspace?.calendarSources ?? []" :timezone="timezone" :execute="(command) => executeCalendarCommand(command, 'human-ui')"><template #connections><CalendarConnectionsPanel v-if="defaultModuleConfig.calendarConnections" :controller="calendarConnections" /></template></CalendarSourceManager></template>
           </CalendarWorkspace>
           <div v-else class="tasks-scroll"><TasksView ref="tasksView" :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :quick-add-catalog-revision="recurrenceWorkspace?.revision" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @defer="openTaskAction($event, 'defer')" @cancel="openTaskAction($event, 'cancel')" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @overdue-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
           <TaskDetailDrawer :overlay="page === 'calendar'" :task="showFocus ? undefined : selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
@@ -2018,12 +2056,12 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
         <SettingsView v-else-if="!loading && !showFocus && page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :theme-id="themePreference.themeId" :theme-mode="themePreference.mode" :custom-primary="themePreference.customPrimary" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export-json="exportJsonData" @export-markdown="exportMarkdownData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-theme="setTheme" @set-theme-mode="setThemeMode" @set-custom-primary="setCustomPrimary" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
         <div v-else-if="!loading && !showFocus && destination.kind === 'learning'" class="route-workspace">
           <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
-          <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
+          <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @update-appearance="updateTopicAppearance" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
           <LearningRhythmView v-else-if="destination.section === 'rhythm'" :items="learningRhythmItems" :totals="learningRhythmSelection.totals" @open-occurrence="openRhythmOccurrence" @open-task="openSearchTask" @edit-task="openTaskEditor" />
           <ReviewView v-else-if="destination.section === 'review'" :item="reviewItems[0]" :remaining="reviewItems.length" :revealed="reviewRevealed" :busy="reviewBusy" :refresh-required="reviewRefreshRequired" :weekly-summary="weeklyLearningSummary" :records="recordViews" :topics="state.topics" :initial-mode="reviewMode" :record-target="recordTarget" @reveal="reviewRevealed = true" @reload="reloadReviews" @rate="rateReview" @create-task="createFromNextAction" @open-task="openSearchTask" @open-record="openSearchRecord" @open-plan-source="openWeeklyPlanSource"><template #calendar-review><CalendarWeeklyReview v-if="calendarWeeklySummary" :summary="calendarWeeklySummary" :task-titles="calendarTaskTitles" /></template></ReviewView>
         </div>
       </main>
-      <BottomTabs v-if="!showFocus" :active="destination" @navigate="setDestination" />
+      <BottomTabs v-if="!showFocus && !settingsWindow" :active="destination" @navigate="navigateShell" />
     </div>
 
     <CompletionSheet :open="completionOpen" :context-id="completionReminderId || completionOccurrenceId || completionTaskId || activeSession?.id || activeTask?.id || ''" :busy="Boolean(completionReminderId) ? reminderBusy : completionOccurrenceBusy" :task-title="reminderCompletionTask?.title ?? completionOccurrenceTask?.title ?? completionTask?.title ?? activeTask?.title ?? ''" :scratchpad="completionReminderId || completionOccurrenceId || completionTaskId ? '' : activeSession?.scratchpad ?? ''" @close="completionOpen = false; completionReminderId = ''; completionOccurrenceId = ''; completionTaskId = ''" @save="completeFocus" />
@@ -2035,7 +2073,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
     <Dialog :open="!!taskSlot" title="创建任务时间盒" :description="taskSlot ? `${taskSlot.date}，${taskSlot.duration} 分钟；输入标题后创建，明确输入的日期时间优先。` : ''" @close="taskSlot = null">
       <QuickAddComposer v-if="taskSlot" :destination-list-id="quickAddDestinationListId" :default-start-at="taskSlot.startAt" :default-estimate-minutes="taskSlot.duration" :catalog-revision="recurrenceWorkspace?.revision" @created="calendarSlotTaskCreated" />
     </Dialog>
-    <CalendarEventEditor :open="eventEditorOpen" :event="editingEvent" :sources="recurrenceWorkspace?.calendarSources ?? []" :initial-date="eventInitialDate" :initial-time="eventInitialTime" :submitting="eventSubmitting" :error="eventEditorError" @close="eventEditorOpen = false" @save="saveCalendarEvent" @delete="saveCalendarEvent">
+    <CalendarEventEditor :open="eventEditorOpen" :event="editingEvent" :sources="recurrenceWorkspace?.calendarSources ?? []" :initial-date="eventInitialDate" :initial-time="eventInitialTime" :initial-title="eventInitialTitle" :initial-source-id="eventInitialSourceId" :submitting="eventSubmitting" :error="eventEditorError" @close="eventEditorOpen = false" @save="saveCalendarEvent" @delete="saveCalendarEvent">
       <template #occurrence-actions="{ disabled }"><section v-if="editingEvent?.recurrence && editingEventOriginalStart" aria-label="本次日程">
         <p>本次原定：{{ editingEventOriginalStart }}。下方表单修改整个系列。</p>
         <Button :disabled="disabled" @click="changeEventOccurrence(false)">取消本次</Button>
@@ -2050,7 +2088,7 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
     </Dialog>
     <RecurrenceScopeDialog :open="recurrenceScopeOpen" :preview="recurrencePreview" :previewing="recurrencePreviewing" :executing="recurrenceExecuting" @close="recurrenceScopeOpen = false; clearRecurrencePreview()" @edit-occurrence="editSingleOccurrence" @preview="previewRecurrenceScope" @execute="executeRecurrenceScope" />
     <OccurrenceRescheduleSheet :open="occurrenceRescheduleOpen" :title="selectedTask?.title ?? ''" :model-value="occurrenceRescheduleValue" :timed="occurrenceRescheduleTimed" @close="occurrenceRescheduleOpen = false" @submit="rescheduleOccurrence" />
-    <Sheet :open="topicEditorOpen" :label="state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单'" size="lg" @close="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" autofocus required placeholder="清单名称" /></label><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></Sheet>
+    <Sheet :open="topicEditorOpen" :label="state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单'" size="lg" @close="topicEditorOpen = false"><form class="editor-sheet" @submit.prevent="saveTopic"><h2>{{ state.topics.some((topic) => topic.id === selectedTopicId) ? '编辑清单' : '新建清单' }}</h2><label><span>名称</span><input v-model="topicTitle" autofocus required placeholder="清单名称" /></label><ListAppearancePicker :id="selectedTopicId || topicTitle || 'new-list'" :icon="topicIcon" :color="topicColor" @change="topicIcon = $event.icon; topicColor = $event.color" /><label><span>分组</span><Listbox v-model="topicGroupId" :options="topicGroupOptions" label="分组" /></label><label><span>目标</span><textarea v-model="topicGoal" placeholder="学习目标" /></label><label><span>每周分钟</span><div class="duration-input"><input v-model.number="topicMinutes" type="number" min="30" max="1200" /><span>分钟</span></div></label><footer><button type="button" class="cancel" @click="topicEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></Sheet>
     <Sheet :open="groupEditorOpen" :label="selectedGroupId ? '编辑分组' : '新建分组'" size="sm" @close="groupEditorOpen = false"><form class="editor-sheet compact-editor" @submit.prevent="saveGroup"><h2>{{ selectedGroupId ? '编辑分组' : '新建分组' }}</h2><label><span>名称</span><input v-model="groupTitle" autofocus required placeholder="分组名称" /></label><footer><button v-if="selectedGroupId" type="button" class="cancel danger" @click="archiveGroup">归档</button><span class="footer-spacer"></span><button type="button" class="cancel" @click="groupEditorOpen = false">取消</button><button type="submit" class="save">保存</button></footer></form></Sheet>
     <Dialog v-model:open="reminderCenterOpen" title="任务提醒" :description="nativeDeliveryAvailable ? '系统通知仅显示标题，操作在这里完成。' : '仅应用内提醒；未启用系统通知。'">
       <p v-if="!reminderCards.length">暂时没有待处理提醒。</p>

@@ -88,7 +88,7 @@ test('shell controls emit one typed destination and App owns the canonical sette
   assert.doesNotMatch(sidebar, /'smart-view'|'select-list'/)
   assert.match(bottomTabs, /navigate: \[destination: WorkspaceView\]/)
   assert.doesNotMatch(bottomTabs, /'smart-view'/)
-  assert.match(app, /const destination = ref<ShellDestination>\(\{ kind: 'today' \}\)/)
+  assert.match(app, /const destination = ref<ShellDestination>\(settingsWindow \? \{ kind: 'settings' \} : \{ kind: 'today' \}\)/)
   assert.match(app, /function setDestination\(next: ShellDestination,/)
   assert.match(app, /v-for="item in mobileMoreWorkspaceNavigation"/)
   assert.match(app, /v-for="item in learningWorkspaceNavigation"/)

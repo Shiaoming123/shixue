@@ -4,6 +4,7 @@ import { ArrowRight, X } from '@lucide/vue'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import Listbox from '../ui/Listbox.vue'
 import Sheet from '../ui/Sheet.vue'
+import IconButton from '../ui/IconButton.vue'
 
 export type TaskActionMode = 'plan' | 'defer' | 'block' | 'cancel' | 'reopen'
 export interface TopicOption { id: string; title: string }
@@ -85,7 +86,7 @@ function submit() {
 <template>
   <Sheet :open="open" :label="title" @close="emit('close')">
     <form class="sheet-content" @submit.prevent="submit">
-      <header><div><p>任务操作</p><h2>{{ title }}</h2></div><button type="button" title="关闭" aria-label="关闭" @click="emit('close')"><X :size="20" /></button></header>
+      <header><div><p>任务操作</p><h2>{{ title }}</h2></div><IconButton label="关闭" :icon-size="20" @click="emit('close')"><X /></IconButton></header>
       <p class="task-title">{{ taskTitle }}</p>
 
       <template v-if="mode === 'plan'">

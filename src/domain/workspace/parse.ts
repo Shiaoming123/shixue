@@ -28,6 +28,7 @@ import type {
   WorkspaceStateV4,
 } from './types.ts'
 import { assertIanaTimezone } from '../recurrence/timezone.ts'
+import { isListAccent, isListIconId, type ListIconId } from '../../lib/list-appearance.ts'
 
 const MAX_ITEMS = 100_000
 const MAX_TEXT_LENGTH = 100_000
@@ -270,6 +271,7 @@ function parseTaskList(raw: unknown, index: number): TaskList {
     id: requireText(value.id, 'Task list id'),
     groupId: parseNullableText(value.groupId, 'Task list groupId'),
     title: requireText(value.title, 'Task list title'),
+    ...parseListAppearance(value, `Task list ${index}`),
     position: requireNonNegativeInteger(value.position, 'Task list position'),
     goal: requireText(value.goal, 'Task list goal', true),
     successCriteria: parseTextArray(value.successCriteria, 'Task list successCriteria'),
@@ -278,6 +280,19 @@ function parseTaskList(raw: unknown, index: number): TaskList {
     updatedAt: requireIsoDateTime(value.updatedAt, 'Task list updatedAt'),
     archivedAt: parseNullableIsoDateTime(value.archivedAt, 'Task list archivedAt'),
   }
+}
+
+function parseListAppearance(value: Record<string, unknown>, label: string): { icon?: ListIconId; color?: string } {
+  const appearance: { icon?: ListIconId; color?: string } = {}
+  if (value.icon !== undefined) {
+    if (!isListIconId(value.icon)) throw new Error(`${label} icon is invalid.`)
+    appearance.icon = value.icon
+  }
+  if (value.color !== undefined) {
+    if (!isListAccent(value.color)) throw new Error(`${label} color must use six hex digits.`)
+    appearance.color = value.color
+  }
+  return appearance
 }
 
 function parseListSection(raw: unknown, index: number): ListSection {

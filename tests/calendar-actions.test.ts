@@ -33,7 +33,7 @@ test('opening calendar details keeps destination and routes occurrence IDs separ
 test('calendar quick capture closes details and focuses its composer without changing the date or route', () => {
   const refs = Object.fromEntries(['completionOpen', 'completionReminderId', 'completionTaskId', 'taskActionOpen', 'taskEditorOpen', 'recurrenceScopeOpen', 'occurrenceRescheduleOpen', 'topicEditorOpen', 'groupEditorOpen', 'selectedTaskId', 'selectedOccurrenceId', 'showFocus'].map((name) => [name, { value: true as unknown }]))
   let focused = 0
-  const capture = action('handleQuickAdd', { ...refs, page: { value: 'calendar' }, calendarQuickAdd: { value: { focus: () => focused++ } }, requestAnimationFrame: (run: () => void) => run(), selectSmartView: () => assert.fail('calendar capture must preserve its destination') })
+  const capture = action('handleQuickAdd', { ...refs, page: { value: 'calendar' }, calendarWorkspace: { value: { openToolbarEvent: () => focused++ } }, requestAnimationFrame: (run: () => void) => run(), selectSmartView: () => assert.fail('calendar capture must preserve its destination') })
   capture()
   assert.equal(focused, 1)
   assert.equal(refs.selectedTaskId!.value, '')
@@ -44,7 +44,9 @@ test('calendar quick capture closes details and focuses its composer without cha
 test('calendar shares one detail action interface and keeps its view mounted while focusing', () => {
   assert.equal((app.match(/<TaskDetailDrawer\b/g) ?? []).length, 1)
   assert.match(app, /v-show="!showFocus" class="tasks-layout"/)
-  assert.match(app, /#quick-add="\{ anchor \}"[\s\S]*?:default-start-on="anchor"/)
+  assert.match(app, /#context[\s\S]*?<CalendarSourceManager/)
+  assert.match(app, /@quick-create-event="createQuickCalendarEvent"/)
+  assert.match(app, /@expand-event="expandQuickCalendarEvent"/)
   assert.match(app, /@open="openCalendarTask"/)
   assert.match(app, /@toggle-complete="toggleTaskCompletion"/)
   assert.match(app, /@primary="taskPrimary"/)

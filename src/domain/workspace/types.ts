@@ -6,6 +6,7 @@ import type {
   TaskChecklistItem,
   TaskEvent,
 } from '../../storage/study/types.ts'
+import type { ListIconId } from '../../lib/list-appearance.ts'
 
 export const WORKSPACE_STATE_VERSION = 4 as const
 
@@ -32,6 +33,8 @@ export interface TaskList {
   id: string
   groupId: string | null
   title: string
+  icon?: ListIconId
+  color?: string
   position: number
   goal: string
   successCriteria: string[]

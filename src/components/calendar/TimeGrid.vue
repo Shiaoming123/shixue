@@ -5,6 +5,7 @@ import type { LaidOutCalendarItem } from '../../domain/calendar/layout.ts'
 import type { CalendarItem as CalendarItemModel } from '../../domain/calendar/project.ts'
 import type { CalendarTargetClock } from '../../domain/calendar/target.ts'
 import CalendarItem from './CalendarItem.vue'
+import Popover from '../ui/Popover.vue'
 import { calendarSlot, type CalendarSlot } from './calendar-slot'
 import { calendarPointerMovePreview, calendarItemInteractive, durationMinutes, snapCalendarMinutes, type CalendarDragPreview } from './use-calendar-drag.ts'
 import { calendarOverlapMessage } from './calendar-conflicts.ts'
@@ -67,6 +68,7 @@ function finishBlank(event: PointerEvent) {
 const columns = ref<HTMLElement | null>(null)
 const scroll = ref<HTMLElement | null>(null)
 const allDayColumns = ref<HTMLElement | null>(null)
+const allDayOverflowDay = ref('')
 const halfHours = Array.from({ length: MINUTES_PER_DAY / HALF_HOUR }, (_, index) => index * HALF_HOUR)
 const dayFormatter = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short' })
 const currentDate = computed(() => dateKey(new Date(props.now)))
@@ -93,6 +95,15 @@ function preciseDeadlinesForDay(day: string) {
 function dateOnlyFactsForDay(day: string) {
   return factsForDay(day).filter((item) => !item.start.includes('T'))
 }
+function allDayVisibleFactsForDay(day: string) {
+  const facts = dateOnlyFactsForDay(day)
+  return facts.slice(0, facts.length > 2 ? 1 : 2)
+}
+function allDayOverflowFactsForDay(day: string) {
+  const facts = dateOnlyFactsForDay(day)
+  return facts.slice(facts.length > 2 ? 1 : 2)
+}
+function allDayOverflowCount(day: string) { return allDayOverflowFactsForDay(day).length }
 function titleFor(item: CalendarItemModel) { return props.titles.get(item.eventId ?? item.taskId) ?? '未命名任务' }
 function itemStyle(item: LaidOutCalendarItem) {
   const start = item.displayMinute ?? 0
@@ -155,7 +166,13 @@ defineExpose({ propose, locate, cancelBlank })
       <span class="time-grid__all-day-label">全天</span>
       <div ref="allDayColumns" class="time-grid__all-day-columns">
         <div v-for="day in days" :key="day" class="time-grid__all-day-day">
-          <CalendarItem v-for="item in dateOnlyFactsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :interactive="calendarItemInteractive(item, targetClock(item))" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" @open="emit('open', $event)" @toggle-task="emit('toggle-task', $event)" />
+          <CalendarItem v-for="item in allDayVisibleFactsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :interactive="calendarItemInteractive(item, targetClock(item))" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" @open="emit('open', $event)" @toggle-task="emit('toggle-task', $event)" />
+          <Popover v-if="allDayOverflowCount(day)" :open="allDayOverflowDay === day" align="end" @update:open="allDayOverflowDay = $event ? day : ''">
+            <template #trigger="{ triggerProps }"><button v-bind="triggerProps" type="button" class="time-grid__all-day-more">还有 {{ allDayOverflowCount(day) }} 项</button></template>
+            <div class="time-grid__all-day-overflow" :aria-label="`${dayLabel(day)}的其他全天安排`">
+              <CalendarItem v-for="item in allDayOverflowFactsForDay(day)" :key="item.key" :item="item" :title="titleFor(item)" :target-clock="targetClock(item)" :selected="selectedKey === item.key" :previewing="preview?.itemKey === item.key" :interactive="calendarItemInteractive(item, targetClock(item))" @select="emit('select', $event)" @pointer-start="forwardPointer" @command="forwardCommand" @open="emit('open', $event)" @toggle-task="emit('toggle-task', $event)" />
+            </div>
+          </Popover>
           <div v-if="allDayPreview(day)" class="time-grid__preview time-grid__preview--all-day" :class="{ 'time-grid__preview--conflict': preview?.conflict }"><strong>预览</strong><span>{{ preview?.conflict ?? '全天' }}</span></div>
         </div>
       </div>
@@ -190,8 +207,11 @@ defineExpose({ propose, locate, cancelBlank })
 .time-grid__corner, .time-grid__all-day-label { border-right: 1px solid var(--hairline); }
 .time-grid__all-day { min-height: 42px; max-height: 150px; overflow: hidden; }
 .time-grid__all-day-label { display: grid; place-items: start center; padding-top: 8px; color: var(--muted); font-size: 10px; }
-.time-grid__all-day-columns { min-width: 0; display: grid; grid-template-columns: repeat(var(--day-count), minmax(108px, 1fr)); overflow-y: auto; align-items: start; }
+.time-grid__all-day-columns { min-width: 0; display: grid; grid-template-columns: repeat(var(--day-count), minmax(108px, 1fr)); overflow: hidden; align-items: start; }
 .time-grid__all-day-day { position: relative; min-width: 0; display: grid; align-content: start; gap: 3px; padding: 4px; border-right: 1px solid var(--hairline); }
+.time-grid__all-day-more { min-width: 0; min-height: 28px; overflow: hidden; padding: 0 7px; border: 0; border-radius: var(--radius-sm); background: var(--control-fill); color: var(--muted); font: inherit; font-size: var(--text-xs); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.time-grid__all-day-more:hover { color: var(--text); }
+.time-grid__all-day-overflow { width: min(320px, calc(100vw - 32px)); max-height: min(360px, calc(100vh - 96px)); display: grid; gap: 4px; overflow-y: auto; padding: 8px; }
 .time-grid__scroll { min-width: 0; min-height: 0; flex: 1; overflow: auto; scrollbar-color: var(--border) transparent; }
 .time-grid__body { min-width: calc(58px + var(--day-count, 1) * 108px); height: 1440px; display: grid; grid-template-columns: 58px minmax(0, 1fr); }
 .time-grid__spine { position: relative; border-right: 1px solid var(--hairline); background: color-mix(in srgb, var(--surface-alt) 56%, var(--surface)); }

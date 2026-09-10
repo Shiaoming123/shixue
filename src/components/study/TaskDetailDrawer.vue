@@ -4,6 +4,7 @@ import { ArrowRight, Bell, CalendarDays, Check, Clock3, Flag, Inbox, MoreHorizon
 import type { TaskViewItem } from './TasksView.vue'
 import type { TaskOccurrence } from '../../domain/workspace/types'
 import Sheet from '../ui/Sheet.vue'
+import IconButton from '../ui/IconButton.vue'
 import { resolveTaskDetailPlacement } from '../../lib/responsive-shell'
 
 export interface TaskEventViewItem {
@@ -77,8 +78,8 @@ function addChecklistItem() {
   <Sheet :open="Boolean(task)" label="任务详情" :placement="detailPlacement" @close="emit('close')">
   <aside v-if="task" class="detail-drawer" :class="{ mobile }" :role="covering ? undefined : 'complementary'" aria-label="任务详情">
     <header class="drawer-header">
-      <div><button title="编辑任务" aria-label="编辑任务" @click="emit('edit', task.id)"><Pencil :size="18" /></button><button title="删除任务" aria-label="删除任务" @click="confirmDelete = true"><Trash2 :size="18" /></button></div>
-      <button title="关闭任务详情" aria-label="关闭任务详情" @click="emit('close')"><X :size="22" /></button>
+      <div><IconButton label="编辑任务" @click="emit('edit', task.id)"><Pencil /></IconButton><IconButton label="删除任务" variant="destructive" @click="confirmDelete = true"><Trash2 /></IconButton></div>
+      <IconButton label="关闭任务详情" :icon-size="20" @click="emit('close')"><X /></IconButton>
     </header>
 
     <div v-if="confirmDelete" class="delete-confirm" role="alert"><span><strong>删除这个任务？</strong></span><div><button @click="confirmDelete = false">取消</button><button class="danger" @click="emit('delete', task.id)">删除</button></div></div>
@@ -103,7 +104,7 @@ function addChecklistItem() {
         ><span><Check :size="15" /></span><b>{{ item.text }}</b></button>
         <form v-if="!checklistLocked" class="checklist-add" @submit.prevent="addChecklistItem">
           <input v-model="checklistDraft" aria-label="新增检查项" placeholder="新增一个执行检查项" />
-          <button :disabled="!checklistDraft.trim()" title="新增检查项" type="submit"><Plus :size="16" /></button>
+          <IconButton label="新增检查项" type="submit" :disabled="!checklistDraft.trim()" :icon-size="16"><Plus /></IconButton>
         </form>
         <div v-if="task.acceptanceCriteria.length" class="acceptance">
           <h3>完成时要验证</h3>

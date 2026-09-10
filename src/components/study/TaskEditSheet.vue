@@ -5,6 +5,7 @@ import type { StudyTaskPriority, StudyTopic } from '../../storage/study/types'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import Listbox from '../ui/Listbox.vue'
 import Sheet from '../ui/Sheet.vue'
+import IconButton from '../ui/IconButton.vue'
 import RecurrenceEditor, { type RecurrenceRule } from './RecurrenceEditor.vue'
 import ReminderEditor, { type ReminderPermission, type ReminderSetValue } from './ReminderEditor.vue'
 import type { ReminderRule as TaskReminderRule, Tag } from '../../domain/workspace/types'
@@ -241,7 +242,7 @@ function toLocalDateTime(value: string) {
 <template>
   <Sheet :open="Boolean(open && task)" label="编辑任务" @close="requestClose">
     <form v-if="task" class="sheet-content" @submit.prevent="save">
-      <header><h2 id="task-edit-title">编辑任务</h2><button type="button" title="关闭" aria-label="关闭" @click="requestClose"><X :size="19" /></button></header>
+      <header><h2 id="task-edit-title">编辑任务</h2><IconButton label="关闭" :icon-size="18" @click="requestClose"><X /></IconButton></header>
       <label><span>标题</span><input v-model="title" aria-label="任务标题" required autofocus /></label>
       <label><span>备注</span><textarea v-model="notes" aria-label="任务备注" placeholder="备注" /></label>
       <label><span><ListTree :size="15" />清单</span><Listbox v-model="topicId" :options="topicOptions" label="清单" /></label>

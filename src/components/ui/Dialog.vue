@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, useId } from 'vue'
+import { X } from '@lucide/vue'
 import { useModalOverlay, type OverlayCloseReason } from './use-overlay'
+import IconButton from './IconButton.vue'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -57,7 +59,7 @@ function requestClose(reason: OverlayCloseReason = 'select') {
               <h2 :id="titleId">{{ title }}</h2>
               <p v-if="description" :id="descriptionId">{{ description }}</p>
             </div>
-            <button v-if="showClose" type="button" class="dialog-close" aria-label="关闭" @click="requestClose('select')">×</button>
+            <IconButton v-if="showClose" class="dialog-close" label="关闭" @click="requestClose('select')"><X :size="18" /></IconButton>
           </header>
           <div v-if="$slots.default" class="dialog-body"><slot /></div>
           <footer v-if="$slots.footer" class="dialog-footer"><slot name="footer" :close="requestClose" /></footer>
@@ -82,8 +84,9 @@ function requestClose(reason: OverlayCloseReason = 'select') {
 .dialog-panel {
   width: min(100%, 480px);
   max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-  padding: var(--space-6);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-xl);
   outline: 0;
@@ -91,15 +94,17 @@ function requestClose(reason: OverlayCloseReason = 'select') {
   box-shadow: var(--shadow-lg);
 }
 
-.dialog-panel--sm { width: min(100%, 360px); }
-.dialog-panel--lg { width: min(100%, 620px); }
-.dialog-panel--xl { width: min(100%, 900px); }
+.dialog-panel--sm { width: min(100%, 400px); }
+.dialog-panel--lg { width: min(100%, 680px); }
+.dialog-panel--xl { width: min(100%, 920px); }
 
 .dialog-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--hairline);
 }
 
 .dialog-header h2 {
@@ -116,22 +121,14 @@ function requestClose(reason: OverlayCloseReason = 'select') {
 }
 
 .dialog-close {
-  width: max(34px, var(--icon-hit));
-  height: max(34px, var(--icon-hit));
-  display: grid;
-  flex: 0 0 max(34px, var(--icon-hit));
-  place-items: center;
-  border: 0;
-  border-radius: var(--radius-full);
-  background: var(--control-fill);
-  color: var(--muted);
-  font-size: var(--text-xl);
-  font-weight: var(--font-regular);
-  line-height: 1;
+  margin: -10px -10px 0 0;
 }
 
 .dialog-body {
-  margin-top: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 22px;
+  overscroll-behavior: contain;
   color: var(--text);
   font-size: var(--text-base);
 }
@@ -140,8 +137,7 @@ function requestClose(reason: OverlayCloseReason = 'select') {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
-  margin-top: var(--space-6);
-  padding-top: var(--space-4);
+  padding: 14px 22px 18px;
   border-top: 1px solid var(--hairline);
 }
 
@@ -179,7 +175,7 @@ function requestClose(reason: OverlayCloseReason = 'select') {
   .dialog-panel--xl {
     width: 100%;
     max-height: 92dvh;
-    padding: var(--space-5) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
+    padding: 0;
     border-width: 1px 0 0;
     border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   }

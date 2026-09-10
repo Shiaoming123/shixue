@@ -39,7 +39,7 @@ test('dialog delegates modal keyboard and focus behavior to the shared overlay l
   const dialog = rootSource('src/components/ui/Dialog.vue')
   assert.match(dialog, /useModalOverlay/)
   assert.match(dialog, /size\?: 'sm' \| 'md' \| 'lg' \| 'xl'/)
-  assert.match(dialog, /\.dialog-panel--xl \{ width: min\(100%, 900px\); \}/)
+  assert.match(dialog, /\.dialog-panel--xl \{ width: min\(100%, 920px\); \}/)
   assert.match(dialog, /\.dialog-panel--lg,\s*\n\s*\.dialog-panel--xl \{/)
   assert.doesNotMatch(dialog, /function onKeydown|focusableSelector|@keydown=/)
 })

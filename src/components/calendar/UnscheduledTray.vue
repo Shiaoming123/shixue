@@ -8,6 +8,7 @@ import { groupCalendarPlanningTasks } from '../../domain/calendar/plan.ts'
 import Button from '../ui/Button.vue'
 import DatePicker from '../ui/DatePicker.vue'
 import Popover from '../ui/Popover.vue'
+import IconButton from '../ui/IconButton.vue'
 import TimePicker from '../ui/TimePicker.vue'
 import { calendarMenuMoveCommand, filterUnscheduledTasks } from './use-calendar-drag.ts'
 
@@ -26,6 +27,7 @@ const duration = ref(props.defaultDuration)
 const unscheduled = computed(() => filterUnscheduledTasks(props.tasks))
 const groups = computed(() => groupCalendarPlanningTasks(props.tasks, unscheduled.value, props.range, props.now))
 const count = computed(() => groups.value.reduce((total, group) => total + group.tasks.length, 0))
+const expanded = ref(true)
 const collapsed = ref<Set<string>>(new Set())
 let pointerStart: { id: number; x: number; y: number } | null = null
 let moved = false
@@ -82,7 +84,8 @@ function plan(task: Task, close: (reason: 'select') => void) {
 
 <template>
   <section class="unscheduled-tray" aria-labelledby="unscheduled-title">
-    <header><div><Clock3 :size="16" aria-hidden="true" /><h2 id="unscheduled-title">未安排</h2></div><span>{{ count }}</span></header>
+    <button type="button" class="unscheduled-tray__heading" :aria-expanded="expanded" aria-controls="unscheduled-content" @click="expanded = !expanded"><span><Clock3 :size="16" aria-hidden="true" /><strong id="unscheduled-title">未安排</strong></span><span>{{ count }}</span></button>
+    <div v-show="expanded" id="unscheduled-content" class="unscheduled-tray__content">
     <p v-if="count === 0" class="unscheduled-tray__empty">任务都已有时间位置</p>
     <div v-else class="unscheduled-tray__groups">
       <section v-for="group in groups" :key="group.id" class="unscheduled-tray__group">
@@ -92,7 +95,7 @@ function plan(task: Task, close: (reason: 'select') => void) {
         <button type="button" class="unscheduled-tray__drag" :aria-label="`拖动安排 ${task.title}`" :title="`打开 ${task.title}；拖动安排`" @pointerdown="beginPointer($event, task)" @pointermove="trackPointer" @pointerup="endPointer" @pointercancel="cancelPointer" @lostpointercapture="cancelPointer" @click="openTask($event, task.id)">{{ task.title }}</button>
         <Popover :open="openTaskId === task.id" align="end" mobile-sheet :mobile-sheet-label="`安排 ${task.title}`" @update:open="$event ? openPlanner(task.id) : openTaskId = ''">
           <template #trigger="{ triggerProps }">
-            <button type="button" class="unscheduled-tray__menu" v-bind="triggerProps" :aria-label="`安排 ${task.title}`" title="安排任务" @click="openPlanner(task.id)"><MoreHorizontal :size="16" /></button>
+            <IconButton class="unscheduled-tray__menu" v-bind="triggerProps" :label="`安排 ${task.title}`" :icon-size="16" @click="openPlanner(task.id)"><MoreHorizontal /></IconButton>
           </template>
           <template #default="{ close }">
             <section class="unscheduled-tray__panel" :aria-label="`安排 ${task.title}`">
@@ -109,20 +112,19 @@ function plan(task: Task, close: (reason: 'select') => void) {
         </div>
       </section>
     </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.unscheduled-tray { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--space-3); padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--surface-alt); }
-.unscheduled-tray > header { display: flex; align-items: center; gap: var(--space-2); }
-.unscheduled-tray > header > div { display: flex; align-items: center; gap: var(--space-1); color: var(--muted); }
-.unscheduled-tray h2 { margin: 0; color: var(--text); font-size: var(--text-sm); font-weight: var(--font-semibold); }
-.unscheduled-tray header > span { min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: var(--radius-full); background: var(--control-fill); color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
-.unscheduled-tray__items { min-width: 0; display: flex; gap: var(--space-1); overflow-x: auto; }
-.unscheduled-tray__groups { min-width: 0; display: flex; align-items: start; gap: var(--space-3); overflow-x: auto; }
-.unscheduled-tray__group { min-width: 156px; }
+.unscheduled-tray { min-width: 0; padding: 12px; background: var(--surface); }
+.unscheduled-tray__heading { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text); font: inherit; }.unscheduled-tray__heading:hover { background: var(--control-fill); }.unscheduled-tray__heading > span { display: flex; align-items: center; gap: var(--space-1); }.unscheduled-tray__heading > span:last-child { min-width: 20px; height: 20px; display: grid; place-items: center; border-radius: var(--radius-full); background: var(--control-fill); color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.unscheduled-tray__content { padding-top: 8px; }
+.unscheduled-tray__items { min-width: 0; display: grid; }
+.unscheduled-tray__groups { min-width: 0; display: grid; gap: var(--space-3); }
+.unscheduled-tray__group { min-width: 0; }
 .unscheduled-tray__group > .btn { margin-bottom: var(--space-1); }
-.unscheduled-tray__item { position: relative; min-width: 156px; max-width: 240px; display: flex; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--surface); }
+.unscheduled-tray__item { position: relative; min-width: 0; display: flex; border: 0; border-bottom: 1px solid var(--hairline); border-radius: 0; background: transparent; }
 .unscheduled-tray__drag { min-width: 0; min-height: 34px; flex: 1; overflow: hidden; padding: 0 30px 0 10px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--text-xs); text-align: left; text-overflow: ellipsis; white-space: nowrap; touch-action: none; }
 .unscheduled-tray__menu { position: absolute; top: 2px; right: 2px; width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); }
 .unscheduled-tray__menu:hover { background: var(--control-fill); color: var(--accent); }
@@ -135,7 +137,7 @@ function plan(task: Task, close: (reason: 'select') => void) {
 .unscheduled-tray__panel fieldset button { min-height: max(34px, var(--control-hit)); border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font: inherit; font-size: var(--text-xs); }
 .unscheduled-tray__panel fieldset button[aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }
 @media (max-width: 819px) {
-  .unscheduled-tray { grid-template-columns: 1fr; padding: 10px 16px; }
+  .unscheduled-tray { padding: 10px 16px; }
   .unscheduled-tray__drag, .unscheduled-tray__menu, .unscheduled-tray__panel fieldset button { min-height: 44px; }
   .unscheduled-tray__menu { width: 44px; height: 44px; top: 0; right: 0; }
   .unscheduled-tray__panel footer :deep(.btn) { min-height: 44px; }

@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Archive, ArrowRight, Check, ChevronRight, Folder, Pencil, Plus } from '@lucide/vue'
+import { Archive, ArrowRight, BookOpen, Check, ChevronRight, Code2, Folder, FolderTree, GraduationCap, Languages, NotebookPen, Pencil } from '@lucide/vue'
+import { resolveListAppearance, type ListAppearance, type ListIconId } from '../../lib/list-appearance'
+import IconButton from '../ui/IconButton.vue'
+import ListAppearancePicker from './ListAppearancePicker.vue'
+import ListCreateMenu from './ListCreateMenu.vue'
 
 export interface TopicViewItem {
   id: string
   title: string
+  icon?: ListIconId
+  color?: string
   goal: string
   successCriteria: string[]
   totalSteps: number
@@ -29,19 +35,27 @@ const emit = defineEmits<{
   archive: [id: string]
   createGroup: []
   editGroup: [id: string]
+  updateAppearance: [id: string, appearance: ListAppearance]
 }>()
 
 const selectedTopic = computed(() => props.topics.find((topic) => topic.id === props.selectedId))
+const listIcons: Record<ListIconId, typeof Folder> = {
+  folder: Folder, book: BookOpen, graduation: GraduationCap, code: Code2,
+  languages: Languages, notebook: NotebookPen,
+}
+function topicIdentity(topic: Pick<TopicViewItem, 'id' | 'icon' | 'color'>) { return resolveListAppearance(topic.id, topic.icon, topic.color) }
+function topicIdentityIcon(topic: Pick<TopicViewItem, 'id' | 'icon' | 'color'>) { return listIcons[topicIdentity(topic).icon] }
+function topicIdentityStyle(topic: Pick<TopicViewItem, 'id' | 'icon' | 'color'>) { return { '--list-accent': topicIdentity(topic).color } }
 </script>
 
 <template>
   <section class="topics-view">
     <header>
       <div><h1>清单与主题</h1><p>{{ topics.length }} 项</p></div>
-      <div class="header-actions"><button class="secondary-add" title="新建分组" aria-label="新建分组" @click="emit('createGroup')"><Folder :size="17" /></button><button class="add" title="新建清单" @click="emit('create')"><Plus :size="18" />新建</button></div>
+      <div class="header-actions"><ListCreateMenu @create-list="emit('create')" @create-group="emit('createGroup')" /></div>
     </header>
 
-    <div v-if="groups?.length" class="group-strip" aria-label="清单分组"><button v-for="group in groups" :key="group.id" :title="`编辑分组 ${group.title}`" @click="emit('editGroup', group.id)"><Folder :size="14" />{{ group.title }}<Pencil :size="12" /></button></div>
+    <div v-if="groups?.length" class="group-strip" aria-label="清单分组"><button v-for="group in groups" :key="group.id" :title="`编辑分组 ${group.title}`" @click="emit('editGroup', group.id)"><FolderTree class="group-icon" :size="15" aria-hidden="true" /><span>{{ group.title }}</span><Pencil :size="12" aria-hidden="true" /></button></div>
 
     <div class="topic-layout">
       <aside class="topic-list">
@@ -51,11 +65,12 @@ const selectedTopic = computed(() => props.topics.find((topic) => topic.id === p
           :class="{ active: topic.id === props.selectedId }"
           @click="emit('select', topic.id)"
         >
-          <span>
+          <span class="topic-identity" :style="topicIdentityStyle(topic)"><component :is="topicIdentityIcon(topic)" :size="18" :stroke-width="1.8" aria-hidden="true" /></span>
+          <span class="topic-copy">
             <strong>{{ topic.title }}</strong>
             <small>{{ topic.completedSteps }} / {{ topic.totalSteps }} 步 · {{ topic.recentLabel }}</small>
           </span>
-          <ChevronRight :size="18" />
+          <ChevronRight class="topic-chevron" :size="18" aria-hidden="true" />
         </button>
       </aside>
 
@@ -65,7 +80,7 @@ const selectedTopic = computed(() => props.topics.find((topic) => topic.id === p
             <h2>{{ selectedTopic.title }}</h2>
             <span>{{ selectedTopic.goal }}</span>
           </div>
-          <div class="topic-actions"><button title="编辑" aria-label="编辑清单" @click="emit('edit', selectedTopic.id)"><Pencil :size="17" /></button><button title="归档" aria-label="归档清单" @click="emit('archive', selectedTopic.id)"><Archive :size="17" /></button></div>
+          <div class="topic-actions"><ListAppearancePicker :id="selectedTopic.id" :icon="selectedTopic.icon" :color="selectedTopic.color" @change="emit('updateAppearance', selectedTopic.id, $event)" /><IconButton label="编辑清单" :icon-size="18" @click="emit('edit', selectedTopic.id)"><Pencil /></IconButton><IconButton label="归档清单" variant="destructive" :icon-size="18" @click="emit('archive', selectedTopic.id)"><Archive /></IconButton></div>
         </div>
 
         <section class="success-criteria">
@@ -130,7 +145,6 @@ h1 {
   letter-spacing: -0.035em;
 }
 
-.add,
 .current-action button {
   min-height: 45px;
   display: inline-flex;
@@ -145,7 +159,7 @@ h1 {
   font-weight: 600;
   cursor: pointer;
 }
-.header-actions { display: flex; gap: 8px; }.secondary-add { width: 45px; min-height: 45px; display: grid; place-items: center; border: 1px solid var(--hairline); border-radius: 12px; background: var(--control-fill); color: var(--muted); }.group-strip { display: flex; gap: 7px; padding: 14px 0 0; overflow-x: auto; }.group-strip button { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--hairline); border-radius: var(--radius-full); background: var(--control-fill); color: var(--muted); font-size: 11px; white-space: nowrap; }
+.header-actions { display: flex; gap: 8px; }.group-strip { display: flex; gap: 7px; padding: 14px 0 0; overflow-x: auto; }.group-strip button { min-width: 0; min-height: 44px; display: grid; grid-template-columns: 16px minmax(0, 1fr) 12px; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--muted); font-size: var(--text-xs); text-align: left; }.group-strip button span { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.group-icon { color: var(--muted); }
 
 .topic-layout {
   display: grid;
@@ -163,9 +177,9 @@ h1 {
 .topic-list button {
   width: 100%;
   min-height: 70px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 18px;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 12px 10px 12px 13px;
   border: 0;
@@ -186,12 +200,15 @@ h1 {
   box-shadow: var(--shadow-sm);
 }
 
-.topic-list span {
+.topic-copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
+
+.topic-identity { width: 20px; height: 20px; display: grid; place-items: center; color: var(--list-accent); }
+.topic-chevron { grid-column: 3; flex: 0 0 18px; color: var(--muted); }
 
 .topic-list strong,
 .topic-list small {
@@ -225,10 +242,12 @@ h1 {
   justify-content: space-between;
   gap: 16px;
 }
-.topic-actions { display: flex; gap: 4px; }.topic-actions button { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: var(--radius-md); background: var(--control-fill); color: var(--muted); }.topic-actions button:hover { color: var(--accent); }
+.detail-heading > div:first-child { min-width: 0; }
+.topic-actions { flex: 0 0 auto; display: flex; gap: 4px; }
 
 .detail-heading h2 {
   margin: 0 0 8px;
+  overflow-wrap: anywhere;
   font-size: 25px;
   font-weight: 650;
 }
@@ -335,6 +354,7 @@ h3 {
 .timeline-item strong {
   font-size: 13px;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .timeline-item .blocker {
@@ -355,7 +375,7 @@ h3 {
     align-items: flex-start;
     flex-direction: column;
   }
-  .header-actions { width: 100%; }.add { flex: 1; justify-content: center; }
+  .header-actions { width: 100%; justify-content: flex-end; }
 
   .topic-layout {
     display: block;

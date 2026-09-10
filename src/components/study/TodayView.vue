@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { AlertCircle, ArrowDown, ArrowRight, ArrowUp, Check, CheckCircle2, ChevronRight, Clock3, GripVertical, Inbox, ListTodo, SlidersHorizontal } from '@lucide/vue'
 import type { EntityRef } from '../../domain/capabilities/types'
 import QuickAddComposer from './QuickAddComposer.vue'
+import IconButton from '../ui/IconButton.vue'
 
 export interface TodayTaskItem {
   id: string
@@ -159,8 +160,8 @@ function reasonLabel(reason: NonNullable<TodayTaskItem['reasons']>[number]) {
           <button class="order-open" @click="emit('open', task.id)"><small>{{ task.topic }}</small><strong>{{ task.title }}</strong></button>
           <span v-if="task.isActive" class="active-tag">学习中</span>
           <div v-else class="move-buttons">
-            <button :disabled="index === (actionable[0]?.isActive ? 1 : 0)" :aria-label="`上移 ${task.title}`" @click="moveTask(task.id, -1)"><ArrowUp :size="17" /></button>
-            <button :disabled="index === actionable.length - 1" :aria-label="`下移 ${task.title}`" @click="moveTask(task.id, 1)"><ArrowDown :size="17" /></button>
+            <IconButton :label="`上移 ${task.title}`" :disabled="index === (actionable[0]?.isActive ? 1 : 0)" @click="moveTask(task.id, -1)"><ArrowUp /></IconButton>
+            <IconButton :label="`下移 ${task.title}`" :disabled="index === actionable.length - 1" @click="moveTask(task.id, 1)"><ArrowDown /></IconButton>
           </div>
         </li>
       </ol>

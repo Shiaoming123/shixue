@@ -46,7 +46,9 @@ function requestClose(reason: OverlayCloseReason) {
           :aria-label="placement === 'inline' ? undefined : label"
           :tabindex="placement === 'inline' ? undefined : -1"
         >
-          <slot :close="requestClose" />
+          <header v-if="$slots.header" class="sheet-header"><slot name="header" :close="requestClose" /></header>
+          <div class="sheet-body"><slot :close="requestClose" /></div>
+          <footer v-if="$slots.footer" class="sheet-footer"><slot name="footer" :close="requestClose" /></footer>
         </section>
       </div>
     </Transition>
@@ -68,20 +70,23 @@ function requestClose(reason: OverlayCloseReason) {
 }
 
 .sheet-panel {
-  width: min(100%, 520px);
+  width: min(100%, 600px);
   max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: var(--space-6);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
   border: 1px solid var(--hairline);
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-xl);
   outline: 0;
   background: var(--material-regular);
   box-shadow: var(--shadow-lg);
 }
 
-.sheet-panel--sm { width: min(100%, 420px); }
-.sheet-panel--lg { width: min(100%, 660px); }
+.sheet-panel--sm { width: min(100%, 440px); }
+.sheet-panel--lg { width: min(100%, 760px); }
+.sheet-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px; }
+.sheet-header { padding: 18px 22px 14px; border-bottom: 1px solid var(--hairline); }
+.sheet-footer { padding: 14px 22px 18px; border-top: 1px solid var(--hairline); }
 
 .sheet-layer--right { align-items: stretch; justify-content: flex-end; padding: 0; }
 .sheet-panel--right {
@@ -95,6 +100,7 @@ function requestClose(reason: OverlayCloseReason) {
   border-width: 0 0 0 1px;
   border-radius: 0;
 }
+.sheet-panel--right .sheet-body, .sheet-panel--inline .sheet-body { padding: 0; }
 
 .sheet-layer--inline { position: static; display: contents; padding: 0; background: none; backdrop-filter: none; }
 .sheet-panel--inline {
@@ -134,7 +140,7 @@ function requestClose(reason: OverlayCloseReason) {
     position: relative;
     width: 100%;
     max-height: 94dvh;
-    padding: 34px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+    padding: 0;
     border-width: 1px 0 0;
     border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   }
@@ -149,6 +155,7 @@ function requestClose(reason: OverlayCloseReason) {
     border-radius: var(--radius-full);
     background: color-mix(in srgb, var(--muted) 32%, transparent);
   }
+  .sheet-panel--responsive .sheet-body { padding: 34px 20px calc(24px + env(safe-area-inset-bottom, 0px)); }
   .sheet-panel--right { width: 100%; border-left: 0; }
 }
 

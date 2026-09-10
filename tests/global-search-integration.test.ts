@@ -7,7 +7,7 @@ const review = readFileSync(new URL('../src/components/study/ReviewView.vue', im
 
 test('App exposes one global search overlay from desktop, mobile, and Ctrl or Command K', () => {
   assert.match(app, /<AppSidebar\b[^>]*@search="openGlobalSearch"/)
-  assert.match(app, /class="mobile-actions"[\s\S]*aria-label="全局搜索"/)
+  assert.match(app, /class="mobile-actions"[\s\S]*<IconButton label="全局搜索"/)
   assert.match(app, /<GlobalSearchDialog\b[^>]*v-model:open="globalSearchOpen"/)
   assert.match(app, /\(event\.ctrlKey \|\| event\.metaKey\)/)
   assert.match(app, /event\.key\.toLocaleLowerCase\(\) !== 'k'/)

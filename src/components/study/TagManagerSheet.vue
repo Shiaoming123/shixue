@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { Archive, Check, Pencil, Plus, Tags, X } from '@lucide/vue'
 import type { Tag } from '../../domain/workspace/types'
 import Sheet from '../ui/Sheet.vue'
+import IconButton from '../ui/IconButton.vue'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -69,7 +70,7 @@ defineExpose({ created, renamed })
     <div class="tag-manager">
       <header>
         <div><span><Tags :size="17" />整理学习标签</span><h2>管理标签</h2><p>标签可跨清单整理任务与学习证据；归档后历史关联仍会保留。</p></div>
-        <button type="button" class="icon-button" aria-label="关闭标签管理" title="关闭" @click="emit('close')"><X :size="19" /></button>
+        <IconButton class="icon-button" label="关闭标签管理" @click="emit('close')"><X /></IconButton>
       </header>
 
       <form class="create-row" @submit.prevent="submitCreate">
@@ -84,14 +85,14 @@ defineExpose({ created, renamed })
           <li v-for="tag in activeTags" :key="tag.id">
             <form v-if="editingId === tag.id" class="rename-row" @submit.prevent="submitRename(tag)">
               <input v-model="editingTitle" :aria-label="`重命名标签 ${tag.title}`" maxlength="40" autocomplete="off" autofocus />
-              <button type="submit" class="icon-button primary" :disabled="busy || !editingTitle.trim() || editingTitle.trim() === tag.title" aria-label="保存标签名称"><Check :size="17" /></button>
-              <button type="button" class="icon-button" aria-label="取消重命名" @click="cancelRename"><X :size="17" /></button>
+              <IconButton type="submit" class="icon-button primary" label="保存标签名称" :disabled="busy || !editingTitle.trim() || editingTitle.trim() === tag.title"><Check /></IconButton>
+              <IconButton class="icon-button" label="取消重命名" @click="cancelRename"><X /></IconButton>
             </form>
             <template v-else>
               <span class="tag-title">{{ tag.title }}</span>
               <div class="row-actions">
-                <button type="button" class="icon-button" :disabled="busy" :aria-label="`重命名标签 ${tag.title}`" title="重命名" @click="beginRename(tag)"><Pencil :size="16" /></button>
-                <button type="button" class="icon-button archive" :disabled="busy" :aria-label="`归档标签 ${tag.title}`" title="归档" @click="emit('archive', tag.id)"><Archive :size="16" /></button>
+                <IconButton class="icon-button" :label="`重命名标签 ${tag.title}`" :disabled="busy" :icon-size="16" @click="beginRename(tag)"><Pencil /></IconButton>
+                <IconButton class="icon-button archive" :label="`归档标签 ${tag.title}`" variant="destructive" :disabled="busy" :icon-size="16" @click="emit('archive', tag.id)"><Archive /></IconButton>
               </div>
             </template>
           </li>

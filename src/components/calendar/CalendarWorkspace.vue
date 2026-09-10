@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { AlertTriangle } from '@lucide/vue'
 import type { CalendarInteractionCommand } from './use-calendar-drag.ts'
 import { layoutTimedItems } from '../../domain/calendar/layout.ts'
@@ -8,14 +8,16 @@ import { queryCalendar, type CalendarFilters } from '../../domain/calendar/query
 import { calendarRange, type CalendarView } from '../../domain/calendar/range.ts'
 import { calendarTimedTarget, type CalendarTargetClock } from '../../domain/calendar/target.ts'
 import { resolveCalendarMode } from '../../domain/calendar/view.ts'
+import { groupCalendarPlanningTasks } from '../../domain/calendar/plan.ts'
 import type { CommandEnvelope } from '../../domain/capabilities/types.ts'
 import type { Task, WorkspaceStateV4 } from '../../domain/workspace/types.ts'
 import Button from '../ui/Button.vue'
-import Dialog from '../ui/Dialog.vue'
 import type { CalendarCreateSlot, CalendarSlot } from './calendar-slot'
+import DateTimePicker from '../ui/DateTimePicker.vue'
 import Input from '../ui/Input.vue'
 import Listbox from '../ui/Listbox.vue'
 import Popover from '../ui/Popover.vue'
+import TimePicker from '../ui/TimePicker.vue'
 import CalendarToolbar from './CalendarToolbar.vue'
 import TimeGrid from './TimeGrid.vue'
 import MonthGrid from './MonthGrid.vue'
@@ -26,6 +28,7 @@ import {
   calendarCommandForPreview,
   durationMinutes,
   calendarItemInteractive,
+  filterUnscheduledTasks,
   type CalendarDragPreview,
 } from './use-calendar-drag.ts'
 import { calendarDeadlineConflict } from './calendar-conflicts.ts'
@@ -53,11 +56,18 @@ const lastDesktopMode = ref<CalendarView>(props.initialMode)
 const viewportWidth = ref(initialWidth)
 const selectedKey = ref('')
 const createSlot = ref<CalendarSlot | null>(null)
-function chooseSlot(kind: 'task' | 'event') {
-  const slot = createSlot.value
-  createSlot.value = null
-  if (slot) emit('create-slot', { ...slot, kind })
-}
+const contextOpen = ref(false)
+const quickEventOpen = ref(false)
+const quickTitleInput = ref<HTMLInputElement | null>(null)
+let quickEventReturnFocus: HTMLElement | null = null
+const quickTitle = ref('')
+const quickDate = ref('')
+const quickStart = ref('09:00')
+const quickEnd = ref('09:30')
+const quickEndDate = ref('')
+const quickStartValid = ref(true)
+const quickEndValid = ref(true)
+const quickSourceId = ref('')
 const statusMessage = ref('')
 const pendingCommand = ref<{ command: CalendarInteractionCommand; source: CommandEnvelope['source']; message: string } | null>(null)
 const timeGrid = ref<InstanceType<typeof TimeGrid> | null>(null)
@@ -70,6 +80,7 @@ const priorityOptions = [{ value: 'all', label: '所有优先级' }, { value: 'h
 const statusOptions = [{ value: 'all', label: '全部状态' }, { value: 'active', label: '未完成' }, { value: 'completed', label: '已完成' }]
 const tagOptions = computed(() => [{ value: '', label: '所有标签' }, ...(props.workspace?.tags ?? []).map((tag) => ({ value: tag.id, label: tag.title }))])
 const hasFilters = computed(() => search.value || tagId.value || priority.value !== 'all' || status.value !== 'all')
+const quickSourceOptions = computed(() => (props.workspace?.calendarSources ?? []).filter((source) => source.provider === 'local' && source.permission === 'write' && source.archivedAt === null).map((source) => ({ value: source.id, label: source.title })))
 let compactMedia: MediaQueryList | undefined
 
 const compact = computed(() => viewportWidth.value <= 819)
@@ -83,18 +94,45 @@ const timedItems = computed(() => layoutTimedItems(items.value))
 const conflictItems = computed(() => layoutTimedItems(results.value.allItems))
 const titles = computed(() => new Map([...(props.workspace?.tasks ?? []), ...(props.workspace?.calendarEvents ?? [])].map((item) => [item.id, item.title])))
 const defaultDropDuration = computed(() => props.defaultEstimateMinutes ?? 30)
+const unscheduledCount = computed(() => groupCalendarPlanningTasks(results.value.tasks, filterUnscheduledTasks(results.value.tasks), range.value, props.now).reduce((total, group) => total + group.tasks.length, 0))
 const anchorLabel = computed(() => {
   if (effectiveMode.value === 'week' || effectiveMode.value === 'agenda') return `${shortDate(days.value[0])}–${shortDate(days.value[days.value.length - 1])}`
   const options = effectiveMode.value === 'month' ? { year: 'numeric', month: 'long' } as const : { month: 'long', day: 'numeric' } as const
   return new Intl.DateTimeFormat('zh-CN', options).format(new Date(`${anchor.value}T00:00:00`))
 })
 
-const emit = defineEmits<{ 'suggest-task': [taskId: string]; 'desktop-mode-selected': [mode: CalendarView]; open: [taskId: string, occurrenceId: string | null]; 'open-event': [eventId: string, originalStart: string]; 'create-event': [date: string]; 'create-slot': [value: CalendarCreateSlot]; 'toggle-task': [value: { taskId: string; occurrenceId: string | null }] }>()
+export interface CalendarQuickEventDraft { title: string; date: string; startTime: string; endTime: string; sourceId: string; endDate: string }
+const emit = defineEmits<{ 'suggest-task': [taskId: string]; 'desktop-mode-selected': [mode: CalendarView]; open: [taskId: string, occurrenceId: string | null]; 'open-event': [eventId: string, originalStart: string]; 'create-event': [date: string]; 'create-slot': [value: CalendarCreateSlot]; 'quick-create-event': [draft: CalendarQuickEventDraft]; 'expand-event': [draft: CalendarQuickEventDraft]; 'toggle-task': [value: { taskId: string; occurrenceId: string | null }] }>()
 function openItem(item: CalendarItem) {
   if (item.eventId !== undefined) emit('open-event', item.eventId, item.originalStart)
   else emit('open', item.taskId, item.occurrenceId)
 }
 function clearFilters() { search.value = ''; tagId.value = ''; priority.value = 'all'; status.value = 'all' }
+function quickDraft(): CalendarQuickEventDraft { return { title: quickTitle.value.trim(), date: quickDate.value, startTime: quickStart.value, endDate: quickEndDate.value, endTime: quickEnd.value, sourceId: quickSourceId.value } }
+function openQuickEvent(slot: CalendarSlot) {
+  if (typeof document !== 'undefined' && typeof HTMLElement !== 'undefined' && document.activeElement instanceof HTMLElement) quickEventReturnFocus = document.activeElement
+  createSlot.value = slot
+  quickTitle.value = ''
+  quickDate.value = slot.date
+  quickStart.value = clockLabel(slot.minute)
+  const endMinute = slot.minute + slot.duration
+  quickEnd.value = clockLabel(endMinute % 1440)
+  quickEndDate.value = addDays(slot.date, Math.floor(endMinute / 1440))
+  quickStartValid.value = true; quickEndValid.value = true
+  if (!quickSourceOptions.value.some(({ value }) => value === quickSourceId.value)) quickSourceId.value = quickSourceOptions.value[0]?.value ?? ''
+  quickEventOpen.value = true
+  nextTick(() => quickTitleInput.value?.focus())
+}
+function openToolbarEvent() { openQuickEvent({ date: anchor.value, minute: 9 * 60, duration: defaultDropDuration.value }) }
+function closeQuickEvent() {
+  quickEventOpen.value = false; createSlot.value = null
+  const target = quickEventReturnFocus
+  quickEventReturnFocus = null
+  nextTick(() => target?.focus({ preventScroll: true }))
+}
+function createTaskFromSlot() { const slot = createSlot.value; closeQuickEvent(); if (slot) emit('create-slot', { ...slot, kind: 'task' }) }
+function saveQuickEvent() { if (!quickTitle.value.trim() || !quickDate.value || !quickSourceId.value || !quickStartValid.value || !quickEndValid.value) return; emit('quick-create-event', quickDraft()) }
+function openFullEventEditor() { emit('expand-event', quickDraft()) }
 
 const drag = createCalendarDragController(async (command) => {
   try {
@@ -189,6 +227,7 @@ async function finishPointer(event: PointerEvent) {
 }
 
 function cancelPointer(event?: PointerEvent) {
+  if (quickEventOpen.value) { closeQuickEvent(); return }
   timeGrid.value?.cancelBlank()
   if (event) drag.cancel(event)
   else drag.cancelActive()
@@ -236,14 +275,14 @@ function addDays(value: string, days: number) { const [year, month, day] = value
 function addMonths(value: string, months: number) { const [year, month, day] = value.split('-').map(Number); const next = new Date(Date.UTC(year, month - 1 + months, 1)); const lastDay = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate(); next.setUTCDate(Math.min(day, lastDay)); return next.toISOString().slice(0, 10) }
 function localDate(date: Date) { return date.toLocaleDateString('sv-SE') }
 function shortDate(value?: string) { if (!value) return ''; const date = new Date(`${value}T00:00:00`); return `${date.getMonth() + 1}/${date.getDate()}` }
+function clockLabel(minute: number) { const normalized = Math.max(0, Math.min(1439, minute)); return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}` }
+defineExpose({ openToolbarEvent, closeQuickEvent })
 </script>
 
 <template>
   <section class="calendar-workspace" @pointermove="updatePointer" @pointerup="finishPointer" @pointercancel="cancelPointer($event)" @lostpointercapture="cancelPointer($event)" @keydown.esc="cancelPointer()">
-    <CalendarToolbar :mode="effectiveMode" :anchor="anchor" :anchor-label="anchorLabel" :compact="compact" @update:mode="setMode" @update:anchor="anchor = $event" @previous="moveAnchor(-1)" @next="moveAnchor(1)" @today="selectToday" />
-    <div class="calendar-workspace__tools">
-      <slot name="quick-add" :anchor="anchor" />
-      <Button variant="secondary" size="sm" @click="emit('create-event', anchor)">新建日程</Button>
+    <CalendarToolbar :mode="effectiveMode" :anchor="anchor" :anchor-label="anchorLabel" :compact="compact" :unscheduled-count="unscheduledCount" :context-open="contextOpen" @update:mode="setMode" @update:anchor="anchor = $event" @previous="moveAnchor(-1)" @next="moveAnchor(1)" @today="selectToday" @new-event="openToolbarEvent" @toggle-context="contextOpen = !contextOpen">
+      <template #filters>
       <Popover v-model:open="filtersOpen" mobile-sheet mobile-sheet-label="筛选日历">
         <template #trigger="{ triggerProps }"><Button v-bind="triggerProps" variant="ghost" size="sm">{{ hasFilters ? '筛选（已启用）' : '筛选' }}</Button></template>
         <template #default="{ close }"><div class="calendar-workspace__filters">
@@ -255,8 +294,17 @@ function shortDate(value?: string) { if (!value) return ''; const date = new Dat
         <Button variant="primary" size="sm" @click="close('select')">查看结果</Button>
       </div></template>
       </Popover>
-    </div>
-    <UnscheduledTray :tasks="results.tasks" :anchor="anchor" :range="range" :now="now" :default-duration="defaultDropDuration" :target-offset="targetOffset" :timezone="displayTimezone" @suggest-task="emit('suggest-task', $event)" @pointer-start="beginTrayPointer" @command="requestCommand" @open="emit('open', $event, null)" />
+      </template>
+    </CalendarToolbar>
+    <aside v-if="contextOpen" id="calendar-context" class="calendar-workspace__context" aria-label="日历上下文"><slot name="context" /><UnscheduledTray :tasks="results.tasks" :anchor="anchor" :range="range" :now="now" :default-duration="defaultDropDuration" :target-offset="targetOffset" :timezone="displayTimezone" @suggest-task="emit('suggest-task', $event)" @pointer-start="beginTrayPointer" @command="requestCommand" @open="emit('open', $event, null)" /></aside>
+    <form v-if="quickEventOpen" class="calendar-workspace__quick-event" role="dialog" aria-label="快速新建日程" @submit.prevent="saveQuickEvent" @keydown.esc.stop="closeQuickEvent">
+      <header><strong>新建日程</strong><Button variant="ghost" size="sm" type="button" @click="closeQuickEvent">关闭</Button></header>
+      <label><span>标题</span><input ref="quickTitleInput" v-model="quickTitle" required aria-label="日程标题" /></label>
+      <DateTimePicker v-model="quickDate" label="日期" required />
+      <div class="calendar-workspace__quick-times"><TimePicker v-model="quickStart" v-model:valid="quickStartValid" label="开始" /><TimePicker v-model="quickEnd" v-model:valid="quickEndValid" :label="quickEndDate === quickDate ? '结束' : '结束（次日）'" /></div>
+      <Listbox v-model="quickSourceId" :options="quickSourceOptions" label="日历" />
+      <footer><Button type="button" variant="ghost" @click="createTaskFromSlot">创建任务</Button><Button type="button" variant="ghost" @click="openFullEventEditor">更多选项</Button><Button type="submit" variant="primary" :disabled="!quickTitle.trim() || !quickSourceId || !quickStartValid || !quickEndValid">保存</Button></footer>
+    </form>
     <p v-if="hasFilters && !items.length" class="calendar-workspace__empty" role="status">当前日期范围没有匹配的安排，可清除筛选或查看未安排任务。</p>
     <div v-if="pendingCommand" class="calendar-workspace__confirmation" role="alert">
       <AlertTriangle :size="17" aria-hidden="true" /><span>{{ pendingCommand.message }}</span>
@@ -264,20 +312,18 @@ function shortDate(value?: string) { if (!value) return ''; const date = new Dat
       <Button variant="primary" size="sm" @click="confirmPending">仍然安排</Button>
     </div>
     <p class="sr-only" aria-live="polite">{{ statusMessage }}{{ drag.preview.value?.conflict ? ` ${drag.preview.value.conflict}` : '' }}</p>
-    <TimeGrid v-if="effectiveMode === 'day' || effectiveMode === 'week'" ref="timeGrid" :days="days" :items="items" :timed-items="timedItems" :conflict-items="conflictItems" :titles="titles" :selected-key="selectedKey" :preview="drag.preview.value" :now="now" :target-clock="targetClock" @select="selectedKey = $event" @pointer-start="beginItemPointer" @command="requestCommand" @open="openItem" @blank-slot="createSlot = $event" @toggle-task="emit('toggle-task', $event)" />
+    <TimeGrid v-if="effectiveMode === 'day' || effectiveMode === 'week'" ref="timeGrid" :days="days" :items="items" :timed-items="timedItems" :conflict-items="conflictItems" :titles="titles" :selected-key="selectedKey" :preview="drag.preview.value" :now="now" :target-clock="targetClock" @select="selectedKey = $event" @pointer-start="beginItemPointer" @command="requestCommand" @open="openItem" @blank-slot="openQuickEvent" @toggle-task="emit('toggle-task', $event)" />
     <MonthGrid v-else-if="effectiveMode === 'month'" :days="days" :anchor="anchor" :week-starts-on="weekStartsOn" :items="items" :titles="titles" @select-date="anchor = $event" @open="openItem" @toggle-task="emit('toggle-task', $event)" />
     <AgendaView v-else :items="items" :titles="titles" @open="openItem" @toggle-task="emit('toggle-task', $event)" />
-    <Dialog :open="Boolean(createSlot)" title="创建安排" :description="createSlot ? `${createSlot.date} ${String(Math.floor(createSlot.minute / 60)).padStart(2, '0')}:${String(createSlot.minute % 60).padStart(2, '0')} · ${createSlot.duration} 分钟` : ''" size="sm" @close="createSlot = null">
-      <p>把这段时间用于任务，或创建独立日程。</p>
-      <template #footer><Button @click="createSlot = null">取消</Button><Button @click="chooseSlot('task')">创建任务</Button><Button variant="primary" @click="chooseSlot('event')">创建日程</Button></template>
-    </Dialog>
   </section>
 </template>
 
 <style scoped>
-.calendar-workspace { width: 100%; min-width: 0; height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
-.calendar-workspace__tools { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--hairline); }
-.calendar-workspace__tools :deep(.quick-add-composer) { flex: 1 1 280px; min-width: 0; margin: 0; }
+.calendar-workspace { position: relative; width: 100%; min-width: 0; height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
+.calendar-workspace__context { position: absolute; z-index: 8; top: 56px; right: 0; bottom: 0; width: min(340px, 100%); overflow-y: auto; border-left: 1px solid var(--hairline); background: var(--surface); box-shadow: var(--shadow-lg); }
+.calendar-workspace__quick-event { position: absolute; z-index: 9; top: 64px; right: 16px; width: min(420px, calc(100% - 32px)); display: grid; gap: 12px; padding: 16px; border: 1px solid var(--hairline); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-lg); }
+.calendar-workspace__quick-event header, .calendar-workspace__quick-event footer { display: flex; align-items: center; gap: 8px; }.calendar-workspace__quick-event header { justify-content: space-between; }.calendar-workspace__quick-event footer { justify-content: flex-end; }.calendar-workspace__quick-event label > span { display: block; margin-bottom: 6px; color: var(--muted); font-size: var(--text-xs); }.calendar-workspace__quick-event input { width: 100%; min-height: 40px; padding: 0 10px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font: inherit; }.calendar-workspace__quick-event input:focus { outline: 0; border-color: var(--accent); box-shadow: var(--focus-ring); }.calendar-workspace__quick-times { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.calendar-workspace__quick-times :deep(.time-options), .calendar-workspace__quick-times :deep(.note) { display: none; }.calendar-workspace__quick-times :deep(.time-picker) { padding-top: 0; border-top: 0; }
 .calendar-workspace__filters { display: grid; width: min(360px, calc(100vw - 32px)); padding: 12px; gap: 12px; }
 .calendar-workspace__empty { margin: 0; padding: 8px 16px; color: var(--muted); font-size: var(--text-xs); }
 .calendar-workspace__confirmation { display: flex; align-items: center; gap: var(--space-2); padding: 8px 22px; border-bottom: 1px solid color-mix(in srgb, var(--danger) 24%, var(--hairline)); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); color: var(--text); font-size: var(--text-sm); }
@@ -286,8 +332,8 @@ function shortDate(value?: string) { if (!value) return ''; const date = new Dat
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 819px) {
   .calendar-workspace { height: calc(100% - 84px - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
-  .calendar-workspace__tools :deep(.quick-add-composer) { order: -1; flex-basis: 100%; }
-  .calendar-workspace__tools :deep(.btn) { min-height: 44px; }
+  .calendar-workspace__context { top: 56px; width: 100%; border-left: 0; }
+  .calendar-workspace__quick-event { top: 60px; right: 8px; width: calc(100% - 16px); }
   .calendar-workspace__confirmation { flex-wrap: wrap; padding: 8px 16px; }
   .calendar-workspace__confirmation > span { flex-basis: calc(100% - 28px); }
   .calendar-workspace__confirmation :deep(.btn) { min-height: 44px; }

@@ -211,6 +211,8 @@ function migrateStudyV2(study: StudyState, migratedAt: string): WorkspaceStateV3
       id: topic.id,
       groupId: topic.groupId ?? null,
       title: topic.title,
+      ...(topic.icon ? { icon: topic.icon } : {}),
+      ...(topic.color ? { color: topic.color } : {}),
       position: index + 1,
       goal: topic.goal,
       successCriteria: [...topic.successCriteria],

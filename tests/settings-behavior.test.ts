@@ -523,7 +523,7 @@ test('denied preference access does not prevent workspace initialization', async
     reportSmokePhase: async () => {}, runNativeAndroidPersistenceSmoke: async () => null, capabilityService: {},
     reportStorageError() { assert.fail('preference failure must not become a domain-storage failure') }, loading,
     cloudAvailable: false, runtime: { platform: 'web' }, initializeDeviceCapabilities: async () => {}, initializeReminders: async () => {}, clockTimer: undefined, reminderTimer: undefined, cloudTimer: undefined, setInterval: () => 0,
-    disposed: false,
+    disposed: false, settingsWindow: false,
   }
   await new Function(...Object.keys(ports), `${js}; return mounted();`)(...Object.values(ports))
   assert.equal(loaded, 1)
@@ -542,7 +542,7 @@ test('unmount during native initialization cannot install timers after teardown'
     localStorage: { getItem: () => null }, notify() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }), appearanceMedia: undefined, systemDark: ref(false), onAppearanceChange() {},
     compactMedia: undefined, compact: ref(false), onCompactChange() {}, refreshState: async () => {}, state: ref({ topics: [] }), selectedTopicId: ref(''), showFocus: ref(false), activeSession: ref(null),
     reportSmokePhase: async () => {}, runNativeAndroidPersistenceSmoke: async () => null, capabilityService: {},
-    reportStorageError(error: unknown) { throw error }, loading: ref(true), cloudAvailable: false, runtime: { platform: 'desktop' },
+    reportStorageError(error: unknown) { throw error }, loading: ref(true), cloudAvailable: false, runtime: { platform: 'desktop' }, settingsWindow: false,
   }
   const result = await new Function(...Object.keys(ports), `
     let disposed = false, reminderInitializations = 0, timers = 0
@@ -553,7 +553,7 @@ test('unmount during native initialization cannot install timers after teardown'
     ${js}
     return mounted().then(() => ({ reminderInitializations, timers }))
   `)(...Object.values(ports))
-  assert.deepEqual(result, { reminderInitializations: 1, timers: 0 })
+  assert.deepEqual(result, { reminderInitializations: 0, timers: 0 })
 })
 
 test('failed reminder preference write cannot turn the visible switch on', async () => {

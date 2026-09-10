@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import Tooltip from './Tooltip.vue'
 
 const props = withDefaults(defineProps<{
   modelValue: string
@@ -102,11 +103,11 @@ function onDayKeydown(event: KeyboardEvent, value: string) {
       <button v-if="modelValue" type="button" class="clear" :disabled="disabled" @click="emit('update:modelValue', '')">清除</button>
     </div>
     <div class="month-header">
-      <button type="button" aria-label="上一年" :disabled="disabled" @click="moveYear(-1)">«</button>
-      <button type="button" aria-label="上个月" :disabled="disabled" @click="moveMonth(-1)">‹</button>
+      <Tooltip label="上一年"><template #trigger="{ triggerProps }"><button v-bind="triggerProps" type="button" aria-label="上一年" :disabled="disabled" @click="moveYear(-1)">«</button></template></Tooltip>
+      <Tooltip label="上个月"><template #trigger="{ triggerProps }"><button v-bind="triggerProps" type="button" aria-label="上个月" :disabled="disabled" @click="moveMonth(-1)">‹</button></template></Tooltip>
       <strong aria-live="polite">{{ monthLabel }}</strong>
-      <button type="button" aria-label="下个月" :disabled="disabled" @click="moveMonth(1)">›</button>
-      <button type="button" aria-label="下一年" :disabled="disabled" @click="moveYear(1)">»</button>
+      <Tooltip label="下个月"><template #trigger="{ triggerProps }"><button v-bind="triggerProps" type="button" aria-label="下个月" :disabled="disabled" @click="moveMonth(1)">›</button></template></Tooltip>
+      <Tooltip label="下一年"><template #trigger="{ triggerProps }"><button v-bind="triggerProps" type="button" aria-label="下一年" :disabled="disabled" @click="moveYear(1)">»</button></template></Tooltip>
     </div>
     <div ref="calendarElement" class="calendar" role="grid" :aria-label="`${monthLabel}日历`">
       <div class="calendar-row calendar-head" role="row">

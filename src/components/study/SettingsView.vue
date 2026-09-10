@@ -160,6 +160,18 @@ onMounted(() => pageTitle.value?.focus())
 
 <template>
   <div class="settings-view">
+    <aside class="settings-navigation" aria-label="设置分类">
+      <strong>设置</strong>
+      <nav>
+        <a href="#settings-appearance"><Eye :size="17" />外观</a>
+        <a href="#settings-navigation"><PanelLeft :size="17" />导航</a>
+        <a href="#settings-input"><FileJson :size="17" />输入与操作</a>
+        <a href="#settings-reminders"><Bell :size="17" />提醒与启动</a>
+        <a href="#settings-data"><Download :size="17" />数据</a>
+        <a v-if="cloudAvailable" href="#settings-cloud"><Cloud :size="17" />同步</a>
+      </nav>
+    </aside>
+    <main class="settings-content">
     <header class="page-header">
       <div>
         <h1 ref="pageTitle" tabindex="-1">设置</h1>
@@ -169,7 +181,7 @@ onMounted(() => pageTitle.value?.focus())
     </header>
 
     <div class="settings-grid">
-      <section class="settings-section settings-section--wide">
+      <section id="settings-appearance" class="settings-section settings-section--wide">
         <div class="section-title"><Eye :size="18" /><div><h2>外观与显示</h2><p>更改会立即应用到当前设备。</p></div></div>
         <div class="setting-block">
           <span class="setting-label">配色方案</span>
@@ -213,22 +225,21 @@ onMounted(() => pageTitle.value?.focus())
         </div>
       </section>
 
-      <section class="settings-section">
-        <div class="section-title"><PanelLeft :size="18" /><div><h2>侧边栏</h2><p>宽屏可自由切换显示形态。</p></div></div>
+      <section id="settings-navigation" class="settings-section">
+        <div class="section-title"><PanelLeft :size="18" /><div><h2>侧边栏</h2><p>桌面窗口可自由切换显示形态。</p></div></div>
         <div class="setting-block sidebar-mode-control">
           <span class="setting-label">默认显示</span>
           <div class="segmented" role="group" aria-label="侧边栏默认显示">
             <button type="button" :class="{ active: sidebarDisplayMode === 'expanded' }" :aria-pressed="sidebarDisplayMode === 'expanded'" @click="emit('setSidebarDisplayMode', 'expanded')"><PanelLeft :size="17" />展开文字</button>
             <button type="button" :class="{ active: sidebarDisplayMode === 'icons' }" :aria-pressed="sidebarDisplayMode === 'icons'" @click="emit('setSidebarDisplayMode', 'icons')"><PanelLeft :size="17" />仅图标</button>
           </div>
-          <p class="medium-mode-note">当前窗口使用图标侧栏；展开偏好会在宽屏生效。</p>
         </div>
         <button class="action-row" type="button" :disabled="!sidebarOrderCustomized" @click="emit('resetSidebarOrder')">
           <RotateCcw :size="18" /><span><strong>恢复默认菜单顺序</strong><small>{{ sidebarOrderCustomized ? '清除当前拖动排序结果' : '当前已使用默认顺序' }}</small></span>
         </button>
       </section>
 
-      <section class="settings-section">
+      <section id="settings-input" class="settings-section">
         <div class="section-title"><FileJson :size="18" /><div><h2>快速新增</h2><p>控制输入解析后的默认行为。</p></div></div>
         <Switch :model-value="quickAddRemoveRecognizedText" label="移除已识别文字" description="提交时从标题中移除已确认的日期、优先级等文字" @update:model-value="emit('setQuickAddRemoveRecognizedText', $event)" />
         <div class="setting-row">
@@ -237,7 +248,7 @@ onMounted(() => pageTitle.value?.focus())
         </div>
       </section>
 
-      <section class="settings-section">
+      <section id="settings-reminders" class="settings-section">
         <div class="section-title"><Bell :size="18" /><div><h2>提醒</h2><p>通知内容保持最少披露。</p></div></div>
         <Switch :model-value="remindersEnabled" :disabled="reminderBusy" label="任务提醒" :description="remindersAvailable ? '系统通知会显示任务标题；完成与稍后提醒在应用内操作' : '仅应用内提醒；浏览器页面保持打开时可用'" @update:model-value="emit('setReminders', $event)" />
         <button v-if="remindersAvailable" type="button" class="action-row" :disabled="reminderBusy" @click="emit('testNotification')"><Bell :size="18" /><span>测试系统通知</span></button>
@@ -255,7 +266,7 @@ onMounted(() => pageTitle.value?.focus())
         <p v-if="deviceMessage" role="status">{{ deviceMessage }}</p>
       </section>
 
-      <section class="settings-section settings-section--wide">
+      <section id="settings-data" class="settings-section settings-section--wide">
         <div class="section-title"><Download :size="18" /><div><h2>本地数据</h2><p>备份、迁移或恢复这台设备上的记录。</p></div></div>
         <div class="data-actions">
           <button class="action-row" type="button" :disabled="!workspace" @click="emit('exportJson')"><FileJson :size="18" /><span><strong>导出 JSON 备份</strong><small>完整备份，可重新导入拾学</small></span></button>
@@ -270,7 +281,7 @@ onMounted(() => pageTitle.value?.focus())
         </div>
       </section>
 
-      <section v-if="cloudAvailable" class="settings-section settings-section--wide">
+      <section v-if="cloudAvailable" id="settings-cloud" class="settings-section settings-section--wide">
         <div class="section-title"><Cloud :size="18" /><div><h2>可选云同步</h2><p>本地记录始终是事实源。</p></div></div>
         <div v-if="cloudEmail && cloudStatus !== 'signed-out'" class="cloud-session">
           <p><strong>{{ cloudStatus === 'syncing' ? '正在同步…' : cloudStatus === 'failed' ? '同步需要重试' : '已安全登录' }}</strong><small>{{ cloudEmail }}</small></p>
@@ -285,6 +296,9 @@ onMounted(() => pageTitle.value?.focus())
         <p v-if="cloudMessage" class="cloud-message" :class="{ error: cloudStatus === 'failed' }" role="status">{{ cloudMessage }}</p>
       </section>
     </div>
+
+    <p class="privacy">拾学默认只把学习内容保存在这台设备上。只有显式配置并登录可选云同步时，学习快照才会发送到所选项目。</p>
+    </main>
 
     <Dialog v-model:open="importOpen" title="替换本地记录？" description="导入会替换全部本地记录，建议先导出备份。" role="alertdialog">
       <template v-if="importPreview">
@@ -308,18 +322,23 @@ onMounted(() => pageTitle.value?.focus())
         <Button variant="danger" :disabled="!workspace || dataBusy" @click="resetDemo">{{ dataBusy ? '正在恢复…' : '确认恢复' }}</Button>
       </template>
     </Dialog>
-    <p class="privacy">拾学默认只把学习内容保存在这台设备上。只有显式配置并登录可选云同步时，学习快照才会发送到所选项目。</p>
   </div>
 </template>
 
 <style scoped>
-.settings-view { width: min(100%, 980px); min-height: 100%; margin: 0 auto; padding: var(--space-8) var(--screen-inline) 80px; }
+.settings-view { width: min(100%, 1100px); min-height: 100%; display: grid; grid-template-columns: 224px minmax(0, 1fr); margin: 0 auto; }
+.settings-navigation { position: sticky; top: 0; align-self: start; max-height: 100dvh; overflow-y: auto; padding: 28px 16px; border-right: 1px solid var(--hairline); }
+.settings-navigation > strong { display: block; padding: 0 10px 18px; font-size: var(--text-lg); font-weight: 650; }
+.settings-navigation nav { display: grid; gap: 3px; }
+.settings-navigation a { min-height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: var(--radius-md); color: var(--muted); font-size: var(--text-sm); text-decoration: none; }
+.settings-navigation a:hover, .settings-navigation a:focus-visible { outline: 0; background: var(--control-fill); color: var(--text); }
+.settings-content { width: min(100%, 820px); min-width: 0; margin: 0 auto; padding: 28px 28px 80px; }
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-6); margin-bottom: var(--space-8); }
 .page-header h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 650; letter-spacing: -.025em; }
 .page-header p { margin: 7px 0 0; color: var(--muted); font-size: var(--text-base); line-height: 1.55; }
 .local-badge { min-height: 32px; display: inline-flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border: 1px solid var(--hairline); border-radius: var(--radius-full); background: var(--control-fill); color: var(--accent); font-size: var(--text-xs); white-space: nowrap; }
-.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
-.settings-section { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); }
+.settings-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+.settings-section { min-width: 0; scroll-margin-top: 20px; padding: 20px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--surface) 72%, transparent); }
 .settings-section--wide { grid-column: 1 / -1; }
 .section-title { display: flex; align-items: flex-start; gap: var(--space-3); padding-bottom: var(--space-4); border-bottom: 1px solid var(--hairline); }
 .section-title > svg { flex: 0 0 auto; margin-top: 2px; color: var(--accent); }
@@ -340,7 +359,6 @@ onMounted(() => pageTitle.value?.focus())
 .theme-swatches i:nth-child(2) { background: var(--preview-surface); }
 .theme-swatches i:nth-child(3) { background: var(--preview-accent); }
 .theme-card--custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-.medium-mode-note { display: none; margin: 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.5; }
 .segmented { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius-lg); background: var(--control-fill); }
 .segmented--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .segmented button { min-height: 40px; display: flex; align-items: center; justify-content: center; gap: var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--muted); font-size: var(--text-sm); }
@@ -377,7 +395,9 @@ onMounted(() => pageTitle.value?.focus())
 .cloud-message { margin: var(--space-3) 0 0; }.cloud-message.error { color: var(--danger); }
 .privacy { margin: var(--space-8) var(--space-1) 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.65; }
 @media (max-width: 819px) {
-  .settings-view { width: 100%; padding: var(--space-5) var(--screen-inline) calc(118px + env(safe-area-inset-bottom, 0px)); }
+  .settings-view { width: 100%; display: block; }
+  .settings-navigation { display: none; }
+  .settings-content { width: 100%; padding: var(--space-5) var(--screen-inline) calc(118px + env(safe-area-inset-bottom, 0px)); }
   .page-header { margin-bottom: var(--space-6); }.page-header h1 { font-size: 24px; }.page-header p { max-width: 240px; }.local-badge { display: none; }
   .settings-grid { grid-template-columns: 1fr; gap: var(--space-4); }.settings-section--wide { grid-column: auto; }
   .settings-section { padding: var(--space-4); }
@@ -385,6 +405,5 @@ onMounted(() => pageTitle.value?.focus())
   .data-actions { grid-template-columns: 1fr; }.confirm-row, .cloud-session { align-items: stretch; flex-direction: column; }.confirm-row > div, .cloud-session > div { justify-content: flex-end; }
   .cloud-form { grid-template-columns: 1fr; }.cloud-form > p { grid-column: auto; }
 }
-@media (min-width: 820px) and (max-width: 1279px) { .sidebar-mode-control .segmented { display: none; }.medium-mode-note { display: block; } }
 @media (max-width: 420px) { .setting-row { align-items: stretch; flex-direction: column; }.setting-row :deep(.listbox) { width: 100%; flex-basis: auto; }.segmented button { gap: var(--space-1); font-size: var(--text-xs); }.theme-grid { grid-template-columns: 1fr; } }
 </style>

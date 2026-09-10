@@ -8,6 +8,7 @@ import CalendarTaskLabel from './CalendarTaskLabel.vue'
 import CalendarTaskToggle from './CalendarTaskToggle.vue'
 import DatePicker from '../ui/DatePicker.vue'
 import Popover from '../ui/Popover.vue'
+import Tooltip from '../ui/Tooltip.vue'
 import TimePicker from '../ui/TimePicker.vue'
 import { calendarKeyboardCommand, calendarMenuMoveCommand, durationMinutes } from './use-calendar-drag.ts'
 import type { CalendarTargetClock } from '../../domain/calendar/target.ts'
@@ -134,7 +135,7 @@ function formatTime(item: CalendarItem) { return timePart(item) || item.displayD
 
     <Popover v-if="interactive" v-model:open="menuOpen" align="end" mobile-sheet :mobile-sheet-label="`安排 ${title}`">
       <template #trigger="{ triggerProps }">
-        <button class="calendar-item__menu" type="button" v-bind="triggerProps" :aria-label="`安排 ${title}`" :title="item.eventId ? '安排日程' : '安排任务'" @pointerdown.stop><MoreHorizontal :size="15" /></button>
+        <Tooltip :label="item.eventId ? `安排日程 ${title}` : `安排任务 ${title}`"><template #trigger="{ triggerProps: tooltipProps }"><button class="calendar-item__menu" type="button" v-bind="{ ...triggerProps, ...tooltipProps }" :aria-label="`安排 ${title}`" @pointerdown.stop><MoreHorizontal :size="15" /></button></template></Tooltip>
       </template>
       <template #default="{ close }">
         <section class="calendar-item__panel" :class="{ 'calendar-item__panel--event': item.eventId }" :aria-label="`安排 ${title}`">
@@ -155,7 +156,7 @@ function formatTime(item: CalendarItem) { return timePart(item) || item.displayD
       </template>
     </Popover>
 
-    <button v-if="interactive && item.kind === 'timed'" class="calendar-item__resize" type="button" :aria-label="`调整 ${title} 时长`" @pointerdown.stop="beginPointer($event, 'resize')"><MoveVertical :size="12" /></button>
+    <Tooltip v-if="interactive && item.kind === 'timed'" :label="`调整 ${title} 时长`"><template #trigger="{ triggerProps }"><button v-bind="triggerProps" class="calendar-item__resize" type="button" :aria-label="`调整 ${title} 时长`" @pointerdown.stop="beginPointer($event, 'resize')"><MoveVertical :size="12" /></button></template></Tooltip>
   </article>
 </template>
 

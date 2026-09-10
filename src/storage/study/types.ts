@@ -1,3 +1,5 @@
+import { isListAccent, isListIconId, type ListIconId } from '../../lib/list-appearance.ts'
+
 export const STUDY_STATE_VERSION = 2 as const
 export const LEGACY_STUDY_STATE_VERSION = 1 as const
 
@@ -30,6 +32,8 @@ export interface StudyTopic {
   id: string
   groupId?: string | null
   title: string
+  icon?: ListIconId
+  color?: string
   goal: string
   successCriteria: string[]
   weeklyTargetMinutes: number
@@ -753,6 +757,7 @@ function parseTopic(raw: unknown, index: number): StudyTopic {
     id: requireText(value.id, 'Study topic id'),
     groupId: value.groupId === undefined ? null : parseNullableText(value.groupId, 'Study topic groupId'),
     title: requireText(value.title, 'Study topic title'),
+    ...parseListAppearance(value, `Study topic ${index}`),
     goal: requireText(value.goal, 'Study topic goal'),
     successCriteria: parseTextArray(
       value.successCriteria,
@@ -766,6 +771,19 @@ function parseTopic(raw: unknown, index: number): StudyTopic {
     updatedAt: requireText(value.updatedAt, 'Study topic updatedAt'),
     archivedAt: parseNullableText(value.archivedAt, 'Study topic archivedAt'),
   }
+}
+
+function parseListAppearance(value: Record<string, unknown>, label: string): { icon?: ListIconId; color?: string } {
+  const appearance: { icon?: ListIconId; color?: string } = {}
+  if (value.icon !== undefined) {
+    if (!isListIconId(value.icon)) throw new Error(`${label} icon is invalid.`)
+    appearance.icon = value.icon
+  }
+  if (value.color !== undefined) {
+    if (!isListAccent(value.color)) throw new Error(`${label} color must use six hex digits.`)
+    appearance.color = value.color
+  }
+  return appearance
 }
 
 function parseListGroup(raw: unknown, index: number): StudyListGroup {

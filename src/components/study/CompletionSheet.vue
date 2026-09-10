@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { CheckCircle2, X } from '@lucide/vue'
 import Sheet from '../ui/Sheet.vue'
+import IconButton from '../ui/IconButton.vue'
 
 export interface CompletionPayload {
   learned: string
@@ -64,7 +65,7 @@ function submit() {
           <p>完成学习</p>
           <h2 id="completion-title">把时间变成证据</h2>
         </div>
-        <button class="close" title="关闭" aria-label="关闭" @click="emit('close')"><X :size="20" /></button>
+        <IconButton class="close" label="关闭" :icon-size="20" @click="emit('close')"><X /></IconButton>
       </header>
 
       <p class="task">{{ taskTitle }}</p>

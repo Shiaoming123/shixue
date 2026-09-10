@@ -24,5 +24,5 @@ test('global search has an accessible shortcut hint that collapses in both rail 
   assert.match(sidebar, /aria-keyshortcuts="Control\+K Meta\+K"/)
   assert.match(sidebar, /<kbd class="search-shortcut"[^>]*>Ctrl K<\/kbd>/)
   assert.match(sidebar, /\.sidebar\.icons \.search-label, \.sidebar\.icons \.search-shortcut \{[^}]*max-width: 0;[^}]*opacity: 0;/)
-  assert.match(sidebar, /@media \(min-width: 820px\) and \(max-width: 1279px\)[\s\S]*\.brand-copy, \.search-label, \.search-shortcut,[\s\S]*opacity: 0;/)
+  assert.match(sidebar, /class="mode-toggle"[\s\S]*displayMode === 'icons'/)
 })
