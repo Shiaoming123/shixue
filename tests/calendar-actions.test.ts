@@ -61,6 +61,20 @@ test('calendar shares one detail action interface and keeps its view mounted whi
   assert.match(detail, /v-if="!occurrenceId \|\| occurrenceStatus === 'pending'"/)
 })
 
+test('closing task edit dismisses the whole task rail instead of revealing detail underneath', () => {
+  const taskEditorOpen = { value: true }
+  const selectedTaskId = { value: 'task:one' }
+  const selectedOccurrenceId = { value: 'occurrence:one' }
+  const reminderError = { value: 'stale error' }
+  const close = action('closeTaskEditor', { taskEditorOpen, selectedTaskId, selectedOccurrenceId, reminderError })
+  close()
+  assert.equal(taskEditorOpen.value, false)
+  assert.equal(selectedTaskId.value, '')
+  assert.equal(selectedOccurrenceId.value, '')
+  assert.equal(reminderError.value, '')
+  assert.match(app, /<TaskEditSheet\b[^>]*@close="closeTaskEditor"/)
+})
+
 test('finishing focus returns to the calendar while preserving the existing Today return elsewhere', async () => {
   for (const origin of ['calendar', 'tasks']) {
     const showFocus = { value: true }
