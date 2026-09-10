@@ -13,7 +13,9 @@
 - 通知插件可在移动端装配，但当前前端轮询不能保证应用挂起或终止后的投递；原生后台提醒仍未实现。
 - Android 已有调试构建证据；iOS 已在 macOS/Xcode 26.6 上完成 Apple Silicon Simulator 无签名 Debug 原生编译，并在 iPhone 17 Pro / iOS Simulator 26.5 上通过有界启动 smoke。这不是 SQLite 重启持久化、真机、签名或商店证据。
 
-iOS 基础分支现已合入 `origin/main@f011db1`，包含 PR2 至 PR6 以及 v0.3.0 发布证据。下方 Simulator 结果来自较早的 `origin/main@140c012` 快照，不覆盖当前合并树；在 macOS 上重新执行原生构建和启动 smoke 前，当前协议将 iOS build/run 标记为 `NOT_RUN`。
+iOS 基础分支现已合入 `origin/main@f011db1`，包含 PR2 至 PR6 以及 v0.3.0 发布证据。下方手工 Simulator 结果来自较早的 `origin/main@140c012` 快照；PR #40 已补充当前合并测试树的独立 CI 证据。
+
+`ios-simulator` workflow 同时支持限定路径的 PR 触发与合入默认分支后的手动触发。PR #40 run `34196983972` 在 macOS 15 / Xcode 16.4 上对合并提交 `22deca1`（父提交为 `main@d04eb7d` 与 PR 头 `6a09ee6`）完成无签名 aarch64 Simulator 构建，并在 iPhone 16 / iOS 26.2（UDID `EADC2067-4553-4FDB-8780-62A3666009F5`）完成精确 `.app` 安装、启动、进程稳定性和五阶段 readiness smoke。artifact `shixue-ios-simulator-evidence-22deca1cee95594f969c138897b07e5d3c88e536` 保存 SHA、工具链、设备、启动 JSON 与诊断日志。该结果不验证 SQLite 重启恢复、真机、签名、TestFlight 或 App Store，这些边界继续为 `NOT_RUN`。
 
 ## 2. 与整体路线的并行关系
 

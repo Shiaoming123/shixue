@@ -58,8 +58,11 @@ The exact unsigned v0.3.0 local candidate passed package smoke and installed-app
 acceptance; its versioned acceptance ledger records the artifact hashes, checks,
 and remaining `NOT_RUN` rows. This does not raise signing, hosted updates,
 deployed Web hosting, real-device execution, or store submission status.
-Aggregate native mobile delivery remains `source-ready` because iOS has not
-been rerun on the exact current tree. Android has separate `local-debug`
+Aggregate native mobile delivery remains `source-ready`: PR #40 run
+`34196983972` passed unsigned build, install, launch, process stability, and all
+five readiness phases on an iPhone 16 / iOS 26.2 Simulator for merge commit
+`22deca1` (`main@d04eb7d` plus PR head `6a09ee6`), but it did not exercise
+SQLite restart recovery, a physical device, signing, or distribution. Android has separate `local-debug`
 evidence: implementation commit `42cc204` produced an x86_64 debug APK whose
 identity passed metadata validation and whose isolated API 36 emulator run
 reached all five readiness phases while the resolved Activity stayed foreground
@@ -67,9 +70,9 @@ and its PID survived the bounded stability window. The same APK wrote a unique
 task through the capability service, confirmed complete process termination,
 and recovered that task plus its creation receipt and event from SQLite in a new
 process. Android physical-device, emulator-reboot, native-notification, signing,
-and store evidence remain `not-run`. The earlier iOS Simulator result remains a dated historical snapshot
-in `docs/ios-development.md`; it does not establish current-tree runtime
-evidence. Desktop is the primary stable runtime path; Web and mobile are Beta
+and store evidence remain `not-run`. The earlier manual iOS Simulator result remains a dated historical snapshot
+in `docs/ios-development.md`; the PR #40 workflow run is the current-tree iOS
+runtime evidence. Desktop is the primary stable runtime path; Web and mobile are Beta
 adaptations with documented capability degradation.
 
 On a Tauri host, `src/main.ts` resolves the native target once and provides the
