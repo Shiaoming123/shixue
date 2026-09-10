@@ -11,21 +11,21 @@
 
 :root {
   --font-sans:
-    system-ui,
-    'Manrope Variable',
-    'Noto Sans SC Variable',
+    -apple-system,
+    BlinkMacSystemFont,
     'Segoe UI Variable',
     'Segoe UI',
     'PingFang SC',
+    'Noto Sans SC Variable',
     'Microsoft YaHei UI',
     sans-serif;
   --font-display:
-    system-ui,
-    'Manrope Variable',
-    'Noto Sans SC Variable',
+    -apple-system,
+    BlinkMacSystemFont,
     'Segoe UI Variable',
     'Segoe UI',
     'PingFang SC',
+    'Noto Sans SC Variable',
     'Microsoft YaHei UI',
     sans-serif;
   --font-body-size: 14px;
@@ -90,9 +90,9 @@
   --font-medium: 500;
 
   /* ---- 结构 token：阴影（桌面端轻微层次） ---- */
-  --shadow-sm: 0 3px 4px #25233002, 0 8px 16px -12px #2823330b;
-  --shadow-md: 0 12px 28px -14px #33324724;
-  --shadow-lg: 0 20px 56px -20px #15151c38;
+  --shadow-sm: 0 2px 8px -5px #25233022;
+  --shadow-md: 0 10px 28px -14px #25233035;
+  --shadow-lg: 0 24px 64px -22px #15151c52, 0 8px 24px -16px #15151c38;
 
   /* ---- 平台功能层材质 ---- */
   --hairline: color-mix(in srgb, var(--border) 82%, transparent);

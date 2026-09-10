@@ -88,18 +88,20 @@ function requestClose(reason: OverlayCloseReason) {
 .sheet-header { padding: 18px 22px 14px; border-bottom: 1px solid var(--hairline); }
 .sheet-footer { padding: 14px 22px 18px; border-top: 1px solid var(--hairline); }
 
-.sheet-layer--right { align-items: stretch; justify-content: flex-end; padding: 0; }
+.sheet-layer--right { align-items: stretch; justify-content: flex-end; padding: 12px; }
 .sheet-panel--right {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
   width: 360px;
   max-height: none;
   padding: 0;
-  border-width: 0 0 0 1px;
-  border-radius: 0;
+  border-width: 1px;
+  border-radius: 18px;
+  box-shadow: var(--shadow-lg);
 }
+.sheet-panel--right.sheet-panel--lg { width: 420px; }
 .sheet-panel--right .sheet-body, .sheet-panel--inline .sheet-body { padding: 0; }
 
 .sheet-layer--inline { position: static; display: contents; padding: 0; background: none; backdrop-filter: none; }
@@ -114,9 +116,10 @@ function requestClose(reason: OverlayCloseReason) {
   background: transparent;
   box-shadow: none;
 }
+.sheet-panel--inline.sheet-panel--lg { width: 420px; }
 
 @media (min-width: 820px) and (max-width: 1279px) {
-  .sheet-panel--right { position: fixed; width: 360px; }
+  .sheet-panel--right { position: fixed; }
 }
 
 .sheet-overlay-enter-active,
@@ -156,7 +159,7 @@ function requestClose(reason: OverlayCloseReason) {
     background: color-mix(in srgb, var(--muted) 32%, transparent);
   }
   .sheet-panel--responsive .sheet-body { padding: 34px 20px calc(24px + env(safe-area-inset-bottom, 0px)); }
-  .sheet-panel--right { width: 100%; border-left: 0; }
+  .sheet-panel--right { inset: auto 0 0; width: 100%; border-width: 1px 0 0; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Bell, CalendarDays, Flag, ListTree, X } from '@lucide/vue'
 import type { StudyTaskPriority, StudyTopic } from '../../storage/study/types'
 import DateTimePicker from '../ui/DateTimePicker.vue'
@@ -10,6 +10,7 @@ import RecurrenceEditor, { type RecurrenceRule } from './RecurrenceEditor.vue'
 import ReminderEditor, { type ReminderPermission, type ReminderSetValue } from './ReminderEditor.vue'
 import type { ReminderRule as TaskReminderRule, Tag } from '../../domain/workspace/types'
 import { reminderTarget } from '../../domain/reminders/target'
+import { resolveTaskDetailPlacement } from '../../lib/responsive-shell'
 
 export interface TaskEditValue {
   title: string
@@ -50,6 +51,7 @@ const props = defineProps<{
   reminderPermission?: ReminderPermission
   reminderBusy?: boolean
   reminderError?: string
+  overlay?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -59,6 +61,11 @@ const emit = defineEmits<{
 }>()
 
 const title = ref('')
+const viewportWidth = ref(typeof window === 'undefined' ? 1280 : window.innerWidth)
+const placement = computed(() => props.overlay && viewportWidth.value >= 820 ? 'right' : resolveTaskDetailPlacement(viewportWidth.value))
+function updateViewportWidth() { if (typeof window !== 'undefined') viewportWidth.value = window.innerWidth }
+onMounted(() => { if (typeof window !== 'undefined') window.addEventListener('resize', updateViewportWidth) })
+onUnmounted(() => { if (typeof window !== 'undefined') window.removeEventListener('resize', updateViewportWidth) })
 const notes = ref('')
 const topicId = ref('')
 const plannedOn = ref('')
@@ -240,12 +247,12 @@ function toLocalDateTime(value: string) {
 </script>
 
 <template>
-  <Sheet :open="Boolean(open && task)" label="编辑任务" @close="requestClose">
-    <form v-if="task" class="sheet-content" @submit.prevent="save">
-      <header><h2 id="task-edit-title">编辑任务</h2><IconButton label="关闭" :icon-size="18" @click="requestClose"><X /></IconButton></header>
-      <label><span>标题</span><input v-model="title" aria-label="任务标题" required autofocus /></label>
-      <label><span>备注</span><textarea v-model="notes" aria-label="任务备注" placeholder="备注" /></label>
-      <label><span><ListTree :size="15" />清单</span><Listbox v-model="topicId" :options="topicOptions" label="清单" /></label>
+  <Sheet :open="Boolean(open && task)" label="编辑任务" :placement="placement" size="lg" @close="requestClose">
+    <template #header><div class="editor-header"><h2 id="task-edit-title">编辑任务</h2><IconButton label="关闭" :icon-size="18" @click="requestClose"><X /></IconButton></div></template>
+    <form v-if="task" id="task-edit-form" class="sheet-content" @submit.prevent="save">
+      <input v-model="title" class="title-input" aria-label="任务标题" placeholder="任务标题" required autofocus />
+      <textarea v-model="notes" class="notes-input" aria-label="任务备注" placeholder="添加备注" />
+      <label class="field-row"><span><ListTree :size="15" />清单</span><Listbox v-model="topicId" :options="topicOptions" label="清单" /></label>
       <div class="tag-field">
         <div class="field-label"><span>标签</span><button type="button" @click="emit('manageTags')">管理标签</button></div>
         <div v-if="visibleTags.length" class="tag-options" aria-label="任务标签">
@@ -253,26 +260,26 @@ function toLocalDateTime(value: string) {
         </div>
         <p v-else>还没有标签；创建后可跨主题筛选。</p>
       </div>
-      <div class="field-grid">
-        <label><span><CalendarDays :size="15" />日期</span><DateTimePicker v-model="plannedOn" :mode="plannedTimed ? 'datetime' : 'date'" label="日期" placeholder="不设置计划日期" /></label>
-        <label><span>截止</span><DateTimePicker v-model="dueOn" :mode="dueTimed ? 'datetime' : 'date'" label="截止日期" placeholder="不设置截止日期" /></label>
-      </div>
+      <label class="field-row"><span><CalendarDays :size="15" />日期</span><DateTimePicker v-model="plannedOn" :mode="plannedTimed ? 'datetime' : 'date'" label="日期" placeholder="不设置计划日期" /></label>
+      <label class="field-row"><span>截止</span><DateTimePicker v-model="dueOn" :mode="dueTimed ? 'datetime' : 'date'" label="截止日期" placeholder="不设置截止日期" /></label>
       <ReminderEditor v-if="reminderRules !== undefined && task.id" :key="task.id" :task-id="task.id" :rules="draftReminderRules" :start-at="plannedAt" :due-at="dueAt" :notification-available="notificationAvailable" :permission="reminderPermission" :busy="reminderBusy" :error="reminderError" @set="stageReminderSet" @remove="stageReminderRemove" />
-      <label v-else><span><Bell :size="15" />提醒</span><DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" placeholder="不设置提醒" /></label>
-      <label><span><Flag :size="15" />优先级</span><Listbox :model-value="priority" :options="priorityOptions" label="优先级" @update:model-value="priority = $event as StudyTaskPriority" /></label>
-      <label><span>重复</span><RecurrenceEditor :model-value="recurrenceRule" @save="stageRecurrence" /></label>
-      <label><span>预计分钟</span><input v-model.number="estimateMinutes" type="number" min="1" max="1440" placeholder="分钟" /></label>
-      <label v-if="learning"><span>完成标准</span><textarea v-model="criteria" aria-label="完成标准" placeholder="每行一项" /></label>
-      <footer><button type="button" class="cancel" @click="requestClose">取消</button><button class="save" type="submit" :disabled="!title.trim() || reminderBusy">保存</button></footer>
+      <label v-else class="field-row"><span><Bell :size="15" />提醒</span><DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" placeholder="不设置提醒" /></label>
+      <label class="field-row"><span><Flag :size="15" />优先级</span><Listbox :model-value="priority" :options="priorityOptions" label="优先级" @update:model-value="priority = $event as StudyTaskPriority" /></label>
+      <RecurrenceEditor :model-value="recurrenceRule" @save="stageRecurrence" />
+      <label class="field-row"><span>预计时长</span><input v-model.number="estimateMinutes" type="number" min="1" max="1440" placeholder="分钟" /></label>
+      <label v-if="learning" class="stacked-field"><span>完成标准</span><textarea v-model="criteria" aria-label="完成标准" placeholder="每行一项" /></label>
+      <footer class="editor-footer"><button type="button" class="cancel" @click="requestClose">取消</button><button class="save" type="submit" :disabled="!title.trim() || reminderBusy">保存</button></footer>
     </form>
   </Sheet>
 </template>
 
 <style scoped>
-.sheet-content { width: 100%; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding-bottom: 15px; border-bottom: 1px solid var(--hairline); } h2 { margin: 0; font-size: var(--text-xl); font-weight: 600; } header button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--control-fill); color: var(--muted); }
-label { display: block; margin-top: 14px; } label > span { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: var(--muted); font-size: var(--text-xs); font-weight: 600; } input, textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font: inherit; font-size: var(--text-base); } textarea { min-height: 72px; resize: vertical; } input:focus, textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }
-.tag-field { margin-top: 14px; }.field-label { min-height: 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: var(--text-xs); font-weight: 600; }.field-label button { min-height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--accent); font: inherit; }.field-label button:hover { background: var(--control-fill); }.tag-options { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 6px; }.tag-options button { min-height: 34px; display: inline-flex; align-items: center; gap: 5px; padding: 0 11px; border: 1px solid var(--hairline); border-radius: var(--radius-full); background: var(--control-fill); color: var(--muted); font: inherit; font-size: var(--text-xs); }.tag-options button.selected { border-color: color-mix(in srgb, var(--accent) 45%, var(--hairline)); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); }.tag-options button.archived { border-style: dashed; }.tag-options small { font-size: 9px; }.tag-field > p { margin: 7px 0 0; color: var(--muted); font-size: var(--text-xs); }
-.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); } footer button { min-height: 44px; padding: 0 17px; border-radius: var(--radius-lg); font-size: 12px; font-weight: 650; } .cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); } .save { border: 0; background: var(--accent); color: var(--accent-text); } .save:disabled { opacity: .4; }
-@media (max-width: 819px) { .field-grid { grid-template-columns: 1fr; gap: 0; }.tag-options button { min-height: 44px; } }
+.sheet-content { width: 100%; display: grid; gap: 0; }
+.editor-header, .editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.editor-header h2 { margin: 0; font-size: 18px; line-height: 24px; font-weight: 650; letter-spacing: -.01em; }.editor-footer { position: sticky; bottom: -22px; z-index: 1; justify-content: flex-end; margin: 18px -22px -22px; padding: 14px 22px 18px; border-top: 1px solid var(--hairline); background: color-mix(in srgb, var(--material-regular) 92%, transparent); backdrop-filter: blur(18px) saturate(160%); }
+input, textarea { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: color-mix(in srgb, var(--control-fill) 68%, transparent); color: var(--text); font: inherit; font-size: var(--text-base); } textarea { min-height: 64px; resize: vertical; } input:focus, textarea:focus { border-color: color-mix(in srgb, var(--accent) 48%, var(--hairline)); background: var(--surface); box-shadow: var(--focus-ring); }
+.title-input { min-height: 48px; border: 0; border-radius: 0; padding: 4px 0 10px; background: transparent; font-size: 20px; line-height: 26px; font-weight: 600; }.title-input:focus { background: transparent; box-shadow: inset 0 -2px var(--accent); }.notes-input { margin-bottom: 8px; border: 0; padding-inline: 0; background: transparent; }.notes-input:focus { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 38%, var(--hairline)); padding-inline: 10px; }
+.field-row { min-height: 54px; display: grid; grid-template-columns: 104px minmax(0, 1fr); align-items: center; gap: 12px; border-top: 1px solid var(--hairline); }.field-row > span, .stacked-field > span { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: var(--text-sm); font-weight: 500; }.field-row :deep(.listbox-trigger), .field-row :deep(.date-trigger), .field-row > input { min-height: 36px; border-color: transparent; background: transparent; text-align: right; }.field-row :deep(.listbox-trigger:hover), .field-row :deep(.date-trigger:hover), .field-row > input:hover { background: var(--control-fill); }
+.tag-field { min-height: 54px; padding: 9px 0; border-top: 1px solid var(--hairline); }.field-label { min-height: 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: var(--text-sm); font-weight: 500; }.field-label button { min-height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--accent); font: inherit; }.field-label button:hover { background: var(--control-fill); }.tag-options { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 6px; }.tag-options button { min-height: 32px; display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; border: 0; border-radius: var(--radius-full); background: var(--control-fill); color: var(--muted); font: inherit; font-size: var(--text-xs); }.tag-options button.selected { background: color-mix(in srgb, var(--accent) 13%, var(--surface)); color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent); }.tag-options button.archived { border: 1px dashed var(--hairline); }.tag-options small { font-size: 9px; }.tag-field > p { margin: 4px 0 0; color: var(--muted); font-size: var(--text-xs); }
+.stacked-field { display: grid; gap: 7px; padding-top: 12px; border-top: 1px solid var(--hairline); }.editor-footer button { min-height: 36px; padding: 0 16px; border-radius: var(--radius-full); font-size: var(--text-sm); font-weight: 600; }.cancel { border: 0; background: var(--control-fill); color: var(--text); }.save { border: 0; background: var(--accent); color: var(--accent-text); }.save:disabled { opacity: .4; }
+@media (max-width: 819px) { .tag-options button { min-height: 44px; }.field-row { grid-template-columns: 92px minmax(0, 1fr); } }
 </style>

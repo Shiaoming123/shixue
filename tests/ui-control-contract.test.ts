@@ -10,7 +10,7 @@ test('shared Sheet owns business modal lifecycle and app-level editors use it', 
   assert.match(sheet, /<Teleport\b[^>]*\bdefer\b[^>]*\bto="#ui-overlay-host"/)
   assert.match(sheet, /:role="placement === 'inline' \? undefined : 'dialog'"/)
   assert.match(sheet, /:aria-modal="placement === 'inline' \? undefined : 'true'"/)
-  assert.match(sheet, /@media \(min-width: 820px\) and \(max-width: 1279px\)[\s\S]*\.sheet-panel--right \{ position: fixed; width: 360px; \}/)
+  assert.match(sheet, /@media \(min-width: 820px\) and \(max-width: 1279px\)[\s\S]*\.sheet-panel--right \{ position: fixed; \}/)
 
   const app = rootSource('src/App.vue')
   assert.match(app, /import Sheet from '.\/components\/ui\/Sheet\.vue'/)
