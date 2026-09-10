@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Bell, CalendarDays, Flag, ListTree, X } from '@lucide/vue'
+import { Bell, CalendarDays, Clock3, Flag, ListTree, X } from '@lucide/vue'
 import type { StudyTaskPriority, StudyTopic } from '../../storage/study/types'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import Listbox from '../ui/Listbox.vue'
@@ -37,7 +37,7 @@ export interface TaskEditChanges {
 
 type EditableStudyTask = TaskEditValue & { id?: string; status: string }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
   task?: EditableStudyTask
   topics: StudyTopic[]
@@ -52,7 +52,8 @@ const props = defineProps<{
   reminderBusy?: boolean
   reminderError?: string
   overlay?: boolean
-}>()
+  embedded?: boolean
+}>(), { embedded: false })
 
 const emit = defineEmits<{
   close: []
@@ -247,8 +248,8 @@ function toLocalDateTime(value: string) {
 </script>
 
 <template>
-  <Sheet :open="Boolean(open && task)" label="编辑任务" :placement="placement" size="lg" @close="requestClose">
-    <template #header><div class="editor-header"><h2 id="task-edit-title">编辑任务</h2><IconButton label="关闭" :icon-size="18" @click="requestClose"><X /></IconButton></div></template>
+  <component :is="embedded ? 'div' : Sheet" :open="Boolean(open && task)" label="编辑任务" :placement="placement" size="lg" class="task-edit-host" @close="requestClose">
+    <div class="editor-header"><h2 id="task-edit-title">编辑任务</h2><IconButton label="关闭" :icon-size="18" @click="requestClose"><X /></IconButton></div>
     <form v-if="task" id="task-edit-form" class="sheet-content" @submit.prevent="save">
       <input v-model="title" class="title-input" aria-label="任务标题" placeholder="任务标题" required autofocus />
       <textarea v-model="notes" class="notes-input" aria-label="任务备注" placeholder="添加备注" />
@@ -261,21 +262,24 @@ function toLocalDateTime(value: string) {
         <p v-else>还没有标签；创建后可跨主题筛选。</p>
       </div>
       <label class="field-row"><span><CalendarDays :size="15" />日期</span><DateTimePicker v-model="plannedOn" :mode="plannedTimed ? 'datetime' : 'date'" label="日期" placeholder="不设置计划日期" /></label>
-      <label class="field-row"><span>截止</span><DateTimePicker v-model="dueOn" :mode="dueTimed ? 'datetime' : 'date'" label="截止日期" placeholder="不设置截止日期" /></label>
+      <label class="field-row"><span><CalendarDays :size="15" />截止</span><DateTimePicker v-model="dueOn" :mode="dueTimed ? 'datetime' : 'date'" label="截止日期" placeholder="不设置截止日期" /></label>
       <ReminderEditor v-if="reminderRules !== undefined && task.id" :key="task.id" :task-id="task.id" :rules="draftReminderRules" :start-at="plannedAt" :due-at="dueAt" :notification-available="notificationAvailable" :permission="reminderPermission" :busy="reminderBusy" :error="reminderError" @set="stageReminderSet" @remove="stageReminderRemove" />
       <label v-else class="field-row"><span><Bell :size="15" />提醒</span><DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" placeholder="不设置提醒" /></label>
       <label class="field-row"><span><Flag :size="15" />优先级</span><Listbox :model-value="priority" :options="priorityOptions" label="优先级" @update:model-value="priority = $event as StudyTaskPriority" /></label>
       <RecurrenceEditor :model-value="recurrenceRule" @save="stageRecurrence" />
-      <label class="field-row"><span>预计时长</span><input v-model.number="estimateMinutes" type="number" min="1" max="1440" placeholder="分钟" /></label>
+      <label class="field-row"><span><Clock3 :size="15" />预计时长</span><input v-model.number="estimateMinutes" type="number" min="1" max="1440" placeholder="分钟" /></label>
       <label v-if="learning" class="stacked-field"><span>完成标准</span><textarea v-model="criteria" aria-label="完成标准" placeholder="每行一项" /></label>
       <footer class="editor-footer"><button type="button" class="cancel" @click="requestClose">取消</button><button class="save" type="submit" :disabled="!title.trim() || reminderBusy">保存</button></footer>
     </form>
-  </Sheet>
+  </component>
 </template>
 
 <style scoped>
-.sheet-content { width: 100%; display: grid; gap: 0; }
-.editor-header, .editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.editor-header h2 { margin: 0; font-size: 18px; line-height: 24px; font-weight: var(--font-semibold); letter-spacing: -.01em; }.editor-footer { position: sticky; bottom: -22px; z-index: 1; justify-content: flex-end; margin: 18px -22px -22px; padding: 14px 22px 18px; border-top: 1px solid var(--glass-border); background: var(--material-thin); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
+.task-edit-host { min-width: 0; overflow-x: hidden; }
+.task-edit-host > .editor-header { padding: 18px 22px 14px; border-bottom: 1px solid var(--hairline); }
+.task-edit-host > .sheet-content { padding: 22px; }
+.sheet-content { width: 100%; min-width: 0; display: grid; gap: 0; overflow-x: hidden; }
+.editor-header, .editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.editor-header h2 { margin: 0; font-size: 18px; line-height: 24px; font-weight: var(--font-semibold); letter-spacing: -.01em; }.editor-footer { position: sticky; bottom: -22px; z-index: 1; justify-content: flex-end; margin: 18px 0 -22px; padding: 14px 0 18px; border-top: 1px solid var(--glass-border); background: var(--material-thin); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
 input, textarea { width: 100%; min-height: var(--field-min-height); padding: 8px 11px; border: 1px solid transparent; border-radius: var(--radius-md); outline: 0; background: var(--field-fill); color: var(--text); font: inherit; font-size: var(--text-base); } textarea { min-height: 64px; resize: vertical; } input:hover:not(:focus), textarea:hover:not(:focus) { background: var(--field-hover-fill); } input:focus, textarea:focus { border-color: var(--accent); background: var(--field-focus-fill); box-shadow: var(--field-focus-ring); }
 .title-input { min-height: max(42px, var(--field-min-height)); font-size: 18px; line-height: 24px; font-weight: 600; }.notes-input { min-height: 58px; margin-bottom: 8px; }
 .field-row { min-height: 50px; display: grid; grid-template-columns: 104px minmax(0, 1fr); align-items: center; gap: 12px; border-top: 1px solid var(--hairline); }.field-row > span, .stacked-field > span { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: var(--text-sm); font-weight: 500; }.field-row :deep(.listbox-trigger), .field-row :deep(.date-trigger), .field-row > input { min-height: var(--field-min-height); text-align: right; }

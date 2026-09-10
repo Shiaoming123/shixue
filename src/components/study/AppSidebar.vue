@@ -27,6 +27,7 @@ const props = defineProps<{
   lists?: Array<{ id: string; groupId: string | null; title: string; count: number; icon?: ListIconId; color?: string }>
   displayMode: SidebarDisplayMode
   order: string[]
+  width: number
 }>()
 
 const emit = defineEmits<{
@@ -34,6 +35,7 @@ const emit = defineEmits<{
   search: []
   'update:displayMode': [mode: SidebarDisplayMode]
   reorder: [order: string[]]
+  resize: [width: number]
   'create-list': []
   'create-group': []
   'edit-group': [id: string]
@@ -42,6 +44,26 @@ const emit = defineEmits<{
 const draggedKey = ref('')
 const dropTargetKey = ref('')
 const reorderMessage = ref('')
+let resizeStart: { pointerId: number; x: number; width: number } | null = null
+const clampWidth = (width: number) => Math.min(360, Math.max(200, Math.round(width)))
+function beginResize(event: PointerEvent) {
+  if (props.displayMode === 'icons') return
+  resizeStart = { pointerId: event.pointerId, x: event.clientX, width: props.width }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+function moveResize(event: PointerEvent) {
+  if (resizeStart?.pointerId === event.pointerId) emit('resize', clampWidth(resizeStart.width + event.clientX - resizeStart.x))
+}
+function endResize(event: PointerEvent) {
+  if (resizeStart?.pointerId !== event.pointerId) return
+  resizeStart = null
+  try { (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId) } catch { /* capture may already be lost */ }
+}
+function resizeByKeyboard(event: KeyboardEvent) {
+  const next = event.key === 'Home' ? 200 : event.key === 'End' ? 360 : event.key === 'ArrowLeft' ? props.width - 8 : event.key === 'ArrowRight' ? props.width + 8 : null
+  if (next === null) return
+  event.preventDefault(); emit('resize', clampWidth(next))
+}
 
 const icons: Record<WorkspaceView['kind'], typeof Inbox> = {
   inbox: Inbox, today: CalendarDays, upcoming: CalendarRange, calendar: CalendarClock,
@@ -130,7 +152,8 @@ function commitMove(source: string, target: string, keys: string[]) {
 </script>
 
 <template>
-  <aside class="sidebar" :class="{ icons: displayMode === 'icons' }" aria-label="主导航">
+  <aside class="sidebar" :class="{ icons: displayMode === 'icons' }" :style="{ '--sidebar-width': `${width}px` }" aria-label="主导航">
+    <button v-if="displayMode !== 'icons'" class="sidebar-resizer" type="button" role="separator" aria-orientation="vertical" aria-label="调整侧边栏宽度" :aria-valuenow="width" aria-valuemin="200" aria-valuemax="360" @pointerdown.prevent="beginResize" @pointermove="moveResize" @pointerup="endResize" @pointercancel="endResize" @keydown="resizeByKeyboard" />
     <div class="brand">
       <span class="brand-mark"><img src="/shixue-mark.svg" alt="" /></span>
       <span class="brand-copy">拾学</span>
@@ -195,7 +218,10 @@ function commitMove(source: string, target: string, keys: string[]) {
 </template>
 
 <style scoped>
-.sidebar { --sidebar-icon-size: 18px; --sidebar-row-padding: 10px; position: relative; z-index: var(--z-base); width: 232px; min-width: 232px; height: 100%; display: flex; flex-direction: column; padding: 24px 12px 20px; border-right: 1px solid var(--glass-border); background: var(--material-thin); box-shadow: var(--glass-highlight), 12px 0 36px -30px color-mix(in srgb, var(--text) 32%, transparent); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); transition: width var(--motion-base) var(--ease), min-width var(--motion-base) var(--ease), padding var(--motion-base) var(--ease); }
+.sidebar { --sidebar-icon-size: 18px; --sidebar-row-padding: 10px; position: relative; z-index: var(--z-base); width: var(--sidebar-width, 232px); min-width: var(--sidebar-width, 232px); height: 100%; display: flex; flex-direction: column; padding: 24px 12px 20px; border-right: 1px solid var(--glass-border); background: var(--material-thin); box-shadow: var(--glass-highlight), 12px 0 36px -30px color-mix(in srgb, var(--text) 32%, transparent); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); transition: width var(--motion-base) var(--ease), min-width var(--motion-base) var(--ease), padding var(--motion-base) var(--ease); }
+.sidebar-resizer { position: absolute; z-index: 2; top: 0; right: -4px; bottom: 0; width: 8px; padding: 0; border: 0; background: transparent; cursor: col-resize; }
+.sidebar-resizer::after { content: ''; position: absolute; top: 0; right: 3px; bottom: 0; width: 1px; background: transparent; }
+.sidebar-resizer:hover::after, .sidebar-resizer:focus-visible::after { background: var(--accent); }
 .sidebar.icons { width: 72px; min-width: 72px; padding-inline: 8px; }
 .brand { position: relative; min-height: 42px; display: grid; grid-template-columns: var(--sidebar-icon-size) minmax(0, 1fr); align-items: center; gap: 10px; padding: 0 var(--sidebar-row-padding); color: var(--text); font-size: var(--text-lg); font-weight: var(--font-medium); letter-spacing: .02em; }
 .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; justify-self: center; overflow: hidden; border: 1px solid color-mix(in srgb, white 32%, var(--hairline)); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface) 72%, transparent); box-shadow: var(--shadow-sm); transition: width var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease), border-width var(--motion-base) var(--ease); }

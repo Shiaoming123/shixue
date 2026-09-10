@@ -44,8 +44,9 @@ test('calendar quick capture closes details and focuses its composer without cha
 test('calendar shares one detail action interface and keeps its view mounted while focusing', () => {
   assert.equal((app.match(/<TaskDetailDrawer\b/g) ?? []).length, 1)
   assert.equal((app.match(/<TaskEditSheet\b/g) ?? []).length, 1)
-  assert.match(app, /<TaskDetailDrawer\s+v-if="!taskEditorOpen"/)
-  assert.match(app, /<TaskEditSheet\s+v-else/)
+  assert.doesNotMatch(app, /<TaskDetailDrawer\s+v-if="!taskEditorOpen"/)
+  assert.match(app, /<TaskDetailDrawer\b[^>]*:editing="taskEditorOpen"/)
+  assert.match(app, /<TaskEditSheet\b[^>]*embedded/)
   assert.match(app, /:task="showFocus \? undefined : selectedTaskView"/)
   assert.match(app, /<TaskDetailDrawer[\s\S]*<TaskEditSheet[\s\S]*<\/div>\s*<\/template>/)
   assert.match(app, /v-show="!showFocus" class="tasks-layout"/)
@@ -61,7 +62,7 @@ test('calendar shares one detail action interface and keeps its view mounted whi
   assert.match(detail, /v-if="!occurrenceId \|\| occurrenceStatus === 'pending'"/)
 })
 
-test('closing task edit dismisses the whole task rail instead of revealing detail underneath', () => {
+test('closing task edit returns to the same selected task in the unified inspector', () => {
   const taskEditorOpen = { value: true }
   const selectedTaskId = { value: 'task:one' }
   const selectedOccurrenceId = { value: 'occurrence:one' }
@@ -69,8 +70,8 @@ test('closing task edit dismisses the whole task rail instead of revealing detai
   const close = action('closeTaskEditor', { taskEditorOpen, selectedTaskId, selectedOccurrenceId, reminderError })
   close()
   assert.equal(taskEditorOpen.value, false)
-  assert.equal(selectedTaskId.value, '')
-  assert.equal(selectedOccurrenceId.value, '')
+  assert.equal(selectedTaskId.value, 'task:one')
+  assert.equal(selectedOccurrenceId.value, 'occurrence:one')
   assert.equal(reminderError.value, '')
   assert.match(app, /<TaskEditSheet\b[^>]*@close="closeTaskEditor"/)
 })

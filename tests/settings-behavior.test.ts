@@ -515,7 +515,7 @@ test('denied preference access does not prevent workspace initialization', async
   const messages: string[] = []
   const ports = {
     window: { addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
-    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, remindersEnabled: ref(false),
+    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, syncAppearance() {}, blockDesktopReload() {}, openDesktopContextMenu() {}, desktopRuntime: false, remindersEnabled: ref(false),
     localStorage: { getItem() { throw Error('SecurityError') } }, notify: (message: string) => messages.push(message),
     applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }), appearanceMedia: undefined, systemDark: ref(false), onAppearanceChange() {},
     compactMedia: undefined, compact: ref(false), onCompactChange() {},
@@ -538,7 +538,7 @@ test('unmount during native initialization cannot install timers after teardown'
   const js = ts.transpileModule(`const mounted = ${callback.getText(source)}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   const ports = {
     window: { addEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
-    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, remindersEnabled: ref(false),
+    handleQuickAdd() {}, handleModuleError() {}, handleGlobalSearchShortcut() {}, syncAppearance() {}, blockDesktopReload() {}, openDesktopContextMenu() {}, desktopRuntime: false, remindersEnabled: ref(false),
     localStorage: { getItem: () => null }, notify() {}, applyReducedGlass() {}, planningPreferences: ref({ reducedGlassOverride: 'system' }), appearanceMedia: undefined, systemDark: ref(false), onAppearanceChange() {},
     compactMedia: undefined, compact: ref(false), onCompactChange() {}, refreshState: async () => {}, state: ref({ topics: [] }), selectedTopicId: ref(''), showFocus: ref(false), activeSession: ref(null),
     reportSmokePhase: async () => {}, runNativeAndroidPersistenceSmoke: async () => null, capabilityService: {},

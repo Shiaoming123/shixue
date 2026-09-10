@@ -8,6 +8,8 @@ const props = withDefaults(defineProps<{
   placement?: 'responsive' | 'right' | 'inline'
   size?: 'sm' | 'md' | 'lg'
   closeOnOutside?: boolean
+  width?: number
+  resizable?: boolean
 }>(), {
   placement: 'responsive',
   size: 'md',
@@ -17,7 +19,29 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   'update:open': [open: boolean]
   close: [reason: OverlayCloseReason]
+  resize: [width: number]
 }>()
+
+let resizeStart: { pointerId: number; x: number; width: number } | null = null
+const clampWidth = (width: number) => Math.min(620, Math.max(340, Math.round(width)))
+function beginResize(event: PointerEvent) {
+  resizeStart = { pointerId: event.pointerId, x: event.clientX, width: props.width ?? 420 }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+function moveResize(event: PointerEvent) {
+  if (resizeStart?.pointerId === event.pointerId) emit('resize', clampWidth(resizeStart.width - event.clientX + resizeStart.x))
+}
+function endResize(event: PointerEvent) {
+  if (resizeStart?.pointerId !== event.pointerId) return
+  resizeStart = null
+  try { (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId) } catch { /* capture may already be lost */ }
+}
+function resizeByKeyboard(event: KeyboardEvent) {
+  const current = props.width ?? 420
+  const next = event.key === 'Home' ? 340 : event.key === 'End' ? 620 : event.key === 'ArrowLeft' ? current + 8 : event.key === 'ArrowRight' ? current - 8 : null
+  if (next === null) return
+  event.preventDefault(); emit('resize', clampWidth(next))
+}
 
 const panel = ref<HTMLElement | null>(null)
 const renderedPlacement = ref(props.placement)
@@ -48,12 +72,14 @@ function requestClose(reason: OverlayCloseReason) {
           ref="panel"
           class="sheet-panel"
           :class="[`sheet-panel--${renderedPlacement}`, `sheet-panel--${size}`]"
+          :style="width && renderedPlacement !== 'responsive' ? { '--sheet-width': `${width}px` } : undefined"
           :data-overlay-layer="renderedPlacement === 'inline' ? undefined : layerId"
           :role="renderedPlacement === 'inline' ? undefined : 'dialog'"
           :aria-modal="renderedPlacement === 'inline' ? undefined : 'true'"
           :aria-label="renderedPlacement === 'inline' ? undefined : label"
           :tabindex="renderedPlacement === 'inline' ? undefined : -1"
         >
+          <button v-if="resizable && renderedPlacement !== 'responsive'" class="sheet-resizer" type="button" role="separator" aria-orientation="vertical" aria-label="调整检查器宽度" :aria-valuenow="width ?? 420" aria-valuemin="340" aria-valuemax="620" @pointerdown.prevent="beginResize" @pointermove="moveResize" @pointerup="endResize" @pointercancel="endResize" @keydown="resizeByKeyboard" />
           <header v-if="$slots.header" class="sheet-header"><slot name="header" :close="requestClose" /></header>
           <div class="sheet-body"><slot :close="requestClose" /></div>
           <footer v-if="$slots.footer" class="sheet-footer"><slot name="footer" :close="requestClose" /></footer>
@@ -104,19 +130,20 @@ function requestClose(reason: OverlayCloseReason) {
   top: 12px;
   right: 12px;
   bottom: 12px;
-  width: 360px;
+  width: var(--sheet-width, 360px);
   max-height: none;
   padding: 0;
   border-width: 1px;
   border-radius: 18px;
   box-shadow: var(--shadow-lg), var(--glass-highlight);
 }
-.sheet-panel--right.sheet-panel--lg { width: 420px; }
+.sheet-panel--right.sheet-panel--lg { width: var(--sheet-width, 420px); }
 .sheet-panel--right .sheet-body, .sheet-panel--inline .sheet-body { padding: 0; }
 
 .sheet-layer--inline { position: static; display: contents; padding: 0; background: none; backdrop-filter: none; }
 .sheet-panel--inline {
-  width: 360px;
+  position: relative;
+  width: var(--sheet-width, 360px);
   height: 100%;
   max-height: none;
   overflow: hidden;
@@ -128,7 +155,10 @@ function requestClose(reason: OverlayCloseReason) {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-.sheet-panel--inline.sheet-panel--lg { width: 420px; }
+.sheet-panel--inline.sheet-panel--lg { width: var(--sheet-width, 420px); }
+.sheet-resizer { position: absolute; z-index: 3; top: 0; bottom: 0; left: -4px; width: 8px; padding: 0; border: 0; background: transparent; cursor: col-resize; }
+.sheet-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; }
+.sheet-resizer:hover::after, .sheet-resizer:focus-visible::after { background: var(--accent); }
 
 @media (min-width: 820px) and (max-width: 1279px) {
   .sheet-panel--right { position: fixed; }

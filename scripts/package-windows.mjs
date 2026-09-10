@@ -13,10 +13,10 @@ import { basename, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const releaseRoot = resolve(projectRoot, 'release-artifacts', 'windows')
+const releaseRoot = resolve(process.env.SHIXUE_WINDOWS_RELEASE_ROOT?.trim() || resolve(projectRoot, 'release-artifacts', 'windows'))
 
 export function resolveCargoTargetRoot(root = projectRoot, environment = process.env) {
-  const configured = environment.CARGO_TARGET_DIR?.trim()
+  const configured = environment.SHIXUE_WINDOWS_CARGO_TARGET?.trim() || environment.CARGO_TARGET_DIR?.trim()
   return configured ? resolve(root, configured) : resolve(root, 'src-tauri', 'target')
 }
 

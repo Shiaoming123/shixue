@@ -3,6 +3,8 @@ export type SidebarDisplayMode = 'expanded' | 'icons'
 export interface SidebarPreferences {
   displayMode: SidebarDisplayMode
   order: string[]
+  width: number
+  inspectorWidth: number
 }
 
 const STORAGE_KEY = 'shixue:sidebar-preferences:v1'
@@ -19,7 +21,7 @@ export function loadSidebarPreferences(menuKeys: string[]): SidebarPreferences {
   try {
     const value = JSON.parse(stored) as unknown
     if (!isSidebarPreferences(value)) return defaults(menuKeys)
-    return { displayMode: value.displayMode, order: normalizeOrder(value.order, menuKeys) }
+    return normalize(value, menuKeys)
   } catch {
     return defaults(menuKeys)
   }
@@ -30,7 +32,7 @@ export function saveSidebarPreferences(
   menuKeys: string[],
 ): SidebarPreferences {
   if (!isSidebarPreferences(value)) throw new TypeError('Invalid sidebar preferences')
-  const next = { displayMode: value.displayMode, order: normalizeOrder(value.order, menuKeys) }
+  const next = normalize(value, menuKeys)
   globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   return { ...next, order: [...next.order] }
 }
@@ -46,7 +48,20 @@ export function moveSidebarItem(order: string[], source: string, target: string)
 }
 
 function defaults(menuKeys: string[]): SidebarPreferences {
-  return { displayMode: 'expanded', order: normalizeOrder([], menuKeys) }
+  return { displayMode: 'expanded', order: normalizeOrder([], menuKeys), width: 232, inspectorWidth: 420 }
+}
+
+function normalize(value: Pick<SidebarPreferences, 'displayMode' | 'order'> & Partial<SidebarPreferences>, menuKeys: string[]): SidebarPreferences {
+  return {
+    displayMode: value.displayMode,
+    order: normalizeOrder(value.order, menuKeys),
+    width: clamp(value.width, 200, 360, 232),
+    inspectorWidth: clamp(value.inspectorWidth, 340, 620, 420),
+  }
+}
+
+function clamp(value: unknown, min: number, max: number, fallback: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback
 }
 
 function normalizeOrder(order: string[], menuKeys: string[]): string[] {

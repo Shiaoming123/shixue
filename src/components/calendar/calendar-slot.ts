@@ -1,4 +1,4 @@
-export interface CalendarSlot { date: string; minute: number; duration: number }
+export interface CalendarSlot { date: string; minute: number; duration: number; anchorX?: number; anchorY?: number }
 export interface CalendarCreateSlot extends CalendarSlot { kind: 'task' | 'event' }
 
 export function calendarSlot(date: string, start: number, end = start): CalendarSlot {

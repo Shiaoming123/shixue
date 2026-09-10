@@ -58,6 +58,9 @@ const selectedKey = ref('')
 const createSlot = ref<CalendarSlot | null>(null)
 const contextOpen = ref(false)
 const quickEventOpen = ref(false)
+const workspace = ref<HTMLElement | null>(null)
+const quickEventPanel = ref<HTMLFormElement | null>(null)
+const quickEventPosition = ref({ left: 16, top: 64 })
 const quickTitleInput = ref<HTMLInputElement | null>(null)
 let quickEventReturnFocus: HTMLElement | null = null
 const quickTitle = ref('')
@@ -121,6 +124,13 @@ function openQuickEvent(slot: CalendarSlot) {
   quickStartValid.value = true; quickEndValid.value = true
   if (!quickSourceOptions.value.some(({ value }) => value === quickSourceId.value)) quickSourceId.value = quickSourceOptions.value[0]?.value ?? ''
   quickEventOpen.value = true
+  const bounds = workspace.value?.getBoundingClientRect()
+  if (bounds && slot.anchorX !== undefined && slot.anchorY !== undefined) {
+    quickEventPosition.value = {
+      left: Math.max(8, Math.min(bounds.width - Math.min(420, bounds.width - 16) - 8, slot.anchorX - bounds.left + 12)),
+      top: Math.max(60, Math.min(bounds.height - 360, slot.anchorY - bounds.top - 64)),
+    }
+  } else quickEventPosition.value = { left: Math.max(8, (bounds?.width ?? 452) - 436), top: 64 }
   nextTick(() => quickTitleInput.value?.focus())
 }
 function openToolbarEvent() { openQuickEvent({ date: anchor.value, minute: 9 * 60, duration: defaultDropDuration.value }) }
@@ -227,10 +237,16 @@ async function finishPointer(event: PointerEvent) {
 }
 
 function cancelPointer(event?: PointerEvent) {
-  if (quickEventOpen.value) { closeQuickEvent(); return }
   timeGrid.value?.cancelBlank()
   if (event) drag.cancel(event)
   else drag.cancelActive()
+}
+function dismissInteraction() {
+  if (quickEventOpen.value) closeQuickEvent()
+  else cancelPointer()
+}
+function dismissQuickEventFromOutside(event: PointerEvent) {
+  if (quickEventOpen.value && !quickEventPanel.value?.contains(event.target as Node)) closeQuickEvent()
 }
 
 async function requestCommand(command: CalendarInteractionCommand, source: CommandEnvelope['source']) {
@@ -280,7 +296,7 @@ defineExpose({ openToolbarEvent, closeQuickEvent })
 </script>
 
 <template>
-  <section class="calendar-workspace" @pointermove="updatePointer" @pointerup="finishPointer" @pointercancel="cancelPointer($event)" @lostpointercapture="cancelPointer($event)" @keydown.esc="cancelPointer()">
+  <section ref="workspace" class="calendar-workspace" @pointerdown.capture="dismissQuickEventFromOutside" @pointermove="updatePointer" @pointerup="finishPointer" @pointercancel="cancelPointer($event)" @lostpointercapture="cancelPointer($event)" @keydown.esc="dismissInteraction">
     <CalendarToolbar :mode="effectiveMode" :anchor="anchor" :anchor-label="anchorLabel" :compact="compact" :unscheduled-count="unscheduledCount" :context-open="contextOpen" @update:mode="setMode" @update:anchor="anchor = $event" @previous="moveAnchor(-1)" @next="moveAnchor(1)" @today="selectToday" @new-event="openToolbarEvent" @toggle-context="contextOpen = !contextOpen">
       <template #filters>
       <Popover v-model:open="filtersOpen" mobile-sheet mobile-sheet-label="筛选日历">
@@ -297,7 +313,7 @@ defineExpose({ openToolbarEvent, closeQuickEvent })
       </template>
     </CalendarToolbar>
     <aside v-if="contextOpen" id="calendar-context" class="calendar-workspace__context" aria-label="日历上下文"><slot name="context" /><UnscheduledTray :tasks="results.tasks" :anchor="anchor" :range="range" :now="now" :default-duration="defaultDropDuration" :target-offset="targetOffset" :timezone="displayTimezone" @suggest-task="emit('suggest-task', $event)" @pointer-start="beginTrayPointer" @command="requestCommand" @open="emit('open', $event, null)" /></aside>
-    <form v-if="quickEventOpen" class="calendar-workspace__quick-event" role="dialog" aria-label="快速新建日程" @submit.prevent="saveQuickEvent" @keydown.esc.stop="closeQuickEvent">
+    <form v-if="quickEventOpen" ref="quickEventPanel" class="calendar-workspace__quick-event" role="dialog" aria-label="快速新建日程" :style="{ left: `${quickEventPosition.left}px`, top: `${quickEventPosition.top}px` }" @pointerdown.stop @submit.prevent="saveQuickEvent" @keydown.esc.stop="closeQuickEvent">
       <header><strong>新建日程</strong><Button variant="ghost" size="sm" type="button" @click="closeQuickEvent">关闭</Button></header>
       <label><span>标题</span><input ref="quickTitleInput" v-model="quickTitle" required aria-label="日程标题" /></label>
       <DateTimePicker v-model="quickDate" label="日期" required />
@@ -321,7 +337,7 @@ defineExpose({ openToolbarEvent, closeQuickEvent })
 <style scoped>
 .calendar-workspace { position: relative; width: 100%; min-width: 0; height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }
 .calendar-workspace__context { position: absolute; z-index: 8; top: 56px; right: 0; bottom: 0; width: min(340px, 100%); overflow-y: auto; border-left: 1px solid var(--glass-border); background: var(--material-regular); box-shadow: var(--shadow-lg), var(--glass-highlight); -webkit-backdrop-filter: var(--glass-filter-strong); backdrop-filter: var(--glass-filter-strong); }
-.calendar-workspace__quick-event { position: absolute; z-index: 9; top: 64px; right: 16px; width: min(420px, calc(100% - 32px)); display: grid; gap: 12px; padding: 16px; border: 1px solid var(--glass-border); border-radius: var(--radius-xl); background: var(--material-regular); box-shadow: var(--shadow-lg), var(--glass-highlight); -webkit-backdrop-filter: var(--glass-filter-strong); backdrop-filter: var(--glass-filter-strong); }
+.calendar-workspace__quick-event { position: absolute; z-index: 9; width: min(420px, calc(100% - 16px)); display: grid; gap: 12px; padding: 16px; border: 1px solid var(--glass-border); border-radius: var(--radius-xl); background: var(--material-regular); box-shadow: var(--shadow-lg), var(--glass-highlight); -webkit-backdrop-filter: var(--glass-filter-strong); backdrop-filter: var(--glass-filter-strong); }
 .calendar-workspace__quick-event header, .calendar-workspace__quick-event footer { display: flex; align-items: center; gap: 8px; }.calendar-workspace__quick-event header { justify-content: space-between; }.calendar-workspace__quick-event footer { justify-content: flex-end; }.calendar-workspace__quick-event label > span { display: block; margin-bottom: 6px; color: var(--muted); font-size: var(--text-xs); }.calendar-workspace__quick-event input { width: 100%; min-height: var(--field-min-height); padding: 0 10px; border: 1px solid transparent; border-radius: var(--radius-md); outline: 0; background: var(--field-fill); color: var(--text); font: inherit; }.calendar-workspace__quick-event input:hover:not(:focus) { background: var(--field-hover-fill); }.calendar-workspace__quick-event input:focus { border-color: var(--accent); background: var(--field-focus-fill); box-shadow: var(--field-focus-ring); }.calendar-workspace__quick-times { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .calendar-workspace__quick-times :deep(.time-options), .calendar-workspace__quick-times :deep(.note) { display: none; }.calendar-workspace__quick-times :deep(.time-picker) { padding-top: 0; border-top: 0; }
 .calendar-workspace__filters { display: grid; width: min(360px, calc(100vw - 32px)); padding: 12px; gap: 12px; }
@@ -333,7 +349,7 @@ defineExpose({ openToolbarEvent, closeQuickEvent })
 @media (max-width: 819px) {
   .calendar-workspace { height: calc(100% - 84px - env(safe-area-inset-bottom, 0px)); overflow-y: auto; }
   .calendar-workspace__context { top: 56px; width: 100%; border-left: 0; }
-  .calendar-workspace__quick-event { top: 60px; right: 8px; width: calc(100% - 16px); }
+  .calendar-workspace__quick-event { top: 60px !important; left: 8px !important; width: calc(100% - 16px); }
   .calendar-workspace__confirmation { flex-wrap: wrap; padding: 8px 16px; }
   .calendar-workspace__confirmation > span { flex-basis: calc(100% - 28px); }
   .calendar-workspace__confirmation :deep(.btn) { min-height: 44px; }

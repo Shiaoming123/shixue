@@ -6,7 +6,7 @@ import { resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const tauriTargetRoot = resolve(projectRoot, 'src-tauri', 'target')
+const tauriTargetRoot = resolve(process.env.SHIXUE_WINDOWS_CARGO_TARGET?.trim() || resolve(projectRoot, 'src-tauri', 'target'))
 const smokeReportPath = resolve(tauriTargetRoot, 'windows-package-smoke-report.json')
 
 const manualStages = [
@@ -188,9 +188,9 @@ export async function removeWindowsProductData(
   await remove(assertWindowsProductDataPath(paths, paths.local, paths.localRoot))
 }
 
-export async function loadCandidateNsisArtifact(root, version) {
-  const directory = resolve(root, 'release-artifacts', 'windows', version)
-  const manifestPath = assertSmokePath(resolve(root, 'release-artifacts', 'windows'), resolve(directory, 'manifest.json'))
+export async function loadCandidateNsisArtifact(root, version, releaseRoot = resolve(root, 'release-artifacts', 'windows')) {
+  const directory = resolve(releaseRoot, version)
+  const manifestPath = assertSmokePath(releaseRoot, resolve(directory, 'manifest.json'))
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   if (manifest.version !== version || manifest.platform !== 'windows') {
     throw new Error(`Windows candidate manifest must describe version ${version} for Windows.`)
@@ -359,7 +359,7 @@ async function main() {
       throw new Error('Could not read the package author for Windows installer cleanup.')
     }
     const binaryName = tauriConfig.mainBinaryName?.trim() || cargoPackageName
-    const candidate = await loadCandidateNsisArtifact(projectRoot, packageJson.version)
+    const candidate = await loadCandidateNsisArtifact(projectRoot, packageJson.version, process.env.SHIXUE_WINDOWS_RELEASE_ROOT?.trim() || undefined)
     if (candidate.manifest.identifier !== tauriConfig.identifier) {
       throw new Error('Windows candidate manifest identifier does not match the current Tauri identity.')
     }

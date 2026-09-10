@@ -7,10 +7,13 @@ import {
   prefersDark,
   resolveThemeDark,
   saveThemePreference,
+  THEME_STORAGE_KEY,
   type ThemeMode,
   type ThemePreference,
 } from './assets/themes/apply'
 import AppSidebar, { type StudySmartViewCounts } from './components/study/AppSidebar.vue'
+import DesktopTitlebar from './components/study/DesktopTitlebar.vue'
+import DesktopContextMenu from './components/study/DesktopContextMenu.vue'
 import BottomTabs from './components/study/BottomTabs.vue'
 import CalendarWorkspace from './components/calendar/CalendarWorkspace.vue'
 import CalendarEventEditor from './components/calendar/CalendarEventEditor.vue'
@@ -133,7 +136,8 @@ import { resolveRecurrenceEditWrite, resolveReminderEditWrite, resolveTaskEditWr
 import type { RecurrenceCadence, RecurrenceSeries, ReminderRule, Task, WorkspaceStateV4 } from './domain/workspace/types'
 import { parseZonedDateTime, zonedDateTimeToInstant } from './domain/recurrence/timezone'
 
-const settingsWindow = isDesktopTauri() && new URLSearchParams(window.location.search).get('window') === 'settings'
+const desktopRuntime = isDesktopTauri()
+const settingsWindow = desktopRuntime && new URLSearchParams(window.location.search).get('window') === 'settings'
 const destination = ref<ShellDestination>(settingsWindow ? { kind: 'settings' } : { kind: 'today' })
 const page = computed(() => renderPageForDestination(destination.value))
 const state = ref<StudyState>(createSeedStudyState())
@@ -173,6 +177,14 @@ const listsMoreOpen = ref(false)
 const taskActionMode = ref<TaskActionMode>('plan')
 const taskActionTaskId = ref('')
 const taskEditorOpen = ref(false)
+const desktopContext = ref<{ open: boolean; x: number; y: number; kind: 'input' | 'task' | 'calendar' | 'list' | 'blank'; target: HTMLElement | null }>({ open: false, x: 0, y: 0, kind: 'blank', target: null })
+const desktopContextItems = computed(() => ({
+  input: [{ id: 'undo', label: '撤销' }, { id: 'cut', label: '剪切' }, { id: 'copy', label: '复制' }, { id: 'paste', label: '粘贴' }, { id: 'selectAll', label: '全选' }],
+  task: [{ id: 'open', label: '打开任务' }, { id: 'edit', label: '编辑任务' }, { id: 'complete', label: '完成或重开' }],
+  calendar: [{ id: 'open', label: '打开安排' }, { id: 'adjust', label: '调整安排' }, { id: 'complete', label: '完成或重开' }],
+  list: [{ id: 'open', label: '打开清单' }],
+  blank: [{ id: 'search', label: '搜索' }, { id: 'create', label: '新建任务' }],
+})[desktopContext.value.kind])
 const globalSearchOpen = ref(false)
 const tagManagerOpen = ref(false)
 const tagManagerReturnToSearch = ref(false)
@@ -501,7 +513,11 @@ const weeklyNext = computed(() => liveTasks.value.find((task) => task.status ===
 onMounted(async () => {
   if (!settingsWindow) window.addEventListener('shixue:quick-add', handleQuickAdd)
   window.addEventListener('shixue:module-error', handleModuleError)
+  window.addEventListener('storage', syncAppearance)
+  window.addEventListener('shixue:appearance-change', syncAppearance)
   if (!settingsWindow) window.addEventListener('keydown', handleGlobalSearchShortcut)
+  if (desktopRuntime) window.addEventListener('keydown', blockDesktopReload, true)
+  if (desktopRuntime) window.addEventListener('contextmenu', openDesktopContextMenu)
   try {
     remindersEnabled.value = localStorage.getItem('meow-study-reminders') === 'enabled'
   } catch {
@@ -548,8 +564,46 @@ onUnmounted(() => {
   compactMedia?.removeEventListener('change', onCompactChange)
   window.removeEventListener('shixue:quick-add', handleQuickAdd)
   window.removeEventListener('shixue:module-error', handleModuleError)
+  window.removeEventListener('storage', syncAppearance)
+  window.removeEventListener('shixue:appearance-change', syncAppearance)
   window.removeEventListener('keydown', handleGlobalSearchShortcut)
+  window.removeEventListener('keydown', blockDesktopReload, true)
+  window.removeEventListener('contextmenu', openDesktopContextMenu)
 })
+
+function blockDesktopReload(event: KeyboardEvent) {
+  if (event.key === 'F5' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r')) event.preventDefault()
+}
+function openDesktopContextMenu(event: MouseEvent) {
+  event.preventDefault()
+  const target = event.target instanceof HTMLElement ? event.target : null
+  const editable = target?.closest('input, textarea, [contenteditable="true"]')
+  const kind = editable ? 'input' : target?.closest('.calendar-item') ? 'calendar' : target?.closest('.task-row') ? 'task' : target?.closest('.nav-item') ? 'list' : 'blank'
+  desktopContext.value = { open: true, x: event.clientX, y: event.clientY, kind, target: (editable as HTMLElement | null) ?? target }
+}
+async function runDesktopContextCommand(command: string) {
+  const target = desktopContext.value.target
+  desktopContext.value.open = false
+  if (!target) return
+  if (desktopContext.value.kind === 'input') {
+    target.focus()
+    if (command === 'paste' && (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+      try {
+        const value = await navigator.clipboard.readText()
+        target.setRangeText(value, target.selectionStart ?? 0, target.selectionEnd ?? 0, 'end')
+        target.dispatchEvent(new Event('input', { bubbles: true }))
+      } catch { notify('剪贴板暂时不可用。') }
+    } else document.execCommand(command)
+    return
+  }
+  if (command === 'search') openGlobalSearch()
+  else if (command === 'create') window.dispatchEvent(new CustomEvent('shixue:quick-add'))
+  else {
+    const container = target.closest('.calendar-item, .task-row, .nav-item') ?? target
+    const selector = command === 'edit' ? '[aria-label^="编辑"]' : command === 'complete' ? '.complete-button, .calendar-item__complete button' : command === 'adjust' ? '.calendar-item__menu' : '.task-main, .calendar-item__body, .calendar-item__fact, .nav-item'
+    ;(container.querySelector<HTMLElement>(selector) ?? (container.matches(selector) ? container as HTMLElement : null))?.click()
+  }
+}
 
 async function notificationAdapter() { return import('./modules/notification') }
 
@@ -1272,8 +1326,6 @@ function openTaskEditor(taskId: string) {
 
 function closeTaskEditor() {
   taskEditorOpen.value = false
-  selectedTaskId.value = ''
-  selectedOccurrenceId.value = ''
   reminderError.value = ''
 }
 
@@ -1922,6 +1974,13 @@ function setThemePreference(patch: Partial<ThemePreference>) {
 function setTheme(themeId: string) { setThemePreference({ themeId }) }
 function setThemeMode(mode: ThemeMode) { setThemePreference({ mode }) }
 function setCustomPrimary(customPrimary: string) { setThemePreference({ themeId: 'custom', customPrimary }) }
+function setFontScale(fontScale: number) { setThemePreference({ fontScale }) }
+function syncAppearance(event: Event) {
+  if (event instanceof StorageEvent && event.key !== THEME_STORAGE_KEY) return
+  const next = event instanceof CustomEvent ? event.detail as ThemePreference : loadThemePreference()
+  themePreference.value = next
+  applyThemePreference(next)
+}
 function onAppearanceChange(event: MediaQueryListEvent) { systemDark.value = event.matches }
 function updatePlanningPreferences(patch: Partial<PlanningPreferences>) {
   try {
@@ -2022,12 +2081,15 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
 </script>
 
 <template>
-  <div class="shell">
+  <div class="app-frame">
+    <DesktopTitlebar v-if="desktopRuntime" />
+    <DesktopContextMenu v-if="desktopRuntime" :open="desktopContext.open" :x="desktopContext.x" :y="desktopContext.y" :items="desktopContextItems" @close="desktopContext.open = false" @command="runDesktopContextCommand" />
+    <div class="shell">
     <OverlayHost />
-    <AppSidebar v-if="!showFocus && !settingsWindow" :active="destination" :counts="smartViewCounts" :groups="activeListGroups" :lists="listNavItems" :display-mode="sidebarPreferences.displayMode" :order="sidebarPreferences.order" @search="openGlobalSearch" @navigate="navigateShell" @update:display-mode="updateSidebarPreferences({ displayMode: $event })" @reorder="updateSidebarPreferences({ order: $event })" @create-list="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" />
+    <AppSidebar v-if="!showFocus && !settingsWindow" :active="destination" :counts="smartViewCounts" :groups="activeListGroups" :lists="listNavItems" :display-mode="sidebarPreferences.displayMode" :order="sidebarPreferences.order" :width="sidebarPreferences.width" @search="openGlobalSearch" @navigate="navigateShell" @update:display-mode="updateSidebarPreferences({ displayMode: $event })" @reorder="updateSidebarPreferences({ order: $event })" @resize="updateSidebarPreferences({ width: $event })" @create-list="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" />
     <div class="workspace">
       <header v-if="!showFocus && !settingsWindow" class="mobile-header"><div class="mobile-brand"><img src="/shixue-mark.svg" alt="" /><strong>拾学</strong></div><div class="mobile-actions"><IconButton label="全局搜索" aria-keyshortcuts="Control+K Meta+K" @click="openGlobalSearch"><Search /></IconButton><IconButton label="设置" :aria-current="destination.kind === 'settings' ? 'page' : undefined" @click="navigateShell({ kind: 'settings' })"><Settings /></IconButton></div></header>
-      <main :class="{ 'focus-main': showFocus, 'tasks-main': (page === 'tasks' || page === 'today') && !showFocus, 'calendar-main': page === 'calendar' && !showFocus }">
+      <main :class="{ 'focus-main': showFocus, 'tasks-main': (page === 'tasks' || page === 'today') && !showFocus, 'calendar-main': page === 'calendar' && !showFocus, 'settings-main': page === 'settings' && !showFocus }">
         <div v-if="loading" class="loading">正在打开你的学习记录…</div>
         <FocusView v-if="!loading && showFocus && activeSession && activeTask" :back-label="page === 'calendar' ? '日历' : '今天'" :topic-title="topicTitleFor(activeTask.topicId)" :task-title="activeTask.title" :criteria="activeTask.acceptanceCriteria" :time-label="timeLabel" :running="activeSession.state === 'running'" :scratchpad="activeSession.scratchpad" :review-link-id="activeReviewLinkId || undefined" @back="showFocus = false" @toggle="toggleFocus" @finish="openFocusCompletion" @update:scratchpad="updateScratchpad" />
         <template v-if="!loading && (page === 'calendar' || (!showFocus && (page === 'tasks' || page === 'today')))">
@@ -2044,11 +2106,12 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
             <template #context><CalendarSourceManager :sources="recurrenceWorkspace?.calendarSources ?? []" :timezone="timezone" :execute="(command) => executeCalendarCommand(command, 'human-ui')"><template #connections><CalendarConnectionsPanel v-if="defaultModuleConfig.calendarConnections" :controller="calendarConnections" /></template></CalendarSourceManager></template>
           </CalendarWorkspace>
           <div v-else class="tasks-scroll"><TasksView ref="tasksView" :tasks="taskViews" :occurrences="occurrenceViews" :topics="state.topics.filter((topic) => !topic.archivedAt)" :title="smartViewTitle" :subtitle="smartViewSubtitle" :selected-id="selectedTaskId" :smart-view="activeSmartView" :search="taskSearch" :topic-filter="taskTopicFilter" :priority-filter="taskPriorityFilter" :sort="taskSort" :quick-add-destination-list-id="quickAddDestinationListId" :quick-add-default-start-on="activeSmartView === 'today' ? today : undefined" :quick-add-default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :quick-add-catalog-revision="recurrenceWorkspace?.revision" @smart-view-change="selectSmartView" @search-change="setTaskSearch" @topic-filter-change="setTaskTopicFilter" @priority-filter-change="setTaskPriorityFilter" @sort-change="setTaskSort" @created="quickAddCreated" @open="openTask" @toggle-complete="toggleTaskCompletion" @edit="openTaskEditor" @delete="deleteTask" @defer="openTaskAction($event, 'defer')" @cancel="openTaskAction($event, 'cancel')" @bulk-delete="bulkDeleteTasks" @bulk-complete="bulkCompleteTasks" @bulk-move-to-today="bulkMoveTasksToToday" @overdue-move-to-today="bulkMoveTasksToToday" @occurrence-open="openOccurrence" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" /></div>
-          <TaskDetailDrawer v-if="!taskEditorOpen" :overlay="page === 'calendar'" :task="showFocus ? undefined : selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" />
-          <TaskEditSheet v-else :open="taskEditorOpen" :overlay="page === 'calendar'" :task="selectedTaskEditModel" :topics="state.topics" :tags="recurrenceWorkspace?.tags ?? []" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @manage-tags="openTagManager()" @close="closeTaskEditor" @save="saveTaskEdit" />
+          <TaskDetailDrawer :editing="taskEditorOpen" :width="sidebarPreferences.inspectorWidth" :overlay="page === 'calendar'" :task="showFocus ? undefined : selectedTaskView" :events="selectedTaskEvents" :due-label="selectedTaskView?.dueLabel" :occurrence-id="selectedOccurrence?.id" :occurrence-status="selectedOccurrence?.status" :occurrence-schedule-label="selectedOccurrence ? formatPlanDate(selectedOccurrence.override?.scheduledOn ?? selectedOccurrence.override?.scheduledAt ?? selectedOccurrence.scheduledOn ?? selectedOccurrence.scheduledAt) : ''" :deadline-label="selectedTaskView?.dueLabel" :mobile="compact" @close="selectedTaskId = ''; selectedOccurrenceId = ''" @edit="openTaskEditor" @delete="deleteTask" @toggle-complete="toggleTaskCompletion" @primary="taskPrimary" @defer="openTaskAction($event, 'defer')" @block="openTaskAction($event, 'block')" @cancel="openTaskAction($event, 'cancel')" @toggle-checklist="toggleTaskChecklist" @add-checklist="addTaskChecklist" @occurrence-complete="executeOccurrence($event, 'recurrence.complete')" @occurrence-skip="executeOccurrence($event, 'recurrence.skip')" @occurrence-reschedule="openOccurrenceReschedule" @resize="updateSidebarPreferences({ inspectorWidth: $event })">
+            <template #editor><TaskEditSheet embedded :open="taskEditorOpen" :overlay="page === 'calendar'" :task="selectedTaskEditModel" :topics="state.topics" :tags="recurrenceWorkspace?.tags ?? []" :recurrence-rule="selectedRecurrenceRule" :learning="selectedWorkspaceTask?.mode === 'learning'" :planned-at="selectedWorkspaceTask?.schedule.startAt" :due-at="selectedWorkspaceTask?.deadline.dueAt" :reminder-rules="recurrenceWorkspace?.reminderRules ?? []" :notification-available="nativeNotificationAvailable" :reminder-permission="editorReminderPermission" :reminder-busy="reminderBusy" :reminder-error="reminderError" @manage-tags="openTagManager()" @close="closeTaskEditor" @save="saveTaskEdit" /></template>
+          </TaskDetailDrawer>
           </div>
         </template>
-        <SettingsView v-else-if="!loading && !showFocus && page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :theme-id="themePreference.themeId" :theme-mode="themePreference.mode" :custom-primary="themePreference.customPrimary" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export-json="exportJsonData" @export-markdown="exportMarkdownData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-theme="setTheme" @set-theme-mode="setThemeMode" @set-custom-primary="setCustomPrimary" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
+        <SettingsView v-else-if="!loading && !showFocus && page === 'settings'" :workspace="recurrenceWorkspace" :dark="appearanceDark" :theme-id="themePreference.themeId" :theme-mode="themePreference.mode" :custom-primary="themePreference.customPrimary" :font-scale="themePreference.fontScale" :reminders-available="nativeNotificationAvailable" :reminder-busy="reminderSettingBusy" :reminder-message="reminderMessage" :reminder-count="reminderCards.length" @open-reminders="openReminderCenter" :lifecycle-available="lifecycleAvailable" :close-behavior="planningPreferences.closeBehavior" :autostart-available="autostartAvailable" :autostart-enabled="autostartEnabled" :autostart-busy="autostartBusy" :device-message="deviceMessage" :reminders-enabled="remindersEnabled" :quick-add-remove-recognized-text="planningPreferences.quickAddRemoveRecognizedText" :default-estimate-minutes="planningPreferences.defaultEstimateMinutes" :reduced-glass-override="planningPreferences.reducedGlassOverride" :sidebar-display-mode="sidebarPreferences.displayMode" :sidebar-order-customized="sidebarOrderCustomized" :cloud-available="cloudAvailable" :cloud-status="cloudStatus" :cloud-email="cloudEmail" :cloud-message="cloudMessage" @export-json="exportJsonData" @export-markdown="exportMarkdownData" @import="importData" @reset-demo="resetDemo" @reset-sidebar-order="resetSidebarOrder" @set-theme="setTheme" @set-theme-mode="setThemeMode" @set-custom-primary="setCustomPrimary" @set-font-scale="setFontScale" @set-reminders="setReminders" @test-notification="testNotification" @set-close-behavior="setCloseBehavior" @set-launch-at-login="setLaunchAtLogin" @set-quick-add-remove-recognized-text="updatePlanningPreferences({ quickAddRemoveRecognizedText: $event })" @set-default-estimate-minutes="updatePlanningPreferences({ defaultEstimateMinutes: $event })" @set-reduced-glass="updatePlanningPreferences({ reducedGlassOverride: $event })" @set-sidebar-display-mode="updateSidebarPreferences({ displayMode: $event })" @cloud-sign-in="signInStudyCloud" @cloud-sign-out="signOutStudyCloud" @cloud-sync="syncStudyCloud" />
         <div v-else-if="!loading && !showFocus && destination.kind === 'learning'" class="route-workspace">
           <nav class="learning-navigation" aria-label="学习导航"><Button v-for="item in learningWorkspaceNavigation" :key="item.preferenceKey" :aria-pressed="isLearningDestinationActive(item.view)" @click="setDestination(item.view)">{{ item.label }}</Button></nav>
           <TopicsView v-if="destination.section === 'topics'" :topics="topicViews" :groups="activeListGroups" :selected-id="selectedTopicId" @select="selectedTopicId = $event" @create="openTopicEditor()" @create-group="openGroupEditor()" @edit-group="openGroupEditor(activeListGroups.find((group) => group.id === $event))" @update-appearance="updateTopicAppearance" @edit="openTopicEditor(state.topics.find((topic) => topic.id === $event))" @archive="archiveTopic" @start="taskPrimary(liveTasks.find((task) => task.topicId === $event && (task.status === 'in_progress' || task.status === 'planned'))?.id ?? '')" />
@@ -2099,18 +2162,20 @@ function reportStorageError(error: unknown) { storageError.value = error instanc
     </Dialog>
     <ToastRegion :key="toastVersion" :message="toast" :action-label="toastAction?.label" :duration="toastAction ? 6000 : 3200" :raised="compact && Boolean(selectedTaskId)" @action="runToastAction" @dismiss="dismissToast" />
     <div v-if="storageError" class="error-banner" role="alert"><span>{{ errorBannerMessage }}</span><button @click="storageError = ''">知道了</button></div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.calendar-main { overflow: hidden; }
+.calendar-main, .settings-main { overflow: hidden; }
 .route-workspace { min-height: 100%; display: flex; flex-direction: column; }
 .route-workspace > :last-child { min-height: 0; flex: 1; }
 .learning-navigation { display: flex; gap: 8px; padding: 16px 24px 0; }
 .learning-navigation > * { min-height: 44px; }
 .lists-more { display: none; }
 .lists-more-menu { min-width: 180px; display: grid; gap: 6px; padding: 8px; }
-.shell { width: 100%; height: 100vh; height: 100dvh; display: flex; overflow: hidden; background: radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 34%), radial-gradient(circle at 100% 92%, color-mix(in srgb, var(--accent-alt) 6%, transparent), transparent 36%), var(--bg); }.workspace { min-width: 0; flex: 1; height: 100%; overflow: hidden; background: color-mix(in srgb, var(--bg) 88%, transparent); } main { width: 100%; height: 100%; overflow-y: auto; overscroll-behavior-y: contain; scroll-behavior: smooth; scrollbar-gutter: stable; }.tasks-main { overflow: hidden; }.today-layout { min-height: 100%; display: flex; justify-content: center; }.today-layout > :first-child { flex: 1 1 auto; }.tasks-layout { height: 100%; display: flex; }.tasks-scroll { min-width: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }.calendar-content { min-width: 0; min-height: 0; flex: 1; }.focus-main { background: var(--bg); }.mobile-header { display: none; }.loading { min-height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
+.app-frame { width: 100%; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.shell { width: 100%; min-height: 0; flex: 1; display: flex; overflow: hidden; background: radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 34%), radial-gradient(circle at 100% 92%, color-mix(in srgb, var(--accent-alt) 6%, transparent), transparent 36%), var(--bg); }.workspace { min-width: 0; flex: 1; height: 100%; overflow: hidden; background: color-mix(in srgb, var(--bg) 88%, transparent); } main { width: 100%; height: 100%; overflow-y: auto; overscroll-behavior-y: contain; scroll-behavior: smooth; scrollbar-gutter: stable; }.tasks-main { overflow: hidden; }.today-layout { min-height: 100%; display: flex; justify-content: center; }.today-layout > :first-child { flex: 1 1 auto; }.tasks-layout { height: 100%; display: flex; }.tasks-scroll { min-width: 0; flex: 1; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }.calendar-content { min-width: 0; min-height: 0; flex: 1; }.focus-main { background: var(--bg); }.mobile-header { display: none; }.loading { min-height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
 .editor-sheet { width: 100%; }.editor-sheet.compact-editor { width: min(100%, 420px); }.editor-sheet > p { margin: 0 0 5px; color: var(--accent); font-size: 11px; font-weight: 600; }.editor-sheet h2 { margin: 0 0 22px; font-size: 23px; font-weight: 650; letter-spacing: -.025em; }.editor-sheet label { display: block; margin-top: 16px; }.editor-sheet label > span { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; }.editor-sheet input, .editor-sheet textarea { width: 100%; min-height: var(--field-min-height); padding: 9px 12px; border: 1px solid transparent; border-radius: var(--radius-md); outline: 0; background: var(--field-fill); color: var(--text); font-size: 13px; transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease); }.editor-sheet input:hover:not(:focus), .editor-sheet textarea:hover:not(:focus) { background: var(--field-hover-fill); }.editor-sheet input:focus, .editor-sheet textarea:focus { border-color: var(--accent); background: var(--field-focus-fill); box-shadow: var(--field-focus-ring); }.editor-sheet textarea { min-height: 80px; resize: vertical; }.duration-input { display: flex; align-items: center; gap: 9px; }.duration-input input { width: 110px; }.duration-input span { color: var(--muted); font-size: 12px; }.editor-sheet footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); }.editor-sheet footer button { min-height: 46px; padding: 0 18px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 600; }.footer-spacer { flex: 1; }.cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); }.save { border: 0; background: var(--accent); color: var(--accent-text); box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 20%, transparent); }
 .error-banner { position: fixed; z-index: var(--z-toast); left: 232px; right: 16px; top: 14px; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 10px 8px 14px; border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border)); border-radius: var(--radius-lg); background: var(--material-regular); color: var(--danger); font-size: 11px; box-shadow: var(--shadow-md);  }.error-banner button { min-height: 30px; border: 0; background: transparent; color: var(--danger); font-weight: 600; }
 @media (max-width: 819px) {

@@ -21,7 +21,7 @@ test('shared Sheet owns business modal lifecycle and app-level editors use it', 
 test('business sheets and responsive task detail no longer own parallel overlay code', () => {
   for (const name of ['CompletionSheet.vue', 'TaskActionSheet.vue', 'TaskEditSheet.vue', 'TaskDetailDrawer.vue']) {
     const source = rootSource(`src/components/study/${name}`)
-    assert.match(source, /<Sheet\b/)
+    assert.match(source, name === 'TaskEditSheet.vue' ? /:is="embedded \? 'div' : Sheet"/ : /<Sheet\b/)
     assert.doesNotMatch(source, /useModalOverlay|<Teleport\b|class="backdrop"|@click\.self/)
   }
   const detail = rootSource('src/components/study/TaskDetailDrawer.vue')

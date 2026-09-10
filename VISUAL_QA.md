@@ -108,6 +108,15 @@ npm run build
 npm run check:docs
 ```
 
+桌面壳层、设置滚动、日历空白拖选或任务检查器发生变化时，运行：
+
+```powershell
+npm run build:web
+npm run smoke:desktop-shell
+```
+
+该烟测固定覆盖 800×560、1180×760、1366×768、1920×1080，并验证空白时间段快速创建、单一检查器查看/编辑切换、设置页唯一滚动容器、字号缩放、侧栏宽度持久化和 console/page error。输出位于 `artifacts/desktop-shell-2026-09-10/`；它是 `web-implementation` 证据，不替代 Windows 原生包验收。
+
 新增视觉模式、修改导航/材质/排版、或准备平台发布候选时，才追加对应平台的一条代表主流程截图与交互核验；不做无关的全仓视觉审计。人工审查按以下顺序进行：
 
 1. 先看信息层级与一眼可理解性。

@@ -21,6 +21,7 @@ const props = defineProps<{
   themeId: string
   themeMode: 'system' | 'light' | 'dark'
   customPrimary: string
+  fontScale: number
   remindersAvailable: boolean
   remindersEnabled: boolean
   quickAddRemoveRecognizedText: boolean
@@ -53,6 +54,7 @@ const emit = defineEmits<{
   setTheme: [id: string]
   setThemeMode: [mode: 'system' | 'light' | 'dark']
   setCustomPrimary: [color: string]
+  setFontScale: [scale: number]
   setReminders: [enabled: boolean]
   testNotification: []
   openReminders: []
@@ -68,6 +70,7 @@ const emit = defineEmits<{
 }>()
 
 const confirmReset = ref(false)
+const settingsContent = ref<HTMLElement>()
 const pageTitle = ref<HTMLHeadingElement>()
 const importInput = ref<HTMLInputElement>()
 const importFileName = ref('')
@@ -155,6 +158,13 @@ function setDefaultEstimate(value: string) { emit('setDefaultEstimateMinutes', v
 function setCustomPrimary(event: Event) {
   emit('setCustomPrimary', (event.target as HTMLInputElement).value)
 }
+function navigateSection(id: string) {
+  const section = document.getElementById(id)
+  const content = settingsContent.value
+  if (!section || !content) return
+  content.scrollTo({ top: Math.max(0, section.offsetTop - 20), behavior: 'smooth' })
+  section.focus({ preventScroll: true })
+}
 onMounted(() => pageTitle.value?.focus())
 </script>
 
@@ -163,15 +173,15 @@ onMounted(() => pageTitle.value?.focus())
     <aside class="settings-navigation" aria-label="设置分类">
       <strong>设置</strong>
       <nav>
-        <a href="#settings-appearance"><Eye :size="17" />外观</a>
-        <a href="#settings-navigation"><PanelLeft :size="17" />导航</a>
-        <a href="#settings-input"><FileJson :size="17" />输入与操作</a>
-        <a href="#settings-reminders"><Bell :size="17" />提醒与启动</a>
-        <a href="#settings-data"><Download :size="17" />数据</a>
-        <a v-if="cloudAvailable" href="#settings-cloud"><Cloud :size="17" />同步</a>
+        <button type="button" @click="navigateSection('settings-appearance')"><Eye :size="17" />外观</button>
+        <button type="button" @click="navigateSection('settings-navigation')"><PanelLeft :size="17" />导航</button>
+        <button type="button" @click="navigateSection('settings-input')"><FileJson :size="17" />输入与操作</button>
+        <button type="button" @click="navigateSection('settings-reminders')"><Bell :size="17" />提醒与启动</button>
+        <button type="button" @click="navigateSection('settings-data')"><Download :size="17" />数据</button>
+        <button v-if="cloudAvailable" type="button" @click="navigateSection('settings-cloud')"><Cloud :size="17" />同步</button>
       </nav>
     </aside>
-    <main class="settings-content">
+    <main ref="settingsContent" class="settings-content">
     <header class="page-header">
       <div>
         <h1 ref="pageTitle" tabindex="-1">设置</h1>
@@ -181,7 +191,7 @@ onMounted(() => pageTitle.value?.focus())
     </header>
 
     <div class="settings-grid">
-      <section id="settings-appearance" class="settings-section settings-section--wide">
+      <section id="settings-appearance" class="settings-section settings-section--wide" tabindex="-1">
         <div class="section-title"><Eye :size="18" /><div><h2>外观与显示</h2><p>更改会立即应用到当前设备。</p></div></div>
         <div class="setting-block">
           <span class="setting-label">配色方案</span>
@@ -215,6 +225,10 @@ onMounted(() => pageTitle.value?.focus())
             </label>
           </div>
         </div>
+        <div class="setting-row font-scale-row">
+          <span><strong>字体大小</strong><small>全局文字 {{ Math.round(fontScale * 100) }}%，控件热区保持不变</small></span>
+          <div><input :value="fontScale * 100" type="range" min="85" max="115" step="5" aria-label="全局字体大小" @input="emit('setFontScale', Number(($event.target as HTMLInputElement).value) / 100)" /><Button size="sm" variant="ghost" @click="emit('setFontScale', 1)">重置</Button></div>
+        </div>
         <div class="setting-block">
           <span class="setting-label">显示模式</span>
           <div class="segmented segmented--three" role="group" aria-label="显示模式">
@@ -225,7 +239,7 @@ onMounted(() => pageTitle.value?.focus())
         </div>
       </section>
 
-      <section id="settings-navigation" class="settings-section">
+      <section id="settings-navigation" class="settings-section" tabindex="-1">
         <div class="section-title"><PanelLeft :size="18" /><div><h2>侧边栏</h2><p>桌面窗口可自由切换显示形态。</p></div></div>
         <div class="setting-block sidebar-mode-control">
           <span class="setting-label">默认显示</span>
@@ -326,13 +340,13 @@ onMounted(() => pageTitle.value?.focus())
 </template>
 
 <style scoped>
-.settings-view { width: min(100%, 1100px); min-height: 100%; display: grid; grid-template-columns: 224px minmax(0, 1fr); margin: 0 auto; }
-.settings-navigation { position: sticky; top: 0; align-self: start; max-height: 100dvh; overflow-y: auto; padding: 28px 16px; border-right: 1px solid var(--glass-border); background: var(--material-thin); box-shadow: var(--glass-highlight); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
+.settings-view { width: min(100%, 1100px); height: 100%; min-height: 0; display: grid; grid-template-columns: 224px minmax(0, 1fr); margin: 0 auto; overflow: hidden; }
+.settings-navigation { height: 100%; min-height: 0; overflow-y: auto; padding: 28px 16px; border-right: 1px solid var(--glass-border); background: var(--material-thin); box-shadow: var(--glass-highlight); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
 .settings-navigation > strong { display: block; padding: 0 10px 18px; font-size: var(--text-lg); font-weight: 650; }
 .settings-navigation nav { display: grid; gap: 3px; }
-.settings-navigation a { min-height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: var(--radius-md); color: var(--muted); font-size: var(--text-sm); text-decoration: none; }
-.settings-navigation a:hover, .settings-navigation a:focus-visible { outline: 0; background: var(--control-fill); color: var(--text); }
-.settings-content { width: min(100%, 820px); min-width: 0; margin: 0 auto; padding: 28px 28px 80px; }
+.settings-navigation button { width: 100%; min-height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--muted); font: inherit; font-size: var(--text-sm); text-align: left; }
+.settings-navigation button:hover, .settings-navigation button:focus-visible { outline: 0; background: var(--control-fill); color: var(--text); }
+.settings-content { width: min(100%, 820px); min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior-y: contain; margin: 0 auto; padding: 28px 28px 80px; scrollbar-gutter: stable; }
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-6); margin-bottom: var(--space-8); }
 .page-header h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 650; letter-spacing: -.025em; }
 .page-header p { margin: 7px 0 0; color: var(--muted); font-size: var(--text-base); line-height: 1.55; }
@@ -368,6 +382,11 @@ onMounted(() => pageTitle.value?.focus())
 .setting-row strong, .action-row strong { font-size: var(--text-base); font-weight: 600; }
 .setting-row small, .action-row small { color: var(--muted); font-size: var(--text-xs); line-height: 1.45; }
 .setting-row :deep(.listbox) { width: 142px; flex: 0 0 142px; }
+.font-scale-row > div { display: flex; align-items: center; gap: var(--space-2); }
+.font-scale-row input { width: 150px; height: 28px; appearance: none; background: transparent; }
+.font-scale-row input::-webkit-slider-runnable-track { height: 4px; border-radius: var(--radius-full); background: var(--control-fill); }
+.font-scale-row input::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -7px; appearance: none; border: 2px solid var(--surface); border-radius: 50%; background: var(--accent); box-shadow: var(--shadow-sm); }
+.font-scale-row input:focus-visible { outline: 0; filter: drop-shadow(var(--focus-ring)); }
 .action-row { justify-content: flex-start; cursor: pointer; }
 .action-row > svg { flex: 0 0 auto; color: var(--accent); }
 .action-row:hover { color: var(--accent); }

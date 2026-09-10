@@ -34,16 +34,20 @@ const menuKeys = ['smart:inbox', 'smart:today', 'list:learning', 'page:topics', 
 
 test('sidebar preferences persist display mode and a normalized menu order', () => {
   withStorage(() => {
-    assert.deepEqual(loadSidebarPreferences(menuKeys), { displayMode: 'expanded', order: menuKeys })
+    assert.deepEqual(loadSidebarPreferences(menuKeys), { displayMode: 'expanded', order: menuKeys, width: 232, inspectorWidth: 420 })
 
     const saved = saveSidebarPreferences({
       displayMode: 'icons',
       order: ['page:review', 'smart:inbox', 'removed', 'smart:inbox'],
+      width: 312,
+      inspectorWidth: 520,
     }, menuKeys)
 
     assert.deepEqual(saved, {
       displayMode: 'icons',
       order: ['page:review', 'smart:inbox', 'smart:today', 'list:learning', 'page:topics'],
+      width: 312,
+      inspectorWidth: 520,
     })
     assert.deepEqual(loadSidebarPreferences(menuKeys), saved)
   })
@@ -52,11 +56,13 @@ test('sidebar preferences persist display mode and a normalized menu order', () 
 test('damaged sidebar storage fails safe and a new menu item is appended', () => {
   withStorage((storage) => {
     storage.setItem('shixue:sidebar-preferences:v1', '{bad json')
-    assert.deepEqual(loadSidebarPreferences(menuKeys), { displayMode: 'expanded', order: menuKeys })
+    assert.deepEqual(loadSidebarPreferences(menuKeys), { displayMode: 'expanded', order: menuKeys, width: 232, inspectorWidth: 420 })
 
     storage.setItem('shixue:sidebar-preferences:v1', JSON.stringify({
       displayMode: 'icons',
       order: ['page:review', 'smart:inbox'],
+      width: 232,
+      inspectorWidth: 420,
     } satisfies SidebarPreferences))
     assert.deepEqual(loadSidebarPreferences([...menuKeys, 'page:settings']).order.at(-1), 'page:settings')
   })

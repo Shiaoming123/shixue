@@ -25,6 +25,8 @@ const props = defineProps<{
   deadlineLabel?: string
   mobile?: boolean
   overlay?: boolean
+  editing?: boolean
+  width?: number
 }>()
 
 const emit = defineEmits<{
@@ -41,6 +43,7 @@ const emit = defineEmits<{
   occurrenceComplete: [id: string]
   occurrenceSkip: [id: string]
   occurrenceReschedule: [id: string]
+  resize: [width: number]
 }>()
 
 const checklistDraft = ref('')
@@ -75,8 +78,10 @@ function addChecklistItem() {
 </script>
 
 <template>
-  <Sheet :open="Boolean(task)" label="任务详情" :placement="detailPlacement" @close="emit('close')">
-  <aside v-if="task" class="detail-drawer" :class="{ mobile, covering }" :role="covering ? undefined : 'complementary'" aria-label="任务详情">
+  <Sheet :open="Boolean(task)" label="任务检查器" :placement="detailPlacement" size="lg" :width="width" resizable @resize="emit('resize', $event)" @close="emit('close')">
+  <Transition name="inspector-mode" mode="out-in">
+  <div v-if="editing" key="editing" class="detail-drawer detail-drawer--editing"><slot name="editor" /></div>
+  <aside v-else-if="task" key="detail" class="detail-drawer" :class="{ mobile, covering }" :role="covering ? undefined : 'complementary'" aria-label="任务详情">
     <header class="drawer-header">
       <div><IconButton label="编辑任务" @click="emit('edit', task.id)"><Pencil /></IconButton><IconButton label="删除任务" variant="destructive" @click="confirmDelete = true"><Trash2 /></IconButton></div>
       <IconButton label="关闭任务详情" :icon-size="20" @click="emit('close')"><X /></IconButton>
@@ -152,11 +157,16 @@ function addChecklistItem() {
       </button>
     </footer>
   </aside>
+  </Transition>
   </Sheet>
 </template>
 
 <style scoped>
 .detail-drawer { width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; background: var(--surface); }
+.detail-drawer--editing { overflow-y: auto; overflow-x: hidden; }
+.detail-drawer--editing :deep(.task-edit-host) { width: 100%; min-width: 0; }
+.inspector-mode-enter-active, .inspector-mode-leave-active { transition: opacity var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease); }
+.inspector-mode-enter-from, .inspector-mode-leave-to { opacity: 0; transform: translateX(8px); }
 .detail-drawer.covering { background: transparent; }
 .drawer-header { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; }.drawer-header > div { display: flex; gap: 3px; }.drawer-header button { width: 42px; height: 42px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text); }.drawer-header button:hover { background: var(--control-fill); }.drawer-header > div button:last-child { color: var(--danger); }
 .delete-confirm { margin: 0 28px 12px; padding: 13px; border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border)); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }.delete-confirm > span { display: flex; flex-direction: column; gap: 4px; }.delete-confirm strong { color: var(--danger); font-size: 12px; }.delete-confirm small { color: var(--muted); font-size: 10px; line-height: 1.5; }.delete-confirm > div { display: flex; justify-content: flex-end; gap: 7px; margin-top: 10px; }.delete-confirm button { min-height: 34px; padding: 0 11px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: var(--control-fill); color: var(--text); font-size: 11px; }.delete-confirm button.danger { color: var(--danger); }

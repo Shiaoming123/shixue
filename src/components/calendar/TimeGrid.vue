@@ -62,7 +62,7 @@ function finishBlank(event: PointerEvent) {
   if (!blankPointer || event.pointerId !== blankPointer.id) return
   const selected = blankSelection.value
   cancelBlank()
-  if (selected) emit('blank-slot', selected)
+  if (selected) emit('blank-slot', { ...selected, anchorX: event.clientX, anchorY: event.clientY })
 }
 
 const columns = ref<HTMLElement | null>(null)

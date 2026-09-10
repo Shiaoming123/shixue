@@ -35,7 +35,7 @@ export async function openSettingsWindow(
     minHeight: 560,
     resizable: true,
     center: true,
-    decorations: true,
+    decorations: false,
   })
   return 'created'
 }

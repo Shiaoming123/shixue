@@ -37,6 +37,7 @@
     "smoke:android-launch": "node scripts/smoke-android-launch.mjs",
     "smoke:android-persistence": "node scripts/smoke-android-persistence.mjs",
     "smoke:calendar": "node scripts/smoke-calendar.mjs",
+    "smoke:desktop-shell": "node scripts/smoke-desktop-shell.mjs",
     "benchmark:task-query": "node --experimental-strip-types scripts/benchmark-study-task-query.mjs",
     "smoke:windows-package": "node scripts/smoke-windows-package.mjs",
     "preview": "vite preview",

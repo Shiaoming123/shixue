@@ -13,8 +13,8 @@ function storage(values: Record<string, string> = {}) {
 test('theme preference round-trips and migrates legacy keys', () => {
   const values: Record<string, string> = { 'meow-study-theme': 'forest', 'meow-study-appearance': 'dark' }
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage(values) })
-  assert.deepEqual(loadThemePreference(), { themeId: 'forest', mode: 'dark', customPrimary: '#176b91' })
-  const preference = { themeId: 'custom', mode: 'system', customPrimary: '#123456' } as const
+  assert.deepEqual(loadThemePreference(), { themeId: 'forest', mode: 'dark', customPrimary: '#176b91', fontScale: 1 })
+  const preference = { themeId: 'custom', mode: 'system', customPrimary: '#123456', fontScale: 1.1 } as const
   saveThemePreference(preference)
   assert.deepEqual(loadThemePreference(), preference)
 })

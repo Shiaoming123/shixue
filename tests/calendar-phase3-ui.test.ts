@@ -101,6 +101,15 @@ test('blank slot opens one lightweight draft and carries it intact to save or fu
   } finally { h.unmount() }
 })
 
+test('losing pointer capture after a blank selection does not dismiss the new draft', () => {
+  const h = mountWorkspace()
+  try {
+    h.state.openQuickEvent({ date: '2026-09-10', minute: 615, duration: 45 })
+    h.state.cancelPointer({ pointerId: 1 })
+    assert.equal(h.state.quickEventOpen.value, true)
+  } finally { h.unmount() }
+})
+
 test('unscheduled content is a collapsible vertical flat section', () => {
   const tray = source('UnscheduledTray.vue')
   assert.match(tray, /:aria-expanded="expanded"/)
