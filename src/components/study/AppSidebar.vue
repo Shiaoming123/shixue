@@ -2,13 +2,12 @@
 import { computed, ref } from 'vue'
 import {
   BookOpen, CalendarClock, CalendarDays, CalendarRange, CircleCheckBig, Folder, History, Inbox,
-  ListTodo, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Settings,
+  ListTodo, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Search, Settings,
 } from '@lucide/vue'
 import { moveSidebarItem, type SidebarDisplayMode } from '../../lib/sidebar-preferences'
 import {
   desktopWorkspaceNavigation,
   learningWorkspaceNavigation,
-  listWorkspaceNavigation,
   type ShellDestination,
   type WorkspaceNavigationDescriptor,
   type WorkspaceView,
@@ -28,6 +27,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   navigate: [destination: ShellDestination]
+  search: []
   'update:displayMode': [mode: SidebarDisplayMode]
   reorder: [order: string[]]
   'create-list': []
@@ -44,7 +44,6 @@ const icons: Record<WorkspaceView['kind'], typeof Inbox> = {
   lists: ListTodo, list: Folder, completed: CircleCheckBig, learning: BookOpen,
 }
 const primaryItems = desktopWorkspaceNavigation.map((item) => ({ ...item, icon: icons[item.view.kind] }))
-const smartListItems = listWorkspaceNavigation.map((item) => ({ ...item, icon: icons[item.view.kind] }))
 const reviewItem = { ...learningWorkspaceNavigation.find(({ preferenceKey }) => preferenceKey === 'page:review')!, icon: History }
 const primaryKeys = primaryItems.map(({ preferenceKey }) => preferenceKey)
 const orderedPrimaryItems = computed(() => sortItems(primaryItems, ({ preferenceKey }) => preferenceKey))
@@ -130,12 +129,18 @@ function commitMove(source: string, target: string, keys: string[]) {
       </button>
     </div>
 
+    <button class="search-command" type="button" aria-label="搜索" aria-keyshortcuts="Control+K Meta+K" title="搜索（Ctrl K）" @click="emit('search')">
+      <Search class="search-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
+      <span class="search-label">搜索</span>
+      <kbd class="search-shortcut" aria-hidden="true">Ctrl K</kbd>
+    </button>
+
     <p id="sidebar-order-help" class="sr-only">拖动菜单项可调整顺序，也可使用 Alt 加上方向键上移或下移。</p>
     <p class="sr-only" aria-live="polite">{{ reorderMessage }}</p>
 
     <nav class="navigation" aria-label="待办导航">
-      <section class="nav-section" aria-labelledby="primary-navigation-heading">
-        <h2 id="primary-navigation-heading">主导航</h2>
+      <section class="nav-section" aria-labelledby="smart-list-heading">
+        <h2 id="smart-list-heading">智能清单</h2>
         <TransitionGroup name="nav-order" tag="div" class="nav-list">
           <button v-for="item in orderedPrimaryItems" :key="item.preferenceKey" class="nav-item" :class="{ active: currentDestination === item.preferenceKey, dragging: draggedKey === item.preferenceKey, 'drop-target': dropTargetKey === item.preferenceKey }" :aria-current="currentDestination === item.preferenceKey ? 'page' : undefined" :aria-label="primaryLabel(item)" aria-describedby="sidebar-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" :title="`${item.label} · 拖动排序`" draggable="true" @click="emit('navigate', item.view)" @dragstart="startDrag($event, item.preferenceKey)" @dragover.prevent="markDropTarget(item.preferenceKey, primaryKeys)" @drop="dropItem($event, item.preferenceKey, primaryKeys)" @dragend="clearDrag" @keydown="moveByKeyboard($event, item.preferenceKey, primaryKeys)">
             <component :is="item.icon" class="nav-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
@@ -147,13 +152,6 @@ function commitMove(source: string, target: string, keys: string[]) {
 
       <section class="nav-section list-section" aria-labelledby="my-lists-heading">
         <div class="section-heading"><h2 id="my-lists-heading">我的清单</h2><div><button type="button" title="新建分组" aria-label="新建分组" @click="emit('create-group')"><Folder :size="15" /></button><button type="button" title="新建清单" aria-label="新建清单" @click="emit('create-list')"><Plus :size="15" /></button></div></div>
-        <div class="nav-list smart-list-items" aria-label="智能清单">
-          <button v-for="item in smartListItems" :key="item.preferenceKey" class="nav-item" :class="{ active: currentDestination === item.preferenceKey }" :aria-current="currentDestination === item.preferenceKey ? 'page' : undefined" :aria-label="primaryLabel(item)" :title="item.label" @click="emit('navigate', item.view)">
-            <component :is="item.icon" class="nav-icon" :size="18" :stroke-width="1.8" aria-hidden="true" />
-            <span class="nav-label">{{ item.label }}</span>
-            <span v-if="smartViewFor(item.view)" class="nav-count" aria-hidden="true">{{ displayCount(smartViewFor(item.view)!) }}</span>
-          </button>
-        </div>
         <div v-for="section in orderedListSections" :key="section.id || 'ungrouped'" class="list-group">
           <div v-if="section.id" class="group-heading"><span>{{ section.title }}</span><button type="button" title="编辑分组" :aria-label="`编辑分组 ${section.title}`" @click="emit('edit-group', section.id)"><Pencil :size="12" /></button></div>
           <TransitionGroup name="nav-order" tag="div" class="nav-list">
@@ -184,7 +182,7 @@ function commitMove(source: string, target: string, keys: string[]) {
 </template>
 
 <style scoped>
-.sidebar { width: 232px; min-width: 232px; height: 100%; display: flex; flex-direction: column; padding: 24px 12px 20px; border-right: 1px solid var(--border); background: var(--material-thin); transition: width var(--motion-base) var(--ease), min-width var(--motion-base) var(--ease), padding var(--motion-base) var(--ease); }
+.sidebar { width: 232px; min-width: 232px; height: 100%; display: flex; flex-direction: column; padding: 24px 12px 20px; border-right: 1px solid var(--border); background: var(--surface); transition: width var(--motion-base) var(--ease), min-width var(--motion-base) var(--ease), padding var(--motion-base) var(--ease); }
 .sidebar.icons { width: 72px; min-width: 72px; padding-inline: 8px; }
 .brand { position: relative; min-height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 8px; color: var(--text); font-size: var(--text-lg); font-weight: var(--font-medium); letter-spacing: .02em; }
 .brand-mark { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; overflow: hidden; border: 1px solid color-mix(in srgb, white 32%, var(--hairline)); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface) 72%, transparent); box-shadow: var(--shadow-sm); transition: width var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease), border-width var(--motion-base) var(--ease); }
@@ -198,6 +196,14 @@ function commitMove(source: string, target: string, keys: string[]) {
 .sidebar.icons .mode-toggle { position: absolute; left: 5px; opacity: 0; pointer-events: none; }
 .sidebar.icons .brand:hover .brand-mark, .sidebar.icons .brand:focus-within .brand-mark { opacity: 0; }
 .sidebar.icons .brand:hover .mode-toggle, .sidebar.icons .mode-toggle:focus-visible { opacity: 1; pointer-events: auto; }
+.search-command { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 0 10px; border: 1px solid var(--hairline); border-radius: var(--radius-md); background: color-mix(in srgb, var(--control-fill) 82%, transparent); color: var(--muted); font: inherit; text-align: left; transition: border-color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease); }
+.search-command:hover { border-color: color-mix(in srgb, var(--accent) 24%, var(--hairline)); background: var(--control-fill); color: var(--text); }
+.search-command:focus-visible { outline: 0; box-shadow: var(--focus-ring); }
+.search-icon { flex: 0 0 auto; }
+.search-label { min-width: 0; max-width: 110px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 1; transition: max-width var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease), transform var(--motion-base) var(--ease); }
+.search-shortcut { max-width: 48px; overflow: hidden; padding: 2px 6px; border: 1px solid var(--hairline); border-radius: var(--radius-sm); color: var(--muted); font: inherit; font-size: 10px; white-space: nowrap; opacity: 1; transition: max-width var(--motion-base) var(--ease), padding var(--motion-base) var(--ease), border-width var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease); }
+.sidebar.icons .search-command { justify-content: center; gap: 0; padding-inline: 0; }
+.sidebar.icons .search-label, .sidebar.icons .search-shortcut { max-width: 0; padding-inline: 0; border-width: 0; opacity: 0; transform: translateX(-6px); }
 .navigation { min-height: 0; flex: 1; overflow-y: auto; padding-top: 24px; scrollbar-width: none; }
 .navigation::-webkit-scrollbar { display: none; }
 .nav-section h2 { max-height: 18px; margin: 0 8px 7px; overflow: hidden; color: color-mix(in srgb, var(--muted) 86%, transparent); font-size: var(--text-xs); font-weight: var(--font-medium); letter-spacing: .04em; opacity: 1; white-space: nowrap; transition: max-height var(--motion-base) var(--ease), margin var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease); }
@@ -205,7 +211,6 @@ function commitMove(source: string, target: string, keys: string[]) {
 .section-heading > div { display: flex; max-width: 60px; overflow: hidden; opacity: 1; transition: max-width var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease); }
 .section-heading button { width: 28px; height: 28px; border-radius: var(--radius-sm); }
 .list-section, .learning-section { margin-top: 20px; padding-top: 17px; border-top: 1px solid color-mix(in srgb, var(--hairline) 80%, transparent); }
-.smart-list-items { margin-bottom: 10px; }
 .list-group + .list-group { margin-top: 8px; }
 .group-heading { min-height: 25px; display: flex; align-items: center; justify-content: space-between; overflow: hidden; padding: 0 8px; color: var(--muted); font-size: var(--text-xs); opacity: 1; transition: min-height var(--motion-base) var(--ease), opacity var(--motion-fast) var(--ease); }
 .group-heading button { width: 24px; height: 24px; border-radius: var(--radius-sm); opacity: 0; }
@@ -236,11 +241,11 @@ function commitMove(source: string, target: string, keys: string[]) {
   .sidebar { width: 72px; min-width: 72px; padding-inline: 8px; }
   .brand { justify-content: center; padding-inline: 0; }
   .mode-toggle { display: none; }
-  .brand-copy, .nav-section h2, .section-heading > div, .group-heading, .nav-label, .nav-count { max-width: 0; min-width: 0; max-height: 0; min-height: 0; margin: 0; padding-inline: 0; border-width: 0; opacity: 0; pointer-events: none; }
+  .brand-copy, .search-label, .search-shortcut, .nav-section h2, .section-heading > div, .group-heading, .nav-label, .nav-count { max-width: 0; min-width: 0; max-height: 0; min-height: 0; margin: 0; padding-inline: 0; border-width: 0; opacity: 0; pointer-events: none; }
   .section-heading > div, .group-heading { visibility: hidden; }
-  .nav-item { justify-content: center; gap: 0; padding-inline: 0; }
+  .search-command, .nav-item { justify-content: center; gap: 0; padding-inline: 0; }
 }
 @media (max-width: 819px) { .sidebar { display: none; } }
-@media (prefers-reduced-motion: reduce) { .sidebar, .brand-copy, .brand-mark, .nav-section h2, .section-heading > div, .group-heading, .nav-item, .nav-label, .nav-count, .nav-order-move { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sidebar, .brand-copy, .brand-mark, .search-command, .search-label, .search-shortcut, .nav-section h2, .section-heading > div, .group-heading, .nav-item, .nav-label, .nav-count, .nav-order-move { transition: none; } }
 @media (prefers-reduced-transparency: reduce) { .sidebar { background: var(--surface); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; } }
 </style>

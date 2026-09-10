@@ -11,7 +11,7 @@
 | **Preview** | Sync、Agent、Ollama、MCP、可选系统插件 |
 | **Roadmap** | sidecar、RAG、语音、OCR |
 
-专题文档既包含当前用法，也包含目标设计；每篇开头的成熟度说明优先于路线图描述。拾学桌面和紧凑布局统一为五个一级领域，最近 7 天与已完成归入清单；Web smoke 与窄屏截图不构成原生验收。v0.3.0 无签名 Release 已于 2026-09-07 发布；其候选通过自动 package smoke 和已安装应用基础验收。最终重建 SHA 的复习完成 UI、提醒/托盘动作、MSI 安装、退出后不再投递、系统 200% 缩放、Narrator、Authenticode 与已发布版本 updater 端到端升级仍为 `NOT_RUN` 或 `BLOCKED`，详见[验收账本](./releases/v0.3.0-acceptance.md)。发布后的 Android `42cc204` 已取得隔离模拟器启动与应用进程重启后的 SQLite 恢复证据，但不属于 v0.3.0 Release，且不证明真机、模拟器重启恢复、通知、签名或商店交付。
+专题文档既包含当前用法，也包含目标设计；每篇开头的成熟度说明优先于路线图描述。拾学桌面导航有七个一级入口，紧凑布局有五个底栏入口；Web smoke 与窄屏截图不构成原生验收。v0.3.0 无签名 Release 已于 2026-09-07 发布；其候选通过自动 package smoke 和已安装应用基础验收。最终重建 SHA 的复习完成 UI、提醒/托盘动作、MSI 安装、退出后不再投递、系统 200% 缩放、Narrator、Authenticode 与已发布版本 updater 端到端升级仍为 `NOT_RUN` 或 `BLOCKED`，详见[验收账本](./releases/v0.3.0-acceptance.md)。发布后的 Android `42cc204` 已取得隔离模拟器启动与应用进程重启后的 SQLite 恢复证据，但不属于 v0.3.0 Release，且不证明真机、模拟器重启恢复、通知、签名或商店交付。
 
 ## 按目标导航
 

@@ -1,22 +1,5 @@
 # 拾学视觉验收矩阵
 
-## iOS UI/UX 大重构（2026-09-10）
-
-本轮以 `docs/experiments/ios-ui-ux-restructure-plan.md` 和 `DESIGN.md` 顶部覆盖合同为准。代表流程固定为：今天 → 任务详情 → 编辑日期 → 开始学习 → 证据完成 → 回顾；另验收日历、清单、学习与设置。
-
-实现验收结论见 `docs/experiments/ios-ui-ux-restructure-review.md`：WebView 8/8 视口与主题组合通过，完整前端与 Rust 验证通过；原生 iOS Simulator、VoiceOver、Dynamic Type、safe area、触觉和真机性能保持 `NOT_RUN`。
-
-| 视口/环境 | 必验内容 |
-| --- | --- |
-| 1440×960 | 五领域侧栏、主内容、详情并列、单一工具栏、键盘与 hover |
-| 820×900 | 图标侧栏、覆盖详情、内容不低于最小宽度 |
-| 390×844 | 五项底栏、安全区、44px 命中、Sheet 内层级、虚拟键盘 |
-| 320×740 | 长标题换行、主动作可达、无横向溢出 |
-| 浅色/深色/高对比 | 语义色、分隔与浮层层级均可辨认 |
-| 200% / reduced effects | 主要操作不丢失，无依赖动效或透明度的信息 |
-
-逐阶段检查：页面只有一个标题和一个 prominent 动作；desktop/mobile 顶层目的地一致；最近 7 天与已完成仍可达；普通列表不叠加卡片、边框和阴影；Popover/Sheet/Dialog 遵循选择矩阵；关闭后焦点返回；控制台无错误。原生 iOS 的 safe area、Dynamic Type、VoiceOver、返回手势、触觉和真机性能必须单独记录 PASS 或 NOT_RUN。
-
 ## 主题系统实验
 
 运行 `node scripts/smoke-theme-system.mjs http://127.0.0.1:18476/`，逐一切换全部预设，并验证系统模式联动、自定义主色、刷新持久化、语义色对比度、控制台错误及桌面/移动设置页截图。证据输出到 `artifacts/theme-system/`；该证据属于 Web 实现，不替代原生壳验证。

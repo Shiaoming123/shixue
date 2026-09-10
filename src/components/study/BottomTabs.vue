@@ -64,7 +64,7 @@ function isActive(view: WorkspaceView) {
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
-    background: var(--material-regular);
+    background: var(--surface);
     box-shadow: var(--shadow-md);
   }
 

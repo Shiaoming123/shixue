@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Button from '../ui/Button.vue'
-import PageHeader from '../ui/PageHeader.vue'
 
 export type LearningRhythmNextState = 'overdue' | 'today' | 'upcoming' | 'none'
 
@@ -66,11 +65,15 @@ function secondaryCounts(item: LearningRhythmViewItem): string {
 
 <template>
   <section class="rhythm-view" aria-labelledby="learning-rhythm-title">
-    <PageHeader class="rhythm-header" title="本周节律" subtitle="按各节律时区统计">
-      <template v-if="items.length" #actions><p class="total-progress">
+    <header class="rhythm-header">
+      <div>
+        <p>按各节律时区统计</p>
+        <h1 id="learning-rhythm-title">本周节律</h1>
+      </div>
+      <p v-if="items.length" class="total-progress">
         有证据完成 <strong>{{ totals.completedWithEvidence }}</strong> / 计划 <strong>{{ totals.planned }}</strong> 次
-      </p></template>
-    </PageHeader>
+      </p>
+    </header>
 
     <div v-if="items.length" class="rhythm-list">
       <article v-for="item in items" :key="item.seriesId" class="rhythm-row">
@@ -143,11 +146,12 @@ function secondaryCounts(item: LearningRhythmViewItem): string {
 
 .rhythm-header p { margin: 0; color: var(--muted); font-size: var(--text-sm); }
 .rhythm-header > div > p { margin-bottom: var(--space-2); color: var(--accent); font-weight: var(--font-medium); }
+.rhythm-header h1 { margin: 0; font-size: var(--text-xl); line-height: 1.25; font-weight: 650; letter-spacing: -.02em; }
 .total-progress { text-align: right; }
 .total-progress strong { color: var(--accent); font-variant-numeric: tabular-nums; }
 
 .rhythm-list { display: grid; gap: 20px; margin-top: 24px; }
-.rhythm-row { padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
+.rhythm-row { padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); box-shadow: var(--shadow-sm); }
 .row-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
 .row-title { min-width: 0; }
 .row-title small { color: var(--accent); font-size: var(--text-xs); }

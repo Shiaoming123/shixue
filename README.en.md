@@ -33,7 +33,7 @@ It is designed for people who want to manage personal todos, schedules, and lear
 
 ## Interface
 
-The interface combines a warm paper background, deep ink text, and a restrained sage-green accent. Desktop and compact layouts share five primary destinations: Inbox, Today, Calendar, Lists, and Learning. Upcoming and Completed are smart lists within Lists. Layouts at 1280px and wider use three columns, 820–1279px uses a details drawer, and 320–819px uses one column with full-screen details.
+The interface combines a warm paper background, deep ink text, and a restrained sage-green accent. Desktop navigation has seven primary destinations: Inbox, Today, Upcoming, Calendar, Lists, Completed, and Learning. At 320–819px, a five-item bottom bar shows Inbox, Today, Calendar, Lists, and Learning; Upcoming and Completed remain available from the More sheet. Layouts at 1280px and wider use three columns, 820–1279px uses a details drawer, and 320–819px uses one column with full-screen details.
 
 | Windows task center | 390px responsive layout |
 | --- | --- |
@@ -159,7 +159,7 @@ For the local Windows package, `npm run smoke:windows-package` installs the NSIS
 
 ## Roadmap
 
-- [x] General tasks, Today / Upcoming, five-destination navigation shared by desktop and compact layouts
+- [x] General tasks, Today / Upcoming, seven-destination desktop navigation, and five-destination compact navigation
 - [x] Day/week/month/agenda calendar, recurrence, offline bilingual quick add, and the multiple-reminder source path
 - [x] Reversible tag management and deterministic search across tasks, checklists, tags, and completion records
 - [x] Optional learning mode, focus sessions, evidence-backed completion, derived learning rhythm, and review loop

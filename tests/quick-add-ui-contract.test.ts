@@ -54,24 +54,6 @@ test('composer renders the shared candidate conflict state', () => {
   assert.match(composer, /conflictedCandidateIds\.includes\(candidate\.id\)/)
 })
 
-test('quick add exposes schedule and list before parsing and uses shared actions', () => {
-  const composer = studySource('QuickAddComposer.vue')
-  assert.match(composer, /import Button from ['"]\.\.\/ui\/Button\.vue['"]/)
-  assert.match(composer, /import IconButton from ['"]\.\.\/ui\/IconButton\.vue['"]/)
-  assert.match(composer, /import DateTimePicker from ['"]\.\.\/ui\/DateTimePicker\.vue['"]/)
-  assert.match(composer, /<input[\s\S]*aria-label="新建任务"/)
-  assert.match(composer, /class="quick-add-fields"[\s\S]*<DateTimePicker[\s\S]*<Listbox/)
-  assert.match(composer, /v-model="quickStartModel"/)
-  assert.match(composer, /v-model="quickListId"/)
-  assert.match(composer, /<Button class="learning-mode"/)
-  assert.match(composer, /<IconButton[\s\S]*type="submit"/)
-  assert.match(composer, /<Button class="apply" variant="prominent"/)
-  assert.doesNotMatch(composer, /<button\b/)
-  assert.match(composer, /acceptedCandidates\.length[\s\S]*<QuickAddChip/)
-  assert.match(composer, /candidate\.kind === 'schedule' \|\| candidate\.kind === 'deadline'/)
-  assert.match(composer, /candidate\.kind === 'list'/)
-})
-
 test('calendar exposes row-owned grid cells, one tab stop, and month and year navigation', () => {
   const datePicker = uiSource('DatePicker.vue')
   assert.match(datePicker, /role="row"/)

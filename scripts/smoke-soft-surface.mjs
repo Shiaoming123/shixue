@@ -22,7 +22,7 @@ const report = {
   startedAt: new Date().toISOString(), results: [], success: false,
 }
 try {
-  for (const viewport of [{ width: 1440, height: 960 }, { width: 820, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 740 }]) {
+  for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }, { width: 320, height: 740 }]) {
     for (const mode of ['light', 'dark']) {
       const context = await browser.newContext({ viewport, colorScheme: mode, timezoneId: 'Asia/Shanghai' })
       const page = await context.newPage()
@@ -37,13 +37,14 @@ try {
       const nav = page.locator(viewport.width < 820 ? '.tabbar' : '.sidebar')
       async function route(label) {
         if (label === '设置') {
-          await page.locator('.app-shell-header').getByRole('button', { name: '设置', exact: true }).click()
+          await page.locator(viewport.width < 820 ? '.mobile-header' : '.sidebar').getByRole('button', { name: '设置', exact: true }).click()
         } else if (['主题', '节律', '回顾'].includes(label)) {
           await nav.getByRole('button', { name: /^学习/ }).click()
           await page.getByRole('navigation', { name: '学习导航' }).getByRole('button', { name: label, exact: true }).click()
         } else if (viewport.width < 820 && ['最近 7 天', '已完成'].includes(label)) {
           await nav.getByRole('button', { name: '清单', exact: true }).click()
-          await page.getByRole('navigation', { name: '智能清单' }).getByRole('button', { name: label, exact: true }).click()
+          await page.getByRole('button', { name: '更多清单', exact: true }).click()
+          await page.getByRole('menuitem', { name: label, exact: true }).click()
         } else await nav.getByRole('button', { name: new RegExp(`^${label}`) }).click()
       }
       async function capture(name) {
@@ -81,18 +82,7 @@ try {
         await page.getByRole('button', { name: '完成记录', exact: true }).click()
         await capture('records')
         await route('今天')
-        await page.locator('.page-header h1').first().click()
-        assert.equal(await page.getByRole('searchbox', { name: '筛选当前清单' }).count(), 0, 'local text filter is collapsed initially')
-        await page.keyboard.press('/')
-        const localFilter = page.getByRole('searchbox', { name: '筛选当前清单' })
-        assert.equal(await localFilter.evaluate((element) => element === document.activeElement), true, '/ opens and focuses current-list filtering')
-        await localFilter.fill('no-match-local-filter-983251')
-        await page.getByRole('button', { name: '筛选', exact: true }).click()
-        assert.equal(await localFilter.isVisible(), true, 'an active text filter cannot become invisible')
-        await page.getByRole('button', { name: '清除筛选文字', exact: true }).click()
-        await localFilter.waitFor({ state: 'hidden' })
-        result.checks.push('Current-list filter is collapsed by default, keyboard reachable, and visible while active')
-        await page.locator('.page-header h1').first().click()
+        await page.locator('.page-title h1').click()
         await page.keyboard.press('n')
         const composer = page.locator('.quick-add-composer')
         const input = composer.getByRole('textbox', { name: '新建任务' })
@@ -104,45 +94,26 @@ try {
         await learning.click()
         assert.equal(await learning.getAttribute('aria-pressed'), 'true')
         await composer.getByRole('button', { name: '添加', exact: true }).click()
-        await page.getByRole('button', { name: '更多任务操作', exact: true }).waitFor()
+        await page.getByRole('button', { name: '编辑任务', exact: true }).waitFor()
         await capture('detail')
         await page.reload()
         await route('今天')
         await page.locator('.task-main').filter({ hasText: marker }).click()
         result.checks.push('N Quick Add; aria-pressed; created learning task persists after reload')
-        await page.getByRole('button', { name: '更多任务操作', exact: true }).click()
-        await page.getByRole('menuitem', { name: '编辑任务', exact: true }).click()
+        await page.getByRole('button', { name: '编辑任务', exact: true }).click()
         const edit = page.getByRole('dialog', { name: '编辑任务', exact: true })
         await edit.waitFor()
         await capture('edit')
-        const save = edit.getByRole('button', { name: '保存', exact: true })
-        async function checkEditorFooter() {
-          assert.equal(await save.evaluate((button) => {
-            const rect = button.getBoundingClientRect()
-            const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
-            return Boolean(button.form && button.closest('.sheet-footer') && rect.top >= 0 && rect.bottom <= innerHeight && (hit === button || button.contains(hit)))
-          }), true, 'Save is form-associated and unobscured within the viewport')
-        }
-        await checkEditorFooter()
-        await edit.locator('.sheet-body').evaluate((body) => { body.scrollTop = body.scrollHeight })
-        await checkEditorFooter()
-        await edit.locator('.sheet-body').evaluate((body) => { body.scrollTop = 0 })
-        result.checks.push('Editor Save remains visible and hit-testable before and after body scroll; native form association retained')
         const date = edit.getByRole('button', { name: '日期', exact: true })
         await date.click()
         await page.locator('.date-panel').waitFor()
         await capture('date-picker')
-        if (viewport.width < 820) {
-          await edit.getByRole('button', { name: '返回编辑任务', exact: true }).click()
-          await page.locator('.date-panel').waitFor({ state: 'hidden' })
-        } else {
-          await page.keyboard.press('Escape')
-          await page.locator('.date-panel').waitFor({ state: 'hidden' })
-          await page.waitForTimeout(250)
-          assert.equal(await date.evaluate((element) => element === document.activeElement), true, 'Escape restores date trigger focus')
-        }
+        await page.keyboard.press('Escape')
+        await page.locator('.date-panel').waitFor({ state: 'hidden' })
+        await page.waitForTimeout(250)
+        assert.equal(await date.evaluate((element) => element === document.activeElement), true, 'Escape restores date trigger focus')
         await edit.getByRole('button', { name: '取消', exact: true }).click()
-        result.checks.push(viewport.width < 820 ? 'Inline date subpage returns to the retained edit sheet' : 'Anchored date picker Escape restores focus and retains edit sheet')
+        result.checks.push('Nested date picker Escape restores focus and retains edit sheet')
         await page.getByRole('button', { name: '开始学习', exact: true }).click()
         await page.locator('.focus-view').waitFor()
         await capture('focus')

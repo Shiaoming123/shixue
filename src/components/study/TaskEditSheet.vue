@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue'
-import { Bell, CalendarDays, Flag, ListTree } from '@lucide/vue'
+import { computed, ref, watch } from 'vue'
+import { Bell, CalendarDays, Flag, ListTree, X } from '@lucide/vue'
 import type { StudyTaskPriority, StudyTopic } from '../../storage/study/types'
-import Button from '../ui/Button.vue'
 import DateTimePicker from '../ui/DateTimePicker.vue'
 import Listbox from '../ui/Listbox.vue'
 import Sheet from '../ui/Sheet.vue'
@@ -71,11 +70,6 @@ const estimateMinutes = ref<number | null>(null)
 const criteria = ref('')
 const tagIds = ref<string[]>([])
 const recurrenceRule = ref<RecurrenceRule | null>(null)
-const formId = useId()
-
-type EditorPage = 'form' | 'planned' | 'due' | 'reminders' | 'recurrence'
-const editorPage = ref<EditorPage>('form')
-const compact = ref(false)
 const recurrenceDirty = ref(false)
 const reminderCommands = ref<ReminderSetValue[]>([])
 const baseTask = ref<TaskEditValue | null>(null)
@@ -111,7 +105,6 @@ const visibleTags = computed(() => (props.tags ?? [])
 watch([() => props.open, () => props.task?.id, () => Boolean(props.task)], ([open]) => {
   const task = props.task
   if (!open) {
-    editorPage.value = 'form'
     recurrenceDirty.value = false
     reminderCommands.value = []
     baseTask.value = null
@@ -120,7 +113,6 @@ watch([() => props.open, () => props.task?.id, () => Boolean(props.task)], ([ope
     return
   }
   if (!task) return
-  editorPage.value = 'form'
   title.value = task.title
   notes.value = task.notes
   topicId.value = task.topicId ?? ''
@@ -146,11 +138,6 @@ watch([() => props.open, () => props.task?.id, () => Boolean(props.task)], ([ope
 watch(() => JSON.stringify(props.recurrenceRule ?? null), () => {
   if (props.open && !recurrenceDirty.value) recurrenceRule.value = props.recurrenceRule ?? null
 })
-
-function syncCompact() { compact.value = typeof window !== 'undefined' && window.innerWidth <= 819 }
-onMounted(() => { if (typeof window !== 'undefined') { syncCompact(); window.addEventListener('resize', syncCompact) } })
-onUnmounted(() => { if (typeof window !== 'undefined') window.removeEventListener('resize', syncCompact) })
-function returnToForm() { editorPage.value = 'form' }
 
 function sameReminder(command: ReminderSetValue, rule: TaskReminderRule) {
   return JSON.stringify(reminderTarget(command)) === JSON.stringify(rule.target) &&
@@ -252,39 +239,31 @@ function toLocalDateTime(value: string) {
 </script>
 
 <template>
-  <Sheet :open="Boolean(open && task)" label="编辑任务" title="编辑任务" :back-label="editorPage === 'form' ? undefined : '返回编辑任务'" @back="returnToForm" @close="requestClose">
-    <template v-if="task && compact && editorPage !== 'form'">
-      <DateTimePicker v-if="editorPage === 'planned'" :model-value="plannedOn" :mode="plannedTimed ? 'datetime' : 'date'" label="日期" :inline="true" @update:model-value="plannedOn = $event; returnToForm()" />
-      <DateTimePicker v-else-if="editorPage === 'due'" :model-value="dueOn" :mode="dueTimed ? 'datetime' : 'date'" label="截止日期" :inline="true" @update:model-value="dueOn = $event; returnToForm()" />
-      <ReminderEditor v-else-if="editorPage === 'reminders' && reminderRules !== undefined && task.id" :task-id="task.id" :rules="draftReminderRules" :start-at="plannedAt" :due-at="dueAt" :notification-available="notificationAvailable" :permission="reminderPermission" :busy="reminderBusy" :error="reminderError" :inline-picker="true" @set="stageReminderSet" @remove="stageReminderRemove" />
-      <RecurrenceEditor v-else-if="editorPage === 'recurrence'" :model-value="recurrenceRule" @save="stageRecurrence; returnToForm()" />
-    </template>
-    <form v-else-if="task" :id="formId" class="sheet-content" @submit.prevent="save">
+  <Sheet :open="Boolean(open && task)" label="编辑任务" @close="requestClose">
+    <form v-if="task" class="sheet-content" @submit.prevent="save">
+      <header><h2 id="task-edit-title">编辑任务</h2><button type="button" title="关闭" aria-label="关闭" @click="requestClose"><X :size="19" /></button></header>
       <label><span>标题</span><input v-model="title" aria-label="任务标题" required autofocus /></label>
       <label><span>备注</span><textarea v-model="notes" aria-label="任务备注" placeholder="备注" /></label>
       <label><span><ListTree :size="15" />清单</span><Listbox v-model="topicId" :options="topicOptions" label="清单" /></label>
       <div class="tag-field">
-        <div class="field-label"><span>标签</span><Button variant="quiet" size="sm" @click="emit('manageTags')">管理标签</Button></div>
+        <div class="field-label"><span>标签</span><button type="button" @click="emit('manageTags')">管理标签</button></div>
         <div v-if="visibleTags.length" class="tag-options" aria-label="任务标签">
-          <Button v-for="tag in visibleTags" :key="tag.id" variant="standard" size="sm" :class="{ selected: tagIds.includes(tag.id), archived: tag.archivedAt !== null }" :aria-pressed="tagIds.includes(tag.id)" @click="toggleTag(tag)">{{ tag.title }}<small v-if="tag.archivedAt !== null">已归档</small></Button>
+          <button v-for="tag in visibleTags" :key="tag.id" type="button" :class="{ selected: tagIds.includes(tag.id), archived: tag.archivedAt !== null }" :aria-pressed="tagIds.includes(tag.id)" @click="toggleTag(tag)">{{ tag.title }}<small v-if="tag.archivedAt !== null">已归档</small></button>
         </div>
         <p v-else>还没有标签；创建后可跨主题筛选。</p>
       </div>
       <div class="field-grid">
-        <label><span><CalendarDays :size="15" />日期</span><Button v-if="compact" variant="standard" @click="editorPage = 'planned'">{{ plannedOn || '不设置计划日期' }}</Button><DateTimePicker v-else v-model="plannedOn" :mode="plannedTimed ? 'datetime' : 'date'" label="日期" placeholder="不设置计划日期" /></label>
-        <label><span>截止</span><Button v-if="compact" variant="standard" @click="editorPage = 'due'">{{ dueOn || '不设置截止日期' }}</Button><DateTimePicker v-else v-model="dueOn" :mode="dueTimed ? 'datetime' : 'date'" label="截止日期" placeholder="不设置截止日期" /></label>
+        <label><span><CalendarDays :size="15" />日期</span><DateTimePicker v-model="plannedOn" :mode="plannedTimed ? 'datetime' : 'date'" label="日期" placeholder="不设置计划日期" /></label>
+        <label><span>截止</span><DateTimePicker v-model="dueOn" :mode="dueTimed ? 'datetime' : 'date'" label="截止日期" placeholder="不设置截止日期" /></label>
       </div>
-      <Button v-if="compact && reminderRules !== undefined && task.id" variant="standard" @click="editorPage = 'reminders'">提醒</Button><ReminderEditor v-else-if="reminderRules !== undefined && task.id" :key="task.id" :task-id="task.id" :rules="draftReminderRules" :start-at="plannedAt" :due-at="dueAt" :notification-available="notificationAvailable" :permission="reminderPermission" :busy="reminderBusy" :error="reminderError" @set="stageReminderSet" @remove="stageReminderRemove" />
+      <ReminderEditor v-if="reminderRules !== undefined && task.id" :key="task.id" :task-id="task.id" :rules="draftReminderRules" :start-at="plannedAt" :due-at="dueAt" :notification-available="notificationAvailable" :permission="reminderPermission" :busy="reminderBusy" :error="reminderError" @set="stageReminderSet" @remove="stageReminderRemove" />
       <label v-else><span><Bell :size="15" />提醒</span><DateTimePicker v-model="reminderAt" mode="datetime" label="提醒时间" placeholder="不设置提醒" /></label>
       <label><span><Flag :size="15" />优先级</span><Listbox :model-value="priority" :options="priorityOptions" label="优先级" @update:model-value="priority = $event as StudyTaskPriority" /></label>
-      <Button v-if="compact" variant="standard" @click="editorPage = 'recurrence'">重复</Button><label v-else><span>重复</span><RecurrenceEditor :model-value="recurrenceRule" @save="stageRecurrence" /></label>
+      <label><span>重复</span><RecurrenceEditor :model-value="recurrenceRule" @save="stageRecurrence" /></label>
       <label><span>预计分钟</span><input v-model.number="estimateMinutes" type="number" min="1" max="1440" placeholder="分钟" /></label>
       <label v-if="learning"><span>完成标准</span><textarea v-model="criteria" aria-label="完成标准" placeholder="每行一项" /></label>
+      <footer><button type="button" class="cancel" @click="requestClose">取消</button><button class="save" type="submit" :disabled="!title.trim() || reminderBusy">保存</button></footer>
     </form>
-    <template v-if="task && (!compact || editorPage === 'form')" #footer>
-      <Button class="cancel" variant="standard" @click="requestClose">取消</Button>
-      <Button class="save" variant="prominent" type="submit" :form="formId" :disabled="!title.trim() || reminderBusy">保存</Button>
-    </template>
   </Sheet>
 </template>
 
@@ -293,6 +272,6 @@ function toLocalDateTime(value: string) {
 header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding-bottom: 15px; border-bottom: 1px solid var(--hairline); } h2 { margin: 0; font-size: var(--text-xl); font-weight: 600; } header button { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--control-fill); color: var(--muted); }
 label { display: block; margin-top: 14px; } label > span { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: var(--muted); font-size: var(--text-xs); font-weight: 600; } input, textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--radius-lg); outline: 0; background: var(--control-fill); color: var(--text); font: inherit; font-size: var(--text-base); } textarea { min-height: 72px; resize: vertical; } input:focus, textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: var(--focus-ring); }
 .tag-field { margin-top: 14px; }.field-label { min-height: 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: var(--text-xs); font-weight: 600; }.field-label button { min-height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--accent); font: inherit; }.field-label button:hover { background: var(--control-fill); }.tag-options { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 6px; }.tag-options button { min-height: 34px; display: inline-flex; align-items: center; gap: 5px; padding: 0 11px; border: 1px solid var(--hairline); border-radius: var(--radius-full); background: var(--control-fill); color: var(--muted); font: inherit; font-size: var(--text-xs); }.tag-options button.selected { border-color: color-mix(in srgb, var(--accent) 45%, var(--hairline)); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); }.tag-options button.archived { border-style: dashed; }.tag-options small { font-size: 9px; }.tag-field > p { margin: 7px 0 0; color: var(--muted); font-size: var(--text-xs); }
-.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--hairline); } footer button { min-height: 44px; padding: 0 17px; border-radius: var(--radius-lg); font-size: 12px; font-weight: 650; } .cancel { border: 1px solid var(--hairline); background: var(--control-fill); color: var(--text); } .save { border: 0; background: var(--accent); color: var(--accent-text); } .save:disabled { opacity: .4; }
 @media (max-width: 819px) { .field-grid { grid-template-columns: 1fr; gap: 0; }.tag-options button { min-height: 44px; } }
 </style>

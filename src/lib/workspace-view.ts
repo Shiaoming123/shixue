@@ -17,7 +17,6 @@ export function renderPageForDestination(destination: ShellDestination): Workspa
   if (destination.kind === 'settings') return 'settings'
   if (destination.kind === 'today') return 'today'
   if (destination.kind === 'calendar') return 'calendar'
-  if (destination.kind === 'lists') return 'topics'
   if (destination.kind === 'learning') return destination.section
   return 'tasks'
 }
@@ -71,17 +70,22 @@ export function shouldResetTaskPriority(destination: ShellDestination, preserveP
 export const desktopWorkspaceNavigation: readonly WorkspaceNavigationDescriptor[] = [
   { label: '收件箱', preferenceKey: 'smart:inbox', view: { kind: 'inbox' } },
   { label: '今天', preferenceKey: 'smart:today', view: { kind: 'today' } },
+  { label: '最近 7 天', preferenceKey: 'smart:next7', view: { kind: 'upcoming' } },
   { label: '日历', preferenceKey: 'page:calendar', view: { kind: 'calendar' } },
   { label: '清单', preferenceKey: 'smart:all', view: { kind: 'lists' } },
+  { label: '已完成', preferenceKey: 'smart:completed', view: { kind: 'completed' } },
   { label: '学习', preferenceKey: 'page:topics', view: { kind: 'learning', section: 'topics' } },
 ]
 
-export const mobileWorkspaceNavigation = desktopWorkspaceNavigation
+export const mobileWorkspaceNavigation = desktopWorkspaceNavigation.filter(({ view }) =>
+  view.kind === 'inbox'
+  || view.kind === 'today'
+  || view.kind === 'calendar'
+  || view.kind === 'lists'
+  || view.kind === 'learning')
 
-export const listWorkspaceNavigation: readonly WorkspaceNavigationDescriptor[] = [
-  { label: '最近 7 天', preferenceKey: 'smart:next7', view: { kind: 'upcoming' } },
-  { label: '已完成', preferenceKey: 'smart:completed', view: { kind: 'completed' } },
-]
+export const mobileMoreWorkspaceNavigation = desktopWorkspaceNavigation.filter(({ view }) =>
+  view.kind === 'upcoming' || view.kind === 'completed')
 
 export const learningWorkspaceNavigation: readonly WorkspaceNavigationDescriptor[] = [
   { label: '主题', preferenceKey: 'page:topics', view: { kind: 'learning', section: 'topics' } },

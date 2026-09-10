@@ -1,18 +1,5 @@
 # 拾学时间规划视觉合同
 
-## iOS UI/UX 大重构覆盖合同（2026-09-10）
-
-用户已授权在 `feat/ios-ui-ux-restructure` 完全重排现有组件布局与页面排版，以 `docs/experiments/ios-ui-ux-restructure-plan.md` 为本轮视觉与交互来源。下列规则在该分支覆盖后文旧布局与 Soft Surface 取值；能力服务、数据模型、重复任务范围、日历写入、学习完成证据和持久化合同不变。
-
-- 桌面、iPad 和紧凑端共用“收件箱 / 今天 / 日历 / 清单 / 学习”五个顶层领域；最近 7 天与已完成进入清单中的智能清单。
-- 每页一个页面标题、一个填充式主要动作；顶层导航只导航，当前页动作进入工具栏，低频动作进入 More。
-- 内容层保持清晰、近乎不透明；Liquid Glass 或降级材质只用于导航、工具栏、Popover、Sheet 等功能层。
-- iOS 触控热区至少 44×44；排版使用 Dynamic Type 语义角色；紧凑页横向内边距 16–20px。
-- 圆角使用 `8 / 12 / 16 / 22 / pill` 语义层级；内容列表默认无阴影，只有真实浮层使用一层柔和阴影。
-- 所有 Button、PageHeader、Dialog、Sheet、Popover、Toast 和可见表单控件来自共享 UI 层或明确平台适配器。
-- iPhone 的日期、提醒、重复等编辑在当前 Sheet 内推进层级；宽屏使用锚定 Popover。不得创建同级嵌套模态。
-- 设计变更按 `VISUAL_QA.md` 的重构矩阵验收；WebView 证据不得表述为原生 iOS、VoiceOver 或真机证据。
-
 ## 主题定制实验扩展
 
 `exp/soft-surface-ui` 允许用户在 9 套配色和自定义主色之间切换；配色方案与 `system / light / dark` 显示模式相互独立。所有页面继续只消费 `--bg / --surface / --surface-alt / --text / --muted / --border / --accent / --accent-alt / --success / --warning / --danger` 及对应文本色。自定义色板必须在常用三层背景上保持正文、次要文字、强调色和状态色至少 4.5:1；设置页色卡与原生取色语义控件需键盘可达，切换遵循全局 motion 与 reduced-motion 规则。

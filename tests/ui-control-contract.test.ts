@@ -18,44 +18,6 @@ test('shared Sheet owns business modal lifecycle and app-level editors use it', 
   assert.doesNotMatch(app, /editor-backdrop|@click\.self/)
 })
 
-test('task editor advances compact date, reminder, and recurrence work inside its existing Sheet', () => {
-  const sheet = rootSource('src/components/ui/Sheet.vue')
-  const editor = rootSource('src/components/study/TaskEditSheet.vue')
-  const picker = rootSource('src/components/ui/DateTimePicker.vue')
-
-  assert.match(sheet, /title\?: string/)
-  assert.match(sheet, /subtitle\?: string/)
-  assert.match(sheet, /backLabel\?: string/)
-  assert.match(sheet, /back: \[\]/)
-  assert.match(editor, /type EditorPage = 'form' \| 'planned' \| 'due' \| 'reminders' \| 'recurrence'/)
-  assert.match(editor, /v-if="task && compact && editorPage !== 'form'"/)
-  assert.match(editor, /:inline="true"/)
-  assert.match(picker, /inline\?: boolean/)
-  assert.doesNotMatch(editor, /<Popover\b|useModalOverlay|<Teleport\b/)
-})
-
-test('compact task editor keeps reminder state in the current Sheet and resets child pages', () => {
-  const sheet = rootSource('src/components/ui/Sheet.vue')
-  const editor = rootSource('src/components/study/TaskEditSheet.vue')
-  const reminder = rootSource('src/components/study/ReminderEditor.vue')
-
-  assert.match(reminder, /inlinePicker\?: boolean/)
-  assert.match(reminder, /:inline="inlinePicker"/)
-  assert.match(editor, /editorPage\.value = 'form'/)
-  assert.match(editor, /:inline-picker="true"/)
-  assert.match(editor, /:notification-available="notificationAvailable"[\s\S]*:permission="reminderPermission"[\s\S]*:busy="reminderBusy"[\s\S]*:error="reminderError"/)
-  assert.match(sheet, /display: flex;\s*flex-direction: column;/)
-  assert.match(sheet, /\.sheet-body \{[^}]*overflow-y: auto;/)
-  assert.doesNotMatch(sheet, /\.sheet-panel \{[^}]*overflow-y: auto;/)
-})
-
-test('task editor uses shared controls for every business action', () => {
-  const editor = rootSource('src/components/study/TaskEditSheet.vue')
-
-  assert.match(editor, /import Button from '..\/ui\/Button\.vue'/)
-  assert.doesNotMatch(editor, /<button\b/)
-})
-
 test('business sheets and responsive task detail no longer own parallel overlay code', () => {
   for (const name of ['CompletionSheet.vue', 'TaskActionSheet.vue', 'TaskEditSheet.vue', 'TaskDetailDrawer.vue']) {
     const source = rootSource(`src/components/study/${name}`)

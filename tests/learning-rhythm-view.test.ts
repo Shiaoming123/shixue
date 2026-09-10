@@ -47,20 +47,9 @@ function loadComponent() {
       return () => Vue.h('button', { onClick: (event: unknown) => emit('click', event) }, slots.default?.())
     },
   })
-  const PageHeaderStub = Vue.defineComponent({
-    props: { title: String, subtitle: String },
-    setup(props, { slots }) {
-      return () => Vue.h('header', [
-        Vue.h('h1', props.title),
-        props.subtitle ? Vue.h('p', props.subtitle) : null,
-        slots.actions?.(),
-      ])
-    },
-  })
   new Function('require', 'exports', code)((id: string) => {
     if (id === 'vue') return Vue
     if (id === '../ui/Button.vue') return { default: ButtonStub }
-    if (id === '../ui/PageHeader.vue') return { default: PageHeaderStub }
     throw new Error(`Unexpected component dependency: ${id}`)
   }, exported)
   return { Component: exported.default, descriptor }

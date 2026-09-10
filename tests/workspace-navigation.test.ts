@@ -4,7 +4,7 @@ import test from 'node:test'
 import {
   desktopWorkspaceNavigation,
   learningWorkspaceNavigation,
-  listWorkspaceNavigation,
+  mobileMoreWorkspaceNavigation,
   mobileWorkspaceNavigation,
   renderPageForDestination,
   resolveArchivedListTransition,
@@ -58,7 +58,7 @@ test('task topic filters become explicit typed navigation transitions', () => {
   assert.equal(shouldResetTaskPriority({ kind: 'lists' }), true)
   assert.equal(shouldResetTaskPriority({ kind: 'list', listId: 'list:a' }), false)
   assert.equal(shouldResetTaskPriority({ kind: 'upcoming' }, true), false)
-  assert.equal(renderPageForDestination({ kind: 'lists' }), 'topics')
+  assert.equal(renderPageForDestination({ kind: 'lists' }), 'tasks')
   assert.equal(renderPageForDestination({ kind: 'list', listId: 'list:a' }), 'tasks')
   assert.equal(renderPageForDestination({ kind: 'learning', section: 'topics' }), 'topics')
   assert.equal(renderPageForDestination({ kind: 'learning', section: 'rhythm' }), 'rhythm')
@@ -90,7 +90,7 @@ test('shell controls emit one typed destination and App owns the canonical sette
   assert.doesNotMatch(bottomTabs, /'smart-view'/)
   assert.match(app, /const destination = ref<ShellDestination>\(\{ kind: 'today' \}\)/)
   assert.match(app, /function setDestination\(next: ShellDestination,/)
-  assert.match(app, /<TopicsView[^>]*:lists-mode="destination\.kind === 'lists'"[^>]*@open-smart="setDestination\(\{ kind: \$event \}\)"/)
+  assert.match(app, /v-for="item in mobileMoreWorkspaceNavigation"/)
   assert.match(app, /v-for="item in learningWorkspaceNavigation"/)
   assert.match(app, /resolveTaskTopicFilterTransition\(value\)/)
   assert.doesNotMatch(app, /const page = ref|const activeSmartView = ref/)
@@ -99,34 +99,17 @@ test('shell controls emit one typed destination and App owns the canonical sette
 test('desktop and mobile navigation expose the contracted destinations in order', () => {
   assert.deepEqual(
     desktopWorkspaceNavigation.map(({ label }) => label),
-    ['收件箱', '今天', '日历', '清单', '学习'],
+    ['收件箱', '今天', '最近 7 天', '日历', '清单', '已完成', '学习'],
   )
   assert.deepEqual(
     desktopWorkspaceNavigation.map(({ view }) => view.kind),
-    ['inbox', 'today', 'calendar', 'lists', 'learning'],
+    ['inbox', 'today', 'upcoming', 'calendar', 'lists', 'completed', 'learning'],
   )
-  assert.deepEqual(mobileWorkspaceNavigation.map(({ label }) => label), ['收件箱', '今天', '日历', '清单', '学习'])
   assert.deepEqual(mobileWorkspaceNavigation.map(({ view }) => view.kind), ['inbox', 'today', 'calendar', 'lists', 'learning'])
-  assert.deepEqual(listWorkspaceNavigation.map(({ label }) => label), ['最近 7 天', '已完成'])
-  assert.deepEqual(listWorkspaceNavigation.map(({ view }) => view.kind), ['upcoming', 'completed'])
+  assert.deepEqual(mobileMoreWorkspaceNavigation.map(({ view }) => view.kind), ['upcoming', 'completed'])
   assert.deepEqual(learningWorkspaceNavigation.map(({ view }) => view), [
     { kind: 'learning', section: 'topics' },
     { kind: 'learning', section: 'rhythm' },
     { kind: 'learning', section: 'review' },
   ])
-})
-
-test('legacy smart-list routes remain addressable without becoming top-level destinations', () => {
-  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
-  const sidebar = readFileSync(new URL('../src/components/study/AppSidebar.vue', import.meta.url), 'utf8')
-  const bottomTabs = readFileSync(new URL('../src/components/study/BottomTabs.vue', import.meta.url), 'utf8')
-  assert.deepEqual(resolveWorkspaceView('/upcoming'), { kind: 'upcoming' })
-  assert.deepEqual(resolveWorkspaceView('/completed'), { kind: 'completed' })
-  assert.equal(serializeWorkspaceView({ kind: 'upcoming' }), '/upcoming')
-  assert.equal(serializeWorkspaceView({ kind: 'completed' }), '/completed')
-  assert.equal(desktopWorkspaceNavigation.some(({ view }) => view.kind === 'upcoming' || view.kind === 'completed'), false)
-  assert.equal(mobileWorkspaceNavigation.some(({ view }) => view.kind === 'upcoming' || view.kind === 'completed'), false)
-  assert.match(app, /<TopicsView[^>]*:lists-mode="destination\.kind === 'lists'"[^>]*@open-smart="setDestination\(\{ kind: \$event \}\)"/)
-  assert.match(sidebar, /listWorkspaceNavigation/)
-  assert.doesNotMatch(bottomTabs, /listWorkspaceNavigation/)
 })

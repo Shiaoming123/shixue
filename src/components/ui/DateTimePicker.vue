@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useId, watch } from 'vue'
+import { computed, nextTick, ref, useId } from 'vue'
 import Popover from './Popover.vue'
 import DatePicker from './DatePicker.vue'
 import { normalizeQuickAddTime } from '../../domain/quick-add/time'
@@ -11,8 +11,7 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   disabled?: boolean
   required?: boolean
-  inline?: boolean
-}>(), { mode: 'date', placeholder: '选择日期', disabled: false, required: false, inline: false })
+}>(), { mode: 'date', placeholder: '选择日期', disabled: false, required: false })
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const open = ref(false)
 const trigger = ref<HTMLButtonElement | null>(null)
@@ -31,11 +30,6 @@ const displayValue = computed(() => {
   }).format(date)
   return props.mode === 'datetime' ? `${formatted} ${props.modelValue.slice(11, 16)}` : formatted
 })
-watch(() => [props.inline, props.modelValue] as const, () => {
-  if (!props.inline) return
-  draftDate.value = props.modelValue.slice(0, 10)
-  draftTime.value = props.modelValue.slice(11, 16) || '09:00'
-}, { immediate: true })
 async function setOpen(value: boolean) {
   if (props.disabled) return
   open.value = value
@@ -70,7 +64,7 @@ function applyDateTime() {
 
 <template>
   <span class="date-time-picker">
-    <Popover v-if="!inline" :open="open" align="start" mobile-sheet :mobile-sheet-label="label" @update:open="setOpen">
+    <Popover :open="open" align="start" mobile-sheet :mobile-sheet-label="label" @update:open="setOpen">
       <template #trigger="{ triggerProps }">
         <button v-bind="triggerProps" ref="trigger" type="button" class="date-trigger" :class="{ placeholder: !modelValue }" :aria-label="label" :aria-required="required || undefined" :disabled="disabled">
           <span>{{ displayValue }}</span><i aria-hidden="true" />
@@ -94,10 +88,6 @@ function applyDateTime() {
         </div>
       </template>
     </Popover>
-    <div v-else ref="panel" class="date-panel">
-      <DatePicker :model-value="draftDate || modelValue.slice(0, 10)" :label="label" @update:model-value="selectDate" />
-      <template v-if="mode === 'datetime'"><label class="time-field"><span>本地时间</span><input v-model="draftTime" type="text" inputmode="numeric" maxlength="5" aria-label="本地时间，24 小时制" @blur="normalizeTime" @keydown.enter.prevent="applyDateTime" /></label><p v-if="timeError" :id="errorId" class="time-error" role="status">{{ timeError }}</p><footer><button type="button" class="apply" :disabled="!draftDate || Boolean(timeError)" @click="applyDateTime">应用</button></footer></template>
-    </div>
   </span>
 </template>
 <style scoped>

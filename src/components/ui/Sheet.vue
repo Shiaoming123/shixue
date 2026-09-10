@@ -1,14 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import IconButton from './IconButton.vue'
 import { useModalOverlay, type OverlayCloseReason } from './use-overlay'
 
 const props = withDefaults(defineProps<{
   open: boolean
   label: string
-  title?: string
-  subtitle?: string
-  backLabel?: string
   placement?: 'responsive' | 'right' | 'inline'
   size?: 'sm' | 'md' | 'lg'
   closeOnOutside?: boolean
@@ -20,7 +16,6 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   'update:open': [open: boolean]
-  back: []
   close: [reason: OverlayCloseReason]
 }>()
 
@@ -51,13 +46,7 @@ function requestClose(reason: OverlayCloseReason) {
           :aria-label="placement === 'inline' ? undefined : label"
           :tabindex="placement === 'inline' ? undefined : -1"
         >
-          <header v-if="title || subtitle" class="sheet-header">
-            <IconButton v-if="backLabel" :aria-label="backLabel" :title="backLabel" @click="$emit('back')">←</IconButton>
-            <div class="sheet-heading"><h2 v-if="title">{{ title }}</h2><p v-if="subtitle">{{ subtitle }}</p></div>
-            <IconButton v-if="!backLabel" ariaLabel="关闭" @click="requestClose('select')">×</IconButton>
-          </header>
-          <div class="sheet-body"><slot :close="requestClose" /></div>
-          <footer v-if="$slots.footer" class="sheet-footer"><slot name="footer" :close="requestClose" /></footer>
+          <slot :close="requestClose" />
         </section>
       </div>
     </Transition>
@@ -81,9 +70,7 @@ function requestClose(reason: OverlayCloseReason) {
 .sheet-panel {
   width: min(100%, 520px);
   max-height: calc(100dvh - 40px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-6);
   border: 1px solid var(--hairline);
@@ -92,7 +79,6 @@ function requestClose(reason: OverlayCloseReason) {
   background: var(--material-regular);
   box-shadow: var(--shadow-lg);
 }
-.sheet-header { display: flex; align-items: flex-start; gap: var(--space-3); flex: 0 0 auto; padding-bottom: var(--space-4); border-bottom: 1px solid var(--hairline); }.sheet-heading { min-width: 0; flex: 1; }.sheet-heading h2, .sheet-heading p { margin: 0; }.sheet-heading h2 { font-size: var(--font-title-2-size); }.sheet-heading p { margin-top: var(--space-1); color: var(--muted); font-size: var(--font-subheadline-size); }.sheet-body { min-width: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }.sheet-footer { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--hairline); }
 
 .sheet-panel--sm { width: min(100%, 420px); }
 .sheet-panel--lg { width: min(100%, 660px); }

@@ -62,20 +62,6 @@ test('damaged sidebar storage fails safe and a new menu item is appended', () =>
   })
 })
 
-test('five-domain navigation drops retired smart keys without changing custom list order', () => {
-  withStorage((storage) => {
-    const currentKeys = ['smart:inbox', 'smart:today', 'page:calendar', 'smart:all', 'page:topics', 'page:review', 'list:work', 'list:study']
-    storage.setItem('shixue:sidebar-preferences:v1', JSON.stringify({
-      displayMode: 'expanded',
-      order: ['smart:next7', 'list:study', 'smart:completed', 'list:work', 'smart:today'],
-    } satisfies SidebarPreferences))
-
-    assert.deepEqual(loadSidebarPreferences(currentKeys).order, [
-      'list:study', 'list:work', 'smart:today', 'smart:inbox', 'page:calendar', 'smart:all', 'page:topics', 'page:review',
-    ])
-  })
-})
-
 test('keyboard and drag ordering share the same deterministic move helper', () => {
   assert.deepEqual(
     moveSidebarItem(menuKeys, 'page:review', 'smart:today'),
