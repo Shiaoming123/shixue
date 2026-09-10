@@ -44,7 +44,9 @@ test('calendar quick capture closes details and focuses its composer without cha
 test('calendar shares one detail action interface and keeps its view mounted while focusing', () => {
   assert.equal((app.match(/<TaskDetailDrawer\b/g) ?? []).length, 1)
   assert.equal((app.match(/<TaskEditSheet\b/g) ?? []).length, 1)
-  assert.match(app, /:task="showFocus \|\| taskEditorOpen \? undefined : selectedTaskView"/)
+  assert.match(app, /<TaskDetailDrawer\s+v-if="!taskEditorOpen"/)
+  assert.match(app, /<TaskEditSheet\s+v-else/)
+  assert.match(app, /:task="showFocus \? undefined : selectedTaskView"/)
   assert.match(app, /<TaskDetailDrawer[\s\S]*<TaskEditSheet[\s\S]*<\/div>\s*<\/template>/)
   assert.match(app, /v-show="!showFocus" class="tasks-layout"/)
   assert.match(app, /#context[\s\S]*?<CalendarSourceManager/)

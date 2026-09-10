@@ -6,8 +6,7 @@ const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 const globalCss = readFileSync(new URL('../src/assets/themes/global.css', import.meta.url), 'utf8')
 const notices = readFileSync(new URL('../public/third-party-font-licenses.txt', import.meta.url), 'utf8')
 
-test('bundles the product typefaces locally and exposes them through design tokens', () => {
-  assert.match(main, /@fontsource-variable\/manrope/)
+test('bundles the product typeface locally and exposes it through design tokens', () => {
   assert.match(main, /@fontsource-variable\/noto-sans-sc/)
   assert.match(globalCss, /--font-sans:/)
   assert.match(globalCss, /--font-display:/)

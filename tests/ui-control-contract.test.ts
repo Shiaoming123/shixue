@@ -57,3 +57,9 @@ test('quick add uses edge-to-edge sheets through 369px and inset sheets from 370
 test('the unused private-breakpoint context rail is removed', () => {
   assert.equal(existsSync(new URL('../src/components/study/ContextRail.vue', import.meta.url)), false)
 })
+
+test('the desktop app root cannot become a second scroll container', () => {
+  const global = rootSource('src/assets/themes/global.css')
+  assert.match(global, /html,\s*\nbody,\s*\n#app\s*\{[\s\S]*height:\s*100%;[\s\S]*overflow:\s*hidden;/)
+  assert.match(global, /#app\s*\{[\s\S]*position:\s*fixed;[\s\S]*inset:\s*0;/)
+})
