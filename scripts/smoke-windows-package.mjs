@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const tauriTargetRoot = resolve(projectRoot, 'src-tauri', 'target')
-const smokeReportPath = resolve(tauriTargetRoot, 'windows-package-smoke-report.json')
+const installerKind = process.argv.includes('--msi') ? 'msi' : 'nsis'
+const smokeReportPath = resolve(tauriTargetRoot, installerKind === 'msi' ? 'windows-msi-smoke-report.json' : 'windows-package-smoke-report.json')
 
 const manualStages = [
   ['permission-first-reminder', 'Observe that startup stays silent and the first enabled reminder requests permission.'],
@@ -22,15 +23,16 @@ const manualStages = [
 ]
 
 export function createWindowsSmokeReport(now = new Date()) {
+  const installerLabel = installerKind === 'msi' ? 'MSI' : 'NSIS'
   return {
     schemaVersion: 1,
     generatedAt: now.toISOString(),
     platform: process.platform,
     automatedResult: 'NOT_RUN',
     stages: [
-      ['manifest-audit', 'Load the versioned candidate manifest and verify the exact NSIS bytes by SHA-256.'],
+      ['manifest-audit', `Load the versioned candidate manifest and verify the exact ${installerLabel} bytes by SHA-256.`],
       ['product-data-preflight', 'Verify the real Windows product data directories are absent before launch.'],
-      ['silent-install', 'Install the manifest-selected NSIS package into a dedicated target directory.'],
+      ['silent-install', `Install the manifest-selected ${installerLabel} package into a dedicated target directory.`],
       ['installed-launch', 'Launch the installed executable and observe that it stays alive for two seconds.'],
       ['installed-relaunch', 'Launch the same installed executable again after the first process exits.'],
       ['silent-uninstall', 'Run the installed candidate uninstaller and verify the executable is removed.'],
@@ -188,7 +190,7 @@ export async function removeWindowsProductData(
   await remove(assertWindowsProductDataPath(paths, paths.local, paths.localRoot))
 }
 
-export async function loadCandidateNsisArtifact(root, version) {
+async function loadCandidateWindowsArtifact(root, version, kind, label) {
   const directory = resolve(root, 'release-artifacts', 'windows', version)
   const manifestPath = assertSmokePath(resolve(root, 'release-artifacts', 'windows'), resolve(directory, 'manifest.json'))
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
@@ -196,21 +198,29 @@ export async function loadCandidateNsisArtifact(root, version) {
     throw new Error(`Windows candidate manifest must describe version ${version} for Windows.`)
   }
   const matches = Array.isArray(manifest.artifacts)
-    ? manifest.artifacts.filter((artifact) => artifact?.kind === 'nsis')
+    ? manifest.artifacts.filter((artifact) => artifact?.kind === kind)
     : []
-  if (matches.length !== 1) throw new Error(`Windows candidate manifest must contain exactly one NSIS artifact; found ${matches.length}.`)
+  if (matches.length !== 1) throw new Error(`Windows candidate manifest must contain exactly one ${label} artifact; found ${matches.length}.`)
   const artifact = matches[0]
   if (typeof artifact.file !== 'string' || !artifact.file || typeof artifact.sha256 !== 'string') {
-    throw new Error('Windows candidate NSIS metadata is incomplete.')
+    throw new Error(`Windows candidate ${label} metadata is incomplete.`)
   }
   const path = assertSmokePath(directory, resolve(directory, artifact.file))
   const [contents, artifactStat] = await Promise.all([readFile(path), stat(path)])
   if (!artifactStat.isFile() || artifactStat.size !== artifact.bytes) {
-    throw new Error(`Windows candidate NSIS size mismatch: ${artifact.file}`)
+    throw new Error(`Windows candidate ${label} size mismatch: ${artifact.file}`)
   }
   const digest = createHash('sha256').update(contents).digest('hex')
-  if (digest !== artifact.sha256) throw new Error(`Windows candidate NSIS checksum mismatch: ${artifact.file}`)
+  if (digest !== artifact.sha256) throw new Error(`Windows candidate ${label} checksum mismatch: ${artifact.file}`)
   return { ...artifact, path, manifestPath, manifest }
+}
+
+export function loadCandidateNsisArtifact(root, version) {
+  return loadCandidateWindowsArtifact(root, version, 'nsis', 'NSIS')
+}
+
+export function loadCandidateMsiArtifact(root, version) {
+  return loadCandidateWindowsArtifact(root, version, 'msi', 'MSI')
 }
 
 export function createNsisInstallArgs(_installerPath, installPath) {
@@ -219,6 +229,14 @@ export function createNsisInstallArgs(_installerPath, installPath) {
 
 export function createNsisUninstallArgs() {
   return ['/S']
+}
+
+export function createMsiInstallArgs(installerPath, installPath) {
+  return ['/i', installerPath, '/qn', '/norestart', 'ALLUSERS=2', 'MSIINSTALLPERUSER=1', `INSTALLDIR=${installPath}`]
+}
+
+export function createMsiUninstallArgs(installerPath) {
+  return ['/x', installerPath, '/qn', '/norestart']
 }
 
 export function resolveInstalledExecutable(installPath, binaryName) {
@@ -303,6 +321,23 @@ async function runRegistryCommand(args) {
   })
 }
 
+function queryInstalledMsiProduct(productName) {
+  const escaped = productName.replaceAll("'", "''")
+  const command = `$found = Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq '${escaped}' }; if ($found) { exit 10 }`
+  return new Promise((resolveQuery, rejectQuery) => {
+    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], { stdio: 'ignore', windowsHide: true })
+    child.once('error', rejectQuery)
+    child.once('exit', (code, signal) => signal ? rejectQuery(new Error(`MSI identity query exited with ${signal}`)) : resolveQuery(code))
+  })
+}
+
+export async function assertWindowsMsiProductAbsent(productName, { query = queryInstalledMsiProduct } = {}) {
+  if (typeof productName !== 'string' || !productName.trim()) throw new Error('Windows MSI product name is unavailable.')
+  const code = await query(productName)
+  if (code === 10) throw new Error(`BLOCKED: ${productName} is already installed; refusing to replace an existing MSI product.`)
+  if (code !== 0) throw new Error(`Could not audit the installed MSI identity for ${productName}.`)
+}
+
 async function removeWindowsInstallerRegistryKey(key) {
   if (!key?.startsWith('HKCU\\Software\\')) {
     throw new Error(`Refusing to remove an unexpected Windows installer registry key: ${key}`)
@@ -344,6 +379,8 @@ async function main() {
   let executablePath
   let productDataPaths
   let ownsProductData = false
+  let msiCandidatePath
+  let msiInstalled = false
   let activeStage = 'manifest-audit'
   let failure
 
@@ -359,17 +396,22 @@ async function main() {
       throw new Error('Could not read the package author for Windows installer cleanup.')
     }
     const binaryName = tauriConfig.mainBinaryName?.trim() || cargoPackageName
-    const candidate = await loadCandidateNsisArtifact(projectRoot, packageJson.version)
+    const candidate = installerKind === 'msi'
+      ? await loadCandidateMsiArtifact(projectRoot, packageJson.version)
+      : await loadCandidateNsisArtifact(projectRoot, packageJson.version)
+    if (installerKind === 'msi') msiCandidatePath = candidate.path
     if (candidate.manifest.identifier !== tauriConfig.identifier) {
       throw new Error('Windows candidate manifest identifier does not match the current Tauri identity.')
     }
     const candidateRegistryKey = `HKCU\\Software\\${packageJson.author}\\${tauriConfig.productName}`
-    const installedIdentity = await runRegistryCommand(['query', candidateRegistryKey])
-    if (installedIdentity === 0) {
-      throw new Error(`BLOCKED: ${candidateRegistryKey} is already installed; refusing to overwrite the real application identity.`)
+    if (installerKind === 'msi') {
+      await assertWindowsMsiProductAbsent(tauriConfig.productName)
+    } else {
+      const installedIdentity = await runRegistryCommand(['query', candidateRegistryKey])
+      if (installedIdentity === 0) throw new Error(`BLOCKED: ${candidateRegistryKey} is already installed; refusing to overwrite the real application identity.`)
+      if (installedIdentity !== 1) throw new Error(`Could not audit installed Windows identity: ${candidateRegistryKey}`)
+      installerRegistryKey = candidateRegistryKey
     }
-    if (installedIdentity !== 1) throw new Error(`Could not audit installed Windows identity: ${candidateRegistryKey}`)
-    installerRegistryKey = candidateRegistryKey
     report.artifact = {
       path: candidate.path,
       manifest: candidate.manifestPath,
@@ -390,7 +432,11 @@ async function main() {
 
     activeStage = 'silent-install'
     await mkdir(installPath)
-    await runCommand(candidate.path, createNsisInstallArgs(candidate.path, installPath))
+    if (installerKind === 'msi') {
+      msiInstalled = true
+      await runCommand('msiexec.exe', createMsiInstallArgs(candidate.path, installPath))
+    }
+    else await runCommand(candidate.path, createNsisInstallArgs(candidate.path, installPath))
     updateSmokeStage(report, 'silent-install', 'PASS', `Installed ${candidate.file} into the isolated smoke directory.`)
 
     activeStage = 'installed-launch'
@@ -423,19 +469,23 @@ async function main() {
     application = undefined
 
     activeStage = 'silent-uninstall'
-    const uninstallerPath = assertSmokePath(smokeRoot, resolve(installPath, 'uninstall.exe'))
-    const uninstallerStat = await stat(uninstallerPath)
-    if (!uninstallerStat.isFile()) throw new Error(`Installed uninstaller is missing: ${uninstallerPath}`)
-    await runCommand(uninstallerPath, createNsisUninstallArgs())
+    if (installerKind === 'msi') {
+      await runCommand('msiexec.exe', createMsiUninstallArgs(candidate.path))
+      msiInstalled = false
+    } else {
+      const uninstallerPath = assertSmokePath(smokeRoot, resolve(installPath, 'uninstall.exe'))
+      const uninstallerStat = await stat(uninstallerPath)
+      if (!uninstallerStat.isFile()) throw new Error(`Installed uninstaller is missing: ${uninstallerPath}`)
+      await runCommand(uninstallerPath, createNsisUninstallArgs())
+    }
     await waitForFileRemoval(executablePath)
-    await assertWindowsInstallerRegistryKeyAbsent(installerRegistryKey)
+    if (installerKind === 'msi') await assertWindowsMsiProductAbsent(tauriConfig.productName)
+    else await assertWindowsInstallerRegistryKeyAbsent(installerRegistryKey)
     updateSmokeStage(report, 'silent-uninstall', 'PASS', 'The candidate uninstaller removed the installed executable and product registry metadata.')
 
     activeStage = 'cleanup'
-    await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath, {
-      registryKey: installerRegistryKey,
-      exists: async () => false,
-    })
+    if (installerKind === 'msi') await removeSmokeRoot(tauriTargetRoot, smokeRoot)
+    else await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath, { registryKey: installerRegistryKey, exists: async () => false })
     if (ownsProductData) await removeWindowsProductData(productDataPaths)
     ownsProductData = false
     updateSmokeStage(report, 'cleanup', 'PASS', 'Removed the owned smoke root, product data, and installer registry residue.')
@@ -449,8 +499,13 @@ async function main() {
   } finally {
     try {
       await terminateChild(application)
+      if (msiInstalled && msiCandidatePath) {
+        await runCommand('msiexec.exe', createMsiUninstallArgs(msiCandidatePath))
+        msiInstalled = false
+      }
       if (report.stages.find((stage) => stage.id === 'cleanup')?.status !== 'PASS') {
-        await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath, { registryKey: installerRegistryKey })
+        if (installerKind === 'msi') await removeSmokeRoot(tauriTargetRoot, smokeRoot)
+        else await cleanupWindowsSmokeInstallation(tauriTargetRoot, smokeRoot, installPath, { registryKey: installerRegistryKey })
         if (ownsProductData) await removeWindowsProductData(productDataPaths)
         ownsProductData = false
         if (activeStage !== 'cleanup') updateSmokeStage(report, 'cleanup', 'PASS', 'Cleaned the owned smoke state after an earlier stage failed.')

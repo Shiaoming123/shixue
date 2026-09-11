@@ -14,6 +14,10 @@ import {
   removeSmokeRoot,
   resolveInstalledExecutable,
   loadCandidateNsisArtifact,
+  loadCandidateMsiArtifact,
+  createMsiInstallArgs,
+  createMsiUninstallArgs,
+  assertWindowsMsiProductAbsent,
   waitForFileRemoval,
   updateSmokeStage,
 } from '../scripts/smoke-windows-package.mjs'
@@ -74,6 +78,31 @@ test('loads the exact manifest NSIS bytes and rejects a checksum mismatch', asyn
   manifest.artifacts[0].sha256 = '0'.repeat(64)
   await writeFile(resolve(directory, 'manifest.json'), JSON.stringify(manifest))
   await assert.rejects(loadCandidateNsisArtifact(root, '0.3.0'), /checksum mismatch/i)
+})
+
+test('loads the exact manifest MSI bytes and uses a quiet per-user lifecycle', async (t) => {
+  const root = await mkdtemp(resolve(tmpdir(), 'shixue-msi-candidate-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const directory = resolve(root, 'release-artifacts', 'windows', '0.3.0')
+  await mkdir(directory, { recursive: true })
+  const file = 'Shixue_0.3.0_x64_Installer.msi'
+  await writeFile(resolve(directory, file), 'candidate bytes')
+  await writeFile(resolve(directory, 'manifest.json'), JSON.stringify({
+    version: '0.3.0', platform: 'windows', identifier: 'com.shiaoming123.shixue',
+    artifacts: [{ kind: 'msi', file, bytes: 15, sha256: '732d058fadd90c70f22429227ab5d9c74919217099efe737aa46835ce3a60856' }],
+  }))
+
+  const artifact = await loadCandidateMsiArtifact(root, '0.3.0')
+  assert.equal(artifact.path, resolve(directory, file))
+  assert.deepEqual(createMsiInstallArgs(artifact.path, 'D:/owned/install'), [
+    '/i', artifact.path, '/qn', '/norestart', 'ALLUSERS=2', 'MSIINSTALLPERUSER=1', 'INSTALLDIR=D:/owned/install',
+  ])
+  assert.deepEqual(createMsiUninstallArgs(artifact.path), ['/x', artifact.path, '/qn', '/norestart'])
+})
+
+test('blocks MSI lifecycle when the product is already installed', async () => {
+  await assert.rejects(assertWindowsMsiProductAbsent('拾学', { query: async () => 10 }), /BLOCKED: 拾学 is already installed/)
+  await assertWindowsMsiProductAbsent('拾学', { query: async () => 0 })
 })
 
 test('rejects cleanup outside the dedicated target subtree', () => {

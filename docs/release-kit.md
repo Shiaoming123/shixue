@@ -118,6 +118,16 @@ double-click UI, successful workspace-load UI, tray graceful-exit,
 notification UI, store, or macOS/Linux package evidence. Use a clean Windows
 user or VM for this smoke when the real application already has local data.
 
+`npm run smoke:windows-msi` applies the same manifest SHA-256 and Windows Known
+Folder data preflights to the single MSI artifact. It also refuses to replace an
+installed product with the same display identity, requests a quiet per-user
+Windows Installer lifecycle in an owned target directory, launches and
+relaunches that installed executable, and uninstalls it in `finally` if a later
+stage fails. Its separate report is
+`src-tauri/target/windows-msi-smoke-report.json`. Existing product data or an
+existing installation is a deliberate `BLOCKED` result, never permission to
+remove or overwrite it.
+
 ## Windows delivery package
 
 Use the Tauri-generated icon set derived from the committed master artwork:
