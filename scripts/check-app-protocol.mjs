@@ -27,6 +27,7 @@ const EXPECTED_NATIVE_EVIDENCE = {
     nativeBuild: 'pass',
     emulatorRun: 'pass',
     persistenceRestart: 'pass',
+    emulatorRebootPersistence: 'pass',
     deviceRun: 'not-run',
   },
   ios: {
