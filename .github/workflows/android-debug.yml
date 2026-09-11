@@ -81,13 +81,13 @@ jobs:
         if: always()
         run: timeout 30 adb -s emulator-5554 emu kill || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: shixue-android-x86_64-debug-apk
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: shixue-android-emulator-evidence
