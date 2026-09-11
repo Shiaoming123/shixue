@@ -34,7 +34,7 @@ serde_json = "1"
 tauri-plugin-clipboard-manager = { version = "2", optional = true }
 tauri-plugin-notification = { version = "2", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock"], optional = true }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"], optional = true }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite"], optional = true }
 tokio = { version = "1", features = ["time"], optional = true }
 
 # —— Agent 能力（P2：密钥代理 + 本地推理，由 feature 门控） ——
