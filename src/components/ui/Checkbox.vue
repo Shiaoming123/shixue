@@ -44,6 +44,8 @@ function onChange(event: Event) {
 
 <style scoped>
 .checkbox {
+  min-width: 0;
+  max-width: 100%;
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -100,6 +102,8 @@ function onChange(event: Event) {
 }
 
 .checkbox-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: var(--text-base);
 }
 

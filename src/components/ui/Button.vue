@@ -47,11 +47,14 @@ defineEmits<{ click: [e: MouseEvent] }>()
   gap: var(--space-2);
   font-family: inherit;
   font-weight: var(--font-medium);
-  line-height: 1;
+  line-height: 1.35;
+  min-width: 0;
+  max-width: 100%;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   cursor: pointer;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   transition:
     background var(--motion-fast) var(--ease),
     border-color var(--motion-fast) var(--ease),

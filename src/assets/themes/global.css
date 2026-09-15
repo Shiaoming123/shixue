@@ -113,9 +113,9 @@
   --field-fill: color-mix(in srgb, var(--surface-alt) 62%, var(--surface));
   --field-hover-fill: color-mix(in srgb, var(--surface-alt) 48%, var(--surface));
   --field-focus-fill: var(--surface);
-  --field-focus-ring: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
+  --field-focus-ring: 0 0 0 2px var(--accent);
   --press-fill: color-mix(in srgb, var(--accent) 17%, var(--surface));
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+  --focus-ring: 0 0 0 2px var(--accent);
   --press-opacity: 0.8;
   --press-scale: 0.992;
 
@@ -267,6 +267,7 @@ time,
 
 /* 尊重系统「减少动效」偏好 */
 @media (prefers-reduced-motion: reduce) {
+  :root { --press-scale: 1; }
   *,
   *::before,
   *::after {
@@ -283,7 +284,8 @@ time,
 }
 
 @media (forced-colors: active) {
-  :root {
+  :root,
+  :root[data-mode] {
     --bg: Canvas !important;
     --surface: Canvas !important;
     --surface-alt: Canvas !important;
@@ -296,21 +298,38 @@ time,
     --danger-text: Canvas !important;
     --material-thin: Canvas;
     --material-regular: Canvas;
+    --material-clear: Canvas;
     --glass-border: CanvasText;
     --glass-highlight: inset 0 0 0 transparent;
     --glass-filter: none;
     --glass-filter-strong: none;
   }
 
+  :root :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: -2px;
+  }
+
+  :root .btn--primary,
+  :root .btn--danger {
+    color: ButtonText !important;
+    background: ButtonFace !important;
+    border-color: ButtonText !important;
+  }
+
+  :root .btn:disabled { color: GrayText !important; }
+
   ::-webkit-scrollbar-thumb {
     background-color: CanvasText;
   }
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  :root {
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root,
+  :root[data-mode] {
     --material-thin: var(--surface);
     --material-regular: var(--surface);
+    --material-clear: var(--surface);
     --glass-border: var(--border);
     --glass-highlight: inset 0 0 0 transparent;
     --glass-filter: none;
@@ -328,6 +347,7 @@ time,
 :root[data-reduced-glass='on'] {
   --material-thin: var(--surface);
   --material-regular: var(--surface);
+  --material-clear: var(--surface);
   --glass-border: var(--border);
   --glass-highlight: inset 0 0 0 transparent;
   --glass-filter: none;
@@ -342,9 +362,11 @@ time,
 }
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  :root {
+  :root,
+  :root[data-mode] {
     --material-thin: var(--surface);
     --material-regular: var(--surface);
+    --material-clear: var(--surface);
     --glass-border: var(--border);
     --glass-highlight: inset 0 0 0 transparent;
     --glass-filter: none;

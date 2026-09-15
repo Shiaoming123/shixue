@@ -104,7 +104,7 @@ test('text entry controls share one compact rest and focus treatment', () => {
   assert.match(global, /--field-min-height:\s*38px/)
   assert.match(global, /--field-fill:\s*color-mix\(/)
   assert.match(global, /--field-focus-fill:\s*var\(--surface\)/)
-  assert.match(global, /--field-focus-ring:\s*0 0 0 1px/)
+  assert.match(global, /--field-focus-ring:\s*0 0 0 2px var\(--accent\)/)
   assert.match(global, /data-input='coarse'[\s\S]*--field-min-height:\s*44px/)
 
   for (const path of [

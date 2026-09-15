@@ -5,6 +5,8 @@
  */
 import { useId } from 'vue'
 
+defineOptions({ inheritAttrs: false })
+
 withDefaults(
   defineProps<{
     modelValue?: string
@@ -25,10 +27,11 @@ function onInput(e: Event) {
 </script>
 
 <template>
-  <div class="field">
-    <label v-if="label" :for="id" class="field__label">{{ label }}</label>
+  <div class="field" v-bind="{ class: $attrs.class, style: $attrs.style }">
+    <label v-if="label" :for="String($attrs.id ?? id)" class="field__label">{{ label }}</label>
     <input
-      :id="id"
+      v-bind="{ ...$attrs, class: undefined, style: undefined }"
+      :id="String($attrs.id ?? id)"
       class="field__input"
       :type="type"
       :value="modelValue"
@@ -41,6 +44,7 @@ function onInput(e: Event) {
 
 <style scoped>
 .field {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -54,6 +58,7 @@ function onInput(e: Event) {
 }
 
 .field__input {
+  min-width: 0;
   width: 100%;
   min-height: var(--field-min-height);
   padding: 0 var(--space-3);

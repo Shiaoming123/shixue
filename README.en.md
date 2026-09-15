@@ -19,7 +19,9 @@
 
 > **Built on MeowStarter:** Shixue is based on the open-source [MeowStarter](https://github.com/Shiaoming123/meow-starter) project. The starter supplies the Tauri 2 and Vue 3 foundation, local storage boundaries, cross-platform capability model, and release tooling. Shixue adds general tasks, an optional learning mode, a complete product workflow, and its own visual system.
 
-![Shixue task center showing the task list and event timeline side by side](./docs/design/shixue-tasks-desktop-implementation.png)
+[![Shixue's redesigned Today view with the sidebar, quick add, search, and task list](./artifacts/desktop-shell-2026-09-10/shell-1366x768.png)](./artifacts/desktop-shell-2026-09-10/shell-1366x768.png)
+
+> This capture comes from Edge/Web acceptance on the development branch on 2026-09-11. It does not show the current v0.3.0 installer or establish Tauri-native acceptance.
 
 ## What Shixue is for
 
@@ -33,13 +35,20 @@ It is designed for people who want to manage personal todos, schedules, and lear
 
 ## Interface
 
-The interface combines a warm paper background, deep ink text, and a restrained sage-green accent. Desktop navigation has seven primary destinations: Inbox, Today, Upcoming, Calendar, Lists, Completed, and Learning. At 320–819px, a five-item bottom bar shows Inbox, Today, Calendar, Lists, and Learning; Upcoming and Completed remain available from the More sheet. Layouts at 1280px and wider use three columns, 820–1279px uses a details drawer, and 320–819px uses one column with full-screen details.
+The interface combines a warm paper background, deep ink text, and a restrained sage-green accent. The latest development branch tightens the desktop sidebar, content width, quick add, search, list organization, and settings entry points, with explicit fallbacks for dark mode, high contrast, forced colors, reduced transparency, and reduced motion. Desktop navigation has seven primary destinations: Inbox, Today, Upcoming, Calendar, Lists, Completed, and Learning; the 320–819px compact layout keeps five primary destinations and routes Upcoming and Completed through More.
 
-| Windows task center | 390px responsive layout |
+| Latest desktop Today view | Dark high-contrast settings |
 | --- | --- |
-| [![Desktop task center thumbnail](./docs/design/shixue-tasks-desktop-implementation.png)](./docs/design/shixue-tasks-desktop-implementation.png) | [![Mobile-width task list thumbnail](./docs/design/shixue-tasks-mobile-implementation.png)](./docs/design/shixue-tasks-mobile-implementation.png) |
+| [![Thumbnail of Shixue's redesigned desktop Today view](./artifacts/desktop-shell-2026-09-10/shell-1366x768.png)](./artifacts/desktop-shell-2026-09-10/shell-1366x768.png) | [![Thumbnail of Shixue's dark high-contrast settings view](./artifacts/desktop-shell-2026-09-10/apple-dark-contrast.png)](./artifacts/desktop-shell-2026-09-10/apple-dark-contrast.png) |
 
-See the [visual fidelity ledger](./docs/design/fidelity-ledger.md) for concepts, implementation captures, and intentional differences.
+Earlier concepts, the mobile-width implementation capture, and intentional differences remain available in the [visual fidelity ledger](./docs/design/fidelity-ledger.md).
+
+### Latest development progress (2026-09-11)
+
+- **Desktop workspace:** Rebuilt how the sidebar, title bar, task list, and details work together; browser flows cover 800×560, 1180×760, 1366×768, and 1920×1080 viewports.
+- **Direct manipulation:** Added a desktop context menu, labels for icon-only actions, list creation and appearance controls, and consistent compact-input and overlay behavior.
+- **Accessibility:** Shared inputs preserve native attributes and expose a stronger keyboard focus state; browser assertions cover dark high contrast, forced colors, reduced transparency, reduced motion, and long-label reflow.
+- **Evidence boundary:** `npm run verify` passed 1009/1009 tests, and `npm run smoke:desktop-shell` passed with no browser console errors. Tauri-native execution, Windows 200% system scaling, Narrator, and physical mobile devices remain unverified. See the [Apple-Design application audit](./docs/design/2026-09-11-apple-design-audit.md).
 
 ## Tasks and time planning
 

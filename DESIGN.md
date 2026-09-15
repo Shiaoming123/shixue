@@ -1,5 +1,16 @@
 # 拾学时间规划视觉合同
 
+## Apple-Design 可访问性精修（2026-09-11）
+
+按用户要求基于 iOS/UI 重构版本 `a41c81b` 独立优化。沿用既有信息架构、品牌、主题与 Glass Chrome；本节只细化共享控件和环境回退，不代表新的布局方向或原生验收。
+
+- 依据 Apple HIG 的 [Materials](https://developer.apple.com/design/human-interface-guidelines/materials)、[Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)、[Entering data](https://developer.apple.com/design/human-interface-guidelines/entering-data) 与 [Layout](https://developer.apple.com/design/human-interface-guidelines/layout)，使用全局 `apple-design` Skill 的中文提炼与工程映射。
+- 现有 `material-thin/regular/clear` 是本产品的 CSS token，不等同 Apple Liquid Glass 的 regular/clear API。功能层继续玻璃，内容层继续平面；深浅色下减少透明度、提高对比、手动关闭玻璃和无 blur 支持时，所有材质 token 必须回到不透明表面。
+- 共享焦点环由弱透明 1px/3px 调整为语义强调色 2px；强制色彩模式使用系统 Highlight 的实体 outline，不能只依赖会被系统移除的阴影。主/危险按钮在该模式使用可读的系统按钮前景与背景。
+- Input 的名称、描述、原生校验、输入模式和事件传给实际 input，外层只保留布局 class/style；显式 id 与 label 对齐。保留既有业务校验和 capability 边界。
+- 共享文字按钮和复选标签允许长文本换行；控制宽度不超过容器，字号增长时高度自然增长。减少动效时不做按压缩放。
+- 原生字号、pt 与 CSS px 不混用。本轮 200% 是 CSS 文字缩放边界测试，不是 Windows 系统缩放或 iOS Dynamic Type 的认证。
+
 ## Glass Chrome 精修合同（2026-09-10）
 
 用户明确要求参考 [Tokens-Counter](https://github.com/Shiaoming123/Tokens-Counter) 的 iOS 玻璃磨砂与极简视觉。本节只覆盖下方 Soft Surface 实验中的“不透明功能层”限制；信息架构、能力服务、数据语义和内容密度保持不变。

@@ -1,5 +1,17 @@
 # 拾学视觉验收矩阵
 
+## Apple-Design 定向回归（2026-09-11）
+
+运行 `npm run build:web` 后运行 `npm run smoke:desktop-shell`。在现有桌面流程上增加：
+
+- 完整日程编辑器：原生必填、月份 1–12 范围校验仍生效。
+- 强制色彩模式：输入框键盘焦点具有至少 2px 实体 outline，主按钮文字可读。
+- 深色模式分别模拟 `prefers-reduced-transparency` 和 `prefers-contrast`：所有材质 token 等于不透明 surface，侧栏无 blur。
+- 390×844，创建超长日历名称，CSS `--font-scale: 2`：操作按钮与复选标签完整换行，关闭与底部保存可通过滚动到达。
+- 四档桌面窗口、单一检查器、日历空白拖选、设置滚动归属、字体同步和侧栏宽度持久化保留原有检查；控制台及 page error 为零。
+
+证据位于 `artifacts/desktop-shell-2026-09-10/`；`apple-*-before.png` 是修复前截图，`apple-*.png` 是本轮产物。目录沿用旧脚本命名，不表示此次运行日期。原生 Tauri、系统 200% 缩放、移动真机和实际读屏仍待验证。详细范围见 [本轮审查](docs/design/2026-09-11-apple-design-audit.md)。
+
 ## Glass Chrome 与视图切换回归（2026-09-10）
 
 - 1440×960：在“最近 7 天”打开内联任务详情后切换“日历”，点击帧及 16/120/240ms 均不得在 `#ui-overlay-host` 出现 `.sheet-layer--inline`；侧栏的 x、宽度和 opacity 全程不变，页面主区域 opacity 为 1。

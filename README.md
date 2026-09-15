@@ -19,7 +19,9 @@
 
 > **脚手架来源**：拾学基于开源项目 [MeowStarter](https://github.com/Shiaoming123/meow-starter) 构建。它提供 Tauri 2、Vue 3、本地存储、多端能力边界和发布工具；拾学在此基础上实现通用任务与可选学习模式、完整产品链路和独立视觉系统。
 
-![拾学任务中心：桌面端同时展示任务列表与详情时间线](./docs/design/shixue-tasks-desktop-implementation.png)
+[![拾学新版桌面端“今天”视图，包含侧栏、快速新增、搜索和任务列表](./artifacts/desktop-shell-2026-09-10/shell-1366x768.png)](./artifacts/desktop-shell-2026-09-10/shell-1366x768.png)
+
+> 上图来自 2026-09-11 开发分支的 Edge/Web 验收，不代表当前 v0.3.0 安装包或 Tauri 原生壳已经采用此界面。
 
 ## 产品定位
 
@@ -33,13 +35,20 @@
 
 ## 界面
 
-界面采用暖纸色、深墨色和低饱和鼠尾草绿，并用系统字体、圆角分组、半透明材质、底部 Sheet 与克制动效建立统一视觉语言。桌面端提供收件箱、今天、最近 7 天、日历、清单、已完成、学习七个一级入口；320–819px 紧凑布局使用收件箱、今天、日历、清单、学习五项底栏，最近 7 天和已完成仍可从更多菜单到达。1280px 以上显示三栏，820–1279px 将详情放入抽屉，320–819px 使用单栏和全屏详情。
+界面采用暖纸色、深墨色和低饱和鼠尾草绿，并用系统字体、圆角分组、半透明材质与克制动效建立统一视觉语言。最新开发分支进一步收紧了桌面侧栏、内容宽度、快速新增、搜索、列表组织和设置入口，并为深色、高对比、强制色彩、减少透明度与减少动效提供明确回退。桌面端提供收件箱、今天、最近 7 天、日历、清单、已完成、学习七个一级入口；320–819px 紧凑布局使用收件箱、今天、日历、清单、学习五项底栏，最近 7 天和已完成仍可从更多菜单到达。
 
-| Windows 桌面任务中心 | 390px 移动布局 |
+| 最新桌面“今天”视图 | 深色高对比设置 |
 | --- | --- |
-| [![桌面端任务中心缩略图](./docs/design/shixue-tasks-desktop-implementation.png)](./docs/design/shixue-tasks-desktop-implementation.png) | [![移动端任务列表缩略图](./docs/design/shixue-tasks-mobile-implementation.png)](./docs/design/shixue-tasks-mobile-implementation.png) |
+| [![拾学新版桌面端今天视图缩略图](./artifacts/desktop-shell-2026-09-10/shell-1366x768.png)](./artifacts/desktop-shell-2026-09-10/shell-1366x768.png) | [![拾学深色高对比设置页缩略图](./artifacts/desktop-shell-2026-09-10/apple-dark-contrast.png)](./artifacts/desktop-shell-2026-09-10/apple-dark-contrast.png) |
 
-设计稿、实现截图和偏差说明见 [视觉保真记录](./docs/design/fidelity-ledger.md)。
+旧版设计稿、移动宽度实现截图和偏差说明仍保留在 [视觉保真记录](./docs/design/fidelity-ledger.md)。
+
+### 最新开发进展（2026-09-11）
+
+- **桌面工作区**：重建侧栏、标题栏、任务列表与详情协作方式；在 800×560、1180×760、1366×768 和 1920×1080 四档视口完成浏览器流程检查。
+- **直接操作**：补齐桌面右键菜单、图标按钮说明、清单创建与外观设置，并统一紧凑输入与弹层行为。
+- **可访问性**：共享输入控件保留原生属性，强化键盘焦点；深色高对比、强制色彩、减少透明度、减少动效和长标签回流均有浏览器断言。
+- **验证边界**：`npm run verify` 通过 1009/1009 项测试，`npm run smoke:desktop-shell` 通过且浏览器控制台无错误；Tauri 原生壳、Windows 系统 200% 缩放、Narrator 与移动真机仍未验证。详见 [Apple-Design 应用审查](./docs/design/2026-09-11-apple-design-audit.md)。
 
 ## 任务与时间规划
 
