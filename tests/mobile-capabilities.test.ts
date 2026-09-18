@@ -9,7 +9,7 @@ const platformModule = await import('../src/lib/platform.ts') as {
 
 const capabilities = JSON.parse(
   readFileSync(new URL('../src-tauri/capabilities/default.json', import.meta.url), 'utf8'),
-) as Array<{ identifier: string; permissions: string[]; platforms?: string[] }>
+) as Array<{ identifier: string; permissions: string[]; platforms?: string[]; windows?: string[] }>
 
 const autostartCapability = JSON.parse(
   readFileSync(new URL('../src-tauri/capabilities/autostart.json', import.meta.url), 'utf8'),
@@ -26,6 +26,7 @@ test('keeps updater permission desktop-only while mobile retains its core capabi
   assert.equal(defaultCapability.permissions.includes('autostart:default'), false)
   assert.deepEqual(updaterCapability?.platforms, ['linux', 'macOS', 'windows'])
   assert.deepEqual(updaterCapability?.permissions, ['updater:default'])
+  assert.deepEqual(updaterCapability?.windows, ['main', 'settings'])
   assert.equal(shortcutCapability, undefined)
   assert.deepEqual(autostartCapability?.platforms, ['linux', 'macOS', 'windows'])
   assert.deepEqual(autostartCapability?.permissions, ['autostart:default'])
