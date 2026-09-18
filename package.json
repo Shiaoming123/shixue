@@ -40,6 +40,7 @@
     "smoke:desktop-shell": "node scripts/smoke-desktop-shell.mjs",
     "benchmark:task-query": "node --experimental-strip-types scripts/benchmark-study-task-query.mjs",
     "smoke:windows-package": "node scripts/smoke-windows-package.mjs",
+    "smoke:windows-msi": "node scripts/smoke-windows-package.mjs --msi",
     "preview": "vite preview",
     "preview:web": "vite preview --mode web",
     "test": "node scripts/run-tests.mjs",

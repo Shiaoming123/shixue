@@ -14,6 +14,12 @@ import {
   removeSmokeRoot,
   resolveInstalledExecutable,
   loadCandidateNsisArtifact,
+  loadCandidateMsiArtifact,
+  createMsiInstallArgs,
+  createMsiUninstallArgs,
+  assertWindowsMsiProductAbsent,
+  installOwnedMsi,
+  cleanupOwnedMsi,
   waitForFileRemoval,
   updateSmokeStage,
 } from '../scripts/smoke-windows-package.mjs'
@@ -74,6 +80,83 @@ test('loads the exact manifest NSIS bytes and rejects a checksum mismatch', asyn
   manifest.artifacts[0].sha256 = '0'.repeat(64)
   await writeFile(resolve(directory, 'manifest.json'), JSON.stringify(manifest))
   await assert.rejects(loadCandidateNsisArtifact(root, '0.3.0'), /checksum mismatch/i)
+})
+
+test('loads the exact manifest MSI bytes and uses a quiet per-user lifecycle', async (t) => {
+  const root = await mkdtemp(resolve(tmpdir(), 'shixue-msi-candidate-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const directory = resolve(root, 'release-artifacts', 'windows', '0.3.0')
+  await mkdir(directory, { recursive: true })
+  const file = 'Shixue_0.3.0_x64_Installer.msi'
+  await writeFile(resolve(directory, file), 'candidate bytes')
+  await writeFile(resolve(directory, 'manifest.json'), JSON.stringify({
+    version: '0.3.0', platform: 'windows', identifier: 'com.shiaoming123.shixue',
+    artifacts: [{ kind: 'msi', file, bytes: 15, sha256: '732d058fadd90c70f22429227ab5d9c74919217099efe737aa46835ce3a60856' }],
+  }))
+
+  const artifact = await loadCandidateMsiArtifact(root, '0.3.0')
+  assert.equal(artifact.path, resolve(directory, file))
+  assert.deepEqual(createMsiInstallArgs(artifact.path, 'D:/owned/install'), [
+    '/i', artifact.path, '/qn', '/norestart', 'ALLUSERS=2', 'MSIINSTALLPERUSER=1', 'INSTALLDIR=D:/owned/install',
+  ])
+  assert.deepEqual(createMsiUninstallArgs(artifact.path), ['/x', artifact.path, '/qn', '/norestart'])
+})
+
+test('blocks MSI lifecycle when the product is already installed', async () => {
+  await assert.rejects(assertWindowsMsiProductAbsent('拾学', { query: async () => 10 }), /BLOCKED: 拾学 is already installed/)
+  await assertWindowsMsiProductAbsent('拾学', { query: async () => 0 })
+})
+
+test('a failed MSI install never grants ownership for fallback uninstall', async () => {
+  let ownership
+  const calls: string[] = []
+  await assert.rejects(async () => {
+    ownership = await installOwnedMsi('D:/candidate.msi', 'D:/install', {
+      run: async (command: string) => {
+        calls.push(command)
+        throw new Error('install failed')
+      },
+    })
+  }, /install failed/)
+  if (ownership) await cleanupOwnedMsi(ownership, '拾学', undefined)
+  assert.deepEqual(calls, ['msiexec.exe'])
+})
+
+test('a downstream launch failure uninstalls only the owned MSI and verifies no residue', async () => {
+  const calls: string[] = []
+  let ownership
+  await assert.rejects(async () => {
+    try {
+      ownership = await installOwnedMsi('D:/candidate.msi', 'D:/install', {
+        run: async (command: string) => { calls.push(`install:${command}`) },
+      })
+      throw new Error('launch failed')
+    } finally {
+      if (ownership) {
+        await cleanupOwnedMsi(ownership, '拾学', 'D:/install/meow-study.exe', {
+          run: async (command: string) => { calls.push(`uninstall:${command}`) },
+          waitForRemoval: async (path: string) => { calls.push(`removed:${path}`) },
+          verifyAbsent: async (productName: string) => { calls.push(`absent:${productName}`) },
+        })
+      }
+    }
+  }, /launch failed/)
+  assert.deepEqual(calls, [
+    'install:msiexec.exe',
+    'uninstall:msiexec.exe',
+    'removed:D:/install/meow-study.exe',
+    'absent:拾学',
+  ])
+})
+
+test('fallback MSI cleanup fails when product residue remains', async () => {
+  await assert.rejects(
+    cleanupOwnedMsi({ installerPath: 'D:/candidate.msi' }, '拾学', undefined, {
+      run: async () => {},
+      verifyAbsent: async () => { throw new Error('MSI residue remains') },
+    }),
+    /MSI residue remains/,
+  )
 })
 
 test('rejects cleanup outside the dedicated target subtree', () => {

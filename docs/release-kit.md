@@ -118,6 +118,12 @@ double-click UI, successful workspace-load UI, tray graceful-exit,
 notification UI, store, or macOS/Linux package evidence. Use a clean Windows
 user or VM for this smoke when the real application already has local data.
 
+`npm run smoke:windows-msi` and the manual `public Windows MSI lifecycle`
+workflow are source-ready for the pinned public v0.3.0 MSI. The MSI command is
+fail-closed outside that GitHub-hosted Windows `main` workflow. This change did
+not run the workflow or install, launch, relaunch, or uninstall the public MSI,
+so MSI lifecycle evidence remains `NOT_RUN` and the maturity above is unchanged.
+
 ## Windows delivery package
 
 Use the Tauri-generated icon set derived from the committed master artwork:
