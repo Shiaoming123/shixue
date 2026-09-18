@@ -1,6 +1,7 @@
 import { applyReviewResult } from '../../storage/study/types.ts'
 import { ensureReviewTask } from '../learning/review-task-link.ts'
 import type { TaskEvent, WorkspaceStateV4 } from '../workspace/types.ts'
+import { applyLiveCompatibilityCommand, nextActionTaskForRecord } from './live-commands.ts'
 import {
   DomainCommandError,
   type CapabilityCommandContext,
@@ -45,7 +46,14 @@ function completeReview(
     if (link.completion?.result !== command.result || link.completion.reviewedOn !== command.reviewedOn) {
       throw new DomainCommandError('VALIDATION_ERROR', 'Completed review link does not match this review outcome.', { linkId: link.id })
     }
-    return { affected: [], changes: [], events: [], compensation: null, data: { completionRecordId: link.completionRecordId, linkId: link.id, result: command.result, reviewedOn: command.reviewedOn, completed: false } }
+    return {
+      affected: [], changes: [], events: [], compensation: null,
+      data: {
+        completionRecordId: link.completionRecordId, linkId: link.id, result: command.result,
+        reviewedOn: command.reviewedOn, completed: false,
+        followUpTaskId: command.result === 'relearn' ? nextActionTaskForRecord(state, link.completionRecordId)?.id ?? null : null,
+      },
+    }
   }
   const recordIndex = state.completionRecords.findIndex(({ id, deletedAt }) => id === link.completionRecordId && deletedAt === null)
   if (recordIndex < 0) throw new DomainCommandError('COMPLETION_RECORD_NOT_FOUND', `Completion record not found: ${link.completionRecordId}.`, { recordId: link.completionRecordId })
@@ -93,7 +101,16 @@ function completeReview(
   }
   const updated = state.completionRecords[recordIndex]!
   const next = updated.nextReviewOn ? ensureReviewTask(state, updated.id, updated.nextReviewOn, context) : null
-  const affected = [
+  const followUp = command.result === 'relearn'
+    ? applyLiveCompatibilityCommand(state, {
+        type: 'completion.create_next_action',
+        recordId: updated.id,
+        taskId: `task:relearn:${link.id}`,
+        eventId: `event:relearn:${link.id}`,
+        startOn: command.reviewedOn,
+      }, context)
+    : null
+  const reviewAffected = [
     { type: 'completion_record' as const, id: updated.id },
     { type: 'task' as const, id: reviewTask.id, revision: reviewTask.revision },
     ...(next ? [
@@ -102,10 +119,22 @@ function completeReview(
     ] : []),
   ]
   return {
-    affected,
-    changes: affected.map((entity) => ({ entity, operation: 'update' as const, fields: ['review'] })),
-    events, compensation: null,
-    data: structuredClone({ completionRecordId: updated.id, linkId: link.id, result: command.result, reviewedOn: command.reviewedOn, record: updated, link, nextLinkId: next?.link.id ?? null }) as never,
+    affected: [...reviewAffected, ...(followUp?.affected ?? [])],
+    changes: [
+      ...reviewAffected.map((entity) => ({ entity, operation: 'update' as const, fields: ['review'] })),
+      ...(followUp?.changes ?? []),
+    ],
+    events: [...events, ...(followUp?.events ?? [])], compensation: null,
+    data: structuredClone({
+      completionRecordId: updated.id,
+      linkId: link.id,
+      result: command.result,
+      reviewedOn: command.reviewedOn,
+      record: updated,
+      link,
+      nextLinkId: next?.link.id ?? null,
+      followUpTaskId: followUp ? nextActionTaskForRecord(state, updated.id)?.id ?? null : null,
+    }) as never,
   }
 }
 

@@ -173,6 +173,87 @@ test('fuzzy preserves the stage for tomorrow while relearn closes the review cha
     completionRecordId === relearnLink.completionRecordId && completedAt === null), false)
 })
 
+test('relearn creates one visible follow-up task traced to the reviewed evidence', async () => {
+  const { store, execute } = await setup()
+  const initial = await store.load()
+  const link = initial.reviewTaskLinks[0]!
+  const record = initial.completionRecords.find(({ id }) => id === link.completionRecordId)!
+  const command = { type: 'review.complete', linkId: link.id, result: 'relearn', reviewedOn: '2026-09-06' } as const
+
+  const created = await execute(command, 'relearn:first')
+  const first = await store.load()
+  const replay = await execute(command, 'relearn:replay')
+  const manual = await execute({
+    type: 'completion.create_next_action',
+    recordId: record.id,
+    taskId: 'task:manual-duplicate',
+    eventId: 'event:manual-duplicate',
+    startOn: '2026-09-06',
+  }, 'relearn:manual-entry')
+  const replayed = await store.load()
+
+  const followUpEvents = replayed.taskEvents.filter(({ reason }) => reason === `Created from completion ${record.id}.`)
+  assert.equal(followUpEvents.length, 1)
+  const followUp = replayed.tasks.find(({ id }) => id === followUpEvents[0]!.taskId)!
+  assert.equal(followUp.mode, 'learning')
+  assert.equal(followUp.title, record.nextAction)
+  assert.equal(followUp.status, 'planned')
+  assert.equal(followUp.schedule.startOn, '2026-09-06')
+  assert.equal(followUp.deletedAt, null)
+  assert.equal((created.data as { followUpTaskId: string }).followUpTaskId, followUp.id)
+  assert.equal((replay.data as { followUpTaskId: string }).followUpTaskId, followUp.id)
+  assert.deepEqual(manual.data, { taskId: followUp.id, created: false })
+  assert.deepEqual(replayed.tasks, first.tasks)
+  assert.deepEqual(replayed.taskEvents, first.taskEvents)
+})
+
+test('relearn ignores a transition whose editable reason imitates a next-action source', async () => {
+  const { store, execute } = await setup()
+  const initial = await store.load()
+  const link = initial.reviewTaskLinks[0]!
+  const record = initial.completionRecords.find(({ id }) => id === link.completionRecordId)!
+  await execute({
+    type: 'task.create', taskId: 'task:unrelated', mode: 'learning', listId: 'list:system:learning',
+    title: 'Unrelated task', startOn: null,
+  }, 'relearn:unrelated-task')
+  const unrelated = (await store.load()).tasks.find(({ id }) => id === 'task:unrelated')!
+  await execute({
+    type: 'task.transition', taskId: unrelated.id, expectedRevision: unrelated.revision, toStatus: 'planned',
+    reason: `Created from completion ${record.id}.`,
+  }, 'relearn:forged-source-reason')
+
+  const completed = await execute({
+    type: 'review.complete', linkId: link.id, result: 'relearn', reviewedOn: '2026-09-06',
+  }, 'relearn:after-forged-source')
+  const next = await store.load()
+  const followUpTaskId = (completed.data as { followUpTaskId: string }).followUpTaskId
+  const followUp = next.tasks.find(({ id }) => id === followUpTaskId)!
+  const sourceEvent = next.taskEvents.find(({ taskId, fromStatus, reason }) =>
+    taskId === followUpTaskId && fromStatus === null && reason === `Created from completion ${record.id}.`)
+
+  assert.notEqual(followUpTaskId, unrelated.id)
+  assert.equal(followUp.title, record.nextAction)
+  assert.equal(sourceEvent?.type, 'planned')
+  assert.equal(sourceEvent?.toStatus, 'planned')
+  assert.equal(sourceEvent?.occurredAt, followUp.createdAt)
+})
+
+test('relearn can continue from retained evidence after its source task is deleted', async () => {
+  const { store, execute } = await setup()
+  const initial = await store.load()
+  const link = initial.reviewTaskLinks[0]!
+  const record = initial.completionRecords.find(({ id }) => id === link.completionRecordId)!
+  const source = initial.tasks.find(({ id }) => id === record.taskId)!
+
+  await execute({ type: 'task.delete', taskId: source.id, expectedRevision: source.revision }, 'relearn:delete-source')
+  await execute({ type: 'review.complete', linkId: link.id, result: 'relearn', reviewedOn: '2026-09-06' }, 'relearn:deleted-source')
+
+  const next = await store.load()
+  const followUpEvent = next.taskEvents.find(({ reason }) => reason === `Created from completion ${record.id}.`)
+  assert.ok(followUpEvent)
+  assert.equal(next.tasks.find(({ id }) => id === followUpEvent.taskId)?.deletedAt, null)
+})
+
 test('replaying a generic toggle against a completed review target is a semantic no-op', async () => {
   const { store, execute } = await setup()
   const link = (await store.load()).reviewTaskLinks[0]!

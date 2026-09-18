@@ -2,6 +2,7 @@ import { createTaskCapabilityService } from '../domain/capabilities/service.ts'
 import {
   CAPABILITY_PROTOCOL_VERSION,
   type CapabilityCommand,
+  type CommandResult,
 } from '../domain/capabilities/types.ts'
 import { SYSTEM_LEARNING_LIST_ID } from '../domain/workspace/migrate.ts'
 import type { Task, WorkspaceStateV4 } from '../domain/workspace/types.ts'
@@ -489,13 +490,16 @@ export async function createTaskFromNextAction(
   options: TaskCommandOptions & { taskId?: string; plannedOn?: string | null } = {},
 ): Promise<StudyTask> {
   const taskId = makeId('task', options.taskId)
-  await executeCommand({
+  const result = await executeCommand({
     type: 'completion.create_next_action', recordId, taskId,
     startOn: options.plannedOn,
     expectedTaskRevision: options.expectedRevision,
     eventId: makeId('event', options.eventId),
   }, commandTime(options.now))
-  return requireTask(await loadStudyState(), taskId)
+  const resultTaskId = result.data && typeof result.data === 'object' && !Array.isArray(result.data) && typeof result.data.taskId === 'string'
+    ? result.data.taskId
+    : taskId
+  return requireTask(await loadStudyState(), resultTaskId)
 }
 
 export async function exportStudyState(exportedAt?: string): Promise<string> {
@@ -553,11 +557,11 @@ export function projectWorkspaceState(
   }
 }
 
-async function executeCommand(command: CapabilityCommand, now: string): Promise<void> {
+async function executeCommand(command: CapabilityCommand, now: string): Promise<CommandResult> {
   const store = getWorkspaceStore()
   const current = await store.load()
   const service = createTaskCapabilityService(store, () => now, (kind) => `${kind}:${crypto.randomUUID()}`)
-  await service.execute({
+  return service.execute({
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
     idempotencyKey: `study:${crypto.randomUUID()}`,
     source: 'human-ui',

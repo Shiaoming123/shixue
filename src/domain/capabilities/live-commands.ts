@@ -440,7 +440,24 @@ function createNextAction(
       recordId: command.recordId,
     })
   }
-  requireTask(state, record.taskId, command.expectedTaskRevision)
+  const existing = nextActionTaskForRecord(state, record.id)
+  if (existing) {
+    return {
+      affected: [taskRef(existing)], changes: [], events: [], compensation: null,
+      data: { taskId: existing.id, created: false },
+    }
+  }
+  const source = state.tasks.find(({ id }) => id === record.taskId)
+  if (!source) {
+    throw new DomainCommandError('TASK_NOT_FOUND', `Study task not found: ${record.taskId}.`, { taskId: record.taskId })
+  }
+  if (command.expectedTaskRevision !== undefined && source.revision !== command.expectedTaskRevision) {
+    throw new DomainCommandError(
+      'ENTITY_REVISION_CONFLICT',
+      `Study task revision conflict: expected ${command.expectedTaskRevision}, found ${source.revision}.`,
+      { taskId: source.id, expectedRevision: command.expectedTaskRevision, actualRevision: source.revision },
+    )
+  }
   const task: Task = {
     id: command.taskId ?? context.id('task'),
     revision: 1,
@@ -473,8 +490,24 @@ function createNextAction(
   return {
     affected: [affected],
     changes: [{ entity: affected, operation: 'create', fields: ['task'] }],
-    events: [event], compensation: { type: 'task.remove_created', taskIds: [task.id] }, data: json(task),
+    events: [event], compensation: { type: 'task.remove_created', taskIds: [task.id] },
+    data: { taskId: task.id, created: true },
   }
+}
+
+export function nextActionTaskForRecord(state: WorkspaceStateV4, recordId: string): Task | null {
+  const reason = `Created from completion ${recordId}.`
+  return state.tasks.find((task) => {
+    if (task.deletedAt !== null) return false
+    const firstEvent = state.taskEvents
+      .filter(({ taskId }) => taskId === task.id)
+      .sort((left, right) => left.sequence - right.sequence)[0]
+    if (!firstEvent || firstEvent.reason !== reason || firstEvent.fromStatus !== null || firstEvent.occurredAt !== task.createdAt) return false
+    const createdAsInbox = firstEvent.type === 'captured' && firstEvent.toStatus === 'inbox'
+    const createdAsPlanned = firstEvent.type === 'planned' && firstEvent.toStatus === 'planned'
+    if (!createdAsInbox && !createdAsPlanned) return false
+    return task.revision > 1 || (task.status === firstEvent.toStatus && task.updatedAt === task.createdAt)
+  }) ?? null
 }
 
 function resetWorkspace(state: WorkspaceStateV4, context: CapabilityCommandContext): CommandApplication {

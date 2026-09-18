@@ -82,6 +82,37 @@ test('review feedback describes the persisted next cycle and releases failed wri
   }
 })
 
+for (const scenario of [
+  { name: 'today', status: 'planned', startOn: '2026-09-08', message: '已安排到今天。' },
+  { name: 'rescheduled', status: 'planned', startOn: '2026-09-12', message: '已安排到2026-09-12。' },
+  { name: 'cancelled', status: 'cancelled', startOn: '2026-09-08', message: '后续任务已取消。' },
+] as const) {
+  test(`relearn feedback describes the persisted ${scenario.name} follow-up and opens it`, async () => {
+    const notices: any[][] = []
+    const opened: string[] = []
+    const { rateReview } = handlers('App.vue', ['rateReview', 'reloadReviews'], {
+      reviewBusy: ref(false), reviewRevealed: ref(true), reviewRefreshRequired: ref(false), today: ref('2026-09-08'),
+      recurrenceWorkspace: ref({ tasks: [{
+        id: 'task:relearn', status: scenario.status,
+        schedule: { startOn: scenario.startOn, startAt: null }, deletedAt: null,
+      }] }),
+      capabilityService: {
+        query: async () => ({ revision: 1 }),
+        execute: async () => ({ data: { nextLinkId: null, followUpTaskId: 'task:relearn' } }),
+      },
+      CAPABILITY_PROTOCOL_VERSION: 1, refreshState: async () => {}, formatShortDate: (date: string) => date,
+      notify: (...args: any[]) => notices.push(args), reportStorageError: assert.fail,
+      openSearchTask: (taskId: string) => opened.push(taskId),
+    })
+
+    await rateReview('review:first', 'relearn')
+    assert.equal(notices[0][0], scenario.message)
+    assert.equal(notices[0][1].label, '查看任务')
+    await notices[0][1].run()
+    assert.deepEqual(opened, ['task:relearn'])
+  })
+}
+
 test('learning completion closes after commit and offers a read-only retry when refreshing fails', async () => {
   const completionTaskId = ref('learning-task')
   const completionOpen = ref(true)

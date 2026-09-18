@@ -9,7 +9,9 @@ import {
   bulkDeleteStudyTasks,
   bulkRescheduleStudyTasks,
   captureStudyTask,
+  completeReviewTaskLink,
   completeStudyTask,
+  createTaskFromNextAction,
   deleteStudyTask,
   loadStudyState,
   planStudyTask,
@@ -38,7 +40,7 @@ import {
   createTauriSqliteStudyStore,
   REPLACE_V1_AFTER_BACKUP_SQL,
 } from '../src/storage/study/tauri-sqlite.ts'
-import type { StudyState, StudyStateV1, StudyStore } from '../src/storage/study/types.ts'
+import { createSeedStudyState, type StudyState, type StudyStateV1, type StudyStore } from '../src/storage/study/types.ts'
 import { createIndexedDbTodoStore } from '../src/storage/todos/indexeddb.ts'
 
 function emptyState(): StudyState {
@@ -146,6 +148,27 @@ test('task commands complete the inbox-to-evidence learning loop atomically', as
     state.taskEvents.map(({ type }) => type),
     ['captured', 'planned', 'started', 'completed', 'captured'],
   )
+})
+
+test('completion-record next action reuses the task already created by relearn', async () => {
+  const store = createInMemoryWorkspaceStore(createSeedStudyState('2026-09-06T12:00:00.000Z'))
+  registerWorkspaceStore(store)
+  const initial = await store.load()
+  const link = initial.reviewTaskLinks[0]!
+
+  await completeReviewTaskLink(link.id, 'relearn', '2026-09-06', { now: '2026-09-06T12:00:00.000Z' })
+  const afterReview = await store.load()
+  const sourceReason = `Created from completion ${link.completionRecordId}.`
+  const followUpId = afterReview.taskEvents.find(({ reason }) => reason === sourceReason)!.taskId
+  const followUp = await createTaskFromNextAction(link.completionRecordId, {
+    taskId: 'task:manual-duplicate', eventId: 'event:manual-duplicate',
+    now: '2026-09-06T12:01:00.000Z', plannedOn: '2026-09-06',
+  })
+
+  const next = await store.load()
+  assert.equal(followUp.id, followUpId)
+  assert.equal(next.taskEvents.filter(({ reason }) => reason === sourceReason).length, 1)
+  assert.equal(next.tasks.some(({ id }) => id === 'task:manual-duplicate'), false)
 })
 
 test('checklist commands persist stable items without noisy TaskEvents', async () => {

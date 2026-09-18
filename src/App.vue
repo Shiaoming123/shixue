@@ -1834,8 +1834,24 @@ async function rateReview(linkId: string, result: ReviewResult) {
       command: { type: 'review.complete', linkId, result, reviewedOn: today.value },
     })
     if (!await reloadReviews()) return
-    const nextLinkId = receipt.data && typeof receipt.data === 'object' && !Array.isArray(receipt.data) ? receipt.data.nextLinkId : undefined
-    notify(result === 'clear' ? (nextLinkId ? '已安排下一次回顾。' : nextLinkId === null ? '已完成这一轮复习。' : '复习结果已刷新。') : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。')
+    const data = receipt.data && typeof receipt.data === 'object' && !Array.isArray(receipt.data) ? receipt.data : {}
+    const nextLinkId = data.nextLinkId
+    const followUpTaskId = typeof data.followUpTaskId === 'string' ? data.followUpTaskId : null
+    if (result === 'relearn' && followUpTaskId) {
+      const followUpTask = recurrenceWorkspace.value?.tasks.find(({ id, deletedAt }) => id === followUpTaskId && !deletedAt)
+      let message = '已安排后续学习。'
+      if (followUpTask?.status === 'cancelled') message = '后续任务已取消。'
+      else if (followUpTask?.status === 'completed') message = '后续任务已完成。'
+      else if (followUpTask?.status === 'in_progress') message = '后续任务正在进行。'
+      else if (followUpTask?.status === 'blocked') message = '后续任务已受阻。'
+      else if (followUpTask?.status === 'inbox') message = '已加入收件箱。'
+      else if (followUpTask?.schedule.startOn === today.value) message = '已安排到今天。'
+      else if (followUpTask?.schedule.startOn) message = `已安排到${formatShortDate(followUpTask.schedule.startOn)}。`
+      else if (followUpTask?.schedule.startAt) message = '后续任务已安排具体时间。'
+      notify(message, { label: '查看任务', run: async () => openSearchTask(followUpTaskId), successMessage: '' })
+    } else {
+      notify(result === 'clear' ? (nextLinkId ? '已安排下一次回顾。' : nextLinkId === null ? '已完成这一轮复习。' : '复习结果已刷新。') : result === 'fuzzy' ? '明天会再见到这条记录。' : '已标记为需要重新学习。')
+    }
   } catch (error) { reviewBusy.value = false; reportStorageError(error) }
 }
 

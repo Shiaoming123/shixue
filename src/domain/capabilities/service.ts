@@ -13,7 +13,7 @@ import type { CommandReceipt, JsonValue, Task, TaskEvent, WorkspaceStateV4 } fro
 import type { WorkspaceStore } from '../../storage/workspace/types.ts'
 import { getCommandDescriptor, getPreviewConfirmation } from './catalog.ts'
 import { applyCalendarCommand, type CalendarCapabilityCommand } from './calendar-commands.ts'
-import { applyLiveCompatibilityCommand } from './live-commands.ts'
+import { applyLiveCompatibilityCommand, nextActionTaskForRecord } from './live-commands.ts'
 import { applyRecurrenceCommand } from './recurrence-commands.ts'
 import { applyTaskCommand } from './task-commands.ts'
 import { applyReviewCommand } from './review-commands.ts'
@@ -658,7 +658,7 @@ function previewAffected(
     return [{ type: 'completion_record', id: completionRecordId }]
   }
   if (command.type === 'completion.create_next_action') {
-    return [{ type: 'task', id: command.taskId ?? 'pending' }]
+    return [{ type: 'task', id: nextActionTaskForRecord(state, command.recordId)?.id ?? command.taskId ?? 'pending' }]
   }
   const taskIds = command.type === 'task.reorder' ||
     command.type === 'task.batch_reschedule' ||
