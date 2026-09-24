@@ -1,0 +1,97 @@
+name: ios-simulator
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/ios-simulator.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'scripts/ios-simulator-ci.mjs'
+      - 'scripts/mobile-doctor.mjs'
+      - 'scripts/prepare-ios-build.mjs'
+      - 'scripts/smoke-ios-launch.mjs'
+      - 'tests/ios-launch-smoke-script.test.ts'
+      - 'tests/ios-simulator-ci.test.ts'
+      - 'tests/mobile-doctor.test.ts'
+      - 'tests/prepare-ios-build.test.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-simulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator-smoke:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+
+      - name: Configure Cargo target directory
+        run: echo "CARGO_TARGET_DIR=$RUNNER_TEMP/shixue-ios-cargo-target" >> "$GITHUB_ENV"
+      - name: Initialize evidence directory
+        run: mkdir -p src-tauri/target/ios-ci src-tauri/target/ios-launch
+      - run: npm ci
+      - name: Record toolchain
+        run: |
+          xcodebuild -version | tee src-tauri/target/ios-ci/xcode.txt
+          pod --version | tee src-tauri/target/ios-ci/cocoapods.txt
+          rustc --version | tee src-tauri/target/ios-ci/rust.txt
+          node --version | tee src-tauri/target/ios-ci/node.txt
+          uname -m | tee src-tauri/target/ios-ci/architecture.txt
+          printf '%s\n' '${{ github.sha }}' > src-tauri/target/ios-ci/source-sha.txt
+      - run: npm run mobile:doctor
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run tauri -- ios init --ci
+      - run: npm run mobile:ios:prepare -- aarch64-sim
+      - run: npm run tauri -- ios build --debug --target aarch64-sim --no-sign --ci
+
+      - name: Locate exact app
+        id: app
+        run: |
+          APP="$GITHUB_WORKSPACE/src-tauri/gen/apple/build/arm64-sim/Shixue.app"
+          test -d "$APP"
+          echo "path=$APP" >> "$GITHUB_OUTPUT"
+      - name: Select an available iPhone Simulator
+        id: simulator
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/ios-devices.json"
+          node scripts/ios-simulator-ci.mjs select --input "$RUNNER_TEMP/ios-devices.json" --output src-tauri/target/ios-ci/simulator.json --github-output "$GITHUB_OUTPUT"
+      - name: Boot selected iPhone Simulator
+        run: |
+          xcrun simctl boot "${{ steps.simulator.outputs.udid }}" || true
+          xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
+      - name: Smoke exact app on exact simulator
+        run: npm run smoke:ios-launch -- --device "${{ steps.simulator.outputs.udid }}" --app "${{ steps.app.outputs.path }}" --output src-tauri/target/ios-launch/ci.json
+      - name: Bind evidence to current source
+        run: node scripts/ios-simulator-ci.mjs evidence --source-sha "${{ github.sha }}" --selection src-tauri/target/ios-ci/simulator.json --app "${{ steps.app.outputs.path }}" --launch-report src-tauri/target/ios-launch/ci.json --output src-tauri/target/ios-ci/evidence.json
+
+      - name: Capture simulator diagnostics
+        if: always()
+        run: |
+          xcrun simctl list devices > src-tauri/target/ios-ci/devices.txt || true
+          xcrun simctl spawn "${{ steps.simulator.outputs.udid }}" log show --last 5m --style compact --predicate 'process == "Shixue" OR process == "meow-study"' > src-tauri/target/ios-ci/simulator.log 2>&1 || true
+      - name: Stop selected simulator
+        if: always()
+        run: xcrun simctl shutdown "${{ steps.simulator.outputs.udid }}" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shixue-ios-simulator-evidence-${{ github.sha }}
+          path: |
+            src-tauri/target/ios-ci/
+            src-tauri/target/ios-launch/
+          if-no-files-found: error
