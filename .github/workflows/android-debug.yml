@@ -70,6 +70,10 @@ jobs:
         timeout-minutes: 3
         run: npm run smoke:android-persistence -- --device emulator-5554 --launch-report "$GITHUB_WORKSPACE/src-tauri/target/android-launch/ci.json" --output src-tauri/target/android-persistence/ci.json
 
+      - name: Smoke Android SQLite persistence across emulator reboot
+        timeout-minutes: 5
+        run: npm run smoke:android-persistence -- --device emulator-5554 --launch-report "$GITHUB_WORKSPACE/src-tauri/target/android-launch/ci.json" --restart emulator-reboot --output src-tauri/target/android-persistence/ci-reboot.json
+
       - name: Capture Android diagnostics
         if: always()
         run: |

@@ -10,6 +10,9 @@ const { runAndroidPersistenceSmoke } = await import('../scripts/smoke-android-pe
     secondPid?: string
     terminatedBetweenLaunches: boolean
     stages: { writeConfirmed: boolean; restartConfirmed: boolean }
+    emulatorRebootConfirmed?: boolean
+    firstBootId?: string
+    secondBootId?: string
     error?: string
     commands: Array<{ command: string; args: string[] }>
   }>
@@ -85,6 +88,57 @@ test('Android persistence smoke binds the passed launch evidence and proves writ
   assert.ok(calls.some(({ args }) => args.join(' ').includes('base64 -d')))
 })
 
+test('Android cold persistence smoke requires a changed boot id before accepting SQLite read-back', async () => {
+  const calls: Array<{ command: string; args: string[] }> = []
+  let starts = 0
+  let rebooted = false
+  let statePollsAfterReboot = 0
+  const runCommand = async (command: string, args: string[]) => {
+    calls.push({ command, args })
+    const joined = args.join(' ')
+    if (joined.includes('get-state')) {
+      if (rebooted && statePollsAfterReboot++ === 0) return { ...result(''), status: 1 }
+      return result('device\n')
+    }
+    if (joined.includes('ro.kernel.qemu')) return result('1\n')
+    if (joined.includes('sys.boot_completed')) return result('1\n')
+    if (joined.includes('cat /proc/sys/kernel/random/boot_id')) {
+      return result(rebooted ? 'boot-after\n' : 'boot-before\n')
+    }
+    if (joined.endsWith('reboot')) { rebooted = true; return result('') }
+    if (joined.includes('pm list packages')) return result('package:com.shiaoming123.shixue\n')
+    if (joined.includes('resolve-activity')) return result('com.shiaoming123.shixue/.MainActivity\n')
+    if (joined.includes('rm -f cache/') || joined.includes('base64 -d') || joined.includes('logcat -c') || joined.includes('am force-stop')) return result('')
+    if (joined.includes('am start -W')) { starts += 1; return result('Status: ok\n') }
+    if (joined.includes('cat cache/shixue-android-persistence-smoke.jsonl')) {
+      const lines = [evidence('cold-run', 'write-confirmed', 2)]
+      if (starts >= 2) lines.push(evidence('cold-run', 'restart-confirmed', 2))
+      return result(`${lines.join('\n')}\n`)
+    }
+    if (joined.includes('pidof')) return result(starts >= 2 ? '5252\n' : '4242\n')
+    if (joined.includes('dumpsys activity activities')) return result('com.shiaoming123.shixue/.MainActivity\n')
+    if (joined.includes('logcat -d')) return result('')
+    throw new Error(`Unexpected command: ${command} ${joined}`)
+  }
+
+  const report = await runAndroidPersistenceSmoke({
+    device: 'emulator-5554',
+    launchReport: launchReportPath,
+    readLaunchReport: async () => launchReport,
+    runCommand,
+    runId: 'cold-run',
+    restartMode: 'emulator-reboot',
+    sleep: async () => undefined,
+    stableAliveMs: 0,
+  })
+
+  assert.equal(report.success, true)
+  assert.equal(report.emulatorRebootConfirmed, true)
+  assert.equal(report.firstBootId, 'boot-before')
+  assert.equal(report.secondBootId, 'boot-after')
+  assert.ok(calls.some(({ args }) => args.join(' ').endsWith('reboot')))
+})
+
 test('Android persistence smoke rejects a launch report for another device before invoking adb', async () => {
   let invoked = false
   const report = await runAndroidPersistenceSmoke({
@@ -145,4 +199,5 @@ test('Android CI runs restart persistence after launch evidence and uploads both
   assert.ok(persistenceIndex > launchIndex)
   assert.match(workflow, /--launch-report "\$GITHUB_WORKSPACE\/src-tauri\/target\/android-launch\/ci\.json"/)
   assert.match(workflow, /src-tauri\/target\/android-persistence\//)
+  assert.match(workflow, /--restart emulator-reboot/)
 })

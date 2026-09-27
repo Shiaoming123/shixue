@@ -55,9 +55,11 @@ export async function runAndroidPersistenceSmoke({
   readLaunchReport = readJson,
   runCommand = runProcess,
   runId = randomUUID(),
+  restartMode = 'process',
   sleep = delay,
   now = () => Date.now(),
   timeoutMs = 30_000,
+  rebootTimeoutMs = 180_000,
   pollIntervalMs = 250,
   stableAliveMs = 1_500,
 } = {}) {
@@ -65,7 +67,11 @@ export async function runAndroidPersistenceSmoke({
   if (!launchReport || !isAbsolute(launchReport)) throw new Error('--launch-report must be an absolute JSON path.')
   if (!safeToken(device)) throw new Error('Device serial contains unsupported characters.')
   if (!safeToken(runId)) throw new Error('Run id contains unsupported characters.')
+  if (restartMode !== 'process' && restartMode !== 'emulator-reboot') {
+    throw new Error('Restart mode must be process or emulator-reboot.')
+  }
   if (timeoutMs <= 0 || stableAliveMs < 0) throw new Error('Smoke timeouts must be non-negative, with timeoutMs > 0.')
+  if (rebootTimeoutMs <= 0) throw new Error('rebootTimeoutMs must be positive.')
 
   const taskId = `task:android-persistence:${runId}`
   const title = `Android persistence smoke ${runId}`
@@ -82,7 +88,11 @@ export async function runAndroidPersistenceSmoke({
     taskId,
     title,
     success: false,
+    restartMode,
     terminatedBetweenLaunches: false,
+    emulatorRebootConfirmed: false,
+    firstBootId: undefined,
+    secondBootId: undefined,
     stages,
     firstPid: undefined,
     secondPid: undefined,
@@ -141,6 +151,14 @@ export async function runAndroidPersistenceSmoke({
   if (resolved.status !== 0 || resolvedActivity !== launch.activity) {
     report.error = 'The installed Android launcher Activity does not match the launch report.'
     return report
+  }
+  if (restartMode === 'emulator-reboot') {
+    const bootId = await onDevice(['shell', 'cat', '/proc/sys/kernel/random/boot_id'])
+    report.firstBootId = bootId.status === 0 ? bootId.stdout.trim() : undefined
+    if (!safeToken(report.firstBootId ?? '')) {
+      report.error = 'Could not read the emulator boot id before reboot.'
+      return report
+    }
   }
 
   let requestSeeded = false
@@ -231,23 +249,72 @@ export async function runAndroidPersistenceSmoke({
     report.firstPid = await waitForStage('write-confirmed', false) ?? undefined
     if (!report.firstPid) return report
 
-    const stop = await onDevice(['shell', 'am', 'force-stop', packageId])
-    if (stop.status !== 0) {
-      report.error = `adb force-stop failed between persistence launches: ${resultText(stop).trim()}`
-      return report
-    }
-    const deathDeadline = now() + timeoutMs
-    while (now() <= deathDeadline) {
-      const processState = await onDevice(['shell', 'pidof', '-s', packageId])
-      if (!extractPid(processState)) {
-        report.terminatedBetweenLaunches = true
-        break
+    if (restartMode === 'process') {
+      const stop = await onDevice(['shell', 'am', 'force-stop', packageId])
+      if (stop.status !== 0) {
+        report.error = `adb force-stop failed between persistence launches: ${resultText(stop).trim()}`
+        return report
       }
-      await sleep(pollIntervalMs)
-    }
-    if (!report.terminatedBetweenLaunches) {
-      report.error = 'Android process did not terminate between persistence launches.'
-      return report
+      const deathDeadline = now() + timeoutMs
+      while (now() <= deathDeadline) {
+        const processState = await onDevice(['shell', 'pidof', '-s', packageId])
+        if (!extractPid(processState)) {
+          report.terminatedBetweenLaunches = true
+          break
+        }
+        await sleep(pollIntervalMs)
+      }
+      if (!report.terminatedBetweenLaunches) {
+        report.error = 'Android process did not terminate between persistence launches.'
+        return report
+      }
+    } else {
+      const reboot = await onDevice(['reboot'])
+      if (reboot.status !== 0) {
+        report.error = `adb reboot failed: ${resultText(reboot).trim()}`
+        return report
+      }
+      const disconnectDeadline = now() + timeoutMs
+      let disconnected = false
+      while (now() <= disconnectDeadline) {
+        const rebootState = await onDevice(['get-state'])
+        if (rebootState.status !== 0 || rebootState.stdout.trim() !== 'device') {
+          disconnected = true
+          break
+        }
+        await sleep(pollIntervalMs)
+      }
+      if (!disconnected) {
+        report.error = 'Android emulator did not disconnect after reboot was requested.'
+        return report
+      }
+      const bootDeadline = now() + rebootTimeoutMs
+      while (now() <= bootDeadline) {
+        const [rebootState, bootComplete] = await Promise.all([
+          onDevice(['get-state']),
+          onDevice(['shell', 'getprop', 'sys.boot_completed']),
+        ])
+        if (rebootState.status === 0 && rebootState.stdout.trim() === 'device' &&
+            bootComplete.status === 0 && bootComplete.stdout.trim() === '1') {
+          const bootId = await onDevice(['shell', 'cat', '/proc/sys/kernel/random/boot_id'])
+          report.secondBootId = bootId.status === 0 ? bootId.stdout.trim() : undefined
+          if (safeToken(report.secondBootId ?? '') && report.secondBootId !== report.firstBootId) {
+            report.emulatorRebootConfirmed = true
+            report.terminatedBetweenLaunches = true
+            break
+          }
+        }
+        await sleep(pollIntervalMs)
+      }
+      if (!report.emulatorRebootConfirmed) {
+        report.error = 'Android emulator did not return with a changed boot id before the reboot timeout.'
+        return report
+      }
+      const persistedPackage = await onDevice(['shell', 'pm', 'list', 'packages', '--user', '0', packageId])
+      if (persistedPackage.status !== 0 || !persistedPackage.stdout.split(/\r?\n/).some((line) => line.trim() === `package:${packageId}`)) {
+        report.error = 'The Android package did not remain installed across the emulator reboot.'
+        return report
+      }
     }
 
     const secondLaunch = await onDevice(['shell', 'am', 'start', '-W', '-S', '-n', launch.activity])
@@ -273,6 +340,7 @@ function parseArgs(argv) {
     if (arg === '--device') options.device = argv[++index]
     else if (arg === '--launch-report') options.launchReport = argv[++index]
     else if (arg === '--adb') options.adb = argv[++index]
+    else if (arg === '--restart') options.restartMode = argv[++index]
     else if (arg === '--output') options.output = argv[++index]
     else throw new Error(`Unknown argument: ${arg}`)
   }
@@ -282,7 +350,7 @@ function parseArgs(argv) {
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv)
   const report = await runAndroidPersistenceSmoke(options)
-  const output = options.output ? resolve(options.output) : resolve(defaultOutputRoot, `restart-${Date.now()}.json`)
+  const output = options.output ? resolve(options.output) : resolve(defaultOutputRoot, `${options.restartMode === 'emulator-reboot' ? 'cold-restart' : 'restart'}-${Date.now()}.json`)
   await mkdir(resolve(output, '..'), { recursive: true })
   const finalReport = { ...report, evidencePath: output }
   await writeFile(output, `${JSON.stringify(finalReport, null, 2)}\n`)

@@ -66,8 +66,11 @@ reached all five readiness phases while the resolved Activity stayed foreground
 and its PID survived the bounded stability window. The same APK wrote a unique
 task through the capability service, confirmed complete process termination,
 and recovered that task plus its creation receipt and event from SQLite in a new
-process. Android physical-device, emulator-reboot, native-notification, signing,
-and store evidence remain `not-run`. The earlier iOS Simulator result remains a dated historical snapshot
+process. At `20000be`, `android-debug` run [34182148062](https://github.com/Shiaoming123/shixue/actions/runs/34182148062)
+also recovered the task, creation receipt, and event after a full API 35 x86_64
+emulator reboot whose kernel boot ID changed. Android physical-device,
+native-notification, signing, and store evidence remain `not-run`. The earlier
+iOS Simulator result remains a dated historical snapshot
 in `docs/ios-development.md`; it does not establish current-tree runtime
 evidence. Desktop is the primary stable runtime path; Web and mobile are Beta
 adaptations with documented capability degradation.
@@ -105,9 +108,12 @@ absolute APK. The first app process creates one run-scoped task through
 `TaskCapabilityService`; after `adb force-stop` and observed PID absence, a new
 process must recover the exact task, `task.create` receipt, and event from the
 native SQLite store. Run-scoped JSON evidence, foreground state, and stable
-liveness must all match. This proves application-process restart recovery on
-the tested emulator; it does not prove recovery across an emulator reboot, a
-physical device, native notifications, signing, or store delivery.
+liveness must all match. With `--restart emulator-reboot`, the runner also
+requires ADB disconnect/reconnect, a completed boot, a changed kernel boot ID,
+and the retained package before accepting the same SQLite read-back. Run
+[34182148062](https://github.com/Shiaoming123/shixue/actions/runs/34182148062)
+passed that mode on an API 35 x86_64 emulator. This does not prove a physical
+device, native notifications, signing, or store delivery.
 
 ## Workspace data evolution
 

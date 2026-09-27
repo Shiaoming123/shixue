@@ -30,7 +30,7 @@ The four verification and delivery lanes are independent:
 | Lane | What it currently proves | What it does not prove |
 | --- | --- | --- |
 | Regular CI | Node tests, protocol and module contracts, Web/desktop builds, and Rust fmt/clippy/test/check | A deployed Web build, native-device UX, or an installed update |
-| Manual Android | APK identity, Activity, five readiness phases, a stable foreground process, and SQLite recovery after application-process restart in an isolated x86_64 emulator | A physical Android device, emulator reboot, native notifications, signing, or store delivery |
+| Manual Android | APK identity, Activity, five readiness phases, a stable foreground process, and SQLite recovery after application-process restart and emulator reboot in an isolated x86_64 emulator | A physical Android device, native notifications, signing, or store delivery |
 | Local Windows Release Kit | Format, size, SHA-256, and manifest checks for NSIS, MSI, and Portable; the NSIS install/launch/relaunch/uninstall lifecycle | MSI installation, Portable runtime, 200% scaling, Narrator, Authenticode, or installed updater E2E |
 | Version-tagged Release | Tag gate, draft assets, Portable digest verification, and publication after checks | The complete install and update experience on an end-user machine |
 

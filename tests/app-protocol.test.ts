@@ -112,6 +112,7 @@ function validProtocol() {
         nativeBuild: 'pass',
         emulatorRun: 'pass',
         persistenceRestart: 'pass',
+        emulatorRebootPersistence: 'pass',
         deviceRun: 'not-run',
       },
       ios: {
@@ -196,6 +197,10 @@ test('rejects removing Android restart persistence or attributing it to the curr
   const iosProtocol = validProtocol()
   iosProtocol.nativeEvidence.ios.persistenceRestart = 'pass'
   assert.match(validate(iosProtocol).errors.join('\n'), /nativeEvidence must retain the recorded Android and iOS evidence boundaries/)
+
+  const rebootProtocol = validProtocol()
+  rebootProtocol.nativeEvidence.android.emulatorRebootPersistence = 'not-run'
+  assert.match(validate(rebootProtocol).errors.join('\n'), /nativeEvidence must retain the recorded Android and iOS evidence boundaries/)
 })
 
 test('rejects a protocol that omits the shipped calendar planning capability', () => {

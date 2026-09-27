@@ -30,7 +30,7 @@
 | 泳道 | 当前证明 | 不会因此证明 |
 | --- | --- | --- |
 | 常规 CI | Node 测试、协议与模块合同、Web/desktop 构建、Rust fmt/clippy/test/check | Web 已部署、原生设备体验或已安装升级 |
-| 手动 Android | 隔离 x86_64 emulator 中的 APK 身份、Activity、五阶段 readiness、前台稳定进程，以及应用进程重启后的 SQLite 恢复 | Android 真机、emulator reboot、原生通知、签名或商店交付 |
+| 手动 Android | 隔离 x86_64 emulator 中的 APK 身份、Activity、五阶段 readiness、前台稳定进程，以及应用进程重启和 emulator reboot 后的 SQLite 恢复 | Android 真机、原生通知、签名或商店交付 |
 | 本地 Windows Release Kit | NSIS、MSI、Portable 的格式、大小、SHA-256 与 manifest；NSIS 安装/启动/重启/卸载生命周期 | MSI 安装、Portable 运行、200% 缩放、Narrator、Authenticode 或已安装 updater E2E |
 | 版本标签 Release | 标签门禁、草稿资产、Portable 摘要回查和校验后公开 | 下载资产在用户机器上的完整安装与升级体验 |
 
