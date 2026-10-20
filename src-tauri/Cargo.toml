@@ -45,7 +45,7 @@ keyring = { version = "4", optional = true }
 reqwest = { version = "0.13", features = ["stream", "json", "query"], optional = true }
 # futures-util：流式代理里消费 bytes_stream
 futures-util = { version = "0.3", optional = true }
-base64 = { version = "0.22", optional = true }
+base64 = { version = "0.23", optional = true }
 sha2 = { version = "0.10", optional = true }
 serde_json_canonicalizer = { version = "=0.3.2", optional = true }
 getrandom = { version = "0.4", optional = true }
