@@ -2868,7 +2868,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_json_canonicalizer",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "sqlx",
  "tauri",
  "tauri-build",
